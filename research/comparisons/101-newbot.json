@@ -1,0 +1,14 @@
+{
+  "id": "grok-101-newbot-2240",
+  "source": {
+    "videoUrl": "https://www.youtube.com/watch?v=8xXhE25vJZY",
+    "title": "Grok Bot 101",
+    "timecode": "00:22:20.000"
+  },
+  "reference": "../frames/grok-101-create-1338-1343/frame-000060.png",
+  "referenceRect": { "x": 0, "y": 60, "width": 1584, "height": 994 },
+  "implementationRect": { "x": 0, "y": 0, "width": 1584, "height": 994 },
+  "output": "../../artifacts/reference-comparison/101-newbot",
+  "threshold": 32,
+  "note": "The source is a scaled, compressed 1920x1080 YouTube recording with a presenter composite; the crop removes the visible black borders and presenter. The original CSS viewport, font rasterization and scale are unknown. The overlay and metrics are visual diagnostics, not a claim of absolute pixel parity."
+}
