@@ -66,6 +66,12 @@ try {
   await page.getByRole('button', { name: 'Save local message' }).click();
   await page.reload();
   await page.locator('.conversation').getByText('Alice local note').waitFor();
+  const aliceSession = (await context.cookies()).find(cookie => cookie.name === 'coke_grok_session')!;
+  identity = 'bob';
+  await page.goto(`${publicUrl}api/auth/google/start`);
+  await page.getByRole('button', { name: 'Sign out' }).waitFor();
+  assert.equal(await page.locator('.conversation').getByText('Alice local note').count(), 0);
+  assert.equal((await fetch(`${publicUrl}api/auth/me`, { headers: { cookie: `${aliceSession.name}=${aliceSession.value}` } })).status, 401);
   await page.getByRole('button', { name: 'Sign out' }).click();
   await page.getByRole('link', { name: 'Continue with Google' }).waitFor();
   identity = 'bob';
