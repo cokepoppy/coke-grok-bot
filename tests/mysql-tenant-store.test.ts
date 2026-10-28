@@ -27,6 +27,12 @@ test('Google subject, membership and one-use OAuth flows remain isolated', async
     await store.createSession(token, a.userId, a.tenantId, new Date(Date.now() + 60000));
     assert.deepEqual(await store.getSession(token), { userId: a.userId, tenantId: a.tenantId, email: 'new@example.test', name: 'A renamed', role: 'owner' });
     await assert.rejects(store.createSession(hash('forged'), a.userId, b.tenantId, new Date(Date.now() + 60000)));
+    await assert.rejects(store.replaceSession(hash('replacement'), a.userId, b.tenantId, new Date(Date.now() + 60000), token));
+    assert.ok(await store.getSession(token), 'failed replacement must preserve the old session');
+    await store.replaceSession(hash('replacement'), b.userId, b.tenantId, new Date(Date.now() + 60000), token);
+    assert.equal(await store.getSession(token), null);
+    assert.equal((await store.getSession(hash('replacement')))?.userId, b.userId);
+    await store.removeSession(hash('replacement'));
     await store.removeSession(token); assert.equal(await store.getSession(token), null);
     await store.createSession(token, a.userId, a.tenantId, new Date(Date.now() + 60000));
     await pool.execute('UPDATE sessions SET expires_at=UTC_TIMESTAMP(3) - INTERVAL 1 SECOND WHERE token_hash=?', [token]);

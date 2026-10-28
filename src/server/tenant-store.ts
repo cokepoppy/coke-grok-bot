@@ -38,6 +38,13 @@ export class TenantStore {
     if (!hashPattern.test(tokenHash) || !Number.isFinite(expiresAt.getTime()) || expiresAt <= new Date()) throw new Error('Invalid session');
     await this.pool.execute('INSERT INTO sessions (token_hash, tenant_id, user_id, expires_at) VALUES (?, ?, ?, ?)', [tokenHash, tenantId, userId, expiresAt]);
   }
+  async replaceSession(tokenHash: string, userId: string, tenantId: string, expiresAt: Date, oldTokenHash?: string): Promise<void> {
+    if (!hashPattern.test(tokenHash) || (oldTokenHash && !hashPattern.test(oldTokenHash)) || !Number.isFinite(expiresAt.getTime()) || expiresAt <= new Date()) throw new Error('Invalid session');
+    await this.transaction(async connection => {
+      if (oldTokenHash) await connection.execute('DELETE FROM sessions WHERE token_hash=?', [oldTokenHash]);
+      await connection.execute('INSERT INTO sessions (token_hash, tenant_id, user_id, expires_at) VALUES (?, ?, ?, ?)', [tokenHash, tenantId, userId, expiresAt]);
+    });
+  }
   async getSession(tokenHash: string): Promise<Session | null> {
     if (!hashPattern.test(tokenHash)) return null;
     const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT s.user_id AS userId, s.tenant_id AS tenantId, u.email, u.name, m.role FROM sessions s JOIN users u ON u.id=s.user_id JOIN memberships m ON m.tenant_id=s.tenant_id AND m.user_id=s.user_id WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP(3)`, [tokenHash]);
