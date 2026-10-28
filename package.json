@@ -16,7 +16,9 @@
     "test:auth": "node --import tsx --test tests/google-auth.test.ts",
     "start:auth": "node --import tsx src/server/start-auth.ts",
     "test:auth-browser": "node --import tsx tests/auth-browser.e2e.ts",
-    "test:google-proxy": "node --import tsx --test tests/google-proxy.test.ts"
+    "test:google-proxy": "node --import tsx --test tests/google-proxy.test.ts",
+    "build:server": "esbuild src/server/start-auth.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist/server/auth.cjs",
+    "test:bundle": "node --import tsx tests/bundled-auth.e2e.ts"
   },
   "dependencies": {
     "google-auth-library": "11.1.0",
@@ -30,10 +32,11 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "5.2.0",
+    "esbuild": "0.28.2",
     "playwright-core": "1.56.1",
     "pngjs": "7.0.0",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
-    "vite": "7.3.6"
+    "vite": "7.3.7"
   }
 }
