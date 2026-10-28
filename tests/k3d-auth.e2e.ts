@@ -16,7 +16,7 @@ const httpPort = (server.address() as import('node:net').AddressInfo).port;
 await new Promise<void>(resolve => server.close(() => resolve()));
 const origin = `http://127.0.0.1:${httpPort}`, base = `${origin}/grok-bot`;
 const admin = await mysql.createConnection({ host: '127.0.0.1', port, user: 'root', timezone: 'Z' });
-let forward: ReturnType<typeof spawn> | undefined, created = false;
+let forward: ReturnType<typeof spawn> | undefined, created = false, paused = false;
 const kubectl = (args: string[], input?: string) => execFileSync('kubectl', args, { input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
 try {
   await admin.query(`CREATE DATABASE \`${database}\``);
@@ -50,8 +50,21 @@ try {
   assert.equal(redirect.origin, 'https://accounts.google.com');
   assert.equal(redirect.searchParams.get('redirect_uri'), `${base}/auth/google/callback`);
   assert.match(start.headers.get('set-cookie')!, /Path=\/grok-bot\/auth\/google\/callback/);
+  if (process.env.COKE_GROK_TEST_DB_FAILURE === '1') {
+    const testContainer = 'coke-grok-k3d-readiness-mysql';
+    const mapped = execFileSync('docker', ['port', testContainer, '3306/tcp'], { encoding: 'utf8' }).trim();
+    if (!mapped.endsWith(`:${port}`)) throw new Error('Disposable MySQL container does not match the test port.');
+    execFileSync('docker', ['pause', testContainer], { stdio: 'ignore' }); paused = true;
+    const pod = kubectl(['get', 'pod', '-n', namespace, '-l', 'app=coke-grok-auth', '-o', 'jsonpath={.items[0].metadata.name}']).trim();
+    kubectl(['wait', '-n', namespace, `pod/${pod}`, '--for=condition=Ready=false', '--timeout=45s']);
+    console.log('K3D readiness became false after the disposable MySQL was paused.');
+    execFileSync('docker', ['unpause', testContainer], { stdio: 'ignore' }); paused = false;
+    kubectl(['wait', '-n', namespace, `pod/${pod}`, '--for=condition=Ready', '--timeout=60s']);
+    console.log('K3D readiness recovered after the disposable MySQL resumed.');
+  }
   console.log(`K3D auth smoke passed in ${namespace}: non-root Pod, private secret files, isolated MySQL, browser login page and prefixed HTTP routes. Google login was not performed.`);
 } finally {
+  if (paused) execFileSync('docker', ['unpause', 'coke-grok-k3d-readiness-mysql'], { stdio: 'ignore' });
   if (forward && forward.exitCode === null) { forward.kill('SIGTERM'); await once(forward, 'exit'); }
   if (created) { try { kubectl(['scale', '-n', namespace, 'deployment/coke-grok-auth', '--replicas=0']); } catch { /* A failed apply may not have created the Deployment. */ } }
   await admin.query(mysql.format('DROP USER IF EXISTS ?@?', [user, '%']));
