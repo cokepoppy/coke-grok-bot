@@ -181,6 +181,14 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
 }
 
 function AuthenticatedApp() {
+  const [authError] = useState(() => {
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('authError');
+    if (code !== null) { url.searchParams.delete('authError'); window.history.replaceState(null, '', url.pathname + url.search + url.hash); }
+    if (!code) return '';
+    if (code === 'cancelled') return 'Sign-in was cancelled or expired. Please try again.';
+    return 'Sign-in could not be completed. Please try again.';
+  });
   const [account, setAccount] = useState<Account | null>(null);
   const [status, setStatus] = useState<'loading' | 'signedOut' | 'signedIn' | 'error'>('loading');
   const [logoutError, setLogoutError] = useState(false);
@@ -204,7 +212,7 @@ function AuthenticatedApp() {
     } catch { setLogoutError(true); }
   }
   if (status === 'signedIn' && account) return <><PreviewApp key={`${account.tenantId}:${account.userId}`} account={account} onLogout={() => void logout()} />{logoutError && <div role="alert" className="auth-error">Sign out failed. Please try again.</div>}</>;
-  return <main className="auth-page"><div className="auth-card"><h1>Coke Grok Bot</h1>{status === 'loading' ? <p>Checking your session…</p> : status === 'error' ? <><p role="alert">The sign-in service is unavailable.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></> : <><p>Sign in to continue to the local preview.</p><a href={`${import.meta.env.BASE_URL}api/auth/google/start`}>Continue with Google</a></>}</div></main>;
+  return <main className="auth-page"><div className="auth-card"><h1>Coke Grok Bot</h1>{status === 'loading' ? <p>Checking your session…</p> : status === 'error' ? <><p role="alert">The sign-in service is unavailable.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></> : <><p>Sign in to continue to the local preview.</p>{authError && <p role="alert">{authError}</p>}<a href={`${import.meta.env.BASE_URL}api/auth/google/start`}>Continue with Google</a></>}</div></main>;
 }
 
 createRoot(document.getElementById('root')!).render(import.meta.env.VITE_REQUIRE_AUTH === 'true' ? <AuthenticatedApp /> : <PreviewApp />);

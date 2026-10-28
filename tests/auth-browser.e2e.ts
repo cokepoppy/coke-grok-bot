@@ -57,7 +57,9 @@ try {
   const context = await browser.newContext(); const page = await context.newPage();
   page.setDefaultTimeout(5000);
   page.on('response', response => { const url = new URL(response.url()); if (url.origin === origin && (url.pathname.startsWith('/auth/') || url.pathname.startsWith('/api/auth/'))) { const location = response.headers()['location'] || ''; const error = location.includes('authError=') ? new URL(location, origin).searchParams.get('authError') : ''; console.log('auth response', url.pathname, response.status(), error); } });
-  await page.goto(publicUrl);
+  await page.goto(`${publicUrl}?authError=cancelled`);
+  await page.getByRole('alert').getByText('Sign-in was cancelled or expired. Please try again.').waitFor();
+  assert.equal(new URL(page.url()).searchParams.has('authError'), false);
   await page.getByRole('link', { name: 'Continue with Google' }).click();
   try { await page.getByRole('button', { name: 'Sign out' }).waitFor(); } catch (error) { console.log('browser page', new URL(page.url()).origin, new URL(page.url()).pathname, (await page.locator('body').innerText()).slice(0, 300)); throw error; }
   await page.getByLabel('Message New Bot').fill('Alice local note');
