@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { CodeChallengeMethod, OAuth2Client } from 'google-auth-library';
 import { TenantStore } from './tenant-store.ts';
+import { parsePublicUrl } from './public-url.ts';
 
 // Google OIDC flow adapted from Coke Dots origin/main 4213e769e49da7a479ab2ad186584c77b721fa69.
 type Claims = { sub?: string; email?: string; email_verified?: boolean; name?: string; nonce?: string };
@@ -43,10 +44,11 @@ function redirect(res: ServerResponse, url: string) { res.writeHead(302, { Locat
 export class GoogleAuthService {
   private origin: string;
   private secure: boolean;
+  private baseUrl: string;
+  private prefix: string;
   constructor(private store: TenantStore, private provider: IdentityProvider, publicUrl: string) {
-    const url = new URL(publicUrl);
-    if (url.username || url.password || url.search || url.hash || url.pathname !== '/' || !['http:', 'https:'].includes(url.protocol) || (url.protocol === 'http:' && !['127.0.0.1','localhost'].includes(url.hostname))) throw new Error('Public URL must be an HTTPS origin or loopback HTTP origin');
-    this.origin = url.origin; this.secure = url.protocol === 'https:';
+    const url = parsePublicUrl(publicUrl);
+    this.origin = url.origin; this.baseUrl = url.baseUrl; this.prefix = url.prefix; this.secure = url.secure;
   }
   private setCookie(res: ServerResponse, name: string, value: string, age: number, path: string) {
     appendCookie(res, `${name}=${value}; HttpOnly; SameSite=Lax; Path=${path}; Max-Age=${age}${this.secure ? '; Secure' : ''}`);
@@ -55,23 +57,23 @@ export class GoogleAuthService {
     const state = token(), nonce = token(), verifier = token();
     const challenge = createHash('sha256').update(verifier).digest('base64url');
     await this.store.createOAuthFlow({ stateHash: hash(state), nonce, codeVerifier: verifier, expiresAt: new Date(Date.now() + 600000) });
-    this.setCookie(res, stateCookie, hash(state), 600, '/auth/google/callback');
+    this.setCookie(res, stateCookie, hash(state), 600, `${this.prefix}/auth/google/callback`);
     redirect(res, this.provider.authorizationUrl(state, nonce, challenge));
   }
   async finish(req: IncomingMessage, res: ServerResponse, url: URL) {
     const state = url.searchParams.get('state') || '', code = url.searchParams.get('code') || '';
     const cookie = cookies(req.headers.cookie || '')[stateCookie] || '';
-    this.setCookie(res, stateCookie, '', 0, '/auth/google/callback');
-    if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !/^[a-f0-9]{64}$/.test(cookie) || !same(hash(state), cookie)) return redirect(res, `${this.origin}/?authError=invalid`);
+    this.setCookie(res, stateCookie, '', 0, `${this.prefix}/auth/google/callback`);
+    if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !/^[a-f0-9]{64}$/.test(cookie) || !same(hash(state), cookie)) return redirect(res, `${this.baseUrl}/?authError=invalid`);
     const flow = await this.store.consumeOAuthFlow(hash(state));
-    if (!flow || !code || code.length > 4096 || url.searchParams.has('error')) return redirect(res, `${this.origin}/?authError=cancelled`);
+    if (!flow || !code || code.length > 4096 || url.searchParams.has('error')) return redirect(res, `${this.baseUrl}/?authError=cancelled`);
     try {
       const identity = await this.provider.exchange(code, flow.codeVerifier);
-      if (!identity.sub || !identity.email || identity.email_verified !== true || identity.nonce !== flow.nonce) return redirect(res, `${this.origin}/?authError=invalid_identity`);
+      if (!identity.sub || !identity.email || identity.email_verified !== true || identity.nonce !== flow.nonce) return redirect(res, `${this.baseUrl}/?authError=invalid_identity`);
       const account = await this.store.signInGoogle({ subject: identity.sub, email: identity.email, name: identity.name || identity.email });
       const session = token(); await this.store.createSession(hash(session), account.userId, account.tenantId, new Date(Date.now() + 30 * 86400000));
-      this.setCookie(res, sessionCookie, session, 30 * 86400, '/'); redirect(res, `${this.origin}/`);
-    } catch { redirect(res, `${this.origin}/?authError=sign_in_failed`); }
+      this.setCookie(res, sessionCookie, session, 30 * 86400, `${this.prefix}/`); redirect(res, `${this.baseUrl}/`);
+    } catch { redirect(res, `${this.baseUrl}/?authError=sign_in_failed`); }
   }
   async me(req: IncomingMessage, res: ServerResponse) {
     const value = cookies(req.headers.cookie || '')[sessionCookie] || '';
@@ -82,6 +84,6 @@ export class GoogleAuthService {
     if (req.headers.origin !== this.origin) return json(res, 403, { error: 'Invalid origin' });
     const value = cookies(req.headers.cookie || '')[sessionCookie] || '';
     if (/^[A-Za-z0-9_-]{43}$/.test(value)) await this.store.removeSession(hash(value));
-    this.setCookie(res, sessionCookie, '', 0, '/'); return json(res, 200, { ok: true });
+    this.setCookie(res, sessionCookie, '', 0, `${this.prefix}/`); return json(res, 200, { ok: true });
   }
 }

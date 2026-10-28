@@ -186,7 +186,7 @@ function AuthenticatedApp() {
   const [logoutError, setLogoutError] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+    fetch(`${import.meta.env.BASE_URL}api/auth/me`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
       .then(async response => {
         if (response.status === 401) { setStatus('signedOut'); return; }
         if (!response.ok) throw new Error('auth unavailable');
@@ -198,13 +198,13 @@ function AuthenticatedApp() {
   }, []);
   async function logout() {
     try {
-      const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+      const response = await fetch(`${import.meta.env.BASE_URL}api/auth/logout`, { method: 'POST', credentials: 'same-origin' });
       if (!response.ok) throw new Error('logout failed');
       setAccount(null); setStatus('signedOut'); setLogoutError(false);
     } catch { setLogoutError(true); }
   }
   if (status === 'signedIn' && account) return <><PreviewApp key={`${account.tenantId}:${account.userId}`} account={account} onLogout={() => void logout()} />{logoutError && <div role="alert" className="auth-error">Sign out failed. Please try again.</div>}</>;
-  return <main className="auth-page"><div className="auth-card"><h1>Coke Grok Bot</h1>{status === 'loading' ? <p>Checking your session…</p> : status === 'error' ? <><p role="alert">The sign-in service is unavailable.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></> : <><p>Sign in to continue to the local preview.</p><a href="/api/auth/google/start">Continue with Google</a></>}</div></main>;
+  return <main className="auth-page"><div className="auth-card"><h1>Coke Grok Bot</h1>{status === 'loading' ? <p>Checking your session…</p> : status === 'error' ? <><p role="alert">The sign-in service is unavailable.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></> : <><p>Sign in to continue to the local preview.</p><a href={`${import.meta.env.BASE_URL}api/auth/google/start`}>Continue with Google</a></>}</div></main>;
 }
 
 createRoot(document.getElementById('root')!).render(import.meta.env.VITE_REQUIRE_AUTH === 'true' ? <AuthenticatedApp /> : <PreviewApp />);

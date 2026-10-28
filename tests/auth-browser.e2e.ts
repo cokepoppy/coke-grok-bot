@@ -19,6 +19,8 @@ async function availablePort() {
 }
 const frontendPort = await availablePort(), backendPort = await availablePort(), identityPort = await availablePort();
 const origin = `http://127.0.0.1:${frontendPort}`;
+const base = process.env.COKE_GROK_TEST_BASE || '/';
+const publicUrl = `${origin}${base}`;
 const database = `grok_browser_${randomUUID().replaceAll('-', '')}`;
 const admin = await mysql.createConnection({ host: '127.0.0.1', port: mysqlPort, user: 'root', timezone: 'Z' });
 await admin.query(`CREATE DATABASE \`${database}\``);
@@ -37,17 +39,17 @@ const provider: IdentityProvider = {
 let identity = 'alice';
 const identityServer = createHttpServer((req, res) => {
   activeState = new URL(req.url || '/', `http://127.0.0.1:${identityPort}`).searchParams.get('state')!;
-  res.writeHead(302, { Location: `${origin}/auth/google/callback?state=${activeState}&code=${identity}` }); res.end();
+  res.writeHead(302, { Location: `${publicUrl}auth/google/callback?state=${activeState}&code=${identity}` }); res.end();
 });
 identityServer.listen(identityPort, '127.0.0.1'); await once(identityServer, 'listening');
-const backend = createAuthServer(new GoogleAuthService(store, provider, origin), origin);
+const backend = createAuthServer(new GoogleAuthService(store, provider, publicUrl), publicUrl);
 backend.listen(backendPort, '127.0.0.1'); await once(backend, 'listening');
-const vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(frontendPort), '--strictPort'], { env: { ...process.env, VITE_REQUIRE_AUTH: 'true', VITE_AUTH_PROXY_TARGET: `http://127.0.0.1:${backendPort}` }, stdio: 'ignore' });
+const vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(frontendPort), '--strictPort'], { env: { ...process.env, VITE_REQUIRE_AUTH: 'true', VITE_BASE_PATH: base, VITE_AUTH_PROXY_TARGET: `http://127.0.0.1:${backendPort}` }, stdio: 'ignore' });
 let browser;
 try {
   for (let i = 0; i < 100; i++) {
     if (vite.exitCode !== null) throw new Error('Vite exited early');
-    try { if ((await fetch(origin)).ok) break; } catch { /* wait for Vite */ }
+    try { if ((await fetch(publicUrl)).ok) break; } catch { /* wait for Vite */ }
     if (i === 99) throw new Error('Vite did not start');
     await new Promise(resolve => setTimeout(resolve, 100));
   }
@@ -55,7 +57,7 @@ try {
   const context = await browser.newContext(); const page = await context.newPage();
   page.setDefaultTimeout(5000);
   page.on('response', response => { const url = new URL(response.url()); if (url.origin === origin && (url.pathname.startsWith('/auth/') || url.pathname.startsWith('/api/auth/'))) { const location = response.headers()['location'] || ''; const error = location.includes('authError=') ? new URL(location, origin).searchParams.get('authError') : ''; console.log('auth response', url.pathname, response.status(), error); } });
-  await page.goto(origin);
+  await page.goto(publicUrl);
   await page.getByRole('link', { name: 'Continue with Google' }).click();
   try { await page.getByRole('button', { name: 'Sign out' }).waitFor(); } catch (error) { console.log('browser page', new URL(page.url()).origin, new URL(page.url()).pathname, (await page.locator('body').innerText()).slice(0, 300)); throw error; }
   await page.getByLabel('Message New Bot').fill('Alice local note');
@@ -75,6 +77,9 @@ try {
   await page.getByRole('link', { name: 'Continue with Google' }).click();
   await page.locator('.conversation').getByText('Alice local note').waitFor();
   assert.equal(await page.locator('.conversation').getByText('Bob local note').count(), 0);
+  const sessionCookies = await context.cookies();
+  assert.equal(sessionCookies.find(cookie => cookie.name === 'coke_grok_session')?.path, base);
+  if (base !== '/') assert.equal((await fetch(`${origin}/api/auth/me`)).status, 404);
   await context.close();
   console.log('Browser E2E passed using a simulated identity provider and real HTTP/MySQL: sign-in, refresh, sign-out and same-browser account switching.');
 } finally {

@@ -3,6 +3,7 @@ import mysql from 'mysql2/promise';
 import { TenantStore } from './tenant-store.ts';
 import { GoogleAuthService, GoogleIdentityProvider } from './google-auth.ts';
 import { createAuthServer } from './auth-http.ts';
+import { parsePublicUrl } from './public-url.ts';
 
 function required(key: string): string {
   const value = process.env[key];
@@ -18,7 +19,7 @@ async function secret(key: string): Promise<string> {
   return value;
 }
 async function main() {
-  const origin = required('COKE_GROK_PUBLIC_ORIGIN');
+  const origin = parsePublicUrl(required('COKE_GROK_PUBLIC_ORIGIN')).baseUrl;
   const googleClientId = required('COKE_GROK_GOOGLE_CLIENT_ID');
   const [password, googleSecret] = await Promise.all([secret('COKE_GROK_MYSQL_PASSWORD_FILE'), secret('COKE_GROK_GOOGLE_SECRET_FILE')]);
   const port = Number(process.env.COKE_GROK_AUTH_PORT || 3001);
