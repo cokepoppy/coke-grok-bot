@@ -38,6 +38,10 @@ test('Google subject, membership and one-use OAuth flows remain isolated', async
     await pool.execute('UPDATE sessions SET expires_at=UTC_TIMESTAMP(3) - INTERVAL 1 SECOND WHERE token_hash=?', [token]);
     assert.equal(await store.getSession(token), null);
     const live = hash('live'); await store.createSession(live, b.userId, b.tenantId, new Date(Date.now() + 60000));
+    await assert.rejects(pool.execute('DELETE FROM memberships WHERE tenant_id=? AND user_id=?', [b.tenantId, b.userId]));
+    assert.ok(await store.getSession(live), 'foreign key must prevent an orphaned active session');
+    await pool.execute('UPDATE memberships SET role=? WHERE tenant_id=? AND user_id=?', ['member', b.tenantId, b.userId]);
+    assert.equal((await store.getSession(live))?.role, 'member', 'authorization must read the current membership role');
     await store.pruneExpiredAuth();
     const [expiredRows] = await pool.execute<import('mysql2/promise').RowDataPacket[]>('SELECT token_hash FROM sessions WHERE token_hash=?', [token]);
     assert.equal(expiredRows.length, 0); assert.ok(await store.getSession(live));
