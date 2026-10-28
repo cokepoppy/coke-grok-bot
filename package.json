@@ -3,15 +3,19 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "test": "node --test tests/reference-frames.test.mjs",
+    "test:mysql": "node --import tsx --test tests/mysql-tenant-store.test.ts",
     "test:ui": "node tests/ui.e2e.mjs",
     "compare:reference": "node --import tsx scripts/compare-reference.ts"
   },
   "dependencies": {
+    "mysql2": "3.24.6",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
