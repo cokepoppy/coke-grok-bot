@@ -1,8 +1,10 @@
-# Build dist/server/auth.cjs with npm run build:server before building this image.
+# Build the authenticated frontend and dist/server/auth.cjs before building this image.
 FROM node:24-bookworm-slim@sha256:2af38505da611a8d2729ed2b6235f04613a4d5cf8b9340d3ca7b0ac54d1462a5
-ENV NODE_ENV=production
+ENV NODE_ENV=production COKE_GROK_STATIC_DIR=/app/web
 WORKDIR /app
 COPY --chown=node:node dist/server/auth.cjs /app/auth.cjs
+COPY --chown=node:node dist/index.html dist/web-build.json /app/web/
+COPY --chown=node:node dist/assets/ /app/web/assets/
 USER node
 EXPOSE 3001
 CMD ["node", "/app/auth.cjs"]

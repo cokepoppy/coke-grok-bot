@@ -2,3 +2,7 @@
 !dist/
 !dist/server/
 !dist/server/auth.cjs
+!dist/index.html
+!dist/web-build.json
+!dist/assets/
+!dist/assets/**

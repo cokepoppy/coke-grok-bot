@@ -19,7 +19,8 @@
     "test:google-proxy": "node --import tsx --test tests/google-proxy.test.ts",
     "build:server": "esbuild src/server/start-auth.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist/server/auth.cjs",
     "test:bundle": "node --import tsx tests/bundled-auth.e2e.ts",
-    "test:k3d-auth": "node --import tsx tests/k3d-auth.e2e.ts"
+    "test:k3d-auth": "node --import tsx tests/k3d-auth.e2e.ts",
+    "build:deployment": "npm run build && node scripts/mark-web-build.mjs && npm run build:server"
   },
   "dependencies": {
     "google-auth-library": "11.1.0",

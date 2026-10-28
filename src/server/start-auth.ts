@@ -1,4 +1,5 @@
 import { readFile, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import mysql from 'mysql2/promise';
 import { TenantStore } from './tenant-store.ts';
 import { GoogleAuthService, GoogleIdentityProvider } from './google-auth.ts';
@@ -21,6 +22,11 @@ async function secret(key: string): Promise<string> {
 async function main() {
   const origin = parsePublicUrl(required('COKE_GROK_PUBLIC_ORIGIN')).baseUrl;
   const googleClientId = required('COKE_GROK_GOOGLE_CLIENT_ID');
+  const staticDirectory = process.env.COKE_GROK_STATIC_DIR;
+  if (staticDirectory) {
+    const metadata = JSON.parse(await readFile(join(staticDirectory, 'web-build.json'), 'utf8')) as { basePath?: string; requireAuth?: boolean };
+    if (metadata.basePath !== `${parsePublicUrl(origin).prefix}/` || metadata.requireAuth !== true) throw new Error('Frontend build does not match the public path or require authentication');
+  }
   const [password, googleSecret] = await Promise.all([secret('COKE_GROK_MYSQL_PASSWORD_FILE'), secret('COKE_GROK_GOOGLE_SECRET_FILE')]);
   const port = Number(process.env.COKE_GROK_AUTH_PORT || 3001);
   const mysqlPort = Number(process.env.COKE_GROK_MYSQL_PORT || 3306);
@@ -29,7 +35,7 @@ async function main() {
   const store = new TenantStore(pool);
   await store.migrate();
   const provider = new GoogleIdentityProvider(googleClientId, googleSecret, `${origin}/auth/google/callback`, process.env.COKE_GROK_GOOGLE_OAUTH_PROXY_URL || '');
-  const server = createAuthServer(new GoogleAuthService(store, provider, origin), origin);
+  const server = createAuthServer(new GoogleAuthService(store, provider, origin), origin, staticDirectory);
   server.listen(port, process.env.COKE_GROK_AUTH_HOST || '127.0.0.1', () => console.log(`Auth service listening on port ${port}`));
   for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => server.close(() => { void pool.end(); }));
 }

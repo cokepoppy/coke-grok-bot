@@ -33,7 +33,7 @@ try {
     args.push(process.env.COKE_GROK_TEST_IMAGE);
     child = spawn('docker', args, { stdio: 'ignore' });
   } else {
-    child = spawn(process.execPath, ['dist/server/auth.cjs'], { env: { ...process.env, COKE_GROK_PUBLIC_ORIGIN: base, COKE_GROK_GOOGLE_CLIENT_ID: 'synthetic-test-client', COKE_GROK_GOOGLE_SECRET_FILE: googleSecret, COKE_GROK_MYSQL_HOST: '127.0.0.1', COKE_GROK_MYSQL_PORT: String(mysqlPort), COKE_GROK_MYSQL_USER: user, COKE_GROK_MYSQL_PASSWORD_FILE: dbSecret, COKE_GROK_MYSQL_DATABASE: database, COKE_GROK_AUTH_PORT: String(port) }, stdio: 'ignore' });
+    child = spawn(process.execPath, ['dist/server/auth.cjs'], { env: { ...process.env, COKE_GROK_PUBLIC_ORIGIN: base, COKE_GROK_GOOGLE_CLIENT_ID: 'synthetic-test-client', COKE_GROK_GOOGLE_SECRET_FILE: googleSecret, COKE_GROK_MYSQL_HOST: '127.0.0.1', COKE_GROK_MYSQL_PORT: String(mysqlPort), COKE_GROK_MYSQL_USER: user, COKE_GROK_MYSQL_PASSWORD_FILE: dbSecret, COKE_GROK_MYSQL_DATABASE: database, COKE_GROK_AUTH_PORT: String(port), COKE_GROK_STATIC_DIR: 'dist' }, stdio: 'ignore' });
   }
   let response: Response | undefined;
   for (let i = 0; i < 100; i++) {
@@ -41,13 +41,21 @@ try {
     try { response = await fetch(`${base}/api/auth/me`); break; } catch { await new Promise(resolve => setTimeout(resolve, 100)); }
   }
   assert.equal(response?.status, 401);
+  const page = await fetch(`${base}/`); assert.equal(page.status, 200);
+  const html = await page.text();
+  const assetPath = html.match(/src="([^"]+\.js)"/)?.[1];
+  assert.ok(assetPath?.startsWith('/grok-bot/assets/'));
+  const asset = await fetch(origin + assetPath); assert.equal(asset.status, 200);
+  assert.match(await asset.text(), /Continue with Google/);
+  assert.equal((await fetch(`${base}/assets/missing.js`)).status, 404);
+  assert.equal((await fetch(`${origin}/`)).status, 404);
   const start = await fetch(`${base}/api/auth/google/start`, { redirect: 'manual' });
   assert.equal(start.status, 302);
   const location = new URL(start.headers.get('location')!);
   assert.equal(location.origin, 'https://accounts.google.com');
   assert.equal(location.searchParams.get('redirect_uri'), `${base}/auth/google/callback`);
   assert.match(start.headers.get('set-cookie')!, /Path=\/grok-bot\/auth\/google\/callback/);
-  console.log('Bundled server smoke passed against a disposable MySQL instance; no live OAuth exchange was performed.');
+  console.log('Bundled frontend and server smoke passed against a disposable MySQL instance; no live OAuth exchange was performed.');
 } finally {
   if (child && child.exitCode === null) { child.kill('SIGTERM'); await once(child, 'exit'); }
   await admin.query(mysql.format('DROP USER IF EXISTS ?@?', [user, '%']));

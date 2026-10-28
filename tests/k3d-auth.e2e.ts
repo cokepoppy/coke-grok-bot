@@ -4,6 +4,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
 import mysql from 'mysql2/promise';
+import { chromium } from 'playwright-core';
 
 const port = Number(process.env.COKE_GROK_TEST_MYSQL_PORT), mysqlHost = process.env.COKE_GROK_TEST_MYSQL_K3D_HOST;
 if (!port || !mysqlHost) throw new Error('Specify the isolated test MySQL port and its K3D-reachable host.');
@@ -36,13 +37,20 @@ try {
     try { res = await fetch(`${base}/api/auth/me`); break; } catch { await new Promise(resolve => setTimeout(resolve, 100)); }
   }
   assert.equal(res?.status, 401);
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`${base}/`);
+    await page.getByRole('link', { name: 'Continue with Google' }).waitFor();
+    assert.equal(await page.getByRole('link', { name: 'Continue with Google' }).getAttribute('href'), '/grok-bot/api/auth/google/start');
+  } finally { await browser.close(); }
   const start = await fetch(`${base}/api/auth/google/start`, { redirect: 'manual' });
   assert.equal(start.status, 302);
   const redirect = new URL(start.headers.get('location')!);
   assert.equal(redirect.origin, 'https://accounts.google.com');
   assert.equal(redirect.searchParams.get('redirect_uri'), `${base}/auth/google/callback`);
   assert.match(start.headers.get('set-cookie')!, /Path=\/grok-bot\/auth\/google\/callback/);
-  console.log(`K3D auth smoke passed in ${namespace}: non-root Pod, private secret files, isolated MySQL and prefixed HTTP routes. Google login was not performed.`);
+  console.log(`K3D auth smoke passed in ${namespace}: non-root Pod, private secret files, isolated MySQL, browser login page and prefixed HTTP routes. Google login was not performed.`);
 } finally {
   if (forward && forward.exitCode === null) { forward.kill('SIGTERM'); await once(forward, 'exit'); }
   if (created) { try { kubectl(['scale', '-n', namespace, 'deployment/coke-grok-auth', '--replicas=0']); } catch { /* A failed apply may not have created the Deployment. */ } }
