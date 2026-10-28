@@ -51,6 +51,11 @@ export class TenantStore {
     return (rows[0] as Session | undefined) || null;
   }
   async removeSession(tokenHash: string): Promise<void> { if (hashPattern.test(tokenHash)) await this.pool.execute('DELETE FROM sessions WHERE token_hash=?', [tokenHash]); }
+  async pruneExpiredAuth(): Promise<void> {
+    // Bounded batches avoid a single unbounded delete; live records are never selected.
+    await this.pool.execute('DELETE FROM oauth_flows WHERE expires_at <= UTC_TIMESTAMP(3) LIMIT 500');
+    await this.pool.execute('DELETE FROM sessions WHERE expires_at <= UTC_TIMESTAMP(3) LIMIT 500');
+  }
   async createOAuthFlow(flow: OAuthFlow): Promise<void> {
     if (!hashPattern.test(flow.stateHash) || !flow.nonce || !flow.codeVerifier || !Number.isFinite(flow.expiresAt.getTime()) || flow.expiresAt <= new Date()) throw new Error('Invalid OAuth flow');
     await this.pool.execute('INSERT INTO oauth_flows (state_hash, nonce, code_verifier, expires_at) VALUES (?, ?, ?, ?)', [flow.stateHash, flow.nonce, flow.codeVerifier, flow.expiresAt]);

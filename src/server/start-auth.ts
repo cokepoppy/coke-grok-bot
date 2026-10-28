@@ -34,9 +34,12 @@ async function main() {
   const pool = mysql.createPool({ host: required('COKE_GROK_MYSQL_HOST'), port: mysqlPort, user: required('COKE_GROK_MYSQL_USER'), database: required('COKE_GROK_MYSQL_DATABASE'), password, timezone: 'Z', connectionLimit: 10 });
   const store = new TenantStore(pool);
   await store.migrate();
+  await store.pruneExpiredAuth();
+  const cleanup = setInterval(() => { void store.pruneExpiredAuth().catch(() => console.error('Expired auth cleanup failed.')); }, 60 * 60 * 1000);
+  cleanup.unref();
   const provider = new GoogleIdentityProvider(googleClientId, googleSecret, `${origin}/auth/google/callback`, process.env.COKE_GROK_GOOGLE_OAUTH_PROXY_URL || '');
   const server = createAuthServer(new GoogleAuthService(store, provider, origin), origin, staticDirectory);
   server.listen(port, process.env.COKE_GROK_AUTH_HOST || '127.0.0.1', () => console.log(`Auth service listening on port ${port}`));
-  for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => server.close(() => { void pool.end(); }));
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => { clearInterval(cleanup); server.close(() => { void pool.end(); }); });
 }
 main().catch(error => { console.error(error instanceof Error && error.message === 'Frontend build does not match the public path or require authentication' ? 'Frontend build does not match the public path or require authentication.' : 'Auth service failed to start; check configuration and database access.'); process.exitCode = 1; });

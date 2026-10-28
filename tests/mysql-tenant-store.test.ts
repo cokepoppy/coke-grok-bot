@@ -37,6 +37,10 @@ test('Google subject, membership and one-use OAuth flows remain isolated', async
     await store.createSession(token, a.userId, a.tenantId, new Date(Date.now() + 60000));
     await pool.execute('UPDATE sessions SET expires_at=UTC_TIMESTAMP(3) - INTERVAL 1 SECOND WHERE token_hash=?', [token]);
     assert.equal(await store.getSession(token), null);
+    const live = hash('live'); await store.createSession(live, b.userId, b.tenantId, new Date(Date.now() + 60000));
+    await store.pruneExpiredAuth();
+    const [expiredRows] = await pool.execute<import('mysql2/promise').RowDataPacket[]>('SELECT token_hash FROM sessions WHERE token_hash=?', [token]);
+    assert.equal(expiredRows.length, 0); assert.ok(await store.getSession(live));
     const stateHash = hash('state');
     await store.createOAuthFlow({ stateHash, nonce: 'nonce', codeVerifier: 'verifier', expiresAt: new Date(Date.now() + 60000) });
     const results = await Promise.all([store.consumeOAuthFlow(stateHash), store.consumeOAuthFlow(stateHash)]);
