@@ -22,7 +22,7 @@ test('HTTP OAuth flow binds state, PKCE and nonce, isolates tenants and revokes 
     async exchange(code, verifier) {
       const flow = flows.get(activeState)!;
       assert.equal(createHash('sha256').update(verifier).digest('base64url'), flow.challenge);
-      return { sub: code, email: `${code}@example.test`, email_verified: true, name: code, nonce: code === 'badnonce' ? 'wrong' : flow.nonce };
+      return { sub: code, email: `${code}@example.test`, email_verified: code !== 'unverified', name: code, nonce: code === 'badnonce' ? 'wrong' : flow.nonce };
     },
   };
   // Reserve the HTTP port before constructing the origin used by the service.
@@ -64,6 +64,11 @@ test('HTTP OAuth flow binds state, PKCE and nonce, isolates tenants and revokes 
     const bm = await (await fetchPath('/api/auth/me', { headers: { cookie: bc } })).json() as { tenantId: string };
     assert.notEqual(am.tenantId, bm.tenantId);
     const nonce = await start(); assert.match((await finish(nonce, 'badnonce')).headers.get('location')!, /authError=invalid_identity/);
+    const unverified = await start();
+    const rejected = await finish(unverified, 'unverified');
+    assert.match(rejected.headers.get('location')!, /authError=invalid_identity/);
+    assert.equal(rejected.headers.getSetCookie().some(cookie => cookie.startsWith('coke_grok_session=')), false);
+    assert.equal((await fetchPath('/api/auth/me', { headers: { cookie: bc } })).status, 200);
     assert.equal((await fetchPath('/api/auth/logout', { method: 'POST', headers: { cookie: bc, origin: 'https://evil.example' } })).status, 403);
     assert.equal((await fetchPath('/api/auth/logout', { method: 'POST', headers: { cookie: bc, origin } })).status, 200);
     assert.equal((await fetchPath('/api/auth/me', { headers: { cookie: ac } })).status, 401);
