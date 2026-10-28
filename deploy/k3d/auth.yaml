@@ -1,0 +1,79 @@
+# Apply only after creating the namespace, auth-config ConfigMap and auth-secrets Secret.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coke-grok-auth
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coke-grok-auth
+  template:
+    metadata:
+      labels:
+        app: coke-grok-auth
+    spec:
+      automountServiceAccountToken: false
+      initContainers:
+        - name: private-secrets
+          image: coke-grok-auth:local-test
+          imagePullPolicy: Never
+          command: ["/bin/sh", "-ec", "umask 077; cp /source/mysql-password /private/mysql-password; cp /source/google-secret /private/google-secret; chown 1000:1000 /private/mysql-password /private/google-secret"]
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN"]
+          volumeMounts:
+            - { name: source-secrets, mountPath: /source, readOnly: true }
+            - { name: private-secrets, mountPath: /private }
+      containers:
+        - name: auth
+          image: coke-grok-auth:local-test
+          imagePullPolicy: Never
+          ports:
+            - { name: http, containerPort: 3001 }
+          envFrom:
+            - configMapRef: { name: auth-config }
+          env:
+            - { name: COKE_GROK_AUTH_HOST, value: "0.0.0.0" }
+            - { name: COKE_GROK_AUTH_PORT, value: "3001" }
+            - { name: COKE_GROK_MYSQL_PASSWORD_FILE, value: /run/coke-secrets/mysql-password }
+            - { name: COKE_GROK_GOOGLE_SECRET_FILE, value: /run/coke-secrets/google-secret }
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          startupProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 5
+          volumeMounts:
+            - { name: private-secrets, mountPath: /run/coke-secrets, readOnly: true }
+      volumes:
+        - name: source-secrets
+          secret:
+            secretName: auth-secrets
+            defaultMode: 256
+        - name: private-secrets
+          emptyDir: { medium: Memory }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coke-grok-auth
+spec:
+  type: ClusterIP
+  selector: { app: coke-grok-auth }
+  ports:
+    - { name: http, port: 3001, targetPort: http }
