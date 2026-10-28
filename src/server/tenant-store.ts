@@ -18,6 +18,7 @@ const hashPattern = /^[a-f0-9]{64}$/;
 
 export class TenantStore {
   constructor(private readonly pool: Pool) {}
+  async ready(): Promise<void> { await this.pool.query({ sql: 'SELECT 1', timeout: 2000 }); }
   async migrate(): Promise<void> { for (const sql of schema) await this.pool.execute(sql); }
 
   async signInGoogle(identity: Identity): Promise<{ userId: string; tenantId: string }> {

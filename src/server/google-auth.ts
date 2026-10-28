@@ -62,6 +62,7 @@ export class GoogleAuthService {
   private setCookie(res: ServerResponse, name: string, value: string, age: number, path: string) {
     appendCookie(res, `${name}=${value}; HttpOnly; SameSite=Lax; Path=${path}; Max-Age=${age}${this.secure ? '; Secure' : ''}`);
   }
+  async ready(): Promise<void> { await this.store.ready(); }
   async begin(res: ServerResponse) {
     const state = token(), nonce = token(), verifier = token();
     const challenge = createHash('sha256').update(verifier).digest('base64url');

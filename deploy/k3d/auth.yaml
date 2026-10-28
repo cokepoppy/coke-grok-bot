@@ -56,8 +56,13 @@ spec:
             periodSeconds: 2
             failureThreshold: 30
           readinessProbe:
-            tcpSocket: { port: http }
+            exec:
+              command:
+                - node
+                - -e
+                - "const u=new URL(process.env.COKE_GROK_PUBLIC_ORIGIN);fetch('http://127.0.0.1:3001'+(u.pathname.endsWith('/')?u.pathname.slice(0,-1):u.pathname)+'/api/auth/ready',{headers:{Host:u.host},signal:AbortSignal.timeout(3000)}).then(r=>process.exit(r.status===204?0:1)).catch(()=>process.exit(1))"
             periodSeconds: 5
+            timeoutSeconds: 4
           volumeMounts:
             - { name: private-secrets, mountPath: /run/coke-secrets, readOnly: true }
       volumes:

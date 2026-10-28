@@ -46,6 +46,7 @@ test('HTTP OAuth flow binds state, PKCE and nonce, isolates tenants and revokes 
     return fetchPath(`/auth/google/callback?state=${flow.state}&code=${code}`, { headers: { cookie: flow.cookie } });
   };
   try {
+    assert.equal((await fetchPath('/api/auth/ready')).status, 204);
     assert.equal((await fetchPath('/api/auth/me')).status, 401);
     const invalid = await start();
     const bad = await fetchPath(`/auth/google/callback?state=${invalid.state}&code=a`, { headers: { cookie: 'coke_grok_oauth_state=wrong' } });
@@ -67,8 +68,10 @@ test('HTTP OAuth flow binds state, PKCE and nonce, isolates tenants and revokes 
     assert.equal((await fetchPath('/api/auth/logout', { method: 'POST', headers: { cookie: bc, origin } })).status, 200);
     assert.equal((await fetchPath('/api/auth/me', { headers: { cookie: ac } })).status, 401);
     assert.equal((await fetchPath('/api/auth/me', { headers: { cookie: bc } })).status, 401);
+    await pool.end();
+    assert.equal((await fetchPath('/api/auth/ready')).status, 503);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-    await pool.end(); await admin.query(`DROP DATABASE \`${database}\``); await admin.end();
+    await pool.end().catch(() => {}); await admin.query(`DROP DATABASE \`${database}\``); await admin.end();
   }
 });
