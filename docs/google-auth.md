@@ -22,7 +22,7 @@ To test prefix routing, run `COKE_GROK_TEST_BASE=/grok-bot/ npm run test:auth-br
 
 `COKE_GROK_GOOGLE_OAUTH_PROXY_URL` optionally sets a dedicated HTTP(S) proxy origin for the Google client transporter. It must not contain credentials, a path, query, or fragment. This setting applies to Google token exchange and certificate retrieval; it does not modify the machine's global proxy. One-use authorization-code exchanges have retries disabled. `npm run test:google-proxy` checks proxy configuration and proves a failed proxied exchange is attempted only once with a local simulated proxy.
 
-On 2026-10-28, direct access from this Mac to Google's OpenID configuration timed out, while the existing loopback HTTP proxy returned HTTP 200. A loopback address inside a K3D Pod refers to the Pod itself, not the Mac; a separately configured and restricted host-accessible endpoint must be tested from the Pod before deploying there. No live Google sign-in has yet been verified.
+On 2026-10-28, direct access from this Mac to Google's OpenID configuration timed out, while the existing loopback HTTP proxy returned HTTP 200. A loopback address inside a K3D Pod refers to the Pod itself, not the Mac; use an explicitly tested host-accessible endpoint for Pod deployments. No live Google sign-in has yet been verified.
 
 ## Auth runtime image
 
@@ -36,6 +36,10 @@ The bundle and local ARM64 image were tested against a disposable MySQL instance
 
 On 2026-10-28, an isolated K3D namespace `coke-grok-auth-test-153c190616c2` was used with a disposable MySQL container on the local K3D Docker network and synthetic Google credentials. The deployed Pod started, read the private files, migrated the separate test database and returned the expected unauthenticated response and prefixed Google authorization redirect through a local port-forward. The test Deployment was scaled to zero afterward; its namespace and synthetic configuration remain. The disposable test database and account were removed with the test container. No existing project database was modified.
 
-`npm run test:k3d-auth` requires `COKE_GROK_TEST_MYSQL_PORT` and `COKE_GROK_TEST_MYSQL_K3D_HOST` for a disposable test MySQL container and checks the expected K3D context. It creates a uniquely named namespace and leaves its Deployment scaled to zero. This is not a real Google login, proxy egress test, public deployment, persistent database, or release acceptance. The Mac proxy currently listens only on `127.0.0.1`; that does not make it available to a Pod.
+`npm run test:k3d-auth` requires `COKE_GROK_TEST_MYSQL_PORT` and `COKE_GROK_TEST_MYSQL_K3D_HOST` for a disposable test MySQL container and checks the expected K3D context. It creates a uniquely named namespace and leaves its Deployment scaled to zero. This is not a real Google login, proxy egress test, public deployment, persistent database, or release acceptance. The Mac proxy listens on `127.0.0.1`; Pod loopback is separate. A Pod may be able to reach the Mac proxy through a Docker Desktop host alias, as tested below.
 
 On 2026-10-28, a second isolated K3D test (`coke-grok-auth-test-a28127d633e0`) additionally opened the bundled login page in headless Chrome through the service port-forward. Its test Deployment was scaled to zero. The test used synthetic Google credentials; it did not sign in to Google.
+
+## Pod-to-Google egress evidence
+
+On 2026-10-28, temporary Pods in `coke-grok-auth-test-a28127d633e0` reached the Google OpenID discovery endpoint over HTTPS with HTTP 200 through `http://host.docker.internal:7890` and `http://host.k3d.internal:17891`. The project's bundled `google-auth-library` also fetched Google signing certificates through `http://host.docker.internal:7890`; `scripts/google-egress-probe.ts` emits only success and the certificate count. The Pods have completed and remain in the namespace. These results apply to the current Docker Desktop/K3D network and running host proxy; they do not prove that a real OAuth authorization-code exchange or Google browser login works. Re-test after network changes. Do not assume the host aliases or ports exist on other machines.
