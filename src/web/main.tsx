@@ -31,9 +31,9 @@ function initialState(reference: boolean): PreviewState {
   return { bots: [starter], activeId: starter.id, messages: {}, showOnboarding: {} };
 }
 
-function safeStoredState(): PreviewState | null {
+function safeStoredState(storageKey: string): PreviewState | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw || raw.length > 1_000_000) return null;
     const value = JSON.parse(raw) as PreviewState;
     if (!Array.isArray(value.bots) || !value.bots.length || typeof value.activeId !== 'string' || !value.messages || !value.showOnboarding) return null;
@@ -81,9 +81,12 @@ function IconButton({ name, label, onClick, className = '' }: { name: IconName; 
   return <button type="button" className={`icon-button ${className}`} aria-label={label} title={label} onClick={onClick}><Icon name={name} /></button>;
 }
 
-function PreviewApp() {
+type Account = { userId: string; tenantId: string; email: string; name: string; role: string };
+
+function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () => void }) {
+  const storageKey = account ? `${STORAGE_KEY}:${account.tenantId}:${account.userId}` : STORAGE_KEY;
   const reference = new URLSearchParams(window.location.search).get('reference') === '101-new-bot';
-  const [state, setState] = useState<PreviewState>(() => reference ? initialState(true) : safeStoredState() || initialState(false));
+  const [state, setState] = useState<PreviewState>(() => reference ? initialState(true) : safeStoredState(storageKey) || initialState(false));
   const [newChat, setNewChat] = useState(false);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
@@ -99,8 +102,8 @@ function PreviewApp() {
 
   useEffect(() => {
     if (reference) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* The preview still works in memory. */ }
-  }, [state, reference]);
+    try { localStorage.setItem(storageKey, JSON.stringify(state)); } catch { /* The preview still works in memory. */ }
+  }, [state, reference, storageKey]);
   useEffect(() => { setDraft(''); setCustomAnswer(''); setNotice(false); }, [state.activeId]);
   useEffect(() => { if (messages.length > 1) messagesEnd.current?.scrollIntoView({ block: 'nearest' }); }, [messages.length]);
 
@@ -143,10 +146,10 @@ function PreviewApp() {
         {filtered.length === 0 && <p className="empty-list">No matching bots</p>}
       </div>
       {reference && <button type="button" className="more-unreads">↓&nbsp; More unreads</button>}
-      <div className="sidebar-footer"><div className="account-dot">M</div><button type="button" className="connect-button" onClick={() => setNotice(true)}>Connect apps <span aria-hidden="true">◈◉▣</span></button></div>
+      <div className="sidebar-footer"><div className="account-dot">{account ? account.name.slice(0, 1).toUpperCase() : "M"}</div>{account && <button type="button" className="logout-button" onClick={onLogout}>Sign out</button>}<button type="button" className="connect-button" onClick={() => setNotice(true)}>Connect apps <span aria-hidden="true">◈◉▣</span></button></div>
     </aside>
     <main className="main-shell">
-      {!reference && <div className="preview-notice" role="status">本地界面预览：数据仅保存在当前浏览器，尚未连接登录、云电脑或 Agent。</div>}
+      {!reference && <div className="preview-notice" role="status">本地界面预览：数据仅保存在当前浏览器，尚未连接云电脑或 Agent。</div>}
       {newChat ? <div className="new-chat-view">
         <div className="new-chat-head"><span>To: <span className="muted">Start a chat with...</span></span><IconButton name="close" label="Close new chat" onClick={() => setNewChat(false)} /></div>
         <div className="new-chat-menu"><button type="button" className="menu-option menu-primary" onClick={createBot}><Icon name="plus" />Create new Bot</button><button type="button" className="menu-option" onClick={() => setNotice(true)}><span className="menu-symbol">♧</span>Create group chat</button>{[primary, ...state.bots].map(bot => <button key={bot.id} type="button" className="menu-option" onClick={() => bot.id === primary.id ? setNotice(true) : selectBot(bot.id)}><Avatar bot={bot} size={27} />{bot.name}</button>)}<button type="button" className="menu-option team-option" onClick={() => setNotice(true)}><span>🟣</span>Team Bots <span className="menu-arrow">›</span></button></div>
@@ -177,4 +180,31 @@ function PreviewApp() {
   </div>;
 }
 
-createRoot(document.getElementById('root')!).render(<PreviewApp />);
+function AuthenticatedApp() {
+  const [account, setAccount] = useState<Account | null>(null);
+  const [status, setStatus] = useState<'loading' | 'signedOut' | 'signedIn' | 'error'>('loading');
+  const [logoutError, setLogoutError] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+      .then(async response => {
+        if (response.status === 401) { setStatus('signedOut'); return; }
+        if (!response.ok) throw new Error('auth unavailable');
+        const value = await response.json() as Account;
+        if (![value.userId, value.tenantId, value.email, value.name, value.role].every(item => typeof item === 'string' && item.length > 0)) throw new Error('invalid session');
+        setAccount(value); setStatus('signedIn');
+      }).catch(error => { if (error.name !== 'AbortError') setStatus('error'); });
+    return () => controller.abort();
+  }, []);
+  async function logout() {
+    try {
+      const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+      if (!response.ok) throw new Error('logout failed');
+      setAccount(null); setStatus('signedOut'); setLogoutError(false);
+    } catch { setLogoutError(true); }
+  }
+  if (status === 'signedIn' && account) return <><PreviewApp key={`${account.tenantId}:${account.userId}`} account={account} onLogout={() => void logout()} />{logoutError && <div role="alert" className="auth-error">Sign out failed. Please try again.</div>}</>;
+  return <main className="auth-page"><div className="auth-card"><h1>Coke Grok Bot</h1>{status === 'loading' ? <p>Checking your session…</p> : status === 'error' ? <><p role="alert">The sign-in service is unavailable.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></> : <><p>Sign in to continue to the local preview.</p><a href="/api/auth/google/start">Continue with Google</a></>}</div></main>;
+}
+
+createRoot(document.getElementById('root')!).render(import.meta.env.VITE_REQUIRE_AUTH === 'true' ? <AuthenticatedApp /> : <PreviewApp />);
