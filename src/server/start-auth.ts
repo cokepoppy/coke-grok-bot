@@ -31,13 +31,13 @@ async function main() {
   const port = Number(process.env.COKE_GROK_AUTH_PORT || 3001);
   const mysqlPort = Number(process.env.COKE_GROK_MYSQL_PORT || 3306);
   if (![port, mysqlPort].every(value => Number.isInteger(value) && value > 0 && value <= 65535)) throw new Error('Invalid port');
+  const provider = new GoogleIdentityProvider(googleClientId, googleSecret, `${origin}/auth/google/callback`, process.env.COKE_GROK_GOOGLE_OAUTH_PROXY_URL || '');
   const pool = mysql.createPool({ host: required('COKE_GROK_MYSQL_HOST'), port: mysqlPort, user: required('COKE_GROK_MYSQL_USER'), database: required('COKE_GROK_MYSQL_DATABASE'), password, timezone: 'Z', connectionLimit: 10 });
   const store = new TenantStore(pool);
-  await store.migrate();
-  await store.pruneExpiredAuth();
+  try { await store.migrate(); await store.pruneExpiredAuth(); }
+  catch (error) { await pool.end(); throw error; }
   const cleanup = setInterval(() => { void store.pruneExpiredAuth().catch(() => console.error('Expired auth cleanup failed.')); }, 60 * 60 * 1000);
   cleanup.unref();
-  const provider = new GoogleIdentityProvider(googleClientId, googleSecret, `${origin}/auth/google/callback`, process.env.COKE_GROK_GOOGLE_OAUTH_PROXY_URL || '');
   const server = createAuthServer(new GoogleAuthService(store, provider, origin), origin, staticDirectory);
   server.listen(port, process.env.COKE_GROK_AUTH_HOST || '127.0.0.1', () => console.log(`Auth service listening on port ${port}`));
   for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => { clearInterval(cleanup); server.close(() => { void pool.end(); }); });
