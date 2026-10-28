@@ -1,0 +1,17 @@
+.DS_Store
+node_modules/
+dist/
+coverage/
+artifacts/
+data/
+releases/
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+research/videos/
+research/frames/
+research/comparisons/local/
+.research/
