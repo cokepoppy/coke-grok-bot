@@ -39,4 +39,4 @@ async function main() {
   server.listen(port, process.env.COKE_GROK_AUTH_HOST || '127.0.0.1', () => console.log(`Auth service listening on port ${port}`));
   for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => server.close(() => { void pool.end(); }));
 }
-main().catch(() => { console.error('Auth service failed to start; check configuration and database access.'); process.exitCode = 1; });
+main().catch(error => { console.error(error instanceof Error && error.message === 'Frontend build does not match the public path or require authentication' ? 'Frontend build does not match the public path or require authentication.' : 'Auth service failed to start; check configuration and database access.'); process.exitCode = 1; });
