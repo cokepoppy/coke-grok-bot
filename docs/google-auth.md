@@ -17,3 +17,9 @@ Preview data is scoped by tenant and user IDs in browser localStorage to avoid a
 `npm run test:auth-browser` uses a local simulated identity provider but real Chromium, the frontend proxy, the HTTP auth service and disposable MySQL. It checks login, refresh, sign-out and account switching in one browser profile. It does not contact Google and is not live OAuth acceptance.
 
 To test prefix routing, run `COKE_GROK_TEST_BASE=/grok-bot/ npm run test:auth-browser` with the disposable MySQL test port set. The browser test checks the callback, cookie path, session recovery and account switching through the prefixed route.
+
+## Google OAuth network access
+
+`COKE_GROK_GOOGLE_OAUTH_PROXY_URL` optionally sets a dedicated HTTP(S) proxy origin for the Google client transporter. It must not contain credentials, a path, query, or fragment. This setting applies to Google token exchange and certificate retrieval; it does not modify the machine's global proxy. One-use authorization-code exchanges have retries disabled. `npm run test:google-proxy` checks proxy configuration and proves a failed proxied exchange is attempted only once with a local simulated proxy.
+
+On 2026-10-28, direct access from this Mac to Google's OpenID configuration timed out, while the existing loopback HTTP proxy returned HTTP 200. A loopback address inside a K3D Pod refers to the Pod itself, not the Mac; a separately configured and restricted host-accessible endpoint must be tested from the Pod before deploying there. No live Google sign-in has yet been verified.

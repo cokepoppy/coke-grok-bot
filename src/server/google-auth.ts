@@ -12,8 +12,9 @@ export interface IdentityProvider {
 }
 export class GoogleIdentityProvider implements IdentityProvider {
   private client: OAuth2Client;
-  constructor(private clientId: string, secret: string, private callback: string) {
-    this.client = new OAuth2Client({ clientId, clientSecret: secret, redirectUri: callback, transporterOptions: { timeout: 15000 } });
+  constructor(private clientId: string, secret: string, private callback: string, proxyUrl = '') {
+    const proxy = parseGoogleProxy(proxyUrl);
+    this.client = new OAuth2Client({ clientId, clientSecret: secret, redirectUri: callback, transporterOptions: { timeout: 15000, ...(proxy ? { proxy } : {}) } });
     const original = this.client.transporter.request.bind(this.client.transporter);
     this.client.transporter.request = options => {
       if (options?.method?.toUpperCase() === 'POST' && options.url && new URL(String(options.url)).pathname.endsWith('/token')) return original({ ...options, retry: false, retryConfig: { retry: 0, httpMethodsToRetry: [] } });
@@ -30,6 +31,14 @@ export class GoogleIdentityProvider implements IdentityProvider {
     const ticket = await this.client.verifyIdToken({ idToken: tokens.id_token, audience: this.clientId });
     return ticket.getPayload() || {};
   }
+}
+export function parseGoogleProxy(configured: string): string {
+  if (!configured.trim()) return '';
+  try {
+    const proxy = new URL(configured.trim());
+    if (!['http:', 'https:'].includes(proxy.protocol) || proxy.username || proxy.password || proxy.pathname !== '/' || proxy.search || proxy.hash) throw new Error();
+    return proxy.origin;
+  } catch { throw new Error('Google OAuth proxy must be an HTTP(S) origin without credentials or a path'); }
 }
 const sessionCookie = 'coke_grok_session';
 const stateCookie = 'coke_grok_oauth_state';

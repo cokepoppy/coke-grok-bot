@@ -15,7 +15,8 @@
     "compare:reference": "node --import tsx scripts/compare-reference.ts",
     "test:auth": "node --import tsx --test tests/google-auth.test.ts",
     "start:auth": "node --import tsx src/server/start-auth.ts",
-    "test:auth-browser": "node --import tsx tests/auth-browser.e2e.ts"
+    "test:auth-browser": "node --import tsx tests/auth-browser.e2e.ts",
+    "test:google-proxy": "node --import tsx --test tests/google-proxy.test.ts"
   },
   "dependencies": {
     "google-auth-library": "11.1.0",
