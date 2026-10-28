@@ -1,0 +1,9 @@
+# Google identity API (in progress)
+
+This backend implements the server-side Google OpenID Connect authorization-code flow described in [Google's documentation](https://developers.google.com/identity/openid-connect/openid-connect), with state, nonce and PKCE, MySQL-backed one-use flows and server-side sessions. The current frontend is still a preview and does not integrate these endpoints. Mock identity-provider tests are not proof of a live Google login.
+
+The service uses `COKE_GROK_PUBLIC_ORIGIN` (an HTTPS origin, or HTTP loopback for development), `COKE_GROK_GOOGLE_CLIENT_ID`, `COKE_GROK_GOOGLE_SECRET_FILE`, `COKE_GROK_MYSQL_HOST`, `COKE_GROK_MYSQL_PORT` (default 3306), `COKE_GROK_MYSQL_USER`, `COKE_GROK_MYSQL_PASSWORD_FILE`, and `COKE_GROK_MYSQL_DATABASE`. Secret files must be private (no group/other permissions). It binds to `127.0.0.1:3001` by default; `COKE_GROK_AUTH_HOST` and `COKE_GROK_AUTH_PORT` override this. Run `npm run start:auth`. The database must already exist; startup creates the identity tables. The Google OAuth client must register the exact callback `<origin>/auth/google/callback`.
+
+A trusted reverse proxy must preserve the public Host, terminate HTTPS, and route `/api/auth/` and `/auth/google/callback` to this service. Do not log callback query strings or cookies. Do not expose this service publicly until its deployment, secrets, origin, and browser flow have been verified. The runtime currently uses the development `tsx` dependency; a production image and K3D deployment remain future work.
+
+For isolated tests, start a disposable MySQL instance with an empty root password accessible only on loopback, then set `COKE_GROK_TEST_MYSQL_PORT` and run `npm run test:auth` and `npm run test:mysql`. Tests create and drop their own randomly named databases. Never point them at an existing shared database server.
