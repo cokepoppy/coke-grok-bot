@@ -81,6 +81,8 @@ export class GoogleAuthService {
       if (!identity.sub || !identity.email || identity.email_verified !== true || identity.nonce !== flow.nonce) return redirect(res, `${this.baseUrl}/?authError=invalid_identity`);
       const account = await this.store.signInGoogle({ subject: identity.sub, email: identity.email, name: identity.name || identity.email });
       const session = token(); await this.store.createSession(hash(session), account.userId, account.tenantId, new Date(Date.now() + 30 * 86400000));
+      const oldSession = cookies(req.headers.cookie || '')[sessionCookie] || '';
+      if (/^[A-Za-z0-9_-]{43}$/.test(oldSession)) await this.store.removeSession(hash(oldSession));
       this.setCookie(res, sessionCookie, session, 30 * 86400, `${this.prefix}/`); redirect(res, `${this.baseUrl}/`);
     } catch { redirect(res, `${this.baseUrl}/?authError=sign_in_failed`); }
   }

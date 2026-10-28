@@ -56,15 +56,17 @@ test('HTTP OAuth flow binds state, PKCE and nonce, isolates tenants and revokes 
     const am = await (await fetchPath('/api/auth/me', { headers: { cookie: ac } })).json() as { tenantId: string; email: string };
     assert.equal(am.email, 'alice@example.test');
     assert.match((await finish(a, 'alice')).headers.get('location')!, /authError=cancelled/);
-    const b = await start(); const br = await finish(b, 'bob');
+    const b = await start(); activeState = b.state;
+    const br = await fetchPath(`/auth/google/callback?state=${b.state}&code=bob`, { headers: { cookie: `${b.cookie}; ${ac}` } });
+    assert.equal((await fetchPath('/api/auth/me', { headers: { cookie: ac } })).status, 401);
     const bc = br.headers.getSetCookie().find(c => c.startsWith('coke_grok_session='))!.split(';')[0];
     const bm = await (await fetchPath('/api/auth/me', { headers: { cookie: bc } })).json() as { tenantId: string };
     assert.notEqual(am.tenantId, bm.tenantId);
     const nonce = await start(); assert.match((await finish(nonce, 'badnonce')).headers.get('location')!, /authError=invalid_identity/);
-    assert.equal((await fetchPath('/api/auth/logout', { method: 'POST', headers: { cookie: ac, origin: 'https://evil.example' } })).status, 403);
-    assert.equal((await fetchPath('/api/auth/logout', { method: 'POST', headers: { cookie: ac, origin } })).status, 200);
+    assert.equal((await fetchPath('/api/auth/logout', { method: 'POST', headers: { cookie: bc, origin: 'https://evil.example' } })).status, 403);
+    assert.equal((await fetchPath('/api/auth/logout', { method: 'POST', headers: { cookie: bc, origin } })).status, 200);
     assert.equal((await fetchPath('/api/auth/me', { headers: { cookie: ac } })).status, 401);
-    assert.equal((await fetchPath('/api/auth/me', { headers: { cookie: bc } })).status, 200);
+    assert.equal((await fetchPath('/api/auth/me', { headers: { cookie: bc } })).status, 401);
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     await pool.end(); await admin.query(`DROP DATABASE \`${database}\``); await admin.end();
