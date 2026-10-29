@@ -1,0 +1,5 @@
+**
+!deploy/
+!deploy/desktop/
+!deploy/desktop/start-desktop.sh
+!deploy/desktop/agent-runtime.mjs
