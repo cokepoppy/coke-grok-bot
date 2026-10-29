@@ -19,3 +19,17 @@ test('Google OAuth proxy validates configuration and does not retry code exchang
     assert.equal(requests, 1, 'a failed token exchange must not retry a one-use code');
   } finally { await new Promise<void>(resolve => proxy.close(() => resolve())); }
 });
+
+test('Google authorization URL includes the configured callback and OIDC protections', () => {
+  const provider = new GoogleIdentityProvider('synthetic-client', 'synthetic-secret', 'https://example.test/grok-bot/auth/google/callback');
+  const url = new URL(provider.authorizationUrl('state-value', 'nonce-value', 'challenge-value'));
+  assert.equal(url.origin, 'https://accounts.google.com');
+  assert.equal(url.searchParams.get('client_id'), 'synthetic-client');
+  assert.equal(url.searchParams.get('redirect_uri'), 'https://example.test/grok-bot/auth/google/callback');
+  assert.equal(url.searchParams.get('response_type'), 'code');
+  assert.equal(url.searchParams.get('state'), 'state-value');
+  assert.equal(url.searchParams.get('nonce'), 'nonce-value');
+  assert.equal(url.searchParams.get('code_challenge'), 'challenge-value');
+  assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
+  assert.deepEqual(new Set(url.searchParams.get('scope')!.split(' ')), new Set(['openid', 'email', 'profile']));
+});
