@@ -30,6 +30,7 @@
     "test:run-browser": "node --import tsx tests/run-browser.e2e.ts",
     "test:provisioner-k3d": "node --import tsx tests/desktop-provisioner-k3d.e2e.ts",
     "test:kube-client-k3d": "node --import tsx tests/kube-client-k3d.e2e.ts",
+    "test:network-policy-k3d": "node --import tsx tests/network-policy-k3d.e2e.ts",
     "test:pi-pipeline-k3d": "node --import tsx tests/pi-pipeline-k3d.e2e.ts",
     "build:deployment": "npm run build && node scripts/mark-web-build.mjs && npm run build:server"
   },
