@@ -18,6 +18,10 @@ export interface PiRuntime { runs:RunStore; close():Promise<void> }
 /** Opt-in only. Caller supplies Kubernetes service account with separately audited permissions. */
 export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env):Promise<PiRuntime|null>{
  if(env.COKE_GROK_PI_ENABLED!=='1')return null;
+ // The copied desktop tools do not yet enforce external-action approval, and
+ // the provisioner does not yet have a namespace-scoped production broker.
+ // Refuse production startup until those boundaries are implemented and tested.
+ if(env.NODE_ENV==='production')throw new Error('Pi runtime is not ready for production');
  const providerKey=(await privateFile(required(env,'COKE_GROK_MODEL_KEY_FILE'))).toString('utf8').trim();
  const signingKey=await privateFile(required(env,'COKE_GROK_DESKTOP_SIGNING_KEY_FILE'));
  const tlsKey=await privateFile(required(env,'COKE_GROK_GATEWAY_TLS_KEY_FILE'));
