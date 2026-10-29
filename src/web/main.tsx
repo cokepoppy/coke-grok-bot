@@ -100,6 +100,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [customAnswer, setCustomAnswer] = useState('');
   const [notice, setNotice] = useState(false);
   const messagesEnd = useRef<HTMLDivElement>(null);
+  const savedNames = useRef<Record<string, string>>({});
+  const renameQueue = useRef<Record<string, Promise<void>>>({});
   const active = state.bots.find(bot => bot.id === state.activeId) || state.bots[0];
   const messages = active ? state.messages[active.id] || [] : [];
   const filtered = state.bots.filter(bot => `${bot.name} ${bot.label}`.toLowerCase().includes(query.toLowerCase()));
@@ -116,6 +118,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       .then(({ bots }) => {
         if (!Array.isArray(bots)) throw new Error('invalid bots');
         const mapped = bots.map(bot => ({ ...bot, preview: 'Start a conversation' }));
+        savedNames.current = Object.fromEntries(mapped.map(bot => [bot.id, bot.name]));
         setState(current => ({ ...current, bots: mapped, activeId: mapped.some(bot => bot.id === current.activeId) ? current.activeId : mapped[0]?.id || '' }));
         setBotStatus('ready');
       }).catch(error => { if (error.name !== 'AbortError') setBotStatus('error'); });
@@ -137,6 +140,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         const response = await fetch(`${import.meta.env.BASE_URL}api/bots`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'New Bot', color: '#a382ef', shape: 'drop' }) });
         if (!response.ok) throw new Error('create failed');
         const { bot } = await response.json() as { bot: Omit<Bot, 'preview'> };
+        savedNames.current[bot.id] = bot.name;
         setState(current => ({ ...current, bots: [{ ...bot, preview: 'Start a conversation' }, ...current.bots], activeId: bot.id }));
         setNewChat(false); setPanel(false);
       } catch { setBotError('Could not create the Bot. Please try again.'); }
@@ -163,15 +167,27 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     if (!active) return;
     setState(current => ({ ...current, bots: current.bots.map(bot => bot.id === active.id ? { ...bot, name: name.slice(0, 60) } : bot) }));
   }
-  async function saveBotName() {
+  function saveBotName() {
     if (!remote || !active) return;
-    const name = active.name.trim();
-    if (!name) { setBotError('Bot name cannot be empty.'); return; }
+    const id = active.id, draftName = active.name, name = draftName.trim();
+    const restore = () => setState(current => ({ ...current, bots: current.bots.map(bot => bot.id === id && bot.name === draftName ? { ...bot, name: savedNames.current[id] || 'New Bot' } : bot) }));
+    if (!name) {
+      setBotError('Bot name cannot be empty.');
+      void (renameQueue.current[id] || Promise.resolve()).then(restore);
+      return;
+    }
     setBotError('');
-    try {
-      const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${active.id}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
-      if (!response.ok) throw new Error('rename failed');
-    } catch { setBotError('Could not save the Bot name. Please try again.'); }
+    const previous = renameQueue.current[id] || Promise.resolve();
+    const next = previous.then(async () => {
+      try {
+        const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${id}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+        if (!response.ok) throw new Error('rename failed');
+        savedNames.current[id] = name;
+        setState(current => ({ ...current, bots: current.bots.map(bot => bot.id === id && bot.name === draftName ? { ...bot, name } : bot) }));
+      } catch { restore(); setBotError('Could not save the Bot name. Please try again.'); }
+    });
+    renameQueue.current[id] = next;
+    void next.finally(() => { if (renameQueue.current[id] === next) delete renameQueue.current[id]; });
   }
   if (botStatus === 'loading') return <main className="auth-page"><div className="auth-card">Loading your Bots…</div></main>;
   if (botStatus === 'error') return <main className="auth-page"><div className="auth-card"><p role="alert">Could not load your Bots.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></div></main>;
