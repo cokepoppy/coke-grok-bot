@@ -29,6 +29,7 @@
     "test:runtime-mysql": "node --import tsx --test tests/run-store.test.ts tests/run-store-order.test.ts tests/run-scheduler.test.ts tests/run-http.test.ts tests/run-pipeline.test.ts",
     "test:run-browser": "node --import tsx tests/run-browser.e2e.ts",
     "test:provisioner-k3d": "node --import tsx tests/desktop-provisioner-k3d.e2e.ts",
+    "test:kube-client-k3d": "node --import tsx tests/kube-client-k3d.e2e.ts",
     "build:deployment": "npm run build && node scripts/mark-web-build.mjs && npm run build:server"
   },
   "dependencies": {
