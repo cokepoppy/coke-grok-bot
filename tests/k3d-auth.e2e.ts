@@ -3,6 +3,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
+import { get } from 'node:http';
 import mysql from 'mysql2/promise';
 import { chromium } from 'playwright-core';
 
@@ -50,6 +51,20 @@ try {
   assert.equal(redirect.origin, 'https://accounts.google.com');
   assert.equal(redirect.searchParams.get('redirect_uri'), `${base}/auth/google/callback`);
   assert.match(start.headers.get('set-cookie')!, /Path=\/grok-bot\/auth\/google\/callback/);
+  kubectl(['apply', '-n', namespace, '-f', 'deploy/k3d/auth-ingress.yaml']);
+  let ingressVerified = false;
+  const ingressResponses = new Set<string>();
+  for (let i = 0; i < 100; i++) {
+    const response = await new Promise<{status: number | undefined; body: string}>((resolve, reject) => {
+      get({ host: '127.0.0.1', port: 18080, path: '/grok-bot/api/auth/me', headers: { Host: `127.0.0.1:${httpPort}` } }, res => {
+        let body = ''; res.setEncoding('utf8'); res.on('data', chunk => { body += chunk; }); res.on('end', () => resolve({ status: res.statusCode, body }));
+      }).on('error', reject);
+    });
+    ingressResponses.add(`${response.status}:${response.body.includes('Unauthenticated') ? 'auth' : 'other'}`);
+    if (response.status === 401 && response.body.includes('Unauthenticated')) { ingressVerified = true; break; }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.ok(ingressVerified, `Traefik must reach the auth service with the complete path; observed ${[...ingressResponses].join(', ')}`);
   if (process.env.COKE_GROK_TEST_DB_FAILURE === '1') {
     const testContainer = 'coke-grok-k3d-readiness-mysql';
     const mapped = execFileSync('docker', ['port', testContainer, '3306/tcp'], { encoding: 'utf8' }).trim();
@@ -66,7 +81,10 @@ try {
 } finally {
   if (paused) execFileSync('docker', ['unpause', 'coke-grok-k3d-readiness-mysql'], { stdio: 'ignore' });
   if (forward && forward.exitCode === null) { forward.kill('SIGTERM'); await once(forward, 'exit'); }
-  if (created) { try { kubectl(['scale', '-n', namespace, 'deployment/coke-grok-auth', '--replicas=0']); } catch { /* A failed apply may not have created the Deployment. */ } }
+  if (created) {
+    try { kubectl(['delete', '-n', namespace, 'ingress', 'coke-grok-auth', '--ignore-not-found']); } catch { /* Preserve the original test error. */ }
+    try { kubectl(['scale', '-n', namespace, 'deployment/coke-grok-auth', '--replicas=0']); } catch { /* A failed apply may not have created the Deployment. */ }
+  }
   await admin.query(mysql.format('DROP USER IF EXISTS ?@?', [user, '%']));
   await admin.query(`DROP DATABASE IF EXISTS \`${database}\``);
   await admin.end();
