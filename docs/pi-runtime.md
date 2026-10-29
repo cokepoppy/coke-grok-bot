@@ -20,3 +20,7 @@ COKE_GROK_MODEL_KEY_FILE=/path/to/private-key-file npm run test:pi-k3d
 ```
 
 The command does not print provider responses or key contents. It requires Docker/K3D, the exact imported test image, and network access. It creates only a disposable test namespace, and leaves existing namespaces, PVCs, images and user data alone.
+
+## Desktop image work
+
+The in-progress desktop image builds on the pinned Dots image above. `deploy/desktop/start-desktop.sh` and `agent-runtime.mjs` were taken from Dots `origin/main` `4213e769e49da7a479ab2ad186584c77b721fa69`; these two source files are unchanged between that commit and the pinned base image's revision. The startup script is changed to leave the Agent runtime to a separate container. The runtime's task directories are group-accessible so the desktop worker and Agent can share the user's task files while running under different UIDs. Provisioning, ownership, live browser viewing and runtime integration remain unfinished.
