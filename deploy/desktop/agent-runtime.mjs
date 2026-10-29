@@ -40,8 +40,11 @@ async function readJson(req) {
   return chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
 }
 
-async function controlOwner() {
-  const response = await fetch(`http://127.0.0.1:${workerPort}/v1/control`, { headers: { authorization: `Bearer ${process.env.LINUX_DESKTOP_WORKER_TOKEN}` }, signal: AbortSignal.timeout(1500) });
+async function controlOwner(modelConfig) {
+  const mediated = process.env.COKE_GROK_MEDIATED_COMPUTER === '1';
+  const target = mediated ? `${modelConfig.baseUrl}/computer/control` : `http://127.0.0.1:${workerPort}/v1/control`;
+  const credential = mediated ? modelConfig.apiKey : process.env.LINUX_DESKTOP_WORKER_TOKEN;
+  const response = await fetch(target, { headers: { authorization: `Bearer ${credential}` }, signal: AbortSignal.timeout(3000), redirect:'error' });
   if (!response.ok) throw new Error('desktop control state is unavailable');
   return (await response.json()).owner;
 }
@@ -198,7 +201,7 @@ async function executeKernel(input, requestSignal, slot) {
   const dingtalkCalendarBridge = validateDingTalkCalendarBridge(input.dingtalkCalendarBridge);
   const dingtalkMinutesBridge = validateDingTalkMinutesBridge(input.dingtalkMinutesBridge);
   const dingtalkSecretaryBridge = validateDingTalkSecretaryBridge(input.dingtalkSecretaryBridge);
-  if (await controlOwner() !== 'agent') return { taskId, status: 'waiting', pausedForControl: true, message: '电脑目前由你控制。我已暂停这项工作；交还电脑后点击“继续”即可恢复。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
+  if (await controlOwner(modelConfig) !== 'agent') return { taskId, status: 'waiting', pausedForControl: true, message: '电脑目前由你控制。我已暂停这项工作；交还电脑后点击“继续”即可恢复。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
 
   const cwd = await safeTaskWorkspace(input.cwd, taskId);
   if (requestSignal?.aborted) throw new Error('Agent task was cancelled');
@@ -224,7 +227,7 @@ async function executeKernel(input, requestSignal, slot) {
     engine, prompt, cwd, workspace, taskId,
     sessionId: typeof input.sessionId === 'string' ? input.sessionId : null,
     modelConfig,
-    computer: {
+    computer: process.env.COKE_GROK_MEDIATED_COMPUTER === '1' ? { mode:'mediated', gatewayUrl:modelConfig.baseUrl, gatewayToken:modelConfig.apiKey } : {
       baseUrl: `http://127.0.0.1:${workerPort}`,
       workerToken: process.env.LINUX_DESKTOP_WORKER_TOKEN,
       actions: ['navigate', 'click', 'type', 'screenshot'],
@@ -235,7 +238,7 @@ async function executeKernel(input, requestSignal, slot) {
     ...(dingtalkSecretaryBridge ? { dingtalkSecretaryBridge } : {}),
   }));
   const timer = setTimeout(() => child.kill('SIGTERM'), 14 * 60_000);
-  const controlPoll = setInterval(() => { void controlOwner().then(owner => { if (owner === 'user') pauseActive(); }).catch(() => child.kill('SIGTERM')); }, 500);
+  const controlPoll = setInterval(() => { void controlOwner(modelConfig).then(owner => { if (owner === 'user') pauseActive(); }).catch(() => child.kill('SIGTERM')); }, 1500);
   const onRequestAbort = () => abort.abort();
   requestSignal?.addEventListener('abort', onRequestAbort, { once: true });
   abort.signal.addEventListener('abort', () => { child.kill('SIGTERM'); setTimeout(() => child.kill('SIGKILL'), 2000).unref(); }, { once: true });

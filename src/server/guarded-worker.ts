@@ -19,6 +19,25 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   if((item.owner!=='agent'&&item.owner!=='user')||typeof item.url!=='string'||item.url.length>4096||typeof item.screenshotSha256!=='string'||!/^[a-f0-9]{64}$/.test(item.screenshotSha256))throw new Error('Invalid computer snapshot');
   return {owner:item.owner,url:item.url,screenshotSha256:item.screenshotSha256};
  }
+ async control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>{
+  const response=await this.request(new URL('/v1/guarded/control',this.endpoint),{headers:{authorization:`Bearer ${this.controlToken}`},signal,redirect:'error'});
+  if(!response.ok)throw new Error('Computer control unavailable');
+  const value:unknown=await response.json();if(!value||typeof value!=='object'||Array.isArray(value)||!['agent','user'].includes(String((value as {owner?:unknown}).owner)))throw new Error('Invalid computer control');
+  return {owner:(value as {owner:'agent'|'user'}).owner};
+ }
+ async inspect(signal:AbortSignal):Promise<unknown>{
+  const response=await this.request(new URL('/v1/guarded/inspect',this.endpoint),{headers:{authorization:`Bearer ${this.controlToken}`},signal,redirect:'error'});
+  if(!response.ok)throw new Error('Computer inspection unavailable');
+  const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>65536)throw new Error('Computer inspection too large');
+  const text=await response.text();if(text.length>65536)throw new Error('Computer inspection too large');
+  const value:unknown=JSON.parse(text);if(!value||typeof value!=='object'||Array.isArray(value)||(value as {ready?:unknown}).ready!==true)throw new Error('Invalid computer inspection');return value;
+ }
+ async screenshot(signal:AbortSignal):Promise<Buffer>{
+  const response=await this.request(new URL('/v1/guarded/screenshot',this.endpoint),{headers:{authorization:`Bearer ${this.controlToken}`},signal,redirect:'error'});
+  if(!response.ok||response.headers.get('content-type')?.split(';')[0]!=='image/png')throw new Error('Computer screenshot unavailable');
+  const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>1024*1024)throw new Error('Computer screenshot too large');
+  const bytes=Buffer.from(await response.arrayBuffer());if(!bytes.length||bytes.length>1024*1024)throw new Error('Computer screenshot too large');return bytes;
+ }
  async performIfUnchanged(input:unknown,expected:ComputerState,signal:AbortSignal):Promise<unknown>{
   if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Invalid computer action');
   const action=input as Record<string,unknown>;

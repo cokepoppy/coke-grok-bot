@@ -67,6 +67,8 @@ export function splitDesktopResources(identity:DesktopIdentity,options:{image:st
   const desktop=find('Deployment','desktop'),pod=desktop.spec.template.spec;
   const [desktopContainer,agentContainer]=pod.containers;
   desktopContainer.env.push({name:'COKE_GROK_AGENT_URL',value:`http://agent.${ns}.svc.cluster.local:8083/`});
+  agentContainer.env=agentContainer.env.filter((entry:{name:string})=>entry.name!=='LINUX_DESKTOP_WORKER_TOKEN');
+  agentContainer.env.push({name:'COKE_GROK_MEDIATED_COMPUTER',value:'1'});
   pod.containers=[desktopContainer];pod.volumes=pod.volumes.filter((volume:{name:string})=>['workspace','shm','desktop-tmp'].includes(volume.name));
   const labels={'app.kubernetes.io/managed-by':'coke-grok-bot','coke-grok-bot.io/owner-hash':identity.ownerHash};
   const agentPod={automountServiceAccountToken:false,securityContext:{runAsNonRoot:true,fsGroup:1000,seccompProfile:{type:'RuntimeDefault'}},

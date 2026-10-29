@@ -17,8 +17,8 @@ export class PiExecutor implements RunExecutor {
     const desktop=await this.desktops.connect(owner,signal);
     const endpoint=new URL(desktop.agentUrl);
     const ownerHash=createHash('sha256').update(`${owner.tenantId.toLowerCase()}:${owner.userId.toLowerCase()}`).digest('hex').slice(0,32);
-    if(endpoint.protocol!=='http:' || endpoint.hostname!==`desktop.grok-user-${ownerHash}.svc.cluster.local` || endpoint.port!=='8083' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || endpoint.pathname!=='/' || !/^[A-Za-z0-9_-]{43}$/.test(desktop.agentToken)) throw new Error('Invalid desktop endpoint');
-    const capability=this.gateway.issue({ttlMs:14*60_000,calls:100,scope:{runId:run.id,leaseId}});
+    if(endpoint.protocol!=='http:' || ![`desktop.grok-user-${ownerHash}.svc.cluster.local`,`agent.grok-user-${ownerHash}.svc.cluster.local`].includes(endpoint.hostname) || endpoint.port!=='8083' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || endpoint.pathname!=='/' || !/^[A-Za-z0-9_-]{43}$/.test(desktop.agentToken)) throw new Error('Invalid desktop endpoint');
+    const capability=this.gateway.issue({ttlMs:14*60_000,calls:100,scope:{runId:run.id,leaseId,owner}});
     try {
       const prompt=`${run.prompt}\n\nWhen your work finishes, return a JSON object with exactly these fields: {"status":"done","message":"<the user-facing result>"}. Report actual outcomes only. If work cannot be completed, explain it in message.`;
       const response=await this.request(new URL('/v1/tasks/run',endpoint),{

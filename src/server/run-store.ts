@@ -103,6 +103,11 @@ export class RunStore {
     const [updated] = await this.pool.execute<ResultSetHeader>(`UPDATE agent_runs SET lease_until=DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? SECOND) WHERE id=? AND lease_id=? AND status='running' AND lease_until>UTC_TIMESTAMP(3)`,[leaseSeconds,runId,leaseId]);
     return updated.affectedRows === 1;
   }
+  async hasLiveLease(owner: RunOwner, runId:string, leaseId:string):Promise<boolean> {
+    if(!uuid.test(owner.tenantId)||!uuid.test(owner.userId)||!uuid.test(runId)||!uuid.test(leaseId))return false;
+    const [rows]=await this.pool.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND r.lease_id=? AND r.status='running' AND r.lease_until>UTC_TIMESTAMP(3) AND b.tenant_id=? AND b.owner_id=?`,[runId,leaseId,owner.tenantId,owner.userId]);
+    return rows.length===1;
+  }
   async markUnknown(runId: string, leaseId: string): Promise<boolean> {
     if (!uuid.test(runId) || !uuid.test(leaseId)) throw new Error('Invalid lease');
     return this.transaction(async connection => {

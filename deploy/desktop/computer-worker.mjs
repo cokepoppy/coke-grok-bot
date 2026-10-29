@@ -407,8 +407,13 @@ http.createServer(async (req, res) => {
     const isWorker = req.headers.authorization === `Bearer ${token}`;
     if (!isControl && !isWorker) return send(res, 401, { error: 'worker token is required' });
     if (guardedMode && !isControl && !(req.method === 'GET' && pathname === '/v1/control')) return send(res, 403, { error: 'control authorization is required' });
+    if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/control') return send(res, 200, {owner});
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/snapshot') return send(res, 200, await guardedComputer.snapshot());
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/inspect') return guardedComputer.locked(async () => send(res, 200, await agentBrowserAction({action:'inspect'})));
+    if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/screenshot') return guardedComputer.locked(async () => {
+      if (owner !== 'agent') throw new Error('The user currently controls this computer');
+      return send(res, 200, await screenshot(), 'image/png');
+    });
     if (guardedMode && isControl && req.method === 'POST' && pathname === '/v1/guarded/execute') {
       const input = await body(req);
       return send(res, 200, await guardedComputer.execute(input.action, input.expected));

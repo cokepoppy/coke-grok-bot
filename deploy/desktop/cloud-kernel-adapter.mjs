@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { Type } from 'typebox';
 
 const decisionStatuses = new Set(['done', 'waiting', 'scheduled', 'delegating']);
@@ -197,11 +198,38 @@ async function createPiBashTool(sdk, cwd, incidentGitEnabled = false) {
 }
 
 function validateComputerBridge(computer) {
+  if (computer?.mode === 'mediated') {
+    let url; try { url = new URL(computer.gatewayUrl); } catch { return null; }
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/v1' || !/^[A-Za-z0-9_-]{43}$/.test(computer.gatewayToken || '')) return null;
+    return { mode:'mediated', baseUrl:url.href.replace(/\/$/,''), workerToken:computer.gatewayToken };
+  }
   if (!computer || typeof computer !== 'object' || typeof computer.baseUrl !== 'string' || typeof computer.workerToken !== 'string') return null;
   let url;
   try { url = new URL(computer.baseUrl); } catch { return null; }
   if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(url.hostname) || url.username || url.password || url.search || url.hash || url.pathname !== '/' || !computer.workerToken || computer.workerToken.length > 4096) return null;
   return { baseUrl: url.origin, workerToken: computer.workerToken };
+}
+
+async function mediatedAction(computer,kind,params,signal) {
+  const headers = {authorization:`Bearer ${computer.workerToken}`,'content-type':'application/json'};
+  const action = {kind,...params};
+  const proposal=await fetch(`${computer.baseUrl}/computer/actions`,{method:'POST',headers,body:JSON.stringify({action}),signal,redirect:'error'});
+  if(!proposal.ok)throw new Error('Computer action approval could not be requested');
+  const value=await proposal.json();
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value?.id || ''))throw new Error('Invalid approval response');
+  while(true) {
+    await delay(1000,undefined,{signal});
+    const response=await fetch(`${computer.baseUrl}/computer/actions/${value.id}`,{headers:{authorization:`Bearer ${computer.workerToken}`},signal,redirect:'error'});
+    if(!response.ok)throw new Error('Computer action approval status unavailable');
+    const status=(await response.json())?.status;
+    if(status==='approved')break;
+    if(status==='denied'||status==='expired'||status==='consumed')throw new Error('Computer action was not approved');
+    if(status!=='pending')throw new Error('Invalid computer action approval status');
+  }
+  // The server consumes the exact approval before dispatch; never retry this POST.
+  const performed=await fetch(`${computer.baseUrl}/computer/actions/${value.id}/execute`,{method:'POST',headers,body:JSON.stringify({action}),signal,redirect:'error'});
+  if(!performed.ok)throw new Error('Approved computer action was not confirmed');
+  return performed.json();
 }
 
 function computerDesktopTool(computerInput) {
@@ -224,10 +252,10 @@ function computerDesktopTool(computerInput) {
     async execute(_id, params, signal) {
       if (signal?.aborted) throw signal.reason || new Error('Task was stopped');
       const headers = { authorization:`Bearer ${computer.workerToken}` };
-      const control = await fetch(`${computer.baseUrl}/v1/control`, {headers,signal});
+      const control = await fetch(`${computer.baseUrl}${computer.mode === 'mediated' ? '/computer/control' : '/v1/control'}`, {headers,signal});
       if (!control.ok || (await control.json()).owner !== 'agent') throw new Error('Desktop control belongs to the user');
       if (params.action === 'screenshot') {
-        const response = await fetch(`${computer.baseUrl}/v1/screenshot`, {headers,signal});
+        const response = await fetch(`${computer.baseUrl}${computer.mode === 'mediated' ? '/computer/screenshot' : '/v1/screenshot'}`, {headers,signal});
         if (!response.ok || response.headers.get('content-type')?.split(';')[0] !== 'image/png') throw new Error('Desktop screenshot unavailable');
         const image = Buffer.from(await response.arrayBuffer());
         if (!image.length || image.length > 1024 * 1024) throw new Error('Desktop screenshot size is unsupported');
@@ -236,6 +264,10 @@ function computerDesktopTool(computerInput) {
       if (params.action === 'click' && (!Number.isFinite(params.x) || !Number.isFinite(params.y))) throw new Error('Desktop click requires coordinates');
       if (params.action === 'type' && typeof params.text !== 'string') throw new Error('Desktop type requires text');
       if (params.action === 'press' && typeof params.key !== 'string') throw new Error('Desktop press requires a key');
+      if (computer.mode === 'mediated') {
+        await mediatedAction(computer,'desktop',params,signal);
+        return {content:[{type:'text',text:'Approved desktop action completed.'}],details:{action:params.action}};
+      }
       const response = await fetch(`${computer.baseUrl}/v1/commands`, {method:'POST',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({...params,actor:'agent'}),signal});
       if (!response.ok) throw new Error('Desktop action failed or control belongs to the user');
       return {content:[{type:'text',text:'Desktop action completed.'}],details:{action:params.action}};
@@ -269,6 +301,17 @@ function computerBrowserTool(computerInput, taskId) {
     }, { additionalProperties: false }),
     async execute(_id, params, signal) {
       if (signal?.aborted) throw signal.reason || new Error('Task was stopped');
+      if (computer.mode === 'mediated') {
+        if (params.action === 'inspect') {
+          const response=await fetch(`${computer.baseUrl}/computer/inspect`,{headers:{authorization:`Bearer ${computer.workerToken}`},signal,redirect:'error'});
+          if(!response.ok)throw new Error('Computer inspection unavailable');
+          const result=await response.json();
+          if(!result || result.ready!==true)throw new Error('Invalid computer inspection');
+          return {content:[{type:'text',text:JSON.stringify(redactValue(result,[computer.workerToken]))}],details:{action:'inspect'}};
+        }
+        const result=await mediatedAction(computer,'browser',params,signal);
+        return {content:[{type:'text',text:JSON.stringify(redactValue(result,[computer.workerToken]))}],details:{action:params.action}};
+      }
       const response = await fetch(`${computer.baseUrl}/v1/browser`, {
         method: 'POST',
         headers: { authorization: `Bearer ${computer.workerToken}`, 'content-type': 'application/json' },

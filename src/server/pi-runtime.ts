@@ -9,6 +9,9 @@ import { PiExecutor } from './pi-executor.ts';
 import { DesktopProvisioner } from './desktop-provisioner.ts';
 import { DesktopKubernetesClient } from './desktop-kubernetes.ts';
 import { ApprovalStore } from './approval-store.ts';
+import { ComputerBridge } from './computer-bridge.ts';
+import { desktopIdentity } from './desktop-resources.ts';
+import { HttpGuardedComputerWorker } from './guarded-worker.ts';
 
 function required(env:NodeJS.ProcessEnv,key:string):string { const value=env[key]?.trim();if(!value)throw new Error(`Missing ${key}`);return value; }
 async function privateFile(path:string):Promise<Buffer>{
@@ -39,7 +42,11 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  const provisioner=new DesktopProvisioner(kube,signingKey,{image:required(env,'COKE_GROK_DESKTOP_IMAGE'),controlNamespace:namespace,gatewayCA:cert.toString('utf8')});
  const runs=new RunStore(pool);await runs.migrate();
  const approvals=new ApprovalStore(pool);await approvals.migrate();
- const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals);
+ const bridge=new ComputerBridge(runs,approvals,scope=>{
+  const identity=desktopIdentity(scope.owner,signingKey);
+  return new HttpGuardedComputerWorker(scope.owner,new URL(`http://desktop.${identity.namespace}.svc.cluster.local:8082/`),identity.controlToken,scope.runId);
+ });
+ const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals,bridge);
  const scheduler=new RunScheduler(runs,new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID')),{concurrency:2,leaseSeconds:30});
  const server=gateway.createServer({key:tlsKey,cert});
  try{server.listen(3002,'0.0.0.0');await once(server,'listening')}catch(error){gateway.close();server.close();throw error}

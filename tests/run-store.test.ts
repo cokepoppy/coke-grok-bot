@@ -37,8 +37,12 @@ test('runs are deduplicated, isolated, serialized per computer and never silentl
     const [claim1, claim2] = await Promise.all([runs.claimNext(sa,10),runs.claimNext(sa,10)]);
     const claim = claim1 || claim2; assert.ok(claim); assert.equal(Number(Boolean(claim1))+Number(Boolean(claim2)),1);
     const otherClaim = await runs.claimNext(sb,10); assert.ok(otherClaim);
+    assert.equal(await runs.hasLiveLease(sa,claim.run.id,claim.leaseId),true);
+    assert.equal(await runs.hasLiveLease(sb,claim.run.id,claim.leaseId),false);
+    assert.equal(await runs.hasLiveLease(sa,claim.run.id,randomUUID()),false);
     assert.equal(await runs.finish(claim.run.id,randomUUID(),'completed','forged'),false);
     assert.equal(await runs.finish(claim.run.id,claim.leaseId,'completed','done'),true);
+    assert.equal(await runs.hasLiveLease(sa,claim.run.id,claim.leaseId),false);
     assert.equal(await runs.finish(claim.run.id,claim.leaseId,'completed','duplicate'),false);
     const next = await runs.claimNext(sa,1); assert.ok(next); assert.notEqual(next.run.id,claim.run.id);
     await new Promise(resolve => setTimeout(resolve,1200));
