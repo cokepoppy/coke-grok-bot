@@ -56,6 +56,7 @@ test('HTTP OAuth flow binds state, PKCE and nonce, isolates tenants and revokes 
     const ac = ar.headers.getSetCookie().find(c => c.startsWith('coke_grok_session='))!.split(';')[0];
     const am = await (await fetchPath('/api/auth/me', { headers: { cookie: ac } })).json() as { tenantId: string; email: string };
     assert.equal(am.email, 'alice@example.test');
+    assert.equal((await fetchPath('/api/auth/me', { headers: { cookie: `${ac}; ${ac}` } })).status, 401);
     assert.match((await finish(a, 'alice')).headers.get('location')!, /authError=cancelled/);
     const b = await start(); activeState = b.state;
     const br = await fetchPath(`/auth/google/callback?state=${b.state}&code=bob`, { headers: { cookie: `${b.cookie}; ${ac}` } });

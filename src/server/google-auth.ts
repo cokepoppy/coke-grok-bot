@@ -44,7 +44,18 @@ const sessionCookie = 'coke_grok_session';
 const stateCookie = 'coke_grok_oauth_state';
 const token = () => randomBytes(32).toString('base64url');
 const hash = (input: string) => createHash('sha256').update(input).digest('hex');
-const cookies = (header: string): Record<string,string> => Object.fromEntries(header.split(';').map(part => part.trim().split(/=(.*)/s).slice(0,2)).filter(parts => parts.length === 2));
+const cookies = (header: string): Record<string, string> => {
+  const values: Record<string, string> = Object.create(null);
+  const duplicates = new Set<string>();
+  for (const part of header.split(';')) {
+    const index = part.indexOf('=');
+    if (index < 0) continue;
+    const name = part.slice(0, index).trim(), value = part.slice(index + 1).trim();
+    if (Object.hasOwn(values, name)) duplicates.add(name); else values[name] = value;
+  }
+  for (const name of duplicates) delete values[name];
+  return values;
+};
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 function appendCookie(res: ServerResponse, value: string) { const previous = res.getHeader('Set-Cookie'); res.setHeader('Set-Cookie', [...(Array.isArray(previous) ? previous : previous ? [String(previous)] : []), value]); }
 function json(res: ServerResponse, status: number, value: unknown) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); }
