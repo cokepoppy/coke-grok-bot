@@ -5,6 +5,7 @@ import { TenantStore } from './tenant-store.ts';
 import { GoogleAuthService, GoogleIdentityProvider } from './google-auth.ts';
 import { createAuthServer } from './auth-http.ts';
 import { parsePublicUrl } from './public-url.ts';
+import { BotStore } from './bot-store.ts';
 
 function required(key: string): string {
   const value = process.env[key];
@@ -34,11 +35,12 @@ async function main() {
   const provider = new GoogleIdentityProvider(googleClientId, googleSecret, `${origin}/auth/google/callback`, process.env.COKE_GROK_GOOGLE_OAUTH_PROXY_URL || '');
   const pool = mysql.createPool({ host: required('COKE_GROK_MYSQL_HOST'), port: mysqlPort, user: required('COKE_GROK_MYSQL_USER'), database: required('COKE_GROK_MYSQL_DATABASE'), password, timezone: 'Z', connectionLimit: 10 });
   const store = new TenantStore(pool);
-  try { await store.migrate(); await store.pruneExpiredAuth(); }
+  const bots = new BotStore(pool);
+  try { await store.migrate(); await bots.migrate(); await store.pruneExpiredAuth(); }
   catch (error) { await pool.end(); throw error; }
   const cleanup = setInterval(() => { void store.pruneExpiredAuth().catch(() => console.error('Expired auth cleanup failed.')); }, 60 * 60 * 1000);
   cleanup.unref();
-  const server = createAuthServer(new GoogleAuthService(store, provider, origin), origin, staticDirectory);
+  const server = createAuthServer(new GoogleAuthService(store, provider, origin), origin, staticDirectory, bots);
   server.listen(port, process.env.COKE_GROK_AUTH_HOST || '127.0.0.1', () => console.log(`Auth service listening on port ${port}`));
   for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => { clearInterval(cleanup); server.close(() => { void pool.end(); }); });
 }

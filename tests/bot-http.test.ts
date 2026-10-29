@@ -1,0 +1,39 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createHash, randomUUID, randomBytes } from 'node:crypto';
+import { once } from 'node:events';
+import mysql from 'mysql2/promise';
+import { TenantStore } from '../src/server/tenant-store.ts';
+import { BotStore } from '../src/server/bot-store.ts';
+import { GoogleAuthService, type IdentityProvider } from '../src/server/google-auth.ts';
+import { createAuthServer } from '../src/server/auth-http.ts';
+
+const port = Number(process.env.COKE_GROK_TEST_MYSQL_PORT);
+if (!port) throw new Error('Set COKE_GROK_TEST_MYSQL_PORT to a disposable local MySQL instance.');
+test('bot API uses session ownership and enforces origin for writes', async () => {
+  const database = `grok_http_${randomUUID().replaceAll('-', '')}`;
+  const admin = await mysql.createConnection({ host:'127.0.0.1', port, user:'root' });
+  await admin.query(`CREATE DATABASE \`${database}\``);
+  const pool = mysql.createPool({host:'127.0.0.1',port,user:'root',database,timezone:'Z'});
+  const net = await import('node:net'); const reservation = net.createServer(); reservation.listen(0,'127.0.0.1'); await once(reservation,'listening');
+  const httpPort = (reservation.address() as import('node:net').AddressInfo).port; await new Promise<void>(resolve => reservation.close(() => resolve()));
+  const origin = `http://127.0.0.1:${httpPort}`, base = origin + '/grok-bot';
+  const identities = new TenantStore(pool), bots = new BotStore(pool); await identities.migrate(); await bots.migrate();
+  const provider: IdentityProvider = { authorizationUrl: () => '', exchange: async () => ({}) };
+  const server = createAuthServer(new GoogleAuthService(identities, provider, base), base, undefined, bots); server.listen(httpPort,'127.0.0.1'); await once(server,'listening');
+  const createSession = async (subject: string) => { const identity = await identities.signInGoogle({subject,email:`${subject}@example.test`,name:subject}); const token = randomBytes(32).toString('base64url'); await identities.createSession(createHash('sha256').update(token).digest('hex'), identity.userId, identity.tenantId, new Date(Date.now()+60000)); return `coke_grok_session=${token}`; };
+  try {
+    const a = await createSession('alice'), b = await createSession('bob');
+    const request = (path: string, cookie = '', options: RequestInit = {}) => fetch(base + path, { ...options, headers: { cookie, ...(options.headers || {}) } });
+    assert.equal((await request('/api/bots')).status, 401);
+    const body = JSON.stringify({name:'Maya',color:'#ffaabb',shape:'hex'});
+    assert.equal((await request('/api/bots',a,{method:'POST',headers:{origin:'https://evil.example','content-type':'application/json'},body})).status,403);
+    const created = await request('/api/bots',a,{method:'POST',headers:{origin,'content-type':'application/json'},body}); assert.equal(created.status,201);
+    const {bot} = await created.json() as {bot:{id:string}};
+    assert.equal((await request(`/api/bots/${bot.id}`,b,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({name:'Stolen'})})).status,404);
+    assert.deepEqual((await (await request('/api/bots',b)).json() as {bots:unknown[]}).bots,[]);
+    assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({name:'Updated'})})).status,200);
+    assert.equal((await (await request('/api/bots',a)).json() as {bots:{name:string}[]}).bots[0].name,'Updated');
+    assert.equal((await request('/api/bots',a,{method:'POST',headers:{origin,'content-type':'application/json'},body:'{}'})).status,400);
+  } finally { await new Promise<void>(resolve=>server.close(()=>resolve())); await pool.end(); await admin.query(`DROP DATABASE \`${database}\``); await admin.end(); }
+});

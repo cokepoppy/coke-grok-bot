@@ -99,9 +99,12 @@ export class GoogleAuthService {
     } catch { redirect(res, `${this.baseUrl}/?authError=sign_in_failed`); }
   }
   async me(req: IncomingMessage, res: ServerResponse) {
-    const value = cookies(req.headers.cookie || '')[sessionCookie] || '';
-    const session = /^[A-Za-z0-9_-]{43}$/.test(value) ? await this.store.getSession(hash(value)) : null;
+    const session = await this.session(req);
     return json(res, session ? 200 : 401, session || { error: 'Unauthenticated' });
+  }
+  async session(req: IncomingMessage) {
+    const value = cookies(req.headers.cookie || '')[sessionCookie] || '';
+    return /^[A-Za-z0-9_-]{43}$/.test(value) ? await this.store.getSession(hash(value)) : null;
   }
   async logout(req: IncomingMessage, res: ServerResponse) {
     if (req.headers.origin !== this.origin) return json(res, 403, { error: 'Invalid origin' });
