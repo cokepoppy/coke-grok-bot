@@ -33,6 +33,7 @@
     "test:network-policy-k3d": "node --import tsx tests/network-policy-k3d.e2e.ts",
     "test:guarded-desktop-k3d": "node --import tsx tests/guarded-desktop-k3d.e2e.ts",
     "test:guarded-approval-k3d": "node --import tsx tests/guarded-approval-k3d.e2e.ts",
+    "test:split-desktop-k3d": "node --import tsx tests/split-desktop-k3d.e2e.ts",
     "test:pi-pipeline-k3d": "node --import tsx tests/pi-pipeline-k3d.e2e.ts",
     "build:deployment": "npm run build && node scripts/mark-web-build.mjs && npm run build:server"
   },
