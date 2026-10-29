@@ -10,7 +10,9 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
   return createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     if (req.headers.host !== origin.host) { res.writeHead(400); return res.end(); }
-    const url = new URL(req.url || '/', origin.origin);
+    let url: URL;
+    try { url = new URL(req.url || '/', origin.origin); }
+    catch { res.writeHead(400, { 'Cache-Control': 'no-store' }); return res.end(); }
     try {
       if (req.method === 'GET' && url.pathname === `${origin.prefix}/api/auth/ready`) { await auth.ready(); res.writeHead(204, { 'Cache-Control': 'no-store' }); return res.end(); }
       if (req.method === 'GET' && url.pathname === `${origin.prefix}/api/auth/google/start`) return await auth.begin(res);

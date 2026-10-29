@@ -46,6 +46,12 @@ test('HTTP OAuth flow binds state, PKCE and nonce, isolates tenants and revokes 
     return fetchPath(`/auth/google/callback?state=${flow.state}&code=${code}`, { headers: { cookie: flow.cookie } });
   };
   try {
+    const http = await import('node:http');
+    const malformed = await new Promise<number>((resolve, reject) => {
+      const request = http.request({ hostname: '127.0.0.1', port: httpPort, path: 'http://[invalid', headers: { host: `127.0.0.1:${httpPort}` } }, response => { response.resume(); resolve(response.statusCode!); });
+      request.on('error', reject); request.end();
+    });
+    assert.equal(malformed, 400);
     assert.equal((await fetchPath('/api/auth/ready')).status, 204);
     assert.equal((await fetchPath('/api/auth/me')).status, 401);
     const cancelled = await start();
