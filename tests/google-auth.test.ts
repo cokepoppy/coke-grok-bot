@@ -48,6 +48,10 @@ test('HTTP OAuth flow binds state, PKCE and nonce, isolates tenants and revokes 
   try {
     assert.equal((await fetchPath('/api/auth/ready')).status, 204);
     assert.equal((await fetchPath('/api/auth/me')).status, 401);
+    const cancelled = await start();
+    const cancelResponse = await fetchPath(`/auth/google/callback?state=${cancelled.state}&error=access_denied`, { headers: { cookie: cancelled.cookie } });
+    assert.match(cancelResponse.headers.get('location')!, /authError=cancelled/);
+    assert.match((await finish(cancelled, 'alice')).headers.get('location')!, /authError=cancelled/);
     const invalid = await start();
     const bad = await fetchPath(`/auth/google/callback?state=${invalid.state}&code=a`, { headers: { cookie: 'coke_grok_oauth_state=wrong' } });
     assert.match(bad.headers.get('location')!, /authError=invalid/);
