@@ -23,6 +23,8 @@
     "test:model-gateway": "node --import tsx --test tests/model-gateway.test.ts",
     "test:run-store": "node --import tsx --test tests/run-store.test.ts",
     "test:pi-k3d": "node --import tsx tests/pi-k3d-gateway.e2e.ts",
+    "test:desktop-k3d": "node --import tsx tests/desktop-k3d.e2e.ts",
+    "test:desktop-resources": "node --import tsx --test tests/desktop-resources.test.ts",
     "build:deployment": "npm run build && node scripts/mark-web-build.mjs && npm run build:server"
   },
   "dependencies": {

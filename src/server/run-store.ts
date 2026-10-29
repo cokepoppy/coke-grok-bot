@@ -13,6 +13,7 @@ export class RunStore {
   async migrate(): Promise<void> {
     await this.pool.execute(`CREATE TABLE IF NOT EXISTS agent_runs (
       id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+      sequence BIGINT UNSIGNED NOT NULL AUTO_INCREMENT UNIQUE,
       bot_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
       request_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
       prompt TEXT NOT NULL,
@@ -23,8 +24,8 @@ export class RunStore {
       created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
       updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
       UNIQUE KEY request_dedup (bot_id, request_id),
-      KEY queue_order (status, created_at, id),
-      KEY bot_runs (bot_id, created_at, id),
+      KEY queue_order (status, sequence),
+      KEY bot_runs (bot_id, sequence),
       FOREIGN KEY (bot_id) REFERENCES bots(id)
     ) ENGINE=InnoDB`);
     await this.pool.execute(`CREATE TABLE IF NOT EXISTS agent_run_events (
@@ -57,7 +58,7 @@ export class RunStore {
   async list(session: Session, botId: string): Promise<AgentRun[] | null> {
     const [owned] = await this.pool.execute<RowDataPacket[]>('SELECT id FROM bots WHERE id=? AND tenant_id=? AND owner_id=?',[botId,session.tenantId,session.userId]);
     if (!owned.length) return null;
-    const [rows] = await this.pool.execute<RowDataPacket[]>('SELECT id,bot_id AS botId,prompt,status,result FROM agent_runs WHERE bot_id=? ORDER BY created_at,id',[botId]);
+    const [rows] = await this.pool.execute<RowDataPacket[]>('SELECT id,bot_id AS botId,prompt,status,result FROM agent_runs WHERE bot_id=? ORDER BY sequence',[botId]);
     return rows as AgentRun[];
   }
   /** A personal computer has at most one running or unresolved run across its Bots. */
@@ -68,7 +69,7 @@ export class RunStore {
       if (!membership.length) return null;
       const [active] = await connection.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND r.status IN ('running','unknown') LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
       if (active.length) return null;
-      const [rows] = await connection.execute<RowDataPacket[]>(`SELECT r.id,r.bot_id AS botId,r.prompt,r.status,r.result FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND r.status='queued' ORDER BY r.created_at,r.id LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
+      const [rows] = await connection.execute<RowDataPacket[]>(`SELECT r.id,r.bot_id AS botId,r.prompt,r.status,r.result FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND r.status='queued' ORDER BY r.sequence LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
       if (!rows.length) return null;
       const run = rows[0] as AgentRun, leaseId = randomUUID();
       await connection.execute(`UPDATE agent_runs SET status='running',lease_id=?,lease_until=DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? SECOND) WHERE id=?`,[leaseId,leaseSeconds,run.id]);

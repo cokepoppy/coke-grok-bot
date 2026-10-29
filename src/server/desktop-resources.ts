@@ -45,7 +45,7 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
           volumeMounts:[{name:'workspace',mountPath:'/workspace'},{name:'shm',mountPath:'/dev/shm'},{name:'desktop-tmp',mountPath:'/tmp'}]},
         {name:'agent',image:options.image,imagePullPolicy:'Never',command:['/bin/sh','-c','umask 0002; mkdir -p /tmp/agent-home; exec node /opt/coke-grok/agent-runtime.mjs'],
           env:[secretEnv('LINUX_DESKTOP_WORKER_TOKEN','worker'),secretEnv('DOTS_AGENT_RUNTIME_TOKEN','agent'),{name:'HOME',value:'/tmp/agent-home'},{name:'NODE_EXTRA_CA_CERTS',value:'/run/model-ca/ca.pem'},
-            {name:'DOTS_DESKTOP_AGENT_ADAPTERS',value:'pi'},{name:'DOTS_AGENT_KERNELS_JSON',value:JSON.stringify({pi:{command:'node',args:['/opt/coke-dots/cloud-kernel-adapter.mjs']}})}],
+            {name:'DOTS_DESKTOP_AGENT_ADAPTERS',value:'pi'},{name:'DOTS_AGENT_KERNELS_JSON',value:JSON.stringify({pi:{command:'node',args:['/opt/coke-dots/grok-kernel-adapter.mjs']}})}],
           securityContext:security(1001,true),resources:{requests:{cpu:'50m',memory:'128Mi'},limits:{cpu:'1',memory:'1Gi'}},ports:[{name:'agent',containerPort:8083}],
           readinessProbe:{httpGet:{path:'/healthz',port:8083},periodSeconds:5,timeoutSeconds:2},
           volumeMounts:[{name:'workspace',mountPath:'/workspace'},{name:'agent-tmp',mountPath:'/tmp'},{name:'model-ca',mountPath:'/run/model-ca',readOnly:true}]},
