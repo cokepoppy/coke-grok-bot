@@ -5,7 +5,9 @@ import type { Session } from './tenant-store.ts';
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'unknown';
 export interface AgentRun { id: string; botId: string; prompt: string; status: RunStatus; result: string | null }
+export type RunOwner = Pick<Session, 'tenantId' | 'userId'>;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export class RunRequestConflict extends Error {}
 
 /** Persistent run queue. An expired lease is unknown, never automatically retried. */
 export class RunStore {
@@ -46,7 +48,7 @@ export class RunStore {
       if (!owned.length) return null;
       const [existing] = await connection.execute<RowDataPacket[]>('SELECT id, bot_id AS botId, prompt, status, result FROM agent_runs WHERE bot_id=? AND request_id=?', [botId,requestId]);
       if (existing.length) {
-        if (existing[0].prompt !== clean) throw new Error('Request ID already used with a different prompt');
+        if (existing[0].prompt !== clean) throw new RunRequestConflict('Request ID already used with a different prompt');
         return existing[0] as AgentRun;
       }
       const run: AgentRun = { id:randomUUID(), botId, prompt:clean, status:'queued', result:null };
@@ -60,6 +62,16 @@ export class RunStore {
     if (!owned.length) return null;
     const [rows] = await this.pool.execute<RowDataPacket[]>('SELECT id,bot_id AS botId,prompt,status,result FROM agent_runs WHERE bot_id=? ORDER BY sequence',[botId]);
     return rows as AgentRun[];
+  }
+  async queuedOwners(limit: number): Promise<RunOwner[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Invalid owner limit');
+    const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT b.tenant_id AS tenantId, b.owner_id AS userId, MIN(r.sequence) AS firstRun
+      FROM agent_runs r JOIN bots b ON b.id=r.bot_id
+      WHERE r.status='queued' AND NOT EXISTS (
+        SELECT 1 FROM agent_runs active JOIN bots owner_bot ON owner_bot.id=active.bot_id
+        WHERE owner_bot.tenant_id=b.tenant_id AND owner_bot.owner_id=b.owner_id AND active.status IN ('running','unknown')
+      ) GROUP BY b.tenant_id,b.owner_id ORDER BY firstRun LIMIT ?`, [limit]);
+    return rows.map(row => ({tenantId:String(row.tenantId),userId:String(row.userId)}));
   }
   /** A personal computer has at most one running or unresolved run across its Bots. */
   async claimNext(session: Pick<Session,'tenantId'|'userId'>, leaseSeconds: number): Promise<{ run: AgentRun; leaseId: string } | null> {
@@ -83,6 +95,20 @@ export class RunStore {
       const [updated] = await connection.execute<ResultSetHeader>(`UPDATE agent_runs SET status=?,result=?,lease_id=NULL,lease_until=NULL WHERE id=? AND lease_id=? AND status='running' AND lease_until>UTC_TIMESTAMP(3)`,[status,result,runId,leaseId]);
       if (!updated.affectedRows) return false;
       await connection.execute('INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,?,?)',[runId,status,result]);
+      return true;
+    });
+  }
+  async renew(runId: string, leaseId: string, leaseSeconds: number): Promise<boolean> {
+    if (!uuid.test(runId) || !uuid.test(leaseId) || !Number.isSafeInteger(leaseSeconds) || leaseSeconds < 1 || leaseSeconds > 900) throw new Error('Invalid lease');
+    const [updated] = await this.pool.execute<ResultSetHeader>(`UPDATE agent_runs SET lease_until=DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? SECOND) WHERE id=? AND lease_id=? AND status='running' AND lease_until>UTC_TIMESTAMP(3)`,[leaseSeconds,runId,leaseId]);
+    return updated.affectedRows === 1;
+  }
+  async markUnknown(runId: string, leaseId: string): Promise<boolean> {
+    if (!uuid.test(runId) || !uuid.test(leaseId)) throw new Error('Invalid lease');
+    return this.transaction(async connection => {
+      const [updated] = await connection.execute<ResultSetHeader>(`UPDATE agent_runs SET status='unknown',lease_id=NULL,lease_until=NULL WHERE id=? AND lease_id=? AND status='running'`,[runId,leaseId]);
+      if (!updated.affectedRows) return false;
+      await connection.execute(`INSERT INTO agent_run_events (run_id,status) VALUES (?,'unknown')`,[runId]);
       return true;
     });
   }

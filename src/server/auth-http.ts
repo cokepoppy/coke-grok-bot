@@ -3,10 +3,11 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { GoogleAuthService } from './google-auth.ts';
 import type { BotStore, BotShape } from './bot-store.ts';
+import { RunRequestConflict, type RunStore } from './run-store.ts';
 import { parsePublicUrl } from './public-url.ts';
 
 // Mount only behind a trusted proxy that preserves the configured Host.
-export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore) {
+export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore) {
   const origin = parsePublicUrl(publicOrigin);
   return createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -23,6 +24,34 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
       const botPath = `${origin.prefix}/api/bots`;
       const botMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})$`));
       const messageMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/messages$`));
+      const runMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/runs$`));
+      const runEventsMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/runs/([0-9a-f-]{36})/events$`));
+      if (runs && (runMatch || runEventsMatch)) {
+        const reply = (status:number, value:unknown) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(value)); };
+        const session = await auth.session(req);
+        if (!session) return reply(401,{error:'Unauthenticated'});
+        if (req.method === 'GET' && runEventsMatch) {
+          const events=await runs.events(session,runEventsMatch[1]);
+          return events ? reply(200,{events}) : reply(404,{error:'Not found'});
+        }
+        if (req.method === 'GET' && runMatch) {
+          const list=await runs.list(session,runMatch[1]);
+          return list ? reply(200,{runs:list}) : reply(404,{error:'Not found'});
+        }
+        if (req.method !== 'POST' || !runMatch) return reply(405,{error:'Method not allowed'});
+        if (req.headers.origin !== origin.origin) return reply(403,{error:'Invalid origin'});
+        if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) return reply(415,{error:'Expected JSON'});
+        let size=0; const chunks:Buffer[]=[];
+        for await(const chunk of req) { size+=chunk.length; if(size>45000)return reply(413,{error:'Request too large'}); chunks.push(chunk); }
+        let body:unknown; try { body=JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return reply(400,{error:'Invalid JSON'}); }
+        if(!body || typeof body!=='object' || Array.isArray(body)) return reply(400,{error:'Invalid run'});
+        const {requestId,prompt}=body as {requestId?:unknown;prompt?:unknown};
+        if(typeof requestId!=='string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId) || typeof prompt!=='string' || !prompt.trim() || prompt.trim().length>10000) return reply(400,{error:'Invalid run'});
+        try {
+          const run=await runs.create(session,runMatch[1],requestId,prompt);
+          return run ? reply(200,{run}) : reply(404,{error:'Not found'});
+        } catch(error) { if(error instanceof RunRequestConflict) return reply(409,{error:'Request ID already used'}); throw error; }
+      }
       if (bots && messageMatch) {
         const reply = (status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
         const session = await auth.session(req);
