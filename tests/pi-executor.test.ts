@@ -24,7 +24,7 @@ test('Pi dispatch is once, scoped to owner and revokes its capability after comp
  };
  try{
   const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',request);
-  const result=await executor.execute(owner,run,new AbortController().signal);
+  const result=await executor.execute(owner,run,new AbortController().signal,randomUUID());
   assert.equal(calls,1);assert.equal(result.status,'completed');assert.equal(result.result,'finished [redacted] [redacted]');
   const after=await fetch(`http://127.0.0.1:${address.port}/v1/chat/completions`,{method:'POST',headers:{authorization:`Bearer ${issued}`,'content-type':'application/json'},body:JSON.stringify({model:'model',messages:[{role:'user',content:'hi'}]})});
   assert.equal(after.status,401);
@@ -34,10 +34,10 @@ test('Pi dispatch is once, scoped to owner and revokes its capability after comp
 test('Pi dispatch fails closed for wrong owner, transport error or interrupted desktop',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const wrong=new PiExecutor({connect:async()=>({agentUrl:new URL('http://other.svc.cluster.local:8083/'),agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>{throw new Error('must not dispatch')});
- await assert.rejects(wrong.execute(owner,run,new AbortController().signal));
+ await assert.rejects(wrong.execute(owner,run,new AbortController().signal,randomUUID()));
  let calls=0;
  const interrupted=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>{calls++;return Response.json({status:'waiting',pausedForControl:true,message:'paused'})});
- await assert.rejects(interrupted.execute(owner,run,new AbortController().signal));assert.equal(calls,1);
+ await assert.rejects(interrupted.execute(owner,run,new AbortController().signal,randomUUID()));assert.equal(calls,1);
  const transport=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>{calls++;throw new Error('unconfirmed')});
- await assert.rejects(transport.execute(owner,run,new AbortController().signal));assert.equal(calls,2);gateway.close();
+ await assert.rejects(transport.execute(owner,run,new AbortController().signal,randomUUID()));assert.equal(calls,2);gateway.close();
 });

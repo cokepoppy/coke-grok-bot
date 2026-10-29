@@ -9,7 +9,7 @@ export interface SchedulerStore {
   markUnknown(runId:string, leaseId:string): Promise<boolean>;
 }
 export type ExecutionResult = {status:'completed'|'failed';result:string};
-export interface RunExecutor { execute(owner:RunOwner,run:AgentRun,signal:AbortSignal):Promise<ExecutionResult> }
+export interface RunExecutor { execute(owner:RunOwner,run:AgentRun,signal:AbortSignal,leaseId:string):Promise<ExecutionResult> }
 
 /**
  * One process may run multiple computers concurrently; each computer is locked
@@ -56,7 +56,7 @@ export class RunScheduler {
     }, Math.max(1000, Math.floor(this.options.leaseSeconds * 1000 / 3)));
     timer.unref();
     try {
-      const outcome = await this.executor.execute(owner,claim.run,abort.signal);
+      const outcome = await this.executor.execute(owner,claim.run,abort.signal,claim.leaseId);
       if (leaseLost || abort.signal.aborted) { await this.store.markUnknown(claim.run.id,claim.leaseId); return; }
       if (!outcome || !['completed','failed'].includes(outcome.status) || typeof outcome.result !== 'string' || !outcome.result.trim() || outcome.result.length > 20000) throw new Error('Invalid executor result');
       const saved = await this.store.finish(claim.run.id,claim.leaseId,outcome.status,outcome.result);

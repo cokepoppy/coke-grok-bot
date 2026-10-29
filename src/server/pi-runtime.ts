@@ -35,11 +35,11 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  const certificate=new X509Certificate(cert);
  if(!certificate.checkHost(gatewayHost) || !certificate.checkPrivateKey(createPrivateKey(tlsKey)) || Date.parse(certificate.validFrom)>Date.now() || Date.parse(certificate.validTo)<=Date.now())throw new Error('Gateway TLS certificate is invalid for its service');
  const gatewayUrl=`https://${gatewayHost}:3002/v1`;
- const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'));
  const kube=new DesktopKubernetesClient(required(env,'COKE_GROK_KUBE_URL'),kubeCa,async()=>(await readFile(kubeTokenFile,'utf8')).trim());
  const provisioner=new DesktopProvisioner(kube,signingKey,{image:required(env,'COKE_GROK_DESKTOP_IMAGE'),controlNamespace:namespace,gatewayCA:cert.toString('utf8')});
  const runs=new RunStore(pool);await runs.migrate();
  const approvals=new ApprovalStore(pool);await approvals.migrate();
+ const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals);
  const scheduler=new RunScheduler(runs,new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID')),{concurrency:2,leaseSeconds:30});
  const server=gateway.createServer({key:tlsKey,cert});
  try{server.listen(3002,'0.0.0.0');await once(server,'listening')}catch(error){gateway.close();server.close();throw error}

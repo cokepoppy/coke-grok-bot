@@ -56,5 +56,11 @@ export class ApprovalStore {
   const [result]=await this.pool.execute<ResultSetHeader>(`UPDATE run_approvals a JOIN agent_runs r ON r.id=a.run_id SET a.status='consumed',a.consumed_at=UTC_TIMESTAMP(3) WHERE a.id=? AND a.run_id=? AND a.action_hash=? AND a.status='approved' AND a.expires_at>UTC_TIMESTAMP(3) AND r.status='running' AND r.lease_id=? AND r.lease_until>UTC_TIMESTAMP(3)`,[id,runId,hash,leaseId]);
   return result.affectedRows===1;
  }
+ async status(runId:string,leaseId:string,id:string):Promise<Approval['status']|null>{
+  if(!uuid.test(runId)||!uuid.test(leaseId)||!uuid.test(id))throw new Error('Invalid approval identity');
+  const [rows]=await this.pool.execute<RowDataPacket[]>(`SELECT CASE WHEN a.status IN ('pending','approved') AND a.expires_at<=UTC_TIMESTAMP(3) THEN 'expired' ELSE a.status END AS status
+   FROM run_approvals a JOIN agent_runs r ON r.id=a.run_id WHERE a.id=? AND a.run_id=? AND r.lease_id=? AND r.status='running' AND r.lease_until>UTC_TIMESTAMP(3)`,[id,runId,leaseId]);
+  return rows.length ? rows[0].status as Approval['status'] : null;
+ }
  private async transaction<T>(fn:(c:PoolConnection)=>Promise<T>):Promise<T>{const c=await this.pool.getConnection();try{await c.beginTransaction();const result=await fn(c);await c.commit();return result}catch(error){await c.rollback();throw error}finally{c.release()}}
 }
