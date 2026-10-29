@@ -22,6 +22,28 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
       if (req.method === 'POST' && url.pathname === `${origin.prefix}/api/auth/logout`) return await auth.logout(req, res);
       const botPath = `${origin.prefix}/api/bots`;
       const botMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})$`));
+      const messageMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/messages$`));
+      if (bots && messageMatch) {
+        const reply = (status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
+        const session = await auth.session(req);
+        if (!session) return reply(401, { error: 'Unauthenticated' });
+        if (req.method === 'GET') {
+          const messages = await bots.messages(session, messageMatch[1]);
+          return messages ? reply(200, { messages }) : reply(404, { error: 'Not found' });
+        }
+        if (req.method !== 'POST') return reply(405, { error: 'Method not allowed' });
+        if (req.headers.origin !== origin.origin) return reply(403, { error: 'Invalid origin' });
+        if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) return reply(415, { error: 'Expected JSON' });
+        let size = 0; const chunks: Buffer[] = [];
+        for await (const chunk of req) { size += chunk.length; if (size > 45000) return reply(413, { error: 'Request too large' }); chunks.push(chunk); }
+        let body: unknown;
+        try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return reply(400, { error: 'Invalid JSON' }); }
+        if (!body || typeof body !== 'object' || Array.isArray(body) || typeof (body as { text?: unknown }).text !== 'string') return reply(400, { error: 'Invalid message' });
+        const text = (body as { text: string }).text.trim();
+        if (!text || text.length > 10000) return reply(400, { error: 'Invalid message' });
+        const message = await bots.addMessage(session, messageMatch[1], text);
+        return message ? reply(201, { message }) : reply(404, { error: 'Not found' });
+      }
       if (bots && (url.pathname === botPath || botMatch)) {
         const reply = (status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
         const session = await auth.session(req);

@@ -24,6 +24,12 @@ test('personal bots persist and are scoped to tenant and owner', async () => {
     assert.equal(await store.rename(session(b), bot.id, 'Intruder'), false);
     assert.equal(await store.rename(session(a), bot.id, 'Renamed'), true);
     assert.equal((await store.list(session(a)))[0].name, 'Renamed');
+    const message = await store.addMessage(session(a), bot.id, ' A private note ');
+    assert.equal(message?.text, 'A private note');
+    assert.deepEqual(await store.messages(session(a), bot.id), [message]);
+    assert.equal(await store.messages(session(b), bot.id), null);
+    assert.equal(await store.addMessage(session(b), bot.id, 'Intrusion'), null);
+    await assert.rejects(store.addMessage(session(a), bot.id, ' '.repeat(3)));
     await assert.rejects(store.create(session(a), { name: '', color: '#abc123', shape: 'hex' }));
     await assert.rejects(store.create(session(a), { name: 'X', color: 'red', shape: 'hex' }));
     await assert.rejects(store.create(session({ userId: a.userId, tenantId: b.tenantId }), { name: 'X', color: '#abc123', shape: 'hex' }));

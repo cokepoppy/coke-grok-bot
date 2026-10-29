@@ -4,6 +4,7 @@ import type { Session } from './tenant-store.ts';
 
 export type BotShape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle';
 export interface StoredBot { id: string; name: string; label: string; color: string; shape: BotShape; group: string }
+export interface StoredMessage { id: string; role: 'user'; text: string }
 const shapes = new Set<BotShape>(['cloud', 'drop', 'hex', 'round', 'triangle']);
 
 export class BotStore {
@@ -19,6 +20,30 @@ export class BotStore {
       KEY owner_bots (tenant_id, owner_id, created_at, id),
       FOREIGN KEY (tenant_id, owner_id) REFERENCES memberships(tenant_id, user_id)
     ) ENGINE=InnoDB`);
+    await this.pool.execute(`CREATE TABLE IF NOT EXISTS bot_messages (
+      id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+      bot_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+      sequence BIGINT UNSIGNED NOT NULL AUTO_INCREMENT UNIQUE,
+      message_text TEXT NOT NULL,
+      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      KEY bot_history (bot_id, sequence),
+      FOREIGN KEY (bot_id) REFERENCES bots(id)
+    ) ENGINE=InnoDB`);
+  }
+  async messages(session: Session, botId: string): Promise<StoredMessage[] | null> {
+    const [owners] = await this.pool.execute<RowDataPacket[]>('SELECT id FROM bots WHERE id=? AND tenant_id=? AND owner_id=?', [botId, session.tenantId, session.userId]);
+    if (!owners.length) return null;
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT id, 'user' AS role, message_text AS text FROM bot_messages WHERE bot_id=? ORDER BY sequence", [botId]);
+    return rows as StoredMessage[];
+  }
+  async addMessage(session: Session, botId: string, text: string): Promise<StoredMessage | null> {
+    const clean = text.trim();
+    if (!clean || clean.length > 10000) throw new Error('Invalid message');
+    const message: StoredMessage = { id: randomUUID(), role: 'user', text: clean };
+    const [result] = await this.pool.execute<import('mysql2').ResultSetHeader>(
+      'INSERT INTO bot_messages (id, bot_id, message_text) SELECT ?, id, ? FROM bots WHERE id=? AND tenant_id=? AND owner_id=?',
+      [message.id, clean, botId, session.tenantId, session.userId]);
+    return result.affectedRows ? message : null;
   }
   async list(session: Session): Promise<StoredBot[]> {
     const [rows] = await this.pool.execute<RowDataPacket[]>(

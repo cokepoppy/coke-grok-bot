@@ -34,6 +34,14 @@ test('bot API uses session ownership and enforces origin for writes', async () =
     assert.deepEqual((await (await request('/api/bots',b)).json() as {bots:unknown[]}).bots,[]);
     assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({name:'Updated'})})).status,200);
     assert.equal((await (await request('/api/bots',a)).json() as {bots:{name:string}[]}).bots[0].name,'Updated');
+    const messagesPath = `/api/bots/${bot.id}/messages`;
+    const messageBody = JSON.stringify({text:'Private message'});
+    assert.equal((await request(messagesPath)).status,401);
+    assert.equal((await request(messagesPath,b)).status,404);
+    assert.equal((await request(messagesPath,b,{method:'POST',headers:{origin,'content-type':'application/json'},body:messageBody})).status,404);
+    assert.equal((await request(messagesPath,a,{method:'POST',headers:{origin:'https://evil.example','content-type':'application/json'},body:messageBody})).status,403);
+    assert.equal((await request(messagesPath,a,{method:'POST',headers:{origin,'content-type':'application/json'},body:messageBody})).status,201);
+    assert.equal((await (await request(messagesPath,a)).json() as {messages:{text:string}[]}).messages[0].text,'Private message');
     assert.equal((await request('/api/bots',a,{method:'POST',headers:{origin,'content-type':'application/json'},body:'{}'})).status,400);
   } finally { await new Promise<void>(resolve=>server.close(()=>resolve())); await pool.end(); await admin.query(`DROP DATABASE \`${database}\``); await admin.end(); }
 });

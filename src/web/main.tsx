@@ -86,7 +86,7 @@ type Account = { userId: string; tenantId: string; email: string; name: string; 
 function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () => void }) {
   const reference = new URLSearchParams(window.location.search).get('reference') === '101-new-bot';
   const remote = Boolean(account) && !reference;
-  const storageKey = account ? `${STORAGE_KEY}:${account.tenantId}:${account.userId}${remote ? ':server-bots-v1' : ''}` : STORAGE_KEY;
+  const storageKey = account ? `${STORAGE_KEY}:${account.tenantId}:${account.userId}${remote ? ':server-chat-v1' : ''}` : STORAGE_KEY;
   const [state, setState] = useState<PreviewState>(() => reference ? initialState(true) : safeStoredState(storageKey) || initialState(false));
   const [botStatus, setBotStatus] = useState<'loading' | 'ready' | 'error'>(remote ? 'loading' : 'ready');
   const [botError, setBotError] = useState('');
@@ -99,17 +99,21 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [draft, setDraft] = useState('');
   const [customAnswer, setCustomAnswer] = useState('');
   const [notice, setNotice] = useState(false);
+  const [history, setHistory] = useState<{ id: string; status: 'loading' | 'ready' | 'error' }>({ id: '', status: 'loading' });
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const messagesEnd = useRef<HTMLDivElement>(null);
   const savedNames = useRef<Record<string, string>>({});
   const renameQueue = useRef<Record<string, Promise<void>>>({});
   const active = state.bots.find(bot => bot.id === state.activeId) || state.bots[0];
+  const activeIdRef = useRef(active?.id); activeIdRef.current = active?.id;
   const messages = active ? state.messages[active.id] || [] : [];
   const filtered = state.bots.filter(bot => `${bot.name} ${bot.label}`.toLowerCase().includes(query.toLowerCase()));
 
   useEffect(() => {
     if (reference) return;
-    try { localStorage.setItem(storageKey, JSON.stringify(state)); } catch { /* The preview still works in memory. */ }
-  }, [state, reference, storageKey]);
+    try { localStorage.setItem(storageKey, JSON.stringify(remote ? { ...state, messages: {}, showOnboarding: {} } : state)); } catch { /* The preview still works in memory. */ }
+  }, [state, reference, remote, storageKey]);
   useEffect(() => {
     if (!remote) return;
     const controller = new AbortController();
@@ -124,15 +128,30 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       }).catch(error => { if (error.name !== 'AbortError') setBotStatus('error'); });
     return () => controller.abort();
   }, [remote]);
+  useEffect(() => {
+    if (!remote || !active?.id) return;
+    const id = active.id, controller = new AbortController();
+    setHistory({ id, status: 'loading' });
+    fetch(`${import.meta.env.BASE_URL}api/bots/${id}/messages`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+      .then(async response => { if (!response.ok) throw new Error('history unavailable'); return response.json() as Promise<{ messages: Message[] }>; })
+      .then(({ messages }) => {
+        if (!Array.isArray(messages)) throw new Error('invalid history');
+        setState(current => ({ ...current, messages: { ...current.messages, [id]: messages } }));
+        setHistory({ id, status: 'ready' });
+      }).catch(error => { if (error.name !== 'AbortError') setHistory({ id, status: 'error' }); });
+    return () => controller.abort();
+  }, [remote, active?.id]);
   useEffect(() => { setDraft(''); setCustomAnswer(''); setNotice(false); }, [state.activeId]);
   useEffect(() => { if (messages.length > 1) messagesEnd.current?.scrollIntoView({ block: 'nearest' }); }, [messages.length]);
 
   function selectBot(id: string) {
+    if (sendingRef.current) return;
     setState(current => ({ ...current, activeId: id }));
     setNewChat(false);
     setPanel(false);
   }
   async function createBot() {
+    if (sendingRef.current) return;
     if (remote) {
       if (savingBot) return;
       setSavingBot(true); setBotError('');
@@ -156,10 +175,27 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     setNewChat(false);
     setPanel(false);
   }
-  function addMessage(text: string) {
+  async function addMessage(text: string) {
     if (!active) return;
     const clean = text.trim();
     if (!clean) return;
+    if (remote) {
+      const id = active.id;
+      if (sendingRef.current || history.id !== id || history.status !== 'ready') return;
+      if (clean.length > 10000) { setBotError('Message is too long.'); return; }
+      sendingRef.current = true; setSending(true); setBotError('');
+      try {
+        const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${id}/messages`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: clean }) });
+        if (!response.ok) throw new Error('save failed');
+        const { message } = await response.json() as { message: Message };
+        setState(current => ({ ...current, messages: { ...current.messages, [id]: [...(current.messages[id] || []), message] }, bots: current.bots.map(bot => bot.id === id ? { ...bot, preview: clean } : bot) }));
+        if (activeIdRef.current === id) { setDraft(''); setCustomAnswer(''); setNotice(true); }
+      } catch {
+        setHistory({ id, status: 'error' });
+        setBotError('Message save could not be confirmed. Refresh and check the history before trying again.');
+      } finally { sendingRef.current = false; setSending(false); }
+      return;
+    }
     setState(current => ({ ...current, messages: { ...current.messages, [active.id]: [...(current.messages[active.id] || []), { id: crypto.randomUUID(), role: 'user', text: clean }] }, bots: current.bots.map(bot => bot.id === active.id ? { ...bot, preview: clean } : bot), showOnboarding: { ...current.showOnboarding, [active.id]: false } }));
     setDraft(''); setCustomAnswer(''); setNotice(true);
   }
@@ -209,7 +245,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       <div className="sidebar-footer"><div className="account-dot">{account ? account.name.slice(0, 1).toUpperCase() : "M"}</div>{account && <button type="button" className="logout-button" onClick={onLogout}>Sign out</button>}<button type="button" className="connect-button" onClick={() => setNotice(true)}>Connect apps <span aria-hidden="true">◈◉▣</span></button></div>
     </aside>
     <main className="main-shell">
-      {!reference && <div className="preview-notice" role="status">{remote ? 'Bot 保存在服务器；聊天仅保存在当前浏览器，尚未连接云电脑或 Agent。原预览数据仍在本地，不会自动导入。' : '本地界面预览：数据仅保存在当前浏览器，尚未连接云电脑或 Agent。'}</div>}
+      {!reference && <div className="preview-notice" role="status">{remote ? 'Bot 和消息保存在服务器；尚未连接云电脑或 Agent。原预览数据仍在本地，不会自动导入。' : '本地界面预览：数据仅保存在当前浏览器，尚未连接云电脑或 Agent。'}</div>}
       {botError && <div role="alert">{botError}</div>}
       {newChat || !active ? <div className="new-chat-view">
         <div className="new-chat-head"><span>To: <span className="muted">Start a chat with...</span></span><IconButton name="close" label="Close new chat" onClick={() => setNewChat(false)} /></div>
@@ -220,6 +256,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         <div className={`workspace ${panel ? 'with-panel' : ''}`}>
           <section className="conversation" aria-label={`Chat with ${active.name}`}>
             <div className="message-scroll">
+              {remote && history.id === active.id && history.status === 'loading' && <div role="status">Loading messages…</div>}
+              {remote && history.id === active.id && history.status === 'error' && <div role="alert">Could not confirm message history. Refresh to check it.</div>}
               {messages.length > 0 && <div className="date-line">{reference ? 'Today 1:26 PM' : 'Today'}</div>}
               {messages.map(message => <div key={message.id} className={`message-line ${message.role}`}><div className="message-bubble">{message.text}</div>{message.role === 'bot' && <div className="message-actions"><Icon name="smile" /><Icon name="reply" /><Icon name="more" /></div>}</div>)}
               {state.showOnboarding[active.id] && <div className="onboarding-card">
@@ -229,10 +267,10 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
                 <div className="card-actions" aria-hidden="true"><Icon name="smile" /><Icon name="reply" /><Icon name="more" /></div>
               </div>}
               {!reference && !messages.length && <div className="empty-chat"><Avatar bot={active} size={52} /><p>Start a conversation with {active.name}.</p><small>This local preview does not connect to a model.</small></div>}
-              {notice && <div className="local-feedback" role="status">This is a local preview. No message was sent to an Agent or external service.</div>}
+              {notice && <div className="local-feedback" role="status">{remote ? 'No message was sent to an Agent.' : 'This is a local preview. No message was sent to an Agent or external service.'}</div>}
               <div ref={messagesEnd} />
             </div>
-            <form className="composer" onSubmit={event => { event.preventDefault(); addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() ? <button type="submit" className="send-button" aria-label="Save local message"><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
+            <form className="composer" onSubmit={event => { event.preventDefault(); void addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} disabled={remote && (sending || history.id !== active.id || history.status !== 'ready')} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() ? <button type="submit" className="send-button" disabled={remote && (sending || history.id !== active.id || history.status !== 'ready')} aria-label={remote ? 'Save message' : 'Save local message'}><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
           </section>
           {panel && <aside className="details-panel" aria-label="Bot details"><Avatar bot={active} size={86} /><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => void saveBotName()} /><span className="bot-label">{active.label || 'Add a label'}</span><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? <><div className="computer-preview"><Icon name="screen" /><span>Computer not connected</span></div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
         </div>

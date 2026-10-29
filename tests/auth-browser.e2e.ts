@@ -104,7 +104,7 @@ try {
   await page.unroute('**/api/bots/*');
   await page.getByRole('button', { name: 'Hide bot details' }).click();
   await page.getByLabel('Message Alice Bot').fill('Alice local note');
-  await page.getByRole('button', { name: 'Save local message' }).click();
+  await page.getByRole('button', { name: 'Save message' }).click();
   await page.reload();
   await page.getByLabel('Message Alice Bot').waitFor();
   await page.locator('.conversation').getByText('Alice local note').waitFor();
@@ -123,7 +123,7 @@ try {
   assert.equal(await page.locator('.conversation').getByText('Alice local note').count(), 0);
   await page.getByRole('button', { name: 'Create new Bot' }).click();
   await page.getByLabel('Message New Bot').fill('Bob local note');
-  await page.getByRole('button', { name: 'Save local message' }).click();
+  await page.getByRole('button', { name: 'Save message' }).click();
   await page.getByRole('button', { name: 'Sign out' }).click();
   identity = 'alice';
   await page.getByRole('link', { name: 'Continue with Google' }).click();
@@ -132,7 +132,7 @@ try {
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.getByLabel('Message Alice Bot').waitFor();
-  assert.equal(await page.locator('.conversation').getByText('Alice local note').count(), 0);
+  await page.locator('.conversation').getByText('Alice local note').waitFor();
   const sessionCookies = await context.cookies();
   assert.equal(sessionCookies.find(cookie => cookie.name === 'coke_grok_session')?.path, base);
   if (base !== '/') assert.equal((await fetch(`${origin}/api/auth/me`)).status, 404);
