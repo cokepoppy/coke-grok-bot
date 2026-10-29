@@ -5,5 +5,7 @@ RUN mkdir -p /opt/coke-grok
 COPY --chmod=0755 deploy/desktop/start-desktop.sh /usr/local/bin/start-grok-desktop
 COPY --chmod=0644 deploy/desktop/agent-runtime.mjs /opt/coke-grok/agent-runtime.mjs
 COPY --chmod=0644 deploy/desktop/cloud-kernel-adapter.mjs /opt/coke-dots/grok-kernel-adapter.mjs
+COPY --chmod=0644 deploy/desktop/computer-worker.mjs /opt/coke-dots/grok-computer-worker.mjs
+COPY --chmod=0644 deploy/desktop/guarded-computer.mjs /opt/coke-grok/guarded-computer.mjs
 USER 1000:1000
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/start-grok-desktop"]

@@ -83,7 +83,7 @@ restart_chromium() {
 }
 trap restart_chromium USR1
 start_chromium
-node /opt/coke-dots/computer-worker.mjs >/tmp/dots-worker.log 2>&1 &
+node /opt/coke-dots/grok-computer-worker.mjs >/tmp/dots-worker.log 2>&1 &
 worker_pid=$!
 
 while true; do

@@ -4,3 +4,5 @@
 !deploy/desktop/start-desktop.sh
 !deploy/desktop/agent-runtime.mjs
 !deploy/desktop/cloud-kernel-adapter.mjs
+!deploy/desktop/computer-worker.mjs
+!deploy/desktop/guarded-computer.mjs

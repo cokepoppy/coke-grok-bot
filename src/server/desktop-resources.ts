@@ -2,18 +2,18 @@ import { createHash, createHmac } from 'node:crypto';
 import type { Session } from './tenant-store.ts';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-export interface DesktopIdentity { namespace: string; ownerHash: string; workerToken: string; agentToken: string }
+export interface DesktopIdentity { namespace: string; ownerHash: string; workerToken: string; agentToken: string; controlToken: string }
 export function desktopIdentity(session: Pick<Session,'tenantId'|'userId'>, signingKey: Buffer): DesktopIdentity {
   if (!uuid.test(session.tenantId) || !uuid.test(session.userId) || signingKey.length < 32) throw new Error('Invalid desktop identity');
   const subject = `${session.tenantId.toLowerCase()}:${session.userId.toLowerCase()}`;
   const ownerHash = createHash('sha256').update(subject).digest('hex').slice(0,32);
   const token = (role: string) => createHmac('sha256',signingKey).update(`coke-grok-desktop:${role}:${subject}`).digest('base64url');
-  return { namespace:`grok-user-${ownerHash}`, ownerHash, workerToken:token('worker'), agentToken:token('agent') };
+  return { namespace:`grok-user-${ownerHash}`, ownerHash, workerToken:token('worker'), agentToken:token('agent'), controlToken:token('control') };
 }
 
 /** Resources are specific to one tenant/user pair. The caller must verify ownership on existing objects. */
-export function desktopResources(identity: DesktopIdentity, options: { image: string; controlNamespace: string; gatewayCA: string }): Record<string, unknown>[] {
-  if (!/^grok-user-[a-f0-9]{32}$/.test(identity.namespace) || !/^[a-f0-9]{32}$/.test(identity.ownerHash) || identity.namespace !== `grok-user-${identity.ownerHash}` || !/^[A-Za-z0-9_-]{43}$/.test(identity.workerToken) || !/^[A-Za-z0-9_-]{43}$/.test(identity.agentToken)) throw new Error('Invalid desktop identity');
+export function desktopResources(identity: DesktopIdentity, options: { image: string; controlNamespace: string; gatewayCA: string; guarded?:boolean }): Record<string, unknown>[] {
+  if (!/^grok-user-[a-f0-9]{32}$/.test(identity.namespace) || !/^[a-f0-9]{32}$/.test(identity.ownerHash) || identity.namespace !== `grok-user-${identity.ownerHash}` || !/^[A-Za-z0-9_-]{43}$/.test(identity.workerToken) || !/^[A-Za-z0-9_-]{43}$/.test(identity.agentToken) || !/^[A-Za-z0-9_-]{43}$/.test(identity.controlToken) || new Set([identity.workerToken,identity.agentToken,identity.controlToken]).size!==3) throw new Error('Invalid desktop identity');
   if (!/^coke-grok-desktop:sha-[a-f0-9]{40}$/.test(options.image) || !/^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/.test(options.controlNamespace) || !options.gatewayCA.includes('BEGIN CERTIFICATE') || options.gatewayCA.length > 16384) throw new Error('Invalid desktop configuration');
   const ns = identity.namespace, labels = { 'app.kubernetes.io/managed-by':'coke-grok-bot', 'coke-grok-bot.io/owner-hash':identity.ownerHash };
   const meta = (name:string) => ({name,namespace:ns,labels});
@@ -22,7 +22,7 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
   return [
     { apiVersion:'v1',kind:'Namespace',metadata:{name:ns,labels} },
     { apiVersion:'v1',kind:'PersistentVolumeClaim',metadata:meta('workspace'),spec:{accessModes:['ReadWriteOnce'],resources:{requests:{storage:'10Gi'}}} },
-    { apiVersion:'v1',kind:'Secret',metadata:meta('desktop-runtime'),type:'Opaque',stringData:{worker:identity.workerToken,agent:identity.agentToken} },
+    { apiVersion:'v1',kind:'Secret',metadata:meta('desktop-runtime'),type:'Opaque',stringData:{worker:identity.workerToken,agent:identity.agentToken,control:identity.controlToken} },
     { apiVersion:'v1',kind:'ConfigMap',metadata:meta('model-ca'),data:{'ca.pem':options.gatewayCA} },
     { apiVersion:'networking.k8s.io/v1',kind:'NetworkPolicy',metadata:meta('desktop-isolation'),spec:{
       podSelector:{matchLabels:{app:'grok-desktop'}},policyTypes:['Ingress','Egress'],
@@ -37,7 +37,7 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
       automountServiceAccountToken:false,securityContext:{runAsNonRoot:true,fsGroup:1000,seccompProfile:{type:'RuntimeDefault'}},
       containers:[
         {name:'desktop',image:options.image,imagePullPolicy:'Never',
-          env:[secretEnv('LINUX_DESKTOP_WORKER_TOKEN','worker'),secretEnv('DOTS_AGENT_RUNTIME_TOKEN','agent'),{name:'COKE_DESKTOP_VNC_AUTH_MODE',value:'gateway'},{name:'COKE_DESKTOP_RESOLUTION',value:'1440x900'},{name:'COKE_DESKTOP_CHROME_NO_SANDBOX',value:'1'}],
+          env:[secretEnv('LINUX_DESKTOP_WORKER_TOKEN','worker'),secretEnv('DOTS_AGENT_RUNTIME_TOKEN','agent'),...(options.guarded?[secretEnv('COKE_GROK_CONTROL_TOKEN','control'),{name:'COKE_GROK_GUARDED_MODE',value:'1'}]:[]),{name:'COKE_DESKTOP_VNC_AUTH_MODE',value:'gateway'},{name:'COKE_DESKTOP_RESOLUTION',value:'1440x900'},{name:'COKE_DESKTOP_CHROME_NO_SANDBOX',value:'1'}],
           securityContext:security(1000,false),resources:{requests:{cpu:'200m',memory:'512Mi'},limits:{cpu:'2',memory:'2Gi'}},
           ports:[{name:'novnc',containerPort:6080},{name:'worker',containerPort:8082}],
           startupProbe:{httpGet:{path:'/healthz',port:8082},periodSeconds:5,timeoutSeconds:5,failureThreshold:36},
