@@ -15,9 +15,9 @@ const safeName=/^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$/;
 /** Narrow in-cluster API client; no shell, credentials in arguments, object logs, or overwrite. */
 export class DesktopKubernetesClient implements DesktopKubernetes {
  private readonly endpoint:URL;
- constructor(endpoint:string,private readonly ca:Buffer,private readonly token:string){
+ constructor(endpoint:string,private readonly ca:Buffer,private readonly token:string | (()=>Promise<string>)){
   this.endpoint=new URL(endpoint);
-  if(this.endpoint.protocol!=='https:'||this.endpoint.username||this.endpoint.password||this.endpoint.search||this.endpoint.hash||this.endpoint.pathname!=='/'||!ca.length||!token||/[\r\n]/.test(token))throw new Error('Invalid Kubernetes connection');
+  if(this.endpoint.protocol!=='https:'||this.endpoint.username||this.endpoint.password||this.endpoint.search||this.endpoint.hash||this.endpoint.pathname!=='/'||!ca.length||(typeof token==='string'&&(!token||/[\r\n]/.test(token))))throw new Error('Invalid Kubernetes connection');
  }
  private path(kind:string,namespace:string|null,name?:string):string{
   const entry=types[kind];if(!entry || (entry.namespaced&&(!namespace||!safeName.test(namespace))) || (!entry.namespaced&&namespace) || (name&&!safeName.test(name)))throw new Error('Invalid Kubernetes resource identity');
@@ -25,8 +25,10 @@ export class DesktopKubernetesClient implements DesktopKubernetes {
  }
  private async call(method:'GET'|'POST',path:string,body:KubernetesObject|undefined,signal:AbortSignal):Promise<{status:number;object:KubernetesObject|null}>{
   const encoded=body?Buffer.from(JSON.stringify(body)):undefined;if(encoded && encoded.length>1024*1024)throw new Error('Kubernetes object too large');
+  const token=typeof this.token==='string'?this.token:await this.token();
+  if(!token || /[\r\n]/.test(token))throw new Error('Invalid Kubernetes token');
   const result=await new Promise<{status:number;data:Buffer}>((resolve,reject)=>{
-   const request=httpsRequest(new URL(path,this.endpoint),{method,ca:this.ca,headers:{authorization:`Bearer ${this.token}`,accept:'application/json',...(encoded?{'content-type':'application/json','content-length':encoded.length}:{})},signal,timeout:15000},response=>{
+   const request=httpsRequest(new URL(path,this.endpoint),{method,ca:this.ca,headers:{authorization:`Bearer ${token}`,accept:'application/json',...(encoded?{'content-type':'application/json','content-length':encoded.length}:{})},signal,timeout:15000},response=>{
     const chunks:Buffer[]=[];let size=0;response.on('data',(chunk:Buffer)=>{size+=chunk.length;if(size>4*1024*1024){response.destroy();reject(new Error('Kubernetes response too large'));return}chunks.push(chunk)});
     response.on('end',()=>resolve({status:response.statusCode||0,data:Buffer.concat(chunks)}));response.on('error',reject);
    });request.on('timeout',()=>request.destroy(new Error('Kubernetes request timed out')));request.on('error',reject);request.end(encoded);

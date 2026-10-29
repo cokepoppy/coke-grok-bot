@@ -6,6 +6,7 @@ import { GoogleAuthService, GoogleIdentityProvider } from './google-auth.ts';
 import { createAuthServer } from './auth-http.ts';
 import { parsePublicUrl } from './public-url.ts';
 import { BotStore } from './bot-store.ts';
+import { startPiRuntime } from './pi-runtime.ts';
 
 function required(key: string): string {
   const value = process.env[key];
@@ -38,10 +39,12 @@ async function main() {
   const bots = new BotStore(pool);
   try { await store.migrate(); await bots.migrate(); await store.pruneExpiredAuth(); }
   catch (error) { await pool.end(); throw error; }
+  let pi: Awaited<ReturnType<typeof startPiRuntime>>;
+  try { pi = await startPiRuntime(pool); } catch (error) { await pool.end(); throw error; }
   const cleanup = setInterval(() => { void store.pruneExpiredAuth().catch(() => console.error('Expired auth cleanup failed.')); }, 60 * 60 * 1000);
   cleanup.unref();
-  const server = createAuthServer(new GoogleAuthService(store, provider, origin), origin, staticDirectory, bots);
+  const server = createAuthServer(new GoogleAuthService(store, provider, origin), origin, staticDirectory, bots, pi?.runs);
   server.listen(port, process.env.COKE_GROK_AUTH_HOST || '127.0.0.1', () => console.log(`Auth service listening on port ${port}`));
-  for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => { clearInterval(cleanup); server.close(() => { void pool.end(); }); });
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => { clearInterval(cleanup); server.close(() => { void (async () => { await pi?.close(); await pool.end(); })(); }); });
 }
 main().catch(error => { console.error(error instanceof Error && error.message === 'Frontend build does not match the public path or require authentication' ? 'Frontend build does not match the public path or require authentication.' : 'Auth service failed to start; check configuration and database access.'); process.exitCode = 1; });

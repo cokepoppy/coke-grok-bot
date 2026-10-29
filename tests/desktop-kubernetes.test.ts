@@ -19,13 +19,14 @@ test('Kubernetes client uses authenticated TLS, refuses unsafe paths and never r
  });
  server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();if(!address||typeof address==='string')throw new Error('No port');
  try{
-  const client=new DesktopKubernetesClient(`https://localhost:${address.port}/`,readFileSync(cert),'test-token'),signal=new AbortController().signal;
+  let tokenReads=0;
+  const client=new DesktopKubernetesClient(`https://localhost:${address.port}/`,readFileSync(cert),async()=>{tokenReads++;return 'test-token'}),signal=new AbortController().signal;
   assert.equal((await client.get('Namespace',null,'test-space',signal))?.kind,'Namespace');
   assert.equal(await client.get('Namespace',null,'missing',signal),null);
   assert.equal(await client.create({apiVersion:'v1',kind:'Namespace',metadata:{name:'test-space'}},signal),false);
   await assert.rejects(client.get('Secret','../other','name',signal));
   await assert.rejects(client.get('Pod','test-space','name',signal));
   await assert.rejects(client.get('Secret','test-space','name',signal),error=>error instanceof Error&&!error.message.includes('private-error-body'));
-  assert.equal(requests,4);
+  assert.equal(requests,4);assert.equal(tokenReads,4);
  }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));rmSync(dir,{recursive:true,force:true})}
 });
