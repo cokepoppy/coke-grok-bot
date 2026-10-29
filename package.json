@@ -25,7 +25,7 @@
     "test:pi-k3d": "node --import tsx tests/pi-k3d-gateway.e2e.ts",
     "test:desktop-k3d": "node --import tsx tests/desktop-k3d.e2e.ts",
     "test:desktop-resources": "node --import tsx --test tests/desktop-resources.test.ts",
-    "test:runtime": "node --import tsx --test tests/model-gateway.test.ts tests/desktop-resources.test.ts tests/desktop-provisioner.test.ts tests/desktop-kubernetes.test.ts tests/pi-executor.test.ts tests/pi-runtime.test.ts",
+    "test:runtime": "node --import tsx --test tests/model-gateway.test.ts tests/desktop-resources.test.ts tests/desktop-provisioner.test.ts tests/desktop-kubernetes.test.ts tests/pi-executor.test.ts tests/pi-runtime.test.ts tests/computer-action.test.ts",
     "test:runtime-mysql": "node --import tsx --test tests/run-store.test.ts tests/run-store-order.test.ts tests/run-scheduler.test.ts tests/run-http.test.ts tests/run-pipeline.test.ts tests/approval-store.test.ts tests/approval-http.test.ts tests/approval-gateway.test.ts",
     "test:run-browser": "node --import tsx tests/run-browser.e2e.ts",
     "test:provisioner-k3d": "node --import tsx tests/desktop-provisioner-k3d.e2e.ts",
