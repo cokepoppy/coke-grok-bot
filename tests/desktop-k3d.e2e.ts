@@ -75,13 +75,32 @@ try {
   const workerPort=await new Promise<number>((resolve,reject)=>{let text='';workerForward.stdout!.on('data',chunk=>{text+=String(chunk);const m=text.match(/127\.0\.0\.1:(\d+) -> 8082/);if(m)resolve(Number(m[1]))});workerForward.once('exit',()=>reject(new Error('worker port-forward exited')));setTimeout(()=>reject(new Error('worker port-forward timeout')),15000).unref()});
   const inspect=await fetch(`http://127.0.0.1:${workerPort}/v1/browser`,{method:'POST',headers:{authorization:`Bearer ${desktop.workerToken}`,'content-type':'application/json'},body:JSON.stringify({action:'inspect',taskId:browserId})});
   const value=await inspect.json() as {ready?:boolean;text?:string}; assert.equal(value.ready,true); assert.ok(value.text?.includes('BROWSER_CLICK_VERIFIED'));
+  const visualId=randomUUID();
+  const visualFixture=`<!doctype html><title>Visual computer test</title><style>body{background:#fff;font:32px sans-serif;padding:80px}button{font:36px sans-serif;width:450px;height:160px;background:#155ab5;color:white}</style><button onclick="document.getElementById('result').textContent='VISUAL_CLICK_VERIFIED'">Click visual test</button><p id="result">Waiting</p>`;
+  await kubectl(['-n',desktop.namespace,'exec',pod,'-c','agent','--','node','-e',`const f=require('fs'),p='/workspace/tasks/${visualId}';f.mkdirSync(p,{recursive:true,mode:0o770});f.writeFileSync(p+'/visual-test.html',${JSON.stringify(visualFixture)},{mode:0o664})`]);
+  const visualResponse=await fetch(`http://127.0.0.1:${port}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${desktop.agentToken}`,'content-type':'application/json'},body:JSON.stringify({engine:'pi',taskId:visualId,cwd:`tasks/${visualId}`,prompt:'Open visual-test.html using computer_browser open_artifact. Then use computer_desktop screenshot to visually locate the blue button and use computer_desktop click at its screen coordinates. Do not use a browser click or a shell for the click. Take another screenshot to check the result. Then return exactly {"status":"done","message":"Completed"}.',modelConfig:{apiKey:capability,baseUrl:`https://host.k3d.internal:${address.port}/v1`,model:'deepseek-v4.1-flash'}}),signal:AbortSignal.timeout(220_000)});
+  if(!visualResponse.ok) throw new Error(`Visual desktop task failed: HTTP ${visualResponse.status}; provider calls ${calls}`);
+  const visualDecision=await visualResponse.json() as {status?:string}; assert.equal(visualDecision.status,'done');
+  const visualProof=await kubectl(['-n',desktop.namespace,'exec',pod,'-c','agent','--','node','-e',`const f=require('fs'),p='/workspace/tasks/${visualId}/.coke-dots-agent-runtime/pi-sessions';const rows=f.readdirSync(p).flatMap(n=>f.readFileSync(p+'/'+n,'utf8').trim().split('\\n').map(x=>JSON.parse(x)));const actions=rows.flatMap(x=>x.message?.content||[]).filter(x=>x.type==='toolCall'&&x.name==='computer_desktop').map(x=>x.arguments?.action);process.stdout.write(JSON.stringify(['screenshot','click'].map(a=>actions.includes(a))))`]);
+  assert.deepEqual(JSON.parse(visualProof),[true,true]);
+  const after=await fetch(`http://127.0.0.1:${workerPort}/v1/browser`,{method:'POST',headers:{authorization:`Bearer ${desktop.workerToken}`,'content-type':'application/json'},body:JSON.stringify({action:'inspect',taskId:visualId})});
+  const visualState=await after.json() as {ready?:boolean;text?:string}; assert.equal(visualState.ready,true); assert.ok(visualState.text?.includes('VISUAL_CLICK_VERIFIED'));
+  const control=async (owner:'user'|'agent')=>fetch(`http://127.0.0.1:${workerPort}/v1/control`,{method:'POST',headers:{authorization:`Bearer ${desktop.workerToken}`,'content-type':'application/json'},body:JSON.stringify({owner})});
+  assert.equal((await control('user')).status,200);
+  const forbidden=await fetch(`http://127.0.0.1:${workerPort}/v1/browser`,{method:'POST',headers:{authorization:`Bearer ${desktop.workerToken}`,'content-type':'application/json'},body:JSON.stringify({action:'click',by:'role',role:'button',target:'Click visual test',taskId:visualId})});
+  assert.equal(forbidden.status,400);
+  const beforeWaiting=calls;
+  const waitId=randomUUID();
+  const waiting=await fetch(`http://127.0.0.1:${port}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${desktop.agentToken}`,'content-type':'application/json'},body:JSON.stringify({engine:'pi',taskId:waitId,cwd:`tasks/${waitId}`,prompt:'Wait',modelConfig:{apiKey:capability,baseUrl:`https://host.k3d.internal:${address.port}/v1`,model:'deepseek-v4.1-flash'}})});
+  const waitResult=await waiting.json() as {status?:string;pausedForControl?:boolean}; assert.equal(waiting.status,200); assert.equal(waitResult.status,'waiting'); assert.equal(waitResult.pausedForControl,true); assert.equal(calls,beforeWaiting);
+  assert.equal((await control('agent')).status,200);
  } finally {workerForward.kill('SIGTERM')}
  await kubectl(['-n',desktop.namespace,'rollout','restart','deployment/desktop']);
  await kubectl(['-n',desktop.namespace,'rollout','status','deployment/desktop','--timeout=150s'],undefined,160_000);
  const pod2=(await kubectl(['-n',desktop.namespace,'get','pods','-l','app=grok-desktop','-o','jsonpath={.items[0].metadata.name}'])).trim();
  const persisted=await kubectl(['-n',desktop.namespace,'exec',pod2,'-c','desktop','--','node','-e',`const fs=require('fs');process.stdout.write(fs.readFileSync('/workspace/tasks/${taskId}/proof.txt','utf8').trim()==='DESKTOP_PI_OK'?'verified':'mismatch')`]);
  assert.equal(persisted,'verified');
- console.log(`Desktop K3D test passed: split UID, protected browser profile, real Pi file and browser click tasks, and PVC persistence after restart; provider requests ${calls}.`);
+ console.log(`Desktop K3D test passed: split UID, protected browser profile, real Pi file, browser and screenshot-driven desktop click tasks, and PVC persistence after restart; provider requests ${calls}.`);
 } finally {
  forwarding?.kill('SIGTERM'); gateway?.close(); if(server) await new Promise<void>(resolve=>server!.close(()=>resolve()));
  if(created) await exec('kubectl',['delete','namespace',desktop.namespace,'--wait=false'],undefined,20_000);
