@@ -45,4 +45,6 @@ Before enabling a public Agent, the current design still needs a server-enforced
 
 The runtime now refuses to start when both `NODE_ENV=production` and `COKE_GROK_PI_ENABLED=1`. This prevents the current production image from accidentally exposing the incomplete integration; the guard is to be removed only after the missing boundaries are implemented and tested.
 
+The feature branch also contains an approval persistence layer and authenticated same-origin decision API. Tests with disposable MySQL verify ownership, denial, expiry, matching the approved action, a valid run lease, and atomic one-time consumption even under concurrent requests. These records are **not yet connected to the Pi tools or an approval UI**; their existence does not enforce approval by itself. In particular, Bash and browser actions must not be enabled publicly until there is an effective server-enforced boundary.
+
 An additional isolated K3D test ran the in-cluster Kubernetes client using a projected service-account token and a namespace-scoped Role. It could read its one allowed ConfigMap and received denials for Secrets and another project's namespace. The temporary test namespace was removed. This validates the client and Kubernetes enforcement for that limited read case, not the broader permissions needed to create personal desktop namespaces and workloads.

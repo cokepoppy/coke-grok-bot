@@ -6,5 +6,5 @@ export default defineConfig(({ mode }) => {
   const target = env.VITE_AUTH_PROXY_TARGET;
   const base = env.VITE_BASE_PATH || '/';
   if (!/^\/(?:[A-Za-z0-9_-]+\/)*$/.test(base)) throw new Error('VITE_BASE_PATH must be a slash-terminated path');
-  return { base, plugins: [react()], server: { host: '127.0.0.1', strictPort: true, proxy: target ? { [`${base}api/auth`]: { target, changeOrigin: false }, [`${base}api/bots`]: { target, changeOrigin: false }, [`${base}auth/google/callback`]: { target, changeOrigin: false } } : undefined } };
+  return { base, plugins: [react()], server: { host: '127.0.0.1', strictPort: true, proxy: target ? { [`${base}api/auth`]: { target, changeOrigin: false }, [`${base}api/bots`]: { target, changeOrigin: false }, [`${base}api/runs`]: { target, changeOrigin: false }, [`${base}api/approvals`]: { target, changeOrigin: false }, [`${base}auth/google/callback`]: { target, changeOrigin: false } } : undefined } };
 });

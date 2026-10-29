@@ -1,0 +1,28 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createHash,randomBytes,randomUUID} from 'node:crypto';
+import {once} from 'node:events';
+import mysql from 'mysql2/promise';
+import {TenantStore} from '../src/server/tenant-store.ts';
+import {BotStore} from '../src/server/bot-store.ts';
+import {RunStore} from '../src/server/run-store.ts';
+import {ApprovalStore} from '../src/server/approval-store.ts';
+import {GoogleAuthService,type IdentityProvider} from '../src/server/google-auth.ts';
+import {createAuthServer} from '../src/server/auth-http.ts';
+const port=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);if(!port)throw new Error('Disposable MySQL port required');
+test('only the owner can approve a pending action through same-origin HTTP',async()=>{
+ const db=`grok_approve_http_${randomUUID().replaceAll('-','')}`,admin=await mysql.createConnection({host:'127.0.0.1',port,user:'root'});await admin.query(`CREATE DATABASE \`${db}\``);
+ const pool=mysql.createPool({host:'127.0.0.1',port,user:'root',database:db,timezone:'Z'}),ids=new TenantStore(pool),bots=new BotStore(pool),runs=new RunStore(pool),approvals=new ApprovalStore(pool);await ids.migrate();await bots.migrate();await runs.migrate();await approvals.migrate();
+ const net=await import('node:net'),reservation=net.createServer();reservation.listen(0,'127.0.0.1');await once(reservation,'listening');const httpPort=(reservation.address() as import('node:net').AddressInfo).port;await new Promise<void>(resolve=>reservation.close(()=>resolve()));
+ const origin=`http://127.0.0.1:${httpPort}`,base=origin+'/grok-bot',provider:IdentityProvider={authorizationUrl:()=>'',exchange:async()=>({})};const server=createAuthServer(new GoogleAuthService(ids,provider,base),base,undefined,bots,runs,approvals);server.listen(httpPort,'127.0.0.1');await once(server,'listening');
+ const login=async(subject:string)=>{const id=await ids.signInGoogle({subject,email:`${subject}@example.test`,name:subject}),token=randomBytes(32).toString('base64url');await ids.createSession(createHash('sha256').update(token).digest('hex'),id.userId,id.tenantId,new Date(Date.now()+60000));return {...id,email:`${subject}@example.test`,name:subject,role:'owner',cookie:`coke_grok_session=${token}`}};
+ try{
+  const a=await login('a'),b=await login('b'),bot=await bots.create(a,{name:'A',shape:'round',color:'#abcdef'}),run=await runs.create(a,bot.id,randomUUID(),'task');assert.ok(run);const claim=await runs.claimNext(a,30);assert.ok(claim);
+  const proposal=await approvals.propose(run.id,claim.leaseId,'Submit test action',30);assert.ok(proposal);
+  const request=(path:string,cookie='',init:RequestInit={})=>fetch(base+path,{...init,headers:{cookie,...init.headers}}),listPath=`/api/runs/${run.id}/approvals`,decisionPath=`/api/approvals/${proposal.id}`;
+  const decide=(cookie:string,from=origin,decision='approved')=>request(decisionPath,cookie,{method:'POST',headers:{origin:from,'content-type':'application/json'},body:JSON.stringify({decision})});
+  assert.equal((await request(listPath)).status,401);assert.equal((await request(listPath,b.cookie)).status,404);assert.equal((await decide(a.cookie,'https://evil.example')).status,403);assert.equal((await decide(b.cookie)).status,404);assert.equal((await decide(a.cookie,origin,'wrong')).status,400);
+  const list=await request(listPath,a.cookie);assert.equal(list.status,200);assert.equal((await list.json() as {approvals:{action:string}[]}).approvals[0].action,'Submit test action');
+  assert.equal((await decide(a.cookie)).status,200);assert.equal((await decide(a.cookie)).status,409);assert.equal(await approvals.consume(run.id,claim.leaseId,proposal.id,'Submit test action'),true);
+ }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));await pool.end();await admin.query(`DROP DATABASE \`${db}\``);await admin.end()}
+});

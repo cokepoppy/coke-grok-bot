@@ -4,10 +4,11 @@ import { join } from 'node:path';
 import type { GoogleAuthService } from './google-auth.ts';
 import type { BotStore, BotShape } from './bot-store.ts';
 import { RunRequestConflict, type RunStore } from './run-store.ts';
+import type { ApprovalStore } from './approval-store.ts';
 import { parsePublicUrl } from './public-url.ts';
 
 // Mount only behind a trusted proxy that preserves the configured Host.
-export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore) {
+export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore) {
   const origin = parsePublicUrl(publicOrigin);
   return createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -32,6 +33,24 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
       const messageMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/messages$`));
       const runMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/runs$`));
       const runEventsMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/runs/([0-9a-f-]{36})/events$`));
+      const approvalListMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/runs/([0-9a-f-]{36})/approvals$`));
+      const approvalMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/approvals/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`, 'i'));
+      if (approvals && (approvalListMatch || approvalMatch)) {
+        const reply = (status:number, value:unknown) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(value)); };
+        const session=await auth.session(req); if(!session)return reply(401,{error:'Unauthenticated'});
+        if(req.method==='GET' && approvalListMatch) {
+          const list=await approvals.list(session,approvalListMatch[1]);return list?reply(200,{approvals:list}):reply(404,{error:'Not found'});
+        }
+        if(req.method!=='POST'||!approvalMatch)return reply(405,{error:'Method not allowed'});
+        if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
+        if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return reply(415,{error:'Expected JSON'});
+        let size=0;const chunks:Buffer[]=[];for await(const chunk of req){size+=chunk.length;if(size>1024)return reply(413,{error:'Request too large'});chunks.push(chunk)}
+        let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return reply(400,{error:'Invalid JSON'})}
+        const decision=body && typeof body==='object' && !Array.isArray(body) ? (body as {decision?:unknown}).decision : undefined;
+        if(decision!=='approved'&&decision!=='denied')return reply(400,{error:'Invalid decision'});
+        const result=await approvals.decide(session,approvalMatch[1],decision);
+        return result==='decided'?reply(200,{ok:true}):result==='not_found'?reply(404,{error:'Not found'}):reply(409,{error:'Approval is no longer pending'});
+      }
       if (runs && (runMatch || runEventsMatch)) {
         const reply = (status:number, value:unknown) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(value)); };
         const session = await auth.session(req);

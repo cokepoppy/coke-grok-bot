@@ -8,13 +8,14 @@ import { RunScheduler } from './run-scheduler.ts';
 import { PiExecutor } from './pi-executor.ts';
 import { DesktopProvisioner } from './desktop-provisioner.ts';
 import { DesktopKubernetesClient } from './desktop-kubernetes.ts';
+import { ApprovalStore } from './approval-store.ts';
 
 function required(env:NodeJS.ProcessEnv,key:string):string { const value=env[key]?.trim();if(!value)throw new Error(`Missing ${key}`);return value; }
 async function privateFile(path:string):Promise<Buffer>{
  const metadata=await stat(path);if(!metadata.isFile()||(metadata.mode&0o077)!==0)throw new Error('Runtime secret file permissions are not private');
  const value=await readFile(path);if(!value.length||value.length>16384)throw new Error('Invalid runtime secret file');return value;
 }
-export interface PiRuntime { runs:RunStore; close():Promise<void> }
+export interface PiRuntime { runs:RunStore; approvals:ApprovalStore; close():Promise<void> }
 /** Opt-in only. Caller supplies Kubernetes service account with separately audited permissions. */
 export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env):Promise<PiRuntime|null>{
  if(env.COKE_GROK_PI_ENABLED!=='1')return null;
@@ -38,9 +39,10 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  const kube=new DesktopKubernetesClient(required(env,'COKE_GROK_KUBE_URL'),kubeCa,async()=>(await readFile(kubeTokenFile,'utf8')).trim());
  const provisioner=new DesktopProvisioner(kube,signingKey,{image:required(env,'COKE_GROK_DESKTOP_IMAGE'),controlNamespace:namespace,gatewayCA:cert.toString('utf8')});
  const runs=new RunStore(pool);await runs.migrate();
+ const approvals=new ApprovalStore(pool);await approvals.migrate();
  const scheduler=new RunScheduler(runs,new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID')),{concurrency:2,leaseSeconds:30});
  const server=gateway.createServer({key:tlsKey,cert});
  try{server.listen(3002,'0.0.0.0');await once(server,'listening')}catch(error){gateway.close();server.close();throw error}
  const timer=setInterval(()=>{void scheduler.tick().catch(()=>console.error('Pi scheduler polling failed.'))},2000);timer.unref();
- return {runs,async close(){clearInterval(timer);await scheduler.stop();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
+ return {runs,approvals,async close(){clearInterval(timer);await scheduler.stop();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
 }
