@@ -55,3 +55,33 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
     { apiVersion:'v1',kind:'Service',metadata:meta('desktop'),spec:{type:'ClusterIP',selector:{app:'grok-desktop'},ports:[{name:'novnc',port:6080,targetPort:'novnc'},{name:'worker',port:8082,targetPort:'worker'},{name:'agent',port:8083,targetPort:'agent'}]} },
   ];
 }
+
+/**
+ * Experimental separate-Pod layout. It is not wired into the provisioner yet:
+ * Pi still needs a mediated computer bridge before it can run tasks.
+ */
+export function splitDesktopResources(identity:DesktopIdentity,options:{image:string;controlNamespace:string;gatewayCA:string}):Record<string,unknown>[] {
+  const resources=structuredClone(desktopResources(identity,{...options,guarded:true}));
+  const ns=identity.namespace;
+  const find=(kind:string,name:string)=>{const resource=resources.find(item=>item.kind===kind&&(item.metadata as {name?:string})?.name===name);if(!resource)throw new Error('Missing desktop resource');return resource as any};
+  const desktop=find('Deployment','desktop'),pod=desktop.spec.template.spec;
+  const [desktopContainer,agentContainer]=pod.containers;
+  desktopContainer.env.push({name:'COKE_GROK_AGENT_URL',value:`http://agent.${ns}.svc.cluster.local:8083/`});
+  pod.containers=[desktopContainer];pod.volumes=pod.volumes.filter((volume:{name:string})=>['workspace','shm','desktop-tmp'].includes(volume.name));
+  const labels={'app.kubernetes.io/managed-by':'coke-grok-bot','coke-grok-bot.io/owner-hash':identity.ownerHash};
+  const agentPod={automountServiceAccountToken:false,securityContext:{runAsNonRoot:true,fsGroup:1000,seccompProfile:{type:'RuntimeDefault'}},
+    affinity:{podAffinity:{requiredDuringSchedulingIgnoredDuringExecution:[{labelSelector:{matchLabels:{app:'grok-desktop'}},topologyKey:'kubernetes.io/hostname'}]}},
+    containers:[agentContainer],volumes:[{name:'workspace',persistentVolumeClaim:{claimName:'workspace'}},{name:'agent-tmp',emptyDir:{sizeLimit:'512Mi'}},{name:'model-ca',configMap:{name:'model-ca'}}]};
+  const agentDeployment={apiVersion:'apps/v1',kind:'Deployment',metadata:{name:'agent',namespace:ns,labels},spec:{replicas:1,strategy:{type:'Recreate'},selector:{matchLabels:{app:'grok-agent'}},template:{metadata:{labels:{...labels,app:'grok-agent'}},spec:agentPod}}};
+  const desktopService=find('Service','desktop');desktopService.spec.ports=desktopService.spec.ports.filter((port:{name:string})=>port.name!=='agent');
+  const agentService={apiVersion:'v1',kind:'Service',metadata:{name:'agent',namespace:ns,labels},spec:{type:'ClusterIP',selector:{app:'grok-agent'},ports:[{name:'agent',port:8083,targetPort:'agent'}]}};
+  const desktopPolicy=find('NetworkPolicy','desktop-isolation');
+  desktopPolicy.spec.ingress=[{from:[{namespaceSelector:{matchLabels:{'kubernetes.io/metadata.name':options.controlNamespace}}}],ports:[{protocol:'TCP',port:6080},{protocol:'TCP',port:8082}]}];
+  desktopPolicy.spec.egress=desktopPolicy.spec.egress.filter((entry:any)=>!entry.to?.some((target:any)=>target.podSelector?.matchLabels?.app==='coke-grok-auth'));
+  desktopPolicy.spec.egress.push({to:[{podSelector:{matchLabels:{app:'grok-agent'}}}],ports:[{protocol:'TCP',port:8083}]});
+  const agentPolicy={apiVersion:'networking.k8s.io/v1',kind:'NetworkPolicy',metadata:{name:'agent-isolation',namespace:ns,labels},spec:{podSelector:{matchLabels:{app:'grok-agent'}},policyTypes:['Ingress','Egress'],
+    ingress:[{from:[{namespaceSelector:{matchLabels:{'kubernetes.io/metadata.name':options.controlNamespace}}},{podSelector:{matchLabels:{app:'grok-desktop'}}}],ports:[{protocol:'TCP',port:8083}]}],
+    egress:[{to:[{namespaceSelector:{matchLabels:{'kubernetes.io/metadata.name':'kube-system'}}}],ports:[{protocol:'UDP',port:53},{protocol:'TCP',port:53}]},
+      {to:[{namespaceSelector:{matchLabels:{'kubernetes.io/metadata.name':options.controlNamespace}},podSelector:{matchLabels:{app:'coke-grok-auth'}}}],ports:[{protocol:'TCP',port:3002}]}]}};
+  return [...resources,agentDeployment,agentService,agentPolicy];
+}

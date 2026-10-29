@@ -16,6 +16,8 @@ const port = Number(process.env.COKE_DESKTOP_WORKER_PORT || 8082);
 const guardedMode = process.env.COKE_GROK_GUARDED_MODE === '1';
 const controlToken = String(process.env.COKE_GROK_CONTROL_TOKEN || '');
 if (guardedMode && (!controlToken || controlToken === token)) throw new Error('A distinct control token is required in guarded mode');
+const agentEndpoint = new URL(process.env.COKE_GROK_AGENT_URL || `http://127.0.0.1:${process.env.DOTS_AGENT_RUNTIME_PORT || 8083}/`);
+if (agentEndpoint.protocol !== 'http:' || agentEndpoint.username || agentEndpoint.password || agentEndpoint.search || agentEndpoint.hash || agentEndpoint.pathname !== '/' || !(agentEndpoint.hostname === '127.0.0.1' || /^agent\.grok-user-[a-f0-9]{32}\.svc\.cluster\.local$/.test(agentEndpoint.hostname)) || agentEndpoint.port !== '8083') throw new Error('Invalid agent endpoint');
 const resolution = String(process.env.COKE_DESKTOP_RESOLUTION || '1440x900').split('x').map(Number);
 let owner = 'agent';
 let browser;
@@ -393,7 +395,7 @@ http.createServer(async (req, res) => {
       try {
         if (!await rendererResponds()) return send(res, 503, { ok: false, code: 'DOTS_RENDERER_UNRESPONSIVE', error: '云电脑里的 Chromium 页面无响应，系统正在自动恢复' });
         await exec('xdpyinfo', ['-display', process.env.DISPLAY || ':1'], { timeout: 1500 });
-        const agent = await fetch(`http://127.0.0.1:${process.env.DOTS_AGENT_RUNTIME_PORT || 8083}/healthz`, { signal: AbortSignal.timeout(1500) });
+        const agent = await fetch(new URL('/healthz',agentEndpoint), { signal: AbortSignal.timeout(1500) });
         if (!agent.ok) return send(res, 503, { ok: false });
         return send(res, 200, { ok: true });
       } catch (error) {
@@ -433,7 +435,7 @@ http.createServer(async (req, res) => {
       return guardedComputer.locked(async () => {
         owner = input.owner;
         if (owner === 'user') {
-          await fetch(`http://127.0.0.1:${process.env.DOTS_AGENT_RUNTIME_PORT || 8083}/v1/tasks/pause`, {
+          await fetch(new URL('/v1/tasks/pause',agentEndpoint), {
             method: 'POST', headers: { authorization: `Bearer ${process.env.DOTS_AGENT_RUNTIME_TOKEN}` }, signal: AbortSignal.timeout(1500),
           }).catch(() => undefined);
         }
