@@ -6,6 +6,7 @@ type Shape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle';
 type Bot = { id: string; name: string; label: string; color: string; shape: Shape; group: string; preview: string };
 type Message = { id: string; role: 'user' | 'bot'; text: string };
 type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null };
+type Approval = { id: string; action: string; status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired' };
 type PreviewState = { bots: Bot[]; activeId: string; messages: Record<string, Message[]>; showOnboarding: Record<string, boolean> };
 type IconName = 'search' | 'plus' | 'mic' | 'sound' | 'close' | 'panel' | 'share' | 'screen' | 'arrow' | 'smile' | 'reply' | 'more';
 
@@ -103,6 +104,10 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [piFeature, setPiFeature] = useState<'loading' | 'enabled' | 'disabled' | 'error'>(remote ? 'loading' : 'disabled');
   const [runHistory, setRunHistory] = useState<{ id: string; status: 'loading' | 'ready' | 'error'; runs: AgentRun[] }>({ id: '', status: 'loading', runs: [] });
   const [runRefresh, setRunRefresh] = useState(0);
+  const [runApprovals, setRunApprovals] = useState<Record<string, Approval[]>>({});
+  const [decidingApproval, setDecidingApproval] = useState<string | null>(null);
+  const decidingRef = useRef(false);
+  const uncertainMutation = useRef(false);
   const [history, setHistory] = useState<{ id: string; status: 'loading' | 'ready' | 'error' }>({ id: '', status: 'loading' });
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
@@ -147,12 +152,21 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     let timer: ReturnType<typeof setTimeout> | undefined;
     setRunHistory({ id, status: 'loading', runs: [] });
     const load = async () => {
+      if (uncertainMutation.current) return;
       try {
         const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${id}/runs`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
         if (!response.ok) throw new Error('runs unavailable');
         const value = await response.json() as { runs: AgentRun[] };
         if (!Array.isArray(value.runs)) throw new Error('invalid runs');
-        if (controller.signal.aborted) return;
+        const pending = await Promise.all(value.runs.filter(run => run.status === 'running').map(async run => {
+          const approvalResponse = await fetch(`${import.meta.env.BASE_URL}api/runs/${run.id}/approvals`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
+          if (!approvalResponse.ok) throw new Error('approvals unavailable');
+          const data = await approvalResponse.json() as { approvals: Approval[] };
+          if (!Array.isArray(data.approvals)) throw new Error('invalid approvals');
+          return [run.id, data.approvals] as const;
+        }));
+        if (controller.signal.aborted || uncertainMutation.current) return;
+        setRunApprovals(Object.fromEntries(pending));
         setRunHistory({ id, status: 'ready', runs: value.runs });
         timer = setTimeout(() => void load(), 2000);
       } catch (error) {
@@ -209,8 +223,21 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     setNewChat(false);
     setPanel(false);
   }
+  async function decideApproval(id: string, decision: 'approved' | 'denied') {
+    if (uncertainMutation.current || decidingRef.current || !active || runHistory.id !== active.id || runHistory.status !== 'ready') return;
+    decidingRef.current = true; setDecidingApproval(id); setBotError('');
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}api/approvals/${id}`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision }) });
+      if (!response.ok) throw new Error('decision could not be confirmed');
+      setRunRefresh(value => value + 1);
+    } catch {
+      uncertainMutation.current = true;
+      setBotError('Approval could not be confirmed. Refresh and check its status before trying again.');
+      setRunHistory(current => ({ ...current, status: 'error' }));
+    } finally { decidingRef.current = false; setDecidingApproval(null); }
+  }
   async function addMessage(text: string) {
-    if (!active) return;
+    if (!active || uncertainMutation.current) return;
     const clean = text.trim();
     if (!clean) return;
     if (remote) {
@@ -237,6 +264,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         setState(current => ({ ...current, messages: { ...current.messages, [id]: [...(current.messages[id] || []), message] }, bots: current.bots.map(bot => bot.id === id ? { ...bot, preview: clean } : bot) }));
         if (activeIdRef.current === id) { setDraft(''); setCustomAnswer(''); setNotice(true); }
       } catch {
+        uncertainMutation.current = true;
         if (piFeature === 'enabled') setRunHistory(current => ({ ...current, id, status: 'error' }));
         else setHistory({ id, status: 'error' });
         setBotError('Submission could not be confirmed. Refresh and check the history before trying again.');
@@ -309,7 +337,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
               {remote && history.id === active.id && history.status === 'error' && <div role="alert">Could not confirm message history. Refresh to check it.</div>}
               {messages.length > 0 && <div className="date-line">{reference ? 'Today 1:26 PM' : 'Today'}</div>}
               {messages.map(message => <div key={message.id} className={`message-line ${message.role}`}><div className="message-bubble">{message.text}</div>{message.role === 'bot' && <div className="message-actions"><Icon name="smile" /><Icon name="reply" /><Icon name="more" /></div>}</div>)}
-              {remote && piFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.map(run => <React.Fragment key={run.id}><div className="message-line user"><div className="message-bubble">{run.prompt}</div></div><div className="message-line bot"><div className="message-bubble"><span className="run-status">{({ queued: 'Queued · waiting for your computer', running: 'Working on your computer', completed: 'Completed', failed: 'Failed', unknown: 'Outcome unknown · check before retrying' } as const)[run.status]}</span>{run.result && <p>{run.result}</p>}</div></div></React.Fragment>)}
+              {remote && piFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.map(run => <React.Fragment key={run.id}><div className="message-line user"><div className="message-bubble">{run.prompt}</div></div><div className="message-line bot"><div className="message-bubble"><span className="run-status">{({ queued: 'Queued · waiting for your computer', running: 'Working on your computer', completed: 'Completed', failed: 'Failed', unknown: 'Outcome unknown · check before retrying' } as const)[run.status]}</span>{run.result && <p>{run.result}</p>}{(runApprovals[run.id] || []).filter(approval => approval.status === 'pending').map(approval => <div className="approval-card" key={approval.id}><strong>Approval requested</strong><p>{approval.action}</p><div><button type="button" disabled={Boolean(decidingApproval) || runHistory.status !== 'ready'} onClick={() => void decideApproval(approval.id, 'denied')}>Deny</button><button type="button" disabled={Boolean(decidingApproval) || runHistory.status !== 'ready'} onClick={() => void decideApproval(approval.id, 'approved')}>Approve</button></div></div>)}</div></div></React.Fragment>)}
               {remote && piFeature === 'enabled' && runHistory.id === active.id && runHistory.status === 'error' && <div role="alert">Could not confirm task history. Refresh to check it before submitting again.</div>}
               {state.showOnboarding[active.id] && <div className="onboarding-card">
                 <div className="onboarding-title">What do you want me helping with most right now?<IconButton name="close" label="Dismiss suggestions" onClick={() => setState(current => ({ ...current, showOnboarding: { ...current.showOnboarding, [active.id]: false } }))} /></div>
