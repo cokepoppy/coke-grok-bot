@@ -47,6 +47,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .message-bubble { max-width: 704px; padding: 8px 40px 8px 15px; border-radius: 17px; background: #ededed; font-size: 18px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .message-line.bot .message-bubble { width: min(704px, 100%); }
 .message-line.user .message-bubble { color: #fff; background: #7d68c8; }
+.run-status { display: block; color: #706b7e; font-size: 13px; font-weight: 600; }
+.message-bubble .run-status + p { margin: 6px 0 0; }
 .message-actions { display: flex; gap: 12px; opacity: 0; color: #555; }
 .message-line:hover .message-actions { opacity: 1; }
 .message-actions svg { width: 18px; height: 18px; }

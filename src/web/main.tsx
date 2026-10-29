@@ -5,6 +5,7 @@ import './shell.css';
 type Shape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle';
 type Bot = { id: string; name: string; label: string; color: string; shape: Shape; group: string; preview: string };
 type Message = { id: string; role: 'user' | 'bot'; text: string };
+type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null };
 type PreviewState = { bots: Bot[]; activeId: string; messages: Record<string, Message[]>; showOnboarding: Record<string, boolean> };
 type IconName = 'search' | 'plus' | 'mic' | 'sound' | 'close' | 'panel' | 'share' | 'screen' | 'arrow' | 'smile' | 'reply' | 'more';
 
@@ -99,6 +100,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [draft, setDraft] = useState('');
   const [customAnswer, setCustomAnswer] = useState('');
   const [notice, setNotice] = useState(false);
+  const [piFeature, setPiFeature] = useState<'loading' | 'enabled' | 'disabled' | 'error'>(remote ? 'loading' : 'disabled');
+  const [runHistory, setRunHistory] = useState<{ id: string; status: 'loading' | 'ready' | 'error'; runs: AgentRun[] }>({ id: '', status: 'loading', runs: [] });
+  const [runRefresh, setRunRefresh] = useState(0);
   const [history, setHistory] = useState<{ id: string; status: 'loading' | 'ready' | 'error' }>({ id: '', status: 'loading' });
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
@@ -128,6 +132,36 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       }).catch(error => { if (error.name !== 'AbortError') setBotStatus('error'); });
     return () => controller.abort();
   }, [remote]);
+  useEffect(() => {
+    if (!remote) return;
+    const controller = new AbortController();
+    fetch(`${import.meta.env.BASE_URL}api/auth/features`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+      .then(async response => { if (response.status === 404) return { pi: false }; if (!response.ok) throw new Error('features unavailable'); return response.json() as Promise<{ pi: boolean }>; })
+      .then(value => { if (typeof value.pi !== 'boolean') throw new Error('invalid features'); setPiFeature(value.pi ? 'enabled' : 'disabled'); })
+      .catch(error => { if (error.name !== 'AbortError') setPiFeature('error'); });
+    return () => controller.abort();
+  }, [remote]);
+  useEffect(() => {
+    if (!remote || piFeature !== 'enabled' || botStatus !== 'ready' || !active?.id) return;
+    const id = active.id, controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setRunHistory({ id, status: 'loading', runs: [] });
+    const load = async () => {
+      try {
+        const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${id}/runs`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error('runs unavailable');
+        const value = await response.json() as { runs: AgentRun[] };
+        if (!Array.isArray(value.runs)) throw new Error('invalid runs');
+        if (controller.signal.aborted) return;
+        setRunHistory({ id, status: 'ready', runs: value.runs });
+        timer = setTimeout(() => void load(), 2000);
+      } catch (error) {
+        if (!controller.signal.aborted) setRunHistory(current => ({ id, status: 'error', runs: current.id === id ? current.runs : [] }));
+      }
+    };
+    void load();
+    return () => { controller.abort(); if (timer) clearTimeout(timer); };
+  }, [remote, piFeature, botStatus, active?.id, runRefresh]);
   useEffect(() => {
     if (!remote || !active?.id) return;
     const id = active.id, controller = new AbortController();
@@ -182,17 +216,30 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     if (remote) {
       const id = active.id;
       if (sendingRef.current || history.id !== id || history.status !== 'ready') return;
+      if (piFeature === 'loading' || piFeature === 'error' || (piFeature === 'enabled' && (runHistory.id !== id || runHistory.status !== 'ready'))) return;
       if (clean.length > 10000) { setBotError('Message is too long.'); return; }
       sendingRef.current = true; setSending(true); setBotError('');
       try {
+        if (piFeature === 'enabled') {
+          const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${id}/runs`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: crypto.randomUUID(), prompt: clean }) });
+          if (!response.ok) throw new Error('run submission failed');
+          const { run } = await response.json() as { run: AgentRun };
+          if (!run || typeof run.id !== 'string' || typeof run.prompt !== 'string') throw new Error('invalid run response');
+          setRunHistory(current => ({ id, status: 'ready', runs: [...current.runs.filter(item => item.id !== run.id), run] }));
+          setState(current => ({ ...current, bots: current.bots.map(bot => bot.id === id ? { ...bot, preview: clean } : bot) }));
+          if (activeIdRef.current === id) { setDraft(''); setCustomAnswer(''); }
+          setRunRefresh(value => value + 1);
+          return;
+        }
         const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${id}/messages`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: clean }) });
         if (!response.ok) throw new Error('save failed');
         const { message } = await response.json() as { message: Message };
         setState(current => ({ ...current, messages: { ...current.messages, [id]: [...(current.messages[id] || []), message] }, bots: current.bots.map(bot => bot.id === id ? { ...bot, preview: clean } : bot) }));
         if (activeIdRef.current === id) { setDraft(''); setCustomAnswer(''); setNotice(true); }
       } catch {
-        setHistory({ id, status: 'error' });
-        setBotError('Message save could not be confirmed. Refresh and check the history before trying again.');
+        if (piFeature === 'enabled') setRunHistory(current => ({ ...current, id, status: 'error' }));
+        else setHistory({ id, status: 'error' });
+        setBotError('Submission could not be confirmed. Refresh and check the history before trying again.');
       } finally { sendingRef.current = false; setSending(false); }
       return;
     }
@@ -225,6 +272,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     renameQueue.current[id] = next;
     void next.finally(() => { if (renameQueue.current[id] === next) delete renameQueue.current[id]; });
   }
+  const composerDisabled = remote && (sending || history.id !== active?.id || history.status !== 'ready' || piFeature === 'loading' || piFeature === 'error' || (piFeature === 'enabled' && (runHistory.id !== active?.id || runHistory.status !== 'ready')));
   if (botStatus === 'loading') return <main className="auth-page"><div className="auth-card">Loading your Bots…</div></main>;
   if (botStatus === 'error') return <main className="auth-page"><div className="auth-card"><p role="alert">Could not load your Bots.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></div></main>;
 
@@ -245,7 +293,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       <div className="sidebar-footer"><div className="account-dot">{account ? account.name.slice(0, 1).toUpperCase() : "M"}</div>{account && <button type="button" className="logout-button" onClick={onLogout}>Sign out</button>}<button type="button" className="connect-button" onClick={() => setNotice(true)}>Connect apps <span aria-hidden="true">◈◉▣</span></button></div>
     </aside>
     <main className="main-shell">
-      {!reference && <div className="preview-notice" role="status">{remote ? 'Bot 和消息保存在服务器；尚未连接云电脑或 Agent。原预览数据仍在本地，不会自动导入。' : '本地界面预览：数据仅保存在当前浏览器，尚未连接云电脑或 Agent。'}</div>}
+      {!reference && <div className="preview-notice" role="status">{remote ? (piFeature === 'enabled' ? 'Pi 任务在你的云电脑执行；同一台电脑的任务会排队。' : 'Bot 和消息保存在服务器；尚未连接云电脑或 Agent。原预览数据仍在本地，不会自动导入。') : '本地界面预览：数据仅保存在当前浏览器，尚未连接云电脑或 Agent。'}</div>}
+      {remote && piFeature === 'error' && <div role="alert">Could not check Agent availability. Refresh to try again.</div>}
       {botError && <div role="alert">{botError}</div>}
       {newChat || !active ? <div className="new-chat-view">
         <div className="new-chat-head"><span>To: <span className="muted">Start a chat with...</span></span><IconButton name="close" label="Close new chat" onClick={() => setNewChat(false)} /></div>
@@ -260,17 +309,19 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
               {remote && history.id === active.id && history.status === 'error' && <div role="alert">Could not confirm message history. Refresh to check it.</div>}
               {messages.length > 0 && <div className="date-line">{reference ? 'Today 1:26 PM' : 'Today'}</div>}
               {messages.map(message => <div key={message.id} className={`message-line ${message.role}`}><div className="message-bubble">{message.text}</div>{message.role === 'bot' && <div className="message-actions"><Icon name="smile" /><Icon name="reply" /><Icon name="more" /></div>}</div>)}
+              {remote && piFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.map(run => <React.Fragment key={run.id}><div className="message-line user"><div className="message-bubble">{run.prompt}</div></div><div className="message-line bot"><div className="message-bubble"><span className="run-status">{({ queued: 'Queued · waiting for your computer', running: 'Working on your computer', completed: 'Completed', failed: 'Failed', unknown: 'Outcome unknown · check before retrying' } as const)[run.status]}</span>{run.result && <p>{run.result}</p>}</div></div></React.Fragment>)}
+              {remote && piFeature === 'enabled' && runHistory.id === active.id && runHistory.status === 'error' && <div role="alert">Could not confirm task history. Refresh to check it before submitting again.</div>}
               {state.showOnboarding[active.id] && <div className="onboarding-card">
                 <div className="onboarding-title">What do you want me helping with most right now?<IconButton name="close" label="Dismiss suggestions" onClick={() => setState(current => ({ ...current, showOnboarding: { ...current.showOnboarding, [active.id]: false } }))} /></div>
                 <div className="choice-list">{['Work & projects', 'Email & Slack', 'Calendar & scheduling', 'Research & writing', 'Something else'].map((option, index) => <button key={option} type="button" onClick={() => addMessage(option)}><span className="choice-key">{String.fromCharCode(65 + index)}</span><span>{option}{index === 4 && <small>I’ll tell you in chat</small>}</span></button>)}</div>
                 <form onSubmit={event => { event.preventDefault(); addMessage(customAnswer); }}><input aria-label="Type your own answer" placeholder="Type your own answer" value={customAnswer} onChange={event => setCustomAnswer(event.target.value)} /></form>
                 <div className="card-actions" aria-hidden="true"><Icon name="smile" /><Icon name="reply" /><Icon name="more" /></div>
               </div>}
-              {!reference && !messages.length && <div className="empty-chat"><Avatar bot={active} size={52} /><p>Start a conversation with {active.name}.</p><small>This local preview does not connect to a model.</small></div>}
+              {!reference && !messages.length && !(piFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.length) && <div className="empty-chat"><Avatar bot={active} size={52} /><p>Start a conversation with {active.name}.</p>{piFeature !== 'enabled' && <small>This local preview does not connect to a model.</small>}</div>}
               {notice && <div className="local-feedback" role="status">{remote ? 'No message was sent to an Agent.' : 'This is a local preview. No message was sent to an Agent or external service.'}</div>}
               <div ref={messagesEnd} />
             </div>
-            <form className="composer" onSubmit={event => { event.preventDefault(); void addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} disabled={remote && (sending || history.id !== active.id || history.status !== 'ready')} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() ? <button type="submit" className="send-button" disabled={remote && (sending || history.id !== active.id || history.status !== 'ready')} aria-label={remote ? 'Save message' : 'Save local message'}><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
+            <form className="composer" onSubmit={event => { event.preventDefault(); void addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} disabled={composerDisabled} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() ? <button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote ? (piFeature === 'enabled' ? 'Send task' : 'Save message') : 'Save local message'}><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
           </section>
           {panel && <aside className="details-panel" aria-label="Bot details"><Avatar bot={active} size={86} /><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => void saveBotName()} /><span className="bot-label">{active.label || 'Add a label'}</span><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? <><div className="computer-preview"><Icon name="screen" /><span>Computer not connected</span></div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
         </div>
