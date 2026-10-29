@@ -4,6 +4,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { get } from 'node:http';
+import { readFileSync } from 'node:fs';
 import mysql from 'mysql2/promise';
 import { chromium } from 'playwright-core';
 
@@ -29,7 +30,9 @@ try {
     { apiVersion: 'v1', kind: 'Secret', metadata: { name: 'auth-secrets', namespace }, type: 'Opaque', data: { 'mysql-password': Buffer.from(password).toString('base64'), 'google-secret': Buffer.from('synthetic-test-secret').toString('base64') } },
   ] };
   kubectl(['apply', '-f', '-'], JSON.stringify(resources));
-  kubectl(['apply', '-n', namespace, '-f', 'deploy/k3d/auth.yaml']);
+  const image = process.env.COKE_GROK_TEST_AUTH_IMAGE || 'coke-grok-auth:local-test';
+  if (!/^coke-grok-auth:[a-zA-Z0-9._-]+$/.test(image)) throw new Error('Invalid test image name');
+  kubectl(['apply', '-n', namespace, '-f', '-'], readFileSync('deploy/k3d/auth.yaml', 'utf8').replaceAll('coke-grok-auth:local-test', image));
   kubectl(['rollout', 'status', '-n', namespace, 'deployment/coke-grok-auth', '--timeout=90s']);
   forward = spawn('kubectl', ['port-forward', '-n', namespace, 'service/coke-grok-auth', `${httpPort}:3001`, '--address=127.0.0.1'], { stdio: 'ignore' });
   let res: Response | undefined;
@@ -51,20 +54,24 @@ try {
   assert.equal(redirect.origin, 'https://accounts.google.com');
   assert.equal(redirect.searchParams.get('redirect_uri'), `${base}/auth/google/callback`);
   assert.match(start.headers.get('set-cookie')!, /Path=\/grok-bot\/auth\/google\/callback/);
-  kubectl(['apply', '-n', namespace, '-f', 'deploy/k3d/auth-ingress.yaml']);
-  let ingressVerified = false;
-  const ingressResponses = new Set<string>();
-  for (let i = 0; i < 100; i++) {
-    const response = await new Promise<{status: number | undefined; body: string}>((resolve, reject) => {
-      get({ host: '127.0.0.1', port: 18080, path: '/grok-bot/api/auth/me', headers: { Host: `127.0.0.1:${httpPort}` } }, res => {
-        let body = ''; res.setEncoding('utf8'); res.on('data', chunk => { body += chunk; }); res.on('end', () => resolve({ status: res.statusCode, body }));
-      }).on('error', reject);
-    });
-    ingressResponses.add(`${response.status}:${response.body.includes('Unauthenticated') ? 'auth' : 'other'}`);
-    if (response.status === 401 && response.body.includes('Unauthenticated')) { ingressVerified = true; break; }
-    await new Promise(resolve => setTimeout(resolve, 100));
+  if (process.env.COKE_GROK_TEST_SKIP_INGRESS !== '1') {
+    const existing = JSON.parse(kubectl(['get', 'ingress', '-A', '-o', 'json'])) as { items: Array<{ metadata: { namespace: string }; spec: { rules?: Array<{ http?: { paths?: Array<{ path: string }> } }> } }> };
+    if (existing.items.some(item => item.metadata.namespace !== namespace && item.spec.rules?.some(rule => rule.http?.paths?.some(path => path.path === '/grok-bot')))) throw new Error('Existing /grok-bot ingress detected; set COKE_GROK_TEST_SKIP_INGRESS=1 to avoid interfering with it');
+    kubectl(['apply', '-n', namespace, '-f', 'deploy/k3d/auth-ingress.yaml']);
+    let ingressVerified = false;
+    const ingressResponses = new Set<string>();
+    for (let i = 0; i < 100; i++) {
+      const response = await new Promise<{status: number | undefined; body: string}>((resolve, reject) => {
+        get({ host: '127.0.0.1', port: 18080, path: '/grok-bot/api/auth/me', headers: { Host: `127.0.0.1:${httpPort}` } }, res => {
+          let body = ''; res.setEncoding('utf8'); res.on('data', chunk => { body += chunk; }); res.on('end', () => resolve({ status: res.statusCode, body }));
+        }).on('error', reject);
+      });
+      ingressResponses.add(`${response.status}:${response.body.includes('Unauthenticated') ? 'auth' : 'other'}`);
+      if (response.status === 401 && response.body.includes('Unauthenticated')) { ingressVerified = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.ok(ingressVerified, `Traefik must reach the auth service with the complete path; observed ${[...ingressResponses].join(', ')}`);
   }
-  assert.ok(ingressVerified, `Traefik must reach the auth service with the complete path; observed ${[...ingressResponses].join(', ')}`);
   if (process.env.COKE_GROK_TEST_DB_FAILURE === '1') {
     const testContainer = 'coke-grok-k3d-readiness-mysql';
     const mapped = execFileSync('docker', ['port', testContainer, '3306/tcp'], { encoding: 'utf8' }).trim();
