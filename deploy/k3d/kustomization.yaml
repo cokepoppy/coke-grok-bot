@@ -7,4 +7,4 @@ resources:
 images:
   - name: coke-grok-auth
     newName: coke-grok-auth
-    newTag: sha-450d007
+    newTag: sha-5b66393
