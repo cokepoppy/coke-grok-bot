@@ -20,6 +20,9 @@
     "build:server": "esbuild src/server/start-auth.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist/server/auth.cjs",
     "test:bundle": "node --import tsx tests/bundled-auth.e2e.ts",
     "test:k3d-auth": "node --import tsx tests/k3d-auth.e2e.ts",
+    "test:model-gateway": "node --import tsx --test tests/model-gateway.test.ts",
+    "test:run-store": "node --import tsx --test tests/run-store.test.ts",
+    "test:pi-k3d": "node --import tsx tests/pi-k3d-gateway.e2e.ts",
     "build:deployment": "npm run build && node scripts/mark-web-build.mjs && npm run build:server"
   },
   "dependencies": {

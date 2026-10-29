@@ -1,0 +1,52 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import mysql from 'mysql2/promise';
+import { TenantStore, type Session } from '../src/server/tenant-store.ts';
+import { BotStore } from '../src/server/bot-store.ts';
+import { RunStore } from '../src/server/run-store.ts';
+
+const port = Number(process.env.COKE_GROK_TEST_MYSQL_PORT);
+if (!port) throw new Error('Set COKE_GROK_TEST_MYSQL_PORT to a disposable local MySQL instance.');
+test('runs are deduplicated, isolated, serialized per computer and never silently retried after lease expiry', async () => {
+  const database = `grok_runs_${randomUUID().replaceAll('-','')}`;
+  const admin = await mysql.createConnection({host:'127.0.0.1',port,user:'root'});
+  await admin.query(`CREATE DATABASE \`${database}\``);
+  const pool = mysql.createPool({host:'127.0.0.1',port,user:'root',database,timezone:'Z',connectionLimit:6});
+  try {
+    const identities = new TenantStore(pool); await identities.migrate();
+    const bots = new BotStore(pool); await bots.migrate();
+    const runs = new RunStore(pool); await runs.migrate(); await runs.migrate();
+    const a = await identities.signInGoogle({subject:'a',email:'a@example.test',name:'A'});
+    const b = await identities.signInGoogle({subject:'b',email:'b@example.test',name:'B'});
+    const session = (x:typeof a):Session => ({...x,email:'x@example.test',name:'X',role:'owner'});
+    const sa = session(a), sb = session(b);
+    const bot1 = await bots.create(sa,{name:'A1',shape:'hex',color:'#abcdef'});
+    const bot2 = await bots.create(sa,{name:'A2',shape:'round',color:'#abcdef'});
+    const bot3 = await bots.create(sb,{name:'B',shape:'round',color:'#abcdef'});
+    const requestId = randomUUID();
+    const [first, duplicate] = await Promise.all([runs.create(sa,bot1.id,requestId,'work one'),runs.create(sa,bot1.id,requestId,'work one')]);
+    assert.ok(first && duplicate); assert.equal(first.id,duplicate.id);
+    await assert.rejects(runs.create(sa,bot1.id,requestId,'different'));
+    assert.equal(await runs.create(sb,bot1.id,randomUUID(),'intrude'),null);
+    assert.equal(await runs.list(sb,bot1.id),null);
+    assert.equal(await runs.events(sb,first.id),null);
+    const second = await runs.create(sa,bot2.id,randomUUID(),'work two');
+    const other = await runs.create(sb,bot3.id,randomUUID(),'other');
+    assert.ok(second && other);
+    const [claim1, claim2] = await Promise.all([runs.claimNext(sa,10),runs.claimNext(sa,10)]);
+    const claim = claim1 || claim2; assert.ok(claim); assert.equal(Number(Boolean(claim1))+Number(Boolean(claim2)),1);
+    const otherClaim = await runs.claimNext(sb,10); assert.ok(otherClaim);
+    assert.equal(await runs.finish(claim.run.id,randomUUID(),'completed','forged'),false);
+    assert.equal(await runs.finish(claim.run.id,claim.leaseId,'completed','done'),true);
+    assert.equal(await runs.finish(claim.run.id,claim.leaseId,'completed','duplicate'),false);
+    const next = await runs.claimNext(sa,1); assert.ok(next); assert.notEqual(next.run.id,claim.run.id);
+    await new Promise(resolve => setTimeout(resolve,1200));
+    assert.equal(await runs.markExpiredUnknown(),1);
+    assert.equal(await runs.finish(next.run.id,next.leaseId,'completed','late'),false);
+    assert.equal(await runs.claimNext(sa,10),null);
+    assert.deepEqual((await runs.events(sa,next.run.id))?.map(event => event.status),['queued','running','unknown']);
+    assert.equal((await runs.list(sa,next.run.botId))?.find(run => run.id === next.run.id)?.status,'unknown');
+    assert.equal(await runs.finish(otherClaim.run.id,otherClaim.leaseId,'completed','other done'),true);
+  } finally { await pool.end(); await admin.query(`DROP DATABASE \`${database}\``); await admin.end(); }
+});
