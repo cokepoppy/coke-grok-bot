@@ -84,9 +84,13 @@ function IconButton({ name, label, onClick, className = '' }: { name: IconName; 
 type Account = { userId: string; tenantId: string; email: string; name: string; role: string };
 
 function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () => void }) {
-  const storageKey = account ? `${STORAGE_KEY}:${account.tenantId}:${account.userId}` : STORAGE_KEY;
   const reference = new URLSearchParams(window.location.search).get('reference') === '101-new-bot';
+  const remote = Boolean(account) && !reference;
+  const storageKey = account ? `${STORAGE_KEY}:${account.tenantId}:${account.userId}${remote ? ':server-bots-v1' : ''}` : STORAGE_KEY;
   const [state, setState] = useState<PreviewState>(() => reference ? initialState(true) : safeStoredState(storageKey) || initialState(false));
+  const [botStatus, setBotStatus] = useState<'loading' | 'ready' | 'error'>(remote ? 'loading' : 'ready');
+  const [botError, setBotError] = useState('');
+  const [savingBot, setSavingBot] = useState(false);
   const [newChat, setNewChat] = useState(false);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
@@ -97,13 +101,26 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [notice, setNotice] = useState(false);
   const messagesEnd = useRef<HTMLDivElement>(null);
   const active = state.bots.find(bot => bot.id === state.activeId) || state.bots[0];
-  const messages = state.messages[active.id] || [];
+  const messages = active ? state.messages[active.id] || [] : [];
   const filtered = state.bots.filter(bot => `${bot.name} ${bot.label}`.toLowerCase().includes(query.toLowerCase()));
 
   useEffect(() => {
     if (reference) return;
     try { localStorage.setItem(storageKey, JSON.stringify(state)); } catch { /* The preview still works in memory. */ }
   }, [state, reference, storageKey]);
+  useEffect(() => {
+    if (!remote) return;
+    const controller = new AbortController();
+    fetch(`${import.meta.env.BASE_URL}api/bots`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
+      .then(async response => { if (!response.ok) throw new Error('bots unavailable'); return response.json() as Promise<{ bots: Omit<Bot, 'preview'>[] }>; })
+      .then(({ bots }) => {
+        if (!Array.isArray(bots)) throw new Error('invalid bots');
+        const mapped = bots.map(bot => ({ ...bot, preview: 'Start a conversation' }));
+        setState(current => ({ ...current, bots: mapped, activeId: mapped.some(bot => bot.id === current.activeId) ? current.activeId : mapped[0]?.id || '' }));
+        setBotStatus('ready');
+      }).catch(error => { if (error.name !== 'AbortError') setBotStatus('error'); });
+    return () => controller.abort();
+  }, [remote]);
   useEffect(() => { setDraft(''); setCustomAnswer(''); setNotice(false); }, [state.activeId]);
   useEffect(() => { if (messages.length > 1) messagesEnd.current?.scrollIntoView({ block: 'nearest' }); }, [messages.length]);
 
@@ -112,7 +129,20 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     setNewChat(false);
     setPanel(false);
   }
-  function createBot() {
+  async function createBot() {
+    if (remote) {
+      if (savingBot) return;
+      setSavingBot(true); setBotError('');
+      try {
+        const response = await fetch(`${import.meta.env.BASE_URL}api/bots`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'New Bot', color: '#a382ef', shape: 'drop' }) });
+        if (!response.ok) throw new Error('create failed');
+        const { bot } = await response.json() as { bot: Omit<Bot, 'preview'> };
+        setState(current => ({ ...current, bots: [{ ...bot, preview: 'Start a conversation' }, ...current.bots], activeId: bot.id }));
+        setNewChat(false); setPanel(false);
+      } catch { setBotError('Could not create the Bot. Please try again.'); }
+      finally { setSavingBot(false); }
+      return;
+    }
     const id = crypto.randomUUID();
     const bot: Bot = { id, name: 'New Bot', label: '', color: '#a382ef', shape: 'drop', group: 'Unassigned', preview: 'Start a conversation' };
     // A static welcome card demonstrates the recorded layout in this local-only preview.
@@ -123,14 +153,28 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     setPanel(false);
   }
   function addMessage(text: string) {
+    if (!active) return;
     const clean = text.trim();
     if (!clean) return;
     setState(current => ({ ...current, messages: { ...current.messages, [active.id]: [...(current.messages[active.id] || []), { id: crypto.randomUUID(), role: 'user', text: clean }] }, bots: current.bots.map(bot => bot.id === active.id ? { ...bot, preview: clean } : bot), showOnboarding: { ...current.showOnboarding, [active.id]: false } }));
     setDraft(''); setCustomAnswer(''); setNotice(true);
   }
   function renameBot(name: string) {
+    if (!active) return;
     setState(current => ({ ...current, bots: current.bots.map(bot => bot.id === active.id ? { ...bot, name: name.slice(0, 60) } : bot) }));
   }
+  async function saveBotName() {
+    if (!remote || !active) return;
+    const name = active.name.trim();
+    if (!name) { setBotError('Bot name cannot be empty.'); return; }
+    setBotError('');
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${active.id}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+      if (!response.ok) throw new Error('rename failed');
+    } catch { setBotError('Could not save the Bot name. Please try again.'); }
+  }
+  if (botStatus === 'loading') return <main className="auth-page"><div className="auth-card">Loading your Bots…</div></main>;
+  if (botStatus === 'error') return <main className="auth-page"><div className="auth-card"><p role="alert">Could not load your Bots.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></div></main>;
 
   return <div className={`app ${reference ? 'reference-mode' : 'preview-mode'}`}>
     <aside className="sidebar" aria-label="Bots">
@@ -140,7 +184,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       <div className="sidebar-scroll">
         {reference && <><div className="section-line"><span>OLD</span><span>3</span></div><div className="section-line"><span>MISC</span><span>3</span></div></>}
         <div className="section-line unassigned"><span>Unassigned</span></div>
-        {filtered.map(bot => <button key={bot.id} type="button" className={`bot-row ${!newChat && bot.id === active.id ? 'selected' : ''}`} onClick={() => selectBot(bot.id)}>
+        {filtered.map(bot => <button key={bot.id} type="button" className={`bot-row ${!newChat && bot.id === active?.id ? 'selected' : ''}`} onClick={() => selectBot(bot.id)}>
           <Avatar bot={bot} size={46} /><span className="bot-row-content"><span className="bot-row-title">{bot.name}{bot.label && <small>{bot.label}</small>}</span><span className="bot-preview">{bot.preview}</span></span>
         </button>)}
         {filtered.length === 0 && <p className="empty-list">No matching bots</p>}
@@ -149,8 +193,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       <div className="sidebar-footer"><div className="account-dot">{account ? account.name.slice(0, 1).toUpperCase() : "M"}</div>{account && <button type="button" className="logout-button" onClick={onLogout}>Sign out</button>}<button type="button" className="connect-button" onClick={() => setNotice(true)}>Connect apps <span aria-hidden="true">◈◉▣</span></button></div>
     </aside>
     <main className="main-shell">
-      {!reference && <div className="preview-notice" role="status">本地界面预览：数据仅保存在当前浏览器，尚未连接云电脑或 Agent。</div>}
-      {newChat ? <div className="new-chat-view">
+      {!reference && <div className="preview-notice" role="status">{remote ? 'Bot 保存在服务器；聊天仅保存在当前浏览器，尚未连接云电脑或 Agent。原预览数据仍在本地，不会自动导入。' : '本地界面预览：数据仅保存在当前浏览器，尚未连接云电脑或 Agent。'}</div>}
+      {botError && <div role="alert">{botError}</div>}
+      {newChat || !active ? <div className="new-chat-view">
         <div className="new-chat-head"><span>To: <span className="muted">Start a chat with...</span></span><IconButton name="close" label="Close new chat" onClick={() => setNewChat(false)} /></div>
         <div className="new-chat-menu"><button type="button" className="menu-option menu-primary" onClick={createBot}><Icon name="plus" />Create new Bot</button><button type="button" className="menu-option" onClick={() => setNotice(true)}><span className="menu-symbol">♧</span>Create group chat</button>{[primary, ...state.bots].map(bot => <button key={bot.id} type="button" className="menu-option" onClick={() => bot.id === primary.id ? setNotice(true) : selectBot(bot.id)}><Avatar bot={bot} size={27} />{bot.name}</button>)}<button type="button" className="menu-option team-option" onClick={() => setNotice(true)}><span>🟣</span>Team Bots <span className="menu-arrow">›</span></button></div>
       </div> : <>
@@ -173,7 +218,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
             </div>
             <form className="composer" onSubmit={event => { event.preventDefault(); addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() ? <button type="submit" className="send-button" aria-label="Save local message"><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
           </section>
-          {panel && <aside className="details-panel" aria-label="Bot details"><Avatar bot={active} size={86} /><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} /><span className="bot-label">{active.label || 'Add a label'}</span><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? <><div className="computer-preview"><Icon name="screen" /><span>Computer not connected</span></div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
+          {panel && <aside className="details-panel" aria-label="Bot details"><Avatar bot={active} size={86} /><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => void saveBotName()} /><span className="bot-label">{active.label || 'Add a label'}</span><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? <><div className="computer-preview"><Icon name="screen" /><span>Computer not connected</span></div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
         </div>
       </>}
     </main>

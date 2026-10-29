@@ -9,6 +9,7 @@ import { chromium } from 'playwright-core';
 import { TenantStore } from '../src/server/tenant-store.ts';
 import { GoogleAuthService, type IdentityProvider } from '../src/server/google-auth.ts';
 import { createAuthServer } from '../src/server/auth-http.ts';
+import { BotStore } from '../src/server/bot-store.ts';
 
 const mysqlPort = Number(process.env.COKE_GROK_TEST_MYSQL_PORT);
 if (!mysqlPort) throw new Error('Set COKE_GROK_TEST_MYSQL_PORT to a disposable local MySQL instance.');
@@ -26,6 +27,7 @@ const admin = await mysql.createConnection({ host: '127.0.0.1', port: mysqlPort,
 await admin.query(`CREATE DATABASE \`${database}\``);
 const pool = mysql.createPool({ host: '127.0.0.1', port: mysqlPort, user: 'root', database, timezone: 'Z' });
 const store = new TenantStore(pool); await store.migrate();
+const bots = new BotStore(pool); await bots.migrate();
 let activeState = '';
 const flows = new Map<string, { nonce: string; challenge: string }>();
 const provider: IdentityProvider = {
@@ -42,7 +44,7 @@ const identityServer = createHttpServer((req, res) => {
   res.writeHead(302, { Location: `${publicUrl}auth/google/callback?state=${activeState}&code=${identity}` }); res.end();
 });
 identityServer.listen(identityPort, '127.0.0.1'); await once(identityServer, 'listening');
-const backend = createAuthServer(new GoogleAuthService(store, provider, publicUrl), publicUrl);
+const backend = createAuthServer(new GoogleAuthService(store, provider, publicUrl), publicUrl, undefined, bots);
 backend.listen(backendPort, '127.0.0.1'); await once(backend, 'listening');
 const vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(frontendPort), '--strictPort'], { env: { ...process.env, VITE_REQUIRE_AUTH: 'true', VITE_BASE_PATH: base, VITE_AUTH_PROXY_TARGET: `http://127.0.0.1:${backendPort}` }, stdio: 'ignore' });
 let browser;
@@ -62,15 +64,22 @@ try {
   assert.equal(new URL(page.url()).searchParams.has('authError'), false);
   await page.getByRole('link', { name: 'Continue with Google' }).click();
   try { await page.getByRole('button', { name: 'Sign out' }).waitFor(); } catch (error) { console.log('browser page', new URL(page.url()).origin, new URL(page.url()).pathname, (await page.locator('body').innerText()).slice(0, 300)); throw error; }
-  await page.getByLabel('Message New Bot').fill('Alice local note');
+  await page.getByRole('button', { name: 'Create new Bot' }).click();
+  await page.getByRole('button', { name: 'Show bot details' }).click();
+  await page.getByLabel('Bot name').fill('Alice Bot');
+  await page.getByLabel('Bot name').blur();
+  await page.getByRole('button', { name: 'Hide bot details' }).click();
+  await page.getByLabel('Message Alice Bot').fill('Alice local note');
   await page.getByRole('button', { name: 'Save local message' }).click();
   await page.reload();
+  await page.getByLabel('Message Alice Bot').waitFor();
   await page.locator('.conversation').getByText('Alice local note').waitFor();
   const aliceSession = (await context.cookies()).find(cookie => cookie.name === 'coke_grok_session')!;
   identity = 'bob';
   await page.goto(`${publicUrl}api/auth/google/start`);
   await page.getByRole('button', { name: 'Sign out' }).waitFor();
   assert.equal(await page.locator('.conversation').getByText('Alice local note').count(), 0);
+  assert.equal(await page.getByText('Alice Bot').count(), 0);
   assert.equal((await fetch(`${publicUrl}api/auth/me`, { headers: { cookie: `${aliceSession.name}=${aliceSession.value}` } })).status, 401);
   await page.getByRole('button', { name: 'Sign out' }).click();
   await page.getByRole('link', { name: 'Continue with Google' }).waitFor();
@@ -78,6 +87,7 @@ try {
   await page.getByRole('link', { name: 'Continue with Google' }).click();
   await page.getByRole('button', { name: 'Sign out' }).waitFor();
   assert.equal(await page.locator('.conversation').getByText('Alice local note').count(), 0);
+  await page.getByRole('button', { name: 'Create new Bot' }).click();
   await page.getByLabel('Message New Bot').fill('Bob local note');
   await page.getByRole('button', { name: 'Save local message' }).click();
   await page.getByRole('button', { name: 'Sign out' }).click();
@@ -85,6 +95,10 @@ try {
   await page.getByRole('link', { name: 'Continue with Google' }).click();
   await page.locator('.conversation').getByText('Alice local note').waitFor();
   assert.equal(await page.locator('.conversation').getByText('Bob local note').count(), 0);
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByLabel('Message Alice Bot').waitFor();
+  assert.equal(await page.locator('.conversation').getByText('Alice local note').count(), 0);
   const sessionCookies = await context.cookies();
   assert.equal(sessionCookies.find(cookie => cookie.name === 'coke_grok_session')?.path, base);
   if (base !== '/') assert.equal((await fetch(`${origin}/api/auth/me`)).status, 404);
