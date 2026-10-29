@@ -70,3 +70,5 @@ HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 NO_PROXY=127.
 对 `26:58–27:03` 的切换边界另外核对原尺寸帧：`27:00.667`（第 80 帧）仍是深色放大电脑视图，顶部显示 `Skip this step` 和 `I'm done, continue`，鼠标指针位于前者附近；`27:00.700`（第 81 帧）已切回三栏。此时侧栏显示等待用户，聊天中的电脑卡片显示 `Action needed`、`Take over`、`I'm done` 和 `Skip`；右侧 `Computer` 面板显示 `Needs your attention`、相同任务说明、`Skip this step`、`I'm done, continue` 和电脑预览。视频中的相邻帧无法单独证明点击事件，也无法证明控制租约是否已经释放。
 
 V1 `27:03–27:08` 的 150 帧已逐张查看联系图，并核对 `27:05.500` 原尺寸帧：聊天电脑卡片标记为 `Skipped`，提供 `Open computer`；右侧仍显示浏览器画面；Bot 消息称 Google Forms 仍然打开，可以再次请求控制或让 Bot 自行完成。这是跳过后可见状态的证据，不证明后台租约或多屏机制。
+
+补充相邻原帧核对：V1 `27:02.733`（索引 142）仍显示 `Action needed` 与右侧提示；`27:02.766`（索引 143）切换为 `Skipped`，卡片只保留 `Open computer`，右侧提示消失，电脑预览保留，底部出现 `maya is working`。鼠标当时在输入框附近，因此仅能确认画面状态变化，不能从这两帧推断具体点击或后台执行状态。
