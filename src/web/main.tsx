@@ -2,15 +2,15 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './shell.css';
 
-type Shape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle';
+type Shape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle' | 'oval' | 'square' | 'pill';
 type Bot = { id: string; name: string; label: string; color: string; shape: Shape; group: string; preview: string };
 type Message = { id: string; role: 'user' | 'bot'; text: string };
 type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null };
 type Approval = { id: string; action: string; status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired'; hasScreenshot?: boolean };
 type PreviewState = { bots: Bot[]; activeId: string; messages: Record<string, Message[]>; showOnboarding: Record<string, boolean> };
 type IconName = 'search' | 'plus' | 'mic' | 'sound' | 'close' | 'panel' | 'share' | 'screen' | 'arrow' | 'smile' | 'reply' | 'more';
-const avatarShapes:Shape[]=['cloud','drop','hex','round','triangle'];
-const avatarColors=['#a382ef','#4c8ff4','#5ac0ae','#f7b447','#e95568','#a48a6d','#080808','#e96aa7'];
+const avatarShapes:Shape[]=['round','oval','square','pill','triangle','hex','cloud','drop'];
+const avatarColors=['#000000','#a27952','#ff3e51','#ff781c','#ffaf38','#00c972','#1cc3b0','#2a92fe','#a97efe','#ff5eb1','#959595'];
 
 const STORAGE_KEY = 'coke-grok-bot:desktop-preview:v1';
 const primary: Bot = { id: 'bobo', name: 'bobo', label: 'life stabilizer', color: '#4c8ff4', shape: 'cloud', group: '', preview: '' };
@@ -71,6 +71,9 @@ function Avatar({ bot, size = 44 }: { bot: Pick<Bot, 'color' | 'shape'>; size?: 
     drop: 'M27 4c-5 1-8 7-12 13C8 27 8 33 12 39c4 7 16 9 25 4 8-4 12-13 8-21C41 14 34 5 27 4Z',
     hex: 'M17 5 34 6 45 16 47 30 38 43 22 47 9 39 5 24 10 12Z',
     round: 'M27 4C13 4 4 14 4 27s10 23 23 23 23-10 23-23S40 4 27 4Z',
+    oval: 'M27 5C13 5 3 15 4 27c1 13 13 21 26 21 13 0 21-8 21-20C51 16 40 5 27 5Z',
+    square: 'M15 6h24c7 0 10 4 10 11v22c0 7-4 10-11 10H16C9 49 5 45 5 38V17C5 10 8 6 15 6Z',
+    pill: 'M19 11h16c11 0 17 7 17 16s-6 16-17 16H19C8 43 2 36 2 27s6-16 17-16Z',
     triangle: 'M20 7c3-4 7-4 11 0l17 26c4 7 0 12-7 13l-29 1C5 47 2 42 5 35Z',
   };
   return <svg width={size} height={size} viewBox="0 0 54 54" className="avatar" aria-hidden="true">
@@ -447,7 +450,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
           {panel && <aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" aria-label="Change Bot picture" onClick={()=>setAvatarEditor({id:active.id,shape:active.shape,color:active.color})}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => void saveBotName()} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && piFeature === 'enabled' ? <ComputerPanel name={active.name} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
         </div>
       </>}
-      {avatarEditor && <div className="avatar-overlay" onMouseDown={event=>{if(event.target===event.currentTarget&&!savingAvatar)setAvatarEditor(null)}}><section className="avatar-dialog" role="dialog" aria-modal="true" aria-labelledby="avatar-dialog-title" onKeyDown={event=>{if(event.key==='Escape'&&!savingAvatar)setAvatarEditor(null)}}><header><h2 id="avatar-dialog-title">Bot picture</h2><IconButton name="close" label="Close picture editor" onClick={()=>{if(!savingAvatar)setAvatarEditor(null)}} /></header><div className="avatar-preview"><Avatar bot={avatarEditor} size={96} /></div><p>Shape</p><div className="avatar-choices">{avatarShapes.map(shape=><button key={shape} type="button" aria-label={`Shape ${shape}`} aria-pressed={avatarEditor.shape===shape} onClick={()=>setAvatarEditor(current=>current?{...current,shape}:null)}><Avatar bot={{shape,color:avatarEditor.color}} size={38} /></button>)}</div><p>Color</p><div className="avatar-choices">{avatarColors.map(color=><button key={color} type="button" className="avatar-color" aria-label={`Color ${color}`} aria-pressed={avatarEditor.color===color} onClick={()=>setAvatarEditor(current=>current?{...current,color}:null)}><span style={{background:color}} /></button>)}</div><footer><button type="button" disabled={savingAvatar} onClick={()=>setAvatarEditor(null)}>Cancel</button><button type="button" disabled={savingAvatar} onClick={()=>void saveAvatar()}>Set avatar</button></footer></section></div>}
+      {avatarEditor && <div className="avatar-overlay" onMouseDown={event=>{if(event.target===event.currentTarget&&!savingAvatar)setAvatarEditor(null)}}><section className="avatar-dialog" role="dialog" aria-modal="true" aria-label="Bot picture" onKeyDown={event=>{if(event.key==='Escape'&&!savingAvatar)setAvatarEditor(null)}}><header className="avatar-tabs"><button type="button" className="selected" aria-current="true">Bot</button><button type="button" disabled title="Not available yet">Generate</button><button type="button" disabled title="Not available yet">Upload</button><button type="button" disabled title="Not available yet">Reset</button></header><div className="avatar-shapes">{avatarShapes.map(shape=><button key={shape} type="button" aria-label={`Shape ${shape}`} aria-pressed={avatarEditor.shape===shape} disabled={savingAvatar} onClick={()=>setAvatarEditor(current=>current?{...current,shape}:null)}><Avatar bot={{shape,color:avatarEditor.color}} size={40} /></button>)}</div><div className="avatar-colors">{avatarColors.map(color=><button key={color} type="button" className="avatar-color" aria-label={`Color ${color}`} aria-pressed={avatarEditor.color.toLowerCase()===color} disabled={savingAvatar} onClick={()=>setAvatarEditor(current=>current?{...current,color}:null)}><span style={{background:color}} /></button>)}</div><footer><button type="button" disabled={savingAvatar} onClick={()=>setAvatarEditor(null)}>Cancel</button><button type="button" disabled={savingAvatar} onClick={()=>void saveAvatar()}>Set avatar</button></footer></section></div>}
     </main>
   </div>;
 }

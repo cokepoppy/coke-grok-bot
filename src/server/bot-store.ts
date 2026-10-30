@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto';
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import type { Session } from './tenant-store.ts';
 
-export type BotShape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle';
+export type BotShape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle' | 'oval' | 'square' | 'pill';
 export interface StoredBot { id: string; name: string; label: string; color: string; shape: BotShape; group: string }
 export interface StoredMessage { id: string; role: 'user'; text: string }
-const shapes = new Set<BotShape>(['cloud', 'drop', 'hex', 'round', 'triangle']);
+const shapes = new Set<BotShape>(['cloud', 'drop', 'hex', 'round', 'triangle', 'oval', 'square', 'pill']);
 
 export class BotStore {
   constructor(private readonly pool: Pool) {}

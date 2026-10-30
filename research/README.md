@@ -11,7 +11,7 @@
 | V2 | [官方 Grok Bot 201](https://www.youtube.com/watch?v=rOVomdnWhjQ)，2026-10-21 | 已完整下载本机 MKV；1920×1080、25 fps、3326.421 秒 | 已按约 30 秒间隔浏览整体联系图，并取 01:15、14:45 各 25 帧；两个时间点仅查看第一张原尺寸帧 | 多 Bot、群聊和工作流还需逐帧分析；不能把上传日期当成客户端版本日期 |
 | V3 | [官方 Introducing Grok Bot](https://www.youtube.com/watch?v=F1_0Lkp16Rc)，2026-08-11 | 已完整下载本机 MKV；3840×2160、24 fps、106.001 秒 | 开头约 0–13 秒按 1 fps 粗看，为宣传片镜头 | 全片逐帧与宣传场景归类；不能以宣传镜头推断真实客户端交互 |
 | T1 | [Charlie Chang：The ONLY Grok Bot Tutorial You Need 2026](https://www.youtube.com/watch?v=q1IwR88mhaA)，2026-09-30 | 已完整下载本机 MKV；1920×1080、24000/1001 fps、840.621 秒；2026-10-30 查询时约 39.3 万播放、146 万频道订阅 | 全片按 10 秒采样联系图浏览；01:35–02:00 共 600 帧已逐张查看联系图，关键帧再看原尺寸图 | 后续按原视频核对电脑操作、设置、Routine、多 Bot；第三方解释不是官方协议证明 |
-| T2 | [Tech With Tim：What You Need to Know About Grok Bot](https://www.youtube.com/watch?v=ezANo2RNryU)，2026-08-28 | 2026-10-30 元数据查询时约 5.97 万播放、211 万频道订阅 | 已获取元数据，尚未下载或观看画面 | 下载后重点查看电脑操作和教学任务，不把章节目录当作观看证据 |
+| T2 | [Tech With Tim：What You Need to Know About Grok Bot](https://www.youtube.com/watch?v=ezANo2RNryU)，2026-08-28 | 已完整下载；1920×1080、30000/1001 fps、748.601 秒；2026-10-30 查询约 5.97 万播放、211 万频道订阅 | 全片约每 10 秒采样浏览；02:35–02:45、02:55–03:00 共 450 帧已查看联系图；另核对 02:57 的五张原尺寸帧 | 按需逐帧研究电脑、教学任务和例行任务；第三方视频不能证明当前产品行为 |
 | T3 | [Founders School：The ONLY Grok Bot Tutorial You Need](https://www.youtube.com/watch?v=ifW-Aj9LOXQ)，2026-10-25 | 2026-10-30 元数据查询时约 6.67 万播放、2800 频道订阅 | 已获取元数据，尚未下载或观看画面 | 后续核对新版协作与例行任务；频道订阅量较少但视频较新 |
 
 本机视频文件的 SHA-256：V1 `270123c76fb7f9a4818f7770d4e5754f3097d06770ad95b817ed0825dbce9231`；V2 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`；V3 `1d6cc00c197d14fb96715a7200f8e95aadf7260d722715b078c8515f54b73a60`。这是当前下载及封装的文件哈希，不代表其他清晰度版本。
@@ -20,7 +20,9 @@ T1 本机文件 SHA-256：`2cbb5f133a0c9743f2d52453a561331fbe0e97d4a271f76569166
 
 T1 `01:45.522` 菜单中 `Create new Bot` 保持高亮；紧接着 `01:45.564` 切到新 Bot 聊天，左侧出现 `New Bot`，聊天内容尚未生成，随后出现问候和用途选择卡片。`01:52.946` 的旧版设置面板显示 `Name`、`Label (optional)`、`Description` 和通知开关；`01:55.449` 可见名称已经改为 `Executive Assistant`。这证明视频录制版本的可见状态与改名路径；不能推断后台保存时机。当前官方文档最近更新于 2026-10-28，称个人 Bot 已不再有 description 或 Bot settings 页面，但名称和标签仍可通过详情编辑；因此不把该视频中的旧版 Description 界面当作当前个人 Bot 的功能规范。
 
-当前[官方 Bot 文档](https://docs.x.ai/grok-bot/bots)说明可从详情中的头像进入 Bot、Generate、Upload 等选项，并可改变角色形象。本项目目前只实现已有五种角色形状和八种颜色的保存；选择弹层是临时实现，尚无可核对的官方弹层截图，因此尚未证明它的布局、选项或保存行为像素一致，也没有实现生成和上传。此前的 `22:40` 画面仅证明详情中有头像，不能证明头像弹层的内容。
+当前 [Cursor 官方编辑 Bot 文档](https://prod.cursor.com/help/grok-bot/edit-bot)包含 [桌面头像选择器截图](https://prod.cursor.com/docs-static/images/grok-bot/avatar-picker-light.png)：图片本身为 577×568，顶部有 Bot、Generate、Upload、Reset，下面有两行共八个形状以及两行共十一个颜色。源图 SHA-256 为 `36efaeba2fb86c82550e4acec4a9a225d1f8b800b115cf81f493028d021429d7`，仅保存在被 Git 忽略的本机研究目录。本项目根据该图调整了形状及颜色排列，形状轮廓仍为近似 SVG；选择保存、背景遮罩与底部按钮是临时实现，源图没有证明它们的布局或操作时序。Generate、Upload 和 Reset 尚未实现，按钮处于禁用状态。不能声称弹层已像素一致或官方功能完整。文档对 Generate 和 Upload 明确提及 Set avatar，但未明确说明 Bot 选项的保存时机。
+
+T2 本机文件 SHA-256 `030451a3c29bcf0d9ee4313ccdf8bc4bdcbd908eaafe6d8d032f276fbea423fb`。连续帧中 `02:57.611` 的旧版深色新聊天菜单显示 `Create new Bot` 高亮；`02:57.644` 为 `New Bot / Creating...`，`02:57.678` 已显示带问候的 Bot 对话。画面在相邻帧内跳过等待过程，可能经过剪辑，不能用来推断创建速度或后台保存时机。右下角讲解者遮挡部分应用区域；该旧版与较新文档存在版本差异。02:35–02:45 片段主要显示产品网页而非完整客户端操作。
 
 V1 `22:38–22:43` 新提取并逐张检查 150 帧联系图，期间右侧始终为 Bot 信息和 Computer 预览；`22:40.000` 原尺寸帧可见名称输入、三个标签以及灰色屏幕占位。对照配置 `research/comparisons/101-details.json` 与 `101-new-chat.json` 分别生成本机叠图和差异图。新聊天截图按 `22:08.633` 对照的阈值诊断为约 2.76% 像素超过 32 色阶；电脑详情画面调整后约 3.40%。视频经过缩放压缩且原始视口未知，这些数值不是像素级一致性的验收结论。
 

@@ -15,3 +15,6 @@ research/videos/
 research/frames/
 research/comparisons/local/
 .research/
+
+# Reference screenshots are for local comparison only.
+research/reference-images/
