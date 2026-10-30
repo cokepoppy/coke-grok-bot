@@ -4,6 +4,7 @@ export interface ComputerState extends ComputerSnapshot { owner:'agent'|'user' }
 /** Worker implementation must check state and ownership atomically with the action. */
 export interface GuardedComputerWorker {
  snapshot(signal:AbortSignal):Promise<ComputerState>;
+ snapshotWithImage?(signal:AbortSignal):Promise<{state:ComputerState;image:Buffer}>;
  performIfUnchanged(input:unknown,expected:ComputerState,signal:AbortSignal):Promise<unknown>;
 }
 /**
@@ -15,9 +16,10 @@ export class ComputerBroker {
  constructor(private readonly approvals:Pick<ApprovalStore,'propose'|'consume'>,private readonly worker:GuardedComputerWorker){}
  async propose(runId:string,leaseId:string,input:unknown,signal:AbortSignal):Promise<Approval>{
   if(signal.aborted)throw new Error('Task stopped');
-  const state=await this.worker.snapshot(signal);if(state.owner!=='agent')throw new Error('User controls the computer');
+  const captured=this.worker.snapshotWithImage ? await this.worker.snapshotWithImage(signal) : null;
+  const state=captured?.state ?? await this.worker.snapshot(signal);if(state.owner!=='agent')throw new Error('User controls the computer');
   const action=canonicalComputerAction(input,state);
-  const approval=await this.approvals.propose(runId,leaseId,action,300);
+  const approval=await this.approvals.propose(runId,leaseId,action,300,captured?.image);
   if(!approval)throw new Error('Run lease is unavailable');
   return approval;
  }

@@ -24,7 +24,9 @@ const identityServer=createHttpServer((req,res)=>{state=new URL(req.url||'/',`ht
 const backend=createAuthServer(new GoogleAuthService(store,provider,publicUrl),publicUrl,undefined,bots,runs,approvals);backend.listen(backPort,'127.0.0.1');await once(backend,'listening');
 const vite=spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port',String(frontPort),'--strictPort'],{env:{...process.env,VITE_REQUIRE_AUTH:'true',VITE_BASE_PATH:base,VITE_AUTH_PROXY_TARGET:`http://127.0.0.1:${backPort}`},stdio:'ignore'});
 let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);let executions=0;
-const scheduler=new RunScheduler(runs,{execute:async (_owner,run)=>{executions++;const [rows]=await pool.execute<import('mysql2/promise').RowDataPacket[]>('SELECT lease_id FROM agent_runs WHERE id=?',[run.id]);const lease=String(rows[0].lease_id),proposal=await approvals.propose(run.id,lease,'Submit the test action',20);assert.ok(proposal);await gate;assert.equal(await approvals.consume(run.id,lease,proposal.id,'Submit the test action'),true);return {status:'completed',result:`Done: ${run.prompt}`}}},{concurrency:2,leaseSeconds:30});
+const testImage=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a18sAAAAASUVORK5CYII=','base64');
+const testAction=JSON.stringify({kind:'browser',action:'click',arguments:{target:'Submit the test action'},page:'https://example.test/',screenshotSha256:createHash('sha256').update(testImage).digest('hex')});
+const scheduler=new RunScheduler(runs,{execute:async (_owner,run)=>{executions++;const [rows]=await pool.execute<import('mysql2/promise').RowDataPacket[]>('SELECT lease_id FROM agent_runs WHERE id=?',[run.id]);const lease=String(rows[0].lease_id),proposal=await approvals.propose(run.id,lease,testAction,20,testImage);assert.ok(proposal);await gate;assert.equal(await approvals.consume(run.id,lease,proposal.id,testAction),true);return {status:'completed',result:`Done: ${run.prompt}`}}},{concurrency:2,leaseSeconds:30});
 let browser;
 try{
  for(let i=0;i<100;i++){try{if((await fetch(publicUrl)).ok)break}catch{}if(i===99)throw new Error('Vite did not start');await new Promise(resolve=>setTimeout(resolve,100))}
@@ -32,11 +34,11 @@ try{
  await page.goto(publicUrl);await page.getByRole('link',{name:'Continue with Google'}).click();await page.getByRole('button',{name:'Create new Bot'}).click();
  const field=page.getByLabel('Message New Bot');await field.fill('Test queued task');await page.getByRole('button',{name:'Send task'}).click();
  await page.getByText('Queued · waiting for your computer').waitFor();await scheduler.tick();await page.getByText('Working on your computer').waitFor();
- await page.getByText('Submit the test action').waitFor();let decisionPosts=0;
+ await page.getByText('Browser: click').waitFor();const image=page.getByRole('img',{name:'Computer screen when this action was requested'});await image.waitFor();await page.waitForFunction(()=>{const image=document.querySelector('.approval-card img') as HTMLImageElement|null;return Boolean(image?.complete && image.naturalWidth)});assert.equal(await page.getByRole('button',{name:'Approve',exact:true}).isEnabled(),true);let decisionPosts=0;
  await page.route('**/api/approvals/*',async route=>{decisionPosts++;await route.fetch();await route.fulfill({status:503,body:'{}'})});
  await page.getByRole('button',{name:'Approve',exact:true}).click();await page.getByText('Approval could not be confirmed. Refresh and check its status before trying again.').waitFor();
  await page.waitForTimeout(2300);assert.equal(decisionPosts,1);assert.equal(await page.getByRole('button',{name:'Approve',exact:true}).isDisabled(),true);
- await page.unroute('**/api/approvals/*');await page.reload();await page.getByText('Working on your computer').waitFor();assert.equal(await page.getByText('Submit the test action').count(),0);
+ await page.unroute('**/api/approvals/*');await page.reload();await page.getByText('Working on your computer').waitFor();assert.equal(await page.getByText('Browser: click').count(),0);
  release();await page.getByText('Done: Test queued task').waitFor();await page.reload();await page.getByText('Done: Test queued task').waitFor();assert.equal(executions,1);
  let posts=0;await page.route('**/api/bots/*/runs',async route=>{if(route.request().method()!=='POST')return route.continue();posts++;await route.fetch();await route.fulfill({status:503,body:'{}'})});
  await page.getByLabel('Message New Bot').fill('Uncertain submission');await page.getByRole('button',{name:'Send task'}).click();await page.getByText('Submission could not be confirmed. Refresh and check the history before trying again.').waitFor();

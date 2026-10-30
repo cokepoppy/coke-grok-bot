@@ -6,7 +6,7 @@ type Shape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle';
 type Bot = { id: string; name: string; label: string; color: string; shape: Shape; group: string; preview: string };
 type Message = { id: string; role: 'user' | 'bot'; text: string };
 type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null };
-type Approval = { id: string; action: string; status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired' };
+type Approval = { id: string; action: string; status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired'; hasScreenshot?: boolean };
 type PreviewState = { bots: Bot[]; activeId: string; messages: Record<string, Message[]>; showOnboarding: Record<string, boolean> };
 type IconName = 'search' | 'plus' | 'mic' | 'sound' | 'close' | 'panel' | 'share' | 'screen' | 'arrow' | 'smile' | 'reply' | 'more';
 
@@ -84,6 +84,17 @@ function IconButton({ name, label, onClick, className = '' }: { name: IconName; 
 }
 
 type Account = { userId: string; tenantId: string; email: string; name: string; role: string };
+
+function ApprovalCard({approval, disabled, decide}: {approval:Approval; disabled:boolean; decide:(decision:'approved'|'denied')=>void}) {
+  const [imageLoaded,setImageLoaded]=useState(false);
+  let detail: {kind?:string;action?:string;arguments?:Record<string,unknown>;page?:string}|null=null;
+  try { const value=JSON.parse(approval.action); if(value && typeof value==='object' && typeof value.action==='string') detail=value; } catch { /* Legacy textual approvals. */ }
+  return <div className="approval-card"><strong>Approval requested</strong>
+    {detail ? <><p>{detail.kind === 'desktop' ? 'Desktop' : 'Browser'}: {detail.action}</p>{detail.page && <p>Page: {detail.page}</p>}{detail.arguments && <pre>{JSON.stringify(detail.arguments,null,2)}</pre>}</> : <p>{approval.action}</p>}
+    {approval.hasScreenshot && <img src={`${import.meta.env.BASE_URL}api/approvals/${approval.id}/screenshot`} alt="Computer screen when this action was requested" onLoad={()=>setImageLoaded(true)} onError={()=>setImageLoaded(false)} />}
+    <div><button type="button" disabled={disabled} onClick={()=>decide('denied')}>Deny</button><button type="button" disabled={disabled || Boolean(approval.hasScreenshot && !imageLoaded)} onClick={()=>decide('approved')}>Approve</button></div>
+  </div>;
+}
 
 function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () => void }) {
   const reference = new URLSearchParams(window.location.search).get('reference') === '101-new-bot';
@@ -337,7 +348,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
               {remote && history.id === active.id && history.status === 'error' && <div role="alert">Could not confirm message history. Refresh to check it.</div>}
               {messages.length > 0 && <div className="date-line">{reference ? 'Today 1:26 PM' : 'Today'}</div>}
               {messages.map(message => <div key={message.id} className={`message-line ${message.role}`}><div className="message-bubble">{message.text}</div>{message.role === 'bot' && <div className="message-actions"><Icon name="smile" /><Icon name="reply" /><Icon name="more" /></div>}</div>)}
-              {remote && piFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.map(run => <React.Fragment key={run.id}><div className="message-line user"><div className="message-bubble">{run.prompt}</div></div><div className="message-line bot"><div className="message-bubble"><span className="run-status">{({ queued: 'Queued · waiting for your computer', running: 'Working on your computer', completed: 'Completed', failed: 'Failed', unknown: 'Outcome unknown · check before retrying' } as const)[run.status]}</span>{run.result && <p>{run.result}</p>}{(runApprovals[run.id] || []).filter(approval => approval.status === 'pending').map(approval => <div className="approval-card" key={approval.id}><strong>Approval requested</strong><p>{approval.action}</p><div><button type="button" disabled={Boolean(decidingApproval) || runHistory.status !== 'ready'} onClick={() => void decideApproval(approval.id, 'denied')}>Deny</button><button type="button" disabled={Boolean(decidingApproval) || runHistory.status !== 'ready'} onClick={() => void decideApproval(approval.id, 'approved')}>Approve</button></div></div>)}</div></div></React.Fragment>)}
+              {remote && piFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.map(run => <React.Fragment key={run.id}><div className="message-line user"><div className="message-bubble">{run.prompt}</div></div><div className="message-line bot"><div className="message-bubble"><span className="run-status">{({ queued: 'Queued · waiting for your computer', running: 'Working on your computer', completed: 'Completed', failed: 'Failed', unknown: 'Outcome unknown · check before retrying' } as const)[run.status]}</span>{run.result && <p>{run.result}</p>}{(runApprovals[run.id] || []).filter(approval => approval.status === 'pending').map(approval => <ApprovalCard key={approval.id} approval={approval} disabled={Boolean(decidingApproval) || runHistory.status !== 'ready'} decide={decision => void decideApproval(approval.id, decision)} />)}</div></div></React.Fragment>)}
               {remote && piFeature === 'enabled' && runHistory.id === active.id && runHistory.status === 'error' && <div role="alert">Could not confirm task history. Refresh to check it before submitting again.</div>}
               {state.showOnboarding[active.id] && <div className="onboarding-card">
                 <div className="onboarding-title">What do you want me helping with most right now?<IconButton name="close" label="Dismiss suggestions" onClick={() => setState(current => ({ ...current, showOnboarding: { ...current.showOnboarding, [active.id]: false } }))} /></div>

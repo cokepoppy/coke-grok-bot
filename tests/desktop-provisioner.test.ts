@@ -34,3 +34,8 @@ test('provisioner refuses an unrelated namespace and honors cancellation',async(
  await assert.rejects(provisioner.connect(owner,new AbortController().signal));assert.equal(kube.creates,0);
  const abort=new AbortController();abort.abort();await assert.rejects(provisioner.connect(owner,abort.signal));assert.equal(kube.creates,0);
 });
+test('split provisioning waits for both Pods and returns the scoped Agent service',async()=>{
+ const owner={tenantId:randomUUID(),userId:randomUUID()},key=randomBytes(32),identity=desktopIdentity(owner,key),kube=new FakeKube(),provisioner=new DesktopProvisioner(kube,key,{...options,split:true});
+ const result=await provisioner.connect(owner,new AbortController().signal);assert.equal(result.agentUrl.hostname,`agent.${identity.namespace}.svc.cluster.local`);
+ assert.equal(kube.creates,10);assert.equal(kube.ready,2);await provisioner.connect(owner,new AbortController().signal);assert.equal(kube.creates,10);assert.equal(kube.ready,4);
+});

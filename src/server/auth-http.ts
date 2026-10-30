@@ -35,9 +35,14 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
       const runEventsMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/runs/([0-9a-f-]{36})/events$`));
       const approvalListMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/runs/([0-9a-f-]{36})/approvals$`));
       const approvalMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/approvals/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`, 'i'));
-      if (approvals && (approvalListMatch || approvalMatch)) {
+      const approvalScreenshotMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/approvals/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})/screenshot$`, 'i'));
+      if (approvals && (approvalListMatch || approvalMatch || approvalScreenshotMatch)) {
         const reply = (status:number, value:unknown) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(value)); };
         const session=await auth.session(req); if(!session)return reply(401,{error:'Unauthenticated'});
+        if(req.method==='GET' && approvalScreenshotMatch) {
+          const image=await approvals.screenshot(session,approvalScreenshotMatch[1]);if(!image)return reply(404,{error:'Not found'});
+          res.writeHead(200,{'Content-Type':'image/png','Content-Length':image.length,'Cache-Control':'no-store'});return res.end(image);
+        }
         if(req.method==='GET' && approvalListMatch) {
           const list=await approvals.list(session,approvalListMatch[1]);return list?reply(200,{approvals:list}):reply(404,{error:'Not found'});
         }

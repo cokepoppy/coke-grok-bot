@@ -1,4 +1,4 @@
-import { desktopIdentity, desktopResources } from './desktop-resources.ts';
+import { desktopIdentity, desktopResources, splitDesktopResources } from './desktop-resources.ts';
 import type { DesktopConnection, DesktopConnections } from './pi-executor.ts';
 import type { RunOwner } from './run-store.ts';
 
@@ -12,11 +12,11 @@ export interface DesktopKubernetes {
 
 /** Create only this user's resources; refuse drift rather than overwrite state or data. */
 export class DesktopProvisioner implements DesktopConnections {
-  constructor(private readonly kube:DesktopKubernetes,private readonly signingKey:Buffer,private readonly options:{image:string;controlNamespace:string;gatewayCA:string}) {}
+  constructor(private readonly kube:DesktopKubernetes,private readonly signingKey:Buffer,private readonly options:{image:string;controlNamespace:string;gatewayCA:string;split?:boolean}) {}
   async connect(owner:RunOwner,signal:AbortSignal):Promise<DesktopConnection> {
     if(signal.aborted) throw new Error('Desktop provisioning cancelled');
     const identity=desktopIdentity(owner,this.signingKey);
-    const resources=desktopResources(identity,this.options);
+    const resources=this.options.split ? splitDesktopResources(identity,this.options) : desktopResources(identity,this.options);
     for(const expected of resources) {
       if(signal.aborted) throw new Error('Desktop provisioning cancelled');
       const kind=String(expected.kind), metadata=expected.metadata as {name:string;namespace?:string};
@@ -28,8 +28,9 @@ export class DesktopProvisioner implements DesktopConnections {
       }
       if(!actual || !matchesExpectedResource(expected,actual)) throw new Error(`Desktop resource ${kind} does not match its expected ownership or configuration`);
     }
+    if(this.options.split)await this.kube.waitForReady(identity.namespace,'agent',signal);
     await this.kube.waitForReady(identity.namespace,'desktop',signal);
-    return {agentUrl:new URL(`http://desktop.${identity.namespace}.svc.cluster.local:8083/`),agentToken:identity.agentToken};
+    return {agentUrl:new URL(`http://${this.options.split?'agent':'desktop'}.${identity.namespace}.svc.cluster.local:8083/`),agentToken:identity.agentToken};
   }
 }
 

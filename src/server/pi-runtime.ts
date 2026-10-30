@@ -39,9 +39,10 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  if(!certificate.checkHost(gatewayHost) || !certificate.checkPrivateKey(createPrivateKey(tlsKey)) || Date.parse(certificate.validFrom)>Date.now() || Date.parse(certificate.validTo)<=Date.now())throw new Error('Gateway TLS certificate is invalid for its service');
  const gatewayUrl=`https://${gatewayHost}:3002/v1`;
  const kube=new DesktopKubernetesClient(required(env,'COKE_GROK_KUBE_URL'),kubeCa,async()=>(await readFile(kubeTokenFile,'utf8')).trim());
- const provisioner=new DesktopProvisioner(kube,signingKey,{image:required(env,'COKE_GROK_DESKTOP_IMAGE'),controlNamespace:namespace,gatewayCA:cert.toString('utf8')});
+ const provisioner=new DesktopProvisioner(kube,signingKey,{image:required(env,'COKE_GROK_DESKTOP_IMAGE'),controlNamespace:namespace,gatewayCA:cert.toString('utf8'),split:true});
  const runs=new RunStore(pool);await runs.migrate();
  const approvals=new ApprovalStore(pool);await approvals.migrate();
+ await approvals.purgeExpiredScreenshots();
  const bridge=new ComputerBridge(runs,approvals,scope=>{
   const identity=desktopIdentity(scope.owner,signingKey);
   return new HttpGuardedComputerWorker(scope.owner,new URL(`http://desktop.${identity.namespace}.svc.cluster.local:8082/`),identity.controlToken,scope.runId);
@@ -51,5 +52,6 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  const server=gateway.createServer({key:tlsKey,cert});
  try{server.listen(3002,'0.0.0.0');await once(server,'listening')}catch(error){gateway.close();server.close();throw error}
  const timer=setInterval(()=>{void scheduler.tick().catch(()=>console.error('Pi scheduler polling failed.'))},2000);timer.unref();
- return {runs,approvals,async close(){clearInterval(timer);await scheduler.stop();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
+ const screenshotCleanup=setInterval(()=>{void approvals.purgeExpiredScreenshots().catch(()=>console.error('Approval screenshot cleanup failed.'))},60000);screenshotCleanup.unref();
+ return {runs,approvals,async close(){clearInterval(timer);clearInterval(screenshotCleanup);await scheduler.stop();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
 }

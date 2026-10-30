@@ -19,10 +19,23 @@ test('only the owner can approve a pending action through same-origin HTTP',asyn
  try{
   const a=await login('a'),b=await login('b'),bot=await bots.create(a,{name:'A',shape:'round',color:'#abcdef'}),run=await runs.create(a,bot.id,randomUUID(),'task');assert.ok(run);const claim=await runs.claimNext(a,30);assert.ok(claim);
   const proposal=await approvals.propose(run.id,claim.leaseId,'Submit test action',30);assert.ok(proposal);
+  const image=Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),Buffer.from('test')]);
+  const action=JSON.stringify({kind:'desktop',action:'click',arguments:{x:4,y:5},page:'https://example.test',screenshotSha256:createHash('sha256').update(image).digest('hex')});
+  await assert.rejects(approvals.propose(run.id,claim.leaseId,action,30,Buffer.concat([image,Buffer.from('changed')])));
+  const pictured=await approvals.propose(run.id,claim.leaseId,action,30,image);assert.ok(pictured);
+  const expired=await approvals.propose(run.id,claim.leaseId,action,30,image);assert.ok(expired);
+  await pool.execute('UPDATE run_approvals SET expires_at=DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 1 SECOND) WHERE id=?',[expired.id]);
+  await approvals.purgeExpiredScreenshots();const [remaining]=await pool.execute<import('mysql2/promise').RowDataPacket[]>('SELECT approval_id FROM approval_screenshots WHERE approval_id=?',[expired.id]);assert.equal(remaining.length,0);
   const request=(path:string,cookie='',init:RequestInit={})=>fetch(base+path,{...init,headers:{cookie,...init.headers}}),listPath=`/api/runs/${run.id}/approvals`,decisionPath=`/api/approvals/${proposal.id}`;
   const decide=(cookie:string,from=origin,decision='approved')=>request(decisionPath,cookie,{method:'POST',headers:{origin:from,'content-type':'application/json'},body:JSON.stringify({decision})});
   assert.equal((await request(listPath)).status,401);assert.equal((await request(listPath,b.cookie)).status,404);assert.equal((await decide(a.cookie,'https://evil.example')).status,403);assert.equal((await decide(b.cookie)).status,404);assert.equal((await decide(a.cookie,origin,'wrong')).status,400);
   const list=await request(listPath,a.cookie);assert.equal(list.status,200);assert.equal((await list.json() as {approvals:{action:string}[]}).approvals[0].action,'Submit test action');
+  const screenshotPath=`/api/approvals/${pictured.id}/screenshot`;
+  assert.equal((await request(screenshotPath)).status,401);assert.equal((await request(screenshotPath,b.cookie)).status,404);
+  const screenshot=await request(screenshotPath,a.cookie);assert.equal(screenshot.status,200);assert.equal(screenshot.headers.get('cache-control'),'no-store');assert.deepEqual(Buffer.from(await screenshot.arrayBuffer()),image);
+  assert.equal((await decide(a.cookie,origin,'wrong')).status,400);
+  assert.equal((await request(`/api/approvals/${pictured.id}`,a.cookie,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({decision:'denied'})})).status,200);
+  assert.equal((await request(screenshotPath,a.cookie)).status,404);
   assert.equal((await decide(a.cookie)).status,200);assert.equal((await decide(a.cookie)).status,409);assert.equal(await approvals.consume(run.id,claim.leaseId,proposal.id,'Submit test action'),true);
  }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));await pool.end();await admin.query(`DROP DATABASE \`${db}\``);await admin.end()}
 });

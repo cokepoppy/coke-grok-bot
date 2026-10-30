@@ -19,6 +19,16 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   if((item.owner!=='agent'&&item.owner!=='user')||typeof item.url!=='string'||item.url.length>4096||typeof item.screenshotSha256!=='string'||!/^[a-f0-9]{64}$/.test(item.screenshotSha256))throw new Error('Invalid computer snapshot');
   return {owner:item.owner,url:item.url,screenshotSha256:item.screenshotSha256};
  }
+ async snapshotWithImage(signal:AbortSignal):Promise<{state:ComputerState;image:Buffer}>{
+  const response=await this.request(new URL('/v1/guarded/snapshot-image',this.endpoint),{headers:{authorization:`Bearer ${this.controlToken}`},signal,redirect:'error'});
+  if(!response.ok)throw new Error('Computer snapshot unavailable');
+  const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>1500000)throw new Error('Computer snapshot too large');
+  const text=await response.text();if(text.length>1500000)throw new Error('Computer snapshot too large');
+  const item=JSON.parse(text) as Partial<ComputerState>&{image?:unknown};
+  if(!item || (item.owner!=='agent'&&item.owner!=='user') || typeof item.url!=='string' || item.url.length>4096 || typeof item.screenshotSha256!=='string' || !/^[a-f0-9]{64}$/.test(item.screenshotSha256) || typeof item.image!=='string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(item.image))throw new Error('Invalid computer snapshot');
+  const image=Buffer.from(item.image,'base64');if(!image.length||image.length>1024*1024||createHash('sha256').update(image).digest('hex')!==item.screenshotSha256)throw new Error('Invalid computer screenshot');
+  return {state:{owner:item.owner,url:item.url,screenshotSha256:item.screenshotSha256},image};
+ }
  async control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>{
   const response=await this.request(new URL('/v1/guarded/control',this.endpoint),{headers:{authorization:`Bearer ${this.controlToken}`},signal,redirect:'error'});
   if(!response.ok)throw new Error('Computer control unavailable');

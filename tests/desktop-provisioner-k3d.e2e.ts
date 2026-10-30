@@ -17,8 +17,8 @@ const kube:DesktopKubernetes={
 };
 try{
  const context=await exec(['config','current-context']);assert.equal(context.out.trim(),'k3d-tp1121-sandbox-dev');
- const provisioner=new DesktopProvisioner(kube,key,{image,controlNamespace:'coke-grok-bot',gatewayCA:'-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----'});
- const first=await provisioner.connect(owner,new AbortController().signal);assert.equal(first.agentUrl.hostname,`desktop.${identity.namespace}.svc.cluster.local`);
+ const provisioner=new DesktopProvisioner(kube,key,{image,controlNamespace:'coke-grok-bot',gatewayCA:'-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----',split:true});
+ const first=await provisioner.connect(owner,new AbortController().signal);assert.equal(first.agentUrl.hostname,`agent.${identity.namespace}.svc.cluster.local`);
  const second=await provisioner.connect(owner,new AbortController().signal);assert.equal(second.agentUrl.href,first.agentUrl.href);
  console.log('K3D desktop provisioner passed: create, readiness and idempotent re-read.');
 }finally{if(created)await exec(['delete','namespace',identity.namespace,'--wait=false'],undefined,20_000)}
