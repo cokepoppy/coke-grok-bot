@@ -1,0 +1,4 @@
+**
+!dist/
+!dist/server/
+!dist/server/desktop-broker.cjs

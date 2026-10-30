@@ -6,8 +6,7 @@ import { ModelGateway } from './model-gateway.ts';
 import { RunStore } from './run-store.ts';
 import { RunScheduler } from './run-scheduler.ts';
 import { PiExecutor } from './pi-executor.ts';
-import { DesktopProvisioner } from './desktop-provisioner.ts';
-import { DesktopKubernetesClient } from './desktop-kubernetes.ts';
+import { DesktopBrokerClient } from './desktop-broker-client.ts';
 import { ApprovalStore } from './approval-store.ts';
 import { ComputerBridge } from './computer-bridge.ts';
 import { desktopIdentity } from './desktop-resources.ts';
@@ -24,23 +23,21 @@ export interface PiRuntime { runs:RunStore; approvals:ApprovalStore; computer:Us
 export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env):Promise<PiRuntime|null>{
  if(env.COKE_GROK_PI_ENABLED!=='1')return null;
  // The copied desktop tools do not yet enforce external-action approval, and
- // the provisioner does not yet have a namespace-scoped production broker.
+ // the provisioning broker and its cluster permissions are not yet production-validated.
  // Refuse production startup until those boundaries are implemented and tested.
  if(env.NODE_ENV==='production')throw new Error('Pi runtime is not ready for production');
  const providerKey=(await privateFile(required(env,'COKE_GROK_MODEL_KEY_FILE'))).toString('utf8').trim();
  const signingKey=await privateFile(required(env,'COKE_GROK_DESKTOP_SIGNING_KEY_FILE'));
  const tlsKey=await privateFile(required(env,'COKE_GROK_GATEWAY_TLS_KEY_FILE'));
  const cert=await readFile(required(env,'COKE_GROK_GATEWAY_TLS_CERT_FILE'));
- const kubeCa=await readFile(required(env,'COKE_GROK_KUBE_CA_FILE'));
- // Projected service-account tokens are controlled by Kubernetes file permissions.
- const kubeTokenFile=required(env,'COKE_GROK_KUBE_TOKEN_FILE');
+ const brokerCa=await readFile(required(env,'COKE_GROK_BROKER_CA_FILE'));
+ const brokerToken=(await privateFile(required(env,'COKE_GROK_BROKER_TOKEN_FILE'))).toString('utf8').trim();
  const namespace=required(env,'COKE_GROK_CONTROL_NAMESPACE');
  const gatewayHost=`coke-grok-model.${namespace}.svc.cluster.local`;
  const certificate=new X509Certificate(cert);
  if(!certificate.checkHost(gatewayHost) || !certificate.checkPrivateKey(createPrivateKey(tlsKey)) || Date.parse(certificate.validFrom)>Date.now() || Date.parse(certificate.validTo)<=Date.now())throw new Error('Gateway TLS certificate is invalid for its service');
  const gatewayUrl=`https://${gatewayHost}:3002/v1`;
- const kube=new DesktopKubernetesClient(required(env,'COKE_GROK_KUBE_URL'),kubeCa,async()=>(await readFile(kubeTokenFile,'utf8')).trim());
- const provisioner=new DesktopProvisioner(kube,signingKey,{image:required(env,'COKE_GROK_DESKTOP_IMAGE'),controlNamespace:namespace,gatewayCA:cert.toString('utf8'),split:true});
+ const provisioner=new DesktopBrokerClient(required(env,'COKE_GROK_BROKER_URL'),brokerCa,brokerToken);
  const runs=new RunStore(pool);await runs.migrate();
  const approvals=new ApprovalStore(pool);await approvals.migrate();
  await approvals.purgeExpiredScreenshots();
