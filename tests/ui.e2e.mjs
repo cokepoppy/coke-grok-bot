@@ -30,6 +30,15 @@ try {
   await page.getByText('本地界面预览', { exact: false }).waitFor();
   assert.equal(await page.locator('.bot-row').count(), 1);
   await page.getByRole('button', { name: 'New chat' }).click();
+  const recipient = page.getByLabel('Start a chat with');
+  assert.equal(await recipient.evaluate(element => element === document.activeElement), true);
+  await recipient.fill('missing recipient');
+  assert.equal(await page.locator('.new-chat-menu').getByText('New Bot', { exact: true }).count(), 0);
+  await recipient.fill('New Bot');
+  assert.equal(await page.locator('.new-chat-menu').getByText('New Bot', { exact: true }).count(), 1);
+  await recipient.press('Escape');
+  await page.keyboard.press('Control+N');
+  assert.equal(await recipient.inputValue(), '');
   await page.getByRole('button', { name: 'Create new Bot' }).click();
   assert.equal(await page.locator('.bot-row').count(), 2);
   await page.getByText('What do you want me helping with most right now?', { exact: true }).waitFor();
@@ -77,6 +86,15 @@ try {
   }
   await mkdir('artifacts/ui', { recursive: true });
   await reference.screenshot({ path: 'artifacts/ui/reference-101-actual.png' });
+  await reference.getByRole('button', { name: 'New Bot', exact: true }).first().click();
+  await reference.getByLabel('Bot name').waitFor();
+  await reference.screenshot({ path: 'artifacts/ui/reference-101-details.png' });
+  await reference.getByRole('button', { name: 'New Bot', exact: true }).first().click();
+  await reference.getByRole('button', { name: 'New chat' }).click();
+  await reference.mouse.move(610, 103);
+  assert.equal(await reference.locator('.new-chat-menu .menu-option').count(), 11);
+  assert.equal(await reference.getByLabel('Message Bot').isDisabled(), true);
+  await reference.screenshot({ path: 'artifacts/ui/reference-101-new-chat.png' });
   assert.deepEqual(errors, []);
   await context.close();
   console.log('UI E2E passed: local preview labeling, create/rename, messages, reload, switching, browser-profile isolation, narrow-layout sanity, reference screenshot, no page errors.');

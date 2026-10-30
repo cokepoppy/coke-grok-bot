@@ -1,0 +1,14 @@
+{
+  "id": "grok-101-new-chat-2208",
+  "source": {
+    "videoUrl": "https://www.youtube.com/watch?v=8xXhE25vJZY",
+    "title": "Grok Bot 101",
+    "timecode": "00:22:08.633"
+  },
+  "reference": "../frames/grok-101-create-1328-1333/frame-000020.png",
+  "referenceRect": { "x": 0, "y": 60, "width": 1584, "height": 994 },
+  "implementationRect": { "x": 0, "y": 0, "width": 1584, "height": 994 },
+  "output": "../../artifacts/reference-comparison/101-new-chat",
+  "threshold": 32,
+  "note": "The YouTube recording is scaled and compressed, with the presenter composited on the right. The viewport, font rasterization and scale of the original app are unknown; results are visual diagnostics, not proof of exact pixel parity."
+}

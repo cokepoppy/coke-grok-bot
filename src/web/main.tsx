@@ -133,6 +133,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [botError, setBotError] = useState('');
   const [savingBot, setSavingBot] = useState(false);
   const [newChat, setNewChat] = useState(false);
+  const [recipientQuery, setRecipientQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
   const [panel, setPanel] = useState(false);
@@ -151,12 +152,13 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const messagesEnd = useRef<HTMLDivElement>(null);
+  const recipientInput = useRef<HTMLInputElement>(null);
   const savedNames = useRef<Record<string, string>>({});
   const renameQueue = useRef<Record<string, Promise<void>>>({});
   const active = state.bots.find(bot => bot.id === state.activeId) || state.bots[0];
   const activeIdRef = useRef(active?.id); activeIdRef.current = active?.id;
   const messages = active ? state.messages[active.id] || [] : [];
-  const filtered = state.bots.filter(bot => `${bot.name} ${bot.label}`.toLowerCase().includes(query.toLowerCase()));
+  const filtered = state.bots.filter(bot => !(reference && newChat && bot.id === 'new') && `${bot.name} ${bot.label}`.toLowerCase().includes(query.toLowerCase()));
 
   useEffect(() => {
     if (reference) return;
@@ -229,12 +231,22 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     return () => controller.abort();
   }, [remote, active?.id]);
   useEffect(() => { setDraft(''); setCustomAnswer(''); setNotice(false); }, [state.activeId]);
+  useEffect(() => { if(newChat) recipientInput.current?.focus(); }, [newChat]);
+  useEffect(() => {
+    const onKeyDown = (event:KeyboardEvent) => {
+      if((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase()==='n' && !sendingRef.current) {
+        event.preventDefault();setRecipientQuery('');setNewChat(true);setPanel(false);
+      }
+    };
+    window.addEventListener('keydown',onKeyDown);return ()=>window.removeEventListener('keydown',onKeyDown);
+  },[]);
   useEffect(() => { if (messages.length > 1) messagesEnd.current?.scrollIntoView({ block: 'nearest' }); }, [messages.length]);
 
   function selectBot(id: string) {
     if (sendingRef.current) return;
     setState(current => ({ ...current, activeId: id }));
     setNewChat(false);
+    setRecipientQuery('');
     setPanel(false);
   }
   async function createBot() {
@@ -345,7 +357,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
 
   return <div className={`app ${reference ? 'reference-mode' : 'preview-mode'}`}>
     <aside className="sidebar" aria-label="Bots">
-      <div className="sidebar-top"><IconButton name="search" label="Search bots" onClick={() => { setSearching(value => !value); setQuery(''); }} /><IconButton name="plus" label="New chat" onClick={() => { setNewChat(true); setPanel(false); }} /></div>
+      <div className="sidebar-top"><IconButton name="search" label="Search bots" onClick={() => { setSearching(value => !value); setQuery(''); }} /><IconButton name="plus" label="New chat" onClick={() => { setRecipientQuery(''); setNewChat(true); setPanel(false); }} /></div>
       {searching && <input className="search-input" aria-label="Search bots" value={query} placeholder="Search bots" onChange={event => setQuery(event.target.value)} />}
       <button className="primary-bot" type="button" onClick={() => setNotice(true)} aria-label="Primary bot preview"><Avatar bot={primary} size={80} /><span>{primary.name}</span><small>{primary.label}</small></button>
       <div className="sidebar-scroll">
@@ -363,11 +375,12 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       {!reference && <div className="preview-notice" role="status">{remote ? (piFeature === 'enabled' ? 'Pi 任务在你的云电脑执行；同一台电脑的任务会排队。' : 'Bot 和消息保存在服务器；尚未连接云电脑或 Agent。原预览数据仍在本地，不会自动导入。') : '本地界面预览：数据仅保存在当前浏览器，尚未连接云电脑或 Agent。'}</div>}
       {remote && piFeature === 'error' && <div role="alert">Could not check Agent availability. Refresh to try again.</div>}
       {botError && <div role="alert">{botError}</div>}
-      {newChat || !active ? <div className="new-chat-view">
-        <div className="new-chat-head"><span>To: <span className="muted">Start a chat with...</span></span><IconButton name="close" label="Close new chat" onClick={() => setNewChat(false)} /></div>
-        <div className="new-chat-menu"><button type="button" className="menu-option menu-primary" onClick={createBot}><Icon name="plus" />Create new Bot</button><button type="button" className="menu-option" onClick={() => setNotice(true)}><span className="menu-symbol">♧</span>Create group chat</button>{[primary, ...state.bots].map(bot => <button key={bot.id} type="button" className="menu-option" onClick={() => bot.id === primary.id ? setNotice(true) : selectBot(bot.id)}><Avatar bot={bot} size={27} />{bot.name}</button>)}<button type="button" className="menu-option team-option" onClick={() => setNotice(true)}><span>🟣</span>Team Bots <span className="menu-arrow">›</span></button></div>
+      {newChat || !active ? <div className="new-chat-view" onKeyDown={event=>{if(event.key==='Escape'&&active){setNewChat(false);setRecipientQuery('')}}}>
+        <div className="new-chat-head"><label>To: <input ref={recipientInput} aria-label="Start a chat with" placeholder="Start a chat with..." value={recipientQuery} onChange={event=>setRecipientQuery(event.target.value)} /></label><IconButton name="close" label="Close new chat" onClick={() => {setNewChat(false);setRecipientQuery('')}} /></div>
+        <div className="new-chat-menu" aria-label="Chat recipients"><button type="button" className="menu-option menu-primary" onClick={createBot}><Icon name="plus" />Create new Bot</button><button type="button" className="menu-option" onClick={() => setNotice(true)}><span className="menu-symbol">♧</span>Create group chat</button>{[primary, ...state.bots.filter(bot=>!reference || bot.id!=='new')].filter(bot=>`${bot.name} ${bot.label}`.toLowerCase().includes(recipientQuery.trim().toLowerCase())).map(bot => <button key={bot.id} type="button" className="menu-option" onClick={() => bot.id === primary.id ? setNotice(true) : selectBot(bot.id)}><Avatar bot={bot} size={27} />{bot.name}</button>)}<button type="button" className="menu-option team-option" onClick={() => setNotice(true)}><span>🟣</span>Team Bots <span className="menu-arrow">›</span></button></div>
+        <div className="composer new-chat-composer"><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label="Message Bot" placeholder="Message Bot" disabled rows={1} /><IconButton name="mic" label="Voice input" className="voice-button" onClick={() => setNotice(true)} /></div>
       </div> : <>
-        <div className="chat-header"><button type="button" className="chat-title" onClick={() => setPanel(value => !value)}><Avatar bot={active} size={30} /><span>{active.name}</span></button></div>
+        <div className={`chat-header ${panel ? 'panel-open' : ''}`}><button type="button" className="chat-title" onClick={() => setPanel(value => !value)}><Avatar bot={active} size={30} /><span>{active.name}</span></button></div>
         <div className="header-actions"><IconButton name="share" label="Share bot" onClick={() => setNotice(true)} /><IconButton name="panel" label={panel ? 'Hide bot details' : 'Show bot details'} onClick={() => setPanel(value => !value)} /></div>
         <div className={`workspace ${panel ? 'with-panel' : ''}`}>
           <section className="conversation" aria-label={`Chat with ${active.name}`}>
@@ -390,7 +403,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
             </div>
             <form className="composer" onSubmit={event => { event.preventDefault(); void addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} disabled={composerDisabled} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() ? <button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote ? (piFeature === 'enabled' ? 'Send task' : 'Save message') : 'Save local message'}><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
           </section>
-          {panel && <aside className="details-panel" aria-label="Bot details"><Avatar bot={active} size={86} /><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => void saveBotName()} /><span className="bot-label">{active.label || 'Add a label'}</span><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && piFeature === 'enabled' ? <ComputerPanel name={active.name} /> : <><div className="computer-preview"><Icon name="screen" /><span>Computer not connected</span></div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
+          {panel && <aside className="details-panel" aria-label="Bot details"><Avatar bot={active} size={86} /><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => void saveBotName()} /><span className="bot-label">{active.label || 'Add a label'}</span><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && piFeature === 'enabled' ? <ComputerPanel name={active.name} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
         </div>
       </>}
     </main>

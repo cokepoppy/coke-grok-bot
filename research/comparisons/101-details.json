@@ -1,0 +1,14 @@
+{
+  "id": "grok-101-details-2240",
+  "source": {
+    "videoUrl": "https://www.youtube.com/watch?v=8xXhE25vJZY",
+    "title": "Grok Bot 101",
+    "timecode": "00:22:40.000"
+  },
+  "reference": "../frames/grok-101-details-1358-1363/frame-000060.png",
+  "referenceRect": { "x": 0, "y": 60, "width": 1584, "height": 994 },
+  "implementationRect": { "x": 0, "y": 0, "width": 1584, "height": 994 },
+  "output": "../../artifacts/reference-comparison/101-details",
+  "threshold": 32,
+  "note": "The reference is a scaled and compressed YouTube frame. Original app viewport and display scaling are unknown; differences are diagnostic rather than exact pixel-fidelity proof."
+}
