@@ -139,7 +139,7 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
           try { const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8')); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(); body = parsed as Record<string, unknown>; }
           catch { return reply(400, { error: 'Invalid JSON' }); }
           if (req.method === 'POST') {
-            if (typeof body.name !== 'string' || typeof body.color !== 'string' || typeof body.shape !== 'string' || !body.name.trim() || body.name.trim().length > 60 || !/^#[0-9a-fA-F]{6}$/.test(body.color) || !['cloud','drop','hex','round','triangle','oval','square','pill'].includes(body.shape)) return reply(400, { error: 'Invalid bot' });
+            if (typeof body.name !== 'string' || typeof body.color !== 'string' || typeof body.shape !== 'string' || !body.name.trim() || body.name.trim().length > 60 || !/^#[0-9a-fA-F]{6}$/.test(body.color) || !['cloud','drop','hex','round','triangle','oval','square','pill','spark','heart','flower','pentagon','star'].includes(body.shape)) return reply(400, { error: 'Invalid bot' });
             return reply(201, { bot: await bots.create(session, { name: body.name, color: body.color, shape: body.shape as BotShape }) });
           }
           if (Object.keys(body).length === 1 && typeof body.label === 'string') {
@@ -151,7 +151,7 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
             return await bots.setSidebarState(session, botMatch![1], field, body[field] as boolean) ? reply(200, { ok: true }) : reply(404, { error: 'Not found' });
           }
           if (Object.keys(body).sort().join(',') === 'color,shape' && typeof body.color === 'string' && typeof body.shape === 'string') {
-            if (!/^#[0-9a-fA-F]{6}$/.test(body.color) || !['cloud','drop','hex','round','triangle','oval','square','pill'].includes(body.shape)) return reply(400, { error: 'Invalid bot' });
+            if (!/^#[0-9a-fA-F]{6}$/.test(body.color) || !['cloud','drop','hex','round','triangle','oval','square','pill','spark','heart','flower','pentagon','star'].includes(body.shape)) return reply(400, { error: 'Invalid bot' });
             return await bots.setAvatar(session, botMatch![1], body.shape as BotShape, body.color) ? reply(200, { ok: true }) : reply(404, { error: 'Not found' });
           }
           if (Object.keys(body).length !== 1 || typeof body.name !== 'string') return reply(400, { error: 'Invalid bot' });

@@ -1,0 +1,9 @@
+{
+  "id": "cursor-forum-0712-create-bot",
+  "reference": "../reference-images/cursor-0712-create-bot.png",
+  "referenceRect": { "x": 740, "y": 229, "width": 440, "height": 582 },
+  "implementationRect": { "x": 0, "y": 0, "width": 440, "height": 580 },
+  "output": "../../artifacts/reference-comparison/cursor-0712-create-bot",
+  "threshold": 32,
+  "note": "Windows 0.71.2 screenshot with unknown display scaling compared to a Mac Chromium rendering. Reference names and geometry are visible; avatar outlines and fonts remain approximations. Diagnostic only."
+}

@@ -10,11 +10,14 @@
 | V1 | [官方 Grok Bot 101](https://www.youtube.com/watch?v=8xXhE25vJZY)，2026-10-06 | 已完整下载本机 MKV；1920×1080、30 fps、3400.761 秒 | 22:08–22:23、26:48–27:53 共 2400 帧已审阅联系图，关键切换另审阅原尺寸 PNG；电脑阶段其余时间有单帧初查 | 其余视频和接管前后的完整路径尚未逐帧审阅 |
 | V2 | [官方 Grok Bot 201](https://www.youtube.com/watch?v=rOVomdnWhjQ)，2026-10-21 | 已完整下载本机 MKV；1920×1080、25 fps、3326.421 秒 | 已按约 30 秒间隔浏览整体联系图，并取 01:15、14:45 各 25 帧；两个时间点仅查看第一张原尺寸帧 | 多 Bot、群聊和工作流还需逐帧分析；不能把上传日期当成客户端版本日期 |
 | V3 | [官方 Introducing Grok Bot](https://www.youtube.com/watch?v=F1_0Lkp16Rc)，2026-08-11 | 已完整下载本机 MKV；3840×2160、24 fps、106.001 秒 | 开头约 0–13 秒按 1 fps 粗看，为宣传片镜头 | 全片逐帧与宣传场景归类；不能以宣传镜头推断真实客户端交互 |
-| T1 | [Charlie Chang：The ONLY Grok Bot Tutorial You Need 2026](https://www.youtube.com/watch?v=q1IwR88mhaA)，2026-09-30 | 已完整下载本机 MKV；1920×1080、24000/1001 fps、840.621 秒；2026-10-30 查询时约 39.3 万播放、146 万频道订阅 | 全片按 10 秒采样联系图浏览；01:35–02:00 共 600 帧已逐张查看联系图，关键帧再看原尺寸图 | 后续按原视频核对电脑操作、设置、Routine、多 Bot；第三方解释不是官方协议证明 |
-| T2 | [Tech With Tim：What You Need to Know About Grok Bot](https://www.youtube.com/watch?v=ezANo2RNryU)，2026-08-28 | 已完整下载；1920×1080、30000/1001 fps、748.601 秒；2026-10-30 查询约 5.97 万播放、211 万频道订阅 | 全片约每 10 秒采样浏览；02:35–02:45、02:55–03:00 共 450 帧已查看联系图；另核对 02:57 的五张原尺寸帧 | 按需逐帧研究电脑、教学任务和例行任务；第三方视频不能证明当前产品行为 |
-| T3 | [Founders School：The ONLY Grok Bot Tutorial You Need](https://www.youtube.com/watch?v=ifW-Aj9LOXQ)，2026-10-25 | 2026-10-30 元数据查询时约 6.67 万播放、2800 频道订阅 | 已获取元数据，尚未下载或观看画面 | 后续核对新版协作与例行任务；频道订阅量较少但视频较新 |
+| T1 | [Charlie Chang：The ONLY Grok Bot Tutorial You Need 2026](https://www.youtube.com/watch?v=q1IwR88mhaA)，2026-09-30 | 已完整下载本机 MKV；1920×1080、24000/1001 fps、840.621 秒；公开索引查询于 2026-10-30，约 326.8–367 千播放、约 146 万频道订阅，索引数值有差异 | 全片按 10 秒采样联系图浏览；01:35–02:00 共 600 帧已逐张查看联系图，关键帧再看原尺寸图 | 后续按原视频核对电脑操作、设置、Routine、多 Bot；第三方解释不是官方协议证明 |
+| T2 | [Tech With Tim：What You Need to Know About Grok Bot](https://www.youtube.com/watch?v=ezANo2RNryU)，2026-08-28 | 已完整下载；1920×1080、30000/1001 fps、748.601 秒；公开索引查询于 2026-10-30，约 4.85–5.97 万播放、约 208–211 万频道订阅，索引数值有差异 | 全片约每 10 秒采样浏览；02:35–02:45、02:55–03:00 共 450 帧已查看联系图；另核对 02:57 的五张原尺寸帧 | 按需逐帧研究电脑、教学任务和例行任务；第三方视频不能证明当前产品行为 |
+| T3 | [Founders School：The ONLY Grok Bot Tutorial You Need](https://www.youtube.com/watch?v=ifW-Aj9LOXQ)，2026-10-25 | 已下载本机 MKV；1920×1080、6930/289 fps（约 24 fps）、1583.981 秒；公开索引在 2026-10-30 显示约 2.72–6.67 万播放、约 2800 频道订阅，索引数值有差异 | 全片按 10 秒联系图初查；03:45、05:15、06:15 三段各 120 帧已逐帧查看；05:17.192–05:17.234 核对原尺寸连续帧 | 新版连接器和协作演示；第三方演示不是当前官方交互的单独证明 |
+| T4 | [Nate Herk：Every Grok Bot Concept Explained for Normal People](https://www.youtube.com/watch?v=NyfYxpXiw_0)，2026-08-31 | 已下载本机 WebM；1920×1080、30 fps、1291.533 秒；YouTube 搜索索引查询于 2026-10-30 显示约 26.2 万播放、101 万频道订阅，另一公开索引显示约 51.1 万播放，播放量存在冲突 | 选取 7 个讲解章节各连续 5 秒，合计 1050 帧已逐帧检查联系图；关键状态另看原尺寸 PNG | 视频其余时间尚未逐帧研究；当前官方文档与视频版本有差异，第三方讲解不能代替当前产品证据 |
 
 本机视频文件的 SHA-256：V1 `270123c76fb7f9a4818f7770d4e5754f3097d06770ad95b817ed0825dbce9231`；V2 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`；V3 `1d6cc00c197d14fb96715a7200f8e95aadf7260d722715b078c8515f54b73a60`。这是当前下载及封装的文件哈希，不代表其他清晰度版本。
+
+第三方频道的受众和播放数只用于挑选讲解参考，不代表内容正确。查询索引的播放数会冲突或滞后；优先保留查询日期和原视频链接。当前优先参考较长、讲解具体的 Nate Herk 视频（频道约百万订阅级、公开播放索引约数十万）和 Charlie Chang（频道约 146 万订阅、公开索引约 33–37 万播放）；逐帧记录只证明该视频画面可见什么，不证明产品当前版本仍如此。
 
 T1 本机文件 SHA-256：`2cbb5f133a0c9743f2d52453a561331fbe0e97d4a271f76569166508880bd0ac`。T1 `01:42.561` 原尺寸帧仍是深色聊天，光标位于侧栏 `+`；下一帧 `01:42.603` 已切到新聊天选择界面，顶部是 `To: Search or create Bots`，菜单有 `Create new Bot`、`Create group chat` 和已有 Bot，底部显示 `Message Bot` 输入区。相邻帧说明可见界面转换，不单独证明鼠标按键事件。视频刻意模糊了部分聊天和 Bot 信息，且录制者头像遮挡右下角；不能用该段作为浅色主题的精确布局基准。录制版与官方 101 的浅色界面也有版本差异，不能仅由颜色判断差异来源。
 
@@ -22,11 +25,24 @@ T1 `01:45.522` 菜单中 `Create new Bot` 保持高亮；紧接着 `01:45.564` �
 
 当前 [Cursor 官方编辑 Bot 文档](https://prod.cursor.com/help/grok-bot/edit-bot)包含 [桌面头像选择器截图](https://prod.cursor.com/docs-static/images/grok-bot/avatar-picker-light.png)：图片本身为 577×568，顶部有 Bot、Generate、Upload、Reset，下面有两行共八个形状以及两行共十一个颜色。源图 SHA-256 为 `36efaeba2fb86c82550e4acec4a9a225d1f8b800b115cf81f493028d021429d7`，仅保存在被 Git 忽略的本机研究目录。本项目根据该图调整了形状及颜色排列，形状轮廓仍为近似 SVG。对图配置 `research/comparisons/cursor-avatar-picker.json` 将原图缩放至本机 290×284 截图；2026-10-30 此配置在色阶阈值 32 下约 4.86% 像素不同。原图显示比例及字体渲染环境未知，这个数字只用于迭代，不能证明像素一致。背景遮罩和弹层位置仍需官方实际画面核对。Generate、Upload 和 Reset 尚未实现，按钮处于禁用状态。
 
+创建 Bot 弹窗另以 [Cursor Forum 中 0.71.2 用户截图](https://forum.cursor.com/t/button-bricked-in-grok-bot/174924)为画面参照；该图是 Windows 用户上传的界面截图，不是官方发布的截图。当前客户端将 `+` 与 Cmd/Ctrl+N 接到创建弹窗；名称、13 个形状及 11 个颜色可提交并写入用户 Bot API。头像轮廓依据该参考截图描摹，颜色从截图色块中心逐点取样。配置 `research/comparisons/cursor-0712-create-bot.json` 将弹窗对齐到 440×580；2026-10-30 色阶阈值 32 下约 4.51% 像素有明显差异，MAE 为 4.73。这个诊断跨 Windows 截图与 Mac Chromium 渲染，受未知缩放和字体影响；仅能用于迭代，不能声称像素级一致。当前 UI 自动化检查了弹窗打开、初始焦点、Tab 循环、Escape 关闭、焦点返回、创建、刷新后的持久性和预览形状/颜色。
+
 [官方 0.56.0 更新记录](https://x.ai/changelog/bot)称形状和颜色的每次选择会立刻生效，快速连续选择也应生效；本项目按此改为立即显示并顺序保存。遇到写入结果不明时提示刷新检查，不自动重复写入。官方文档对 Generate 和 Upload 则明确提及 Set avatar；较早的 [0.71.2 用户论坛回复](https://forum.cursor.com/t/unable-to-tag-custom-bot-categories-or-edit-bot-avatar-color-and-shape/175031)曾描述形状颜色后再点 Set avatar，与更新记录存在差异，本次将立即应用作为当前交互基准。官方图片仅能证明图片中的八种形状和十一种颜色；更新记录还提及其他形状，不能推断这张图片覆盖了所有版本。
 
 [Cursor 官方侧栏菜单文档](https://prod.cursor.com/help/grok-bot/how-to)提供了 [右键菜单截图](https://prod.cursor.com/docs-static/images/grok-bot/sidebar-bot-menu-light.png)，原图 449×580、SHA-256 `de90489936681e7c894920a1c33850947c74943fb3d943fe6bf698d644f67c10`；菜单本体约占 x=25–423、y=25–553，图片缩放比例和实际打开位置未标明。[官方 Bot 编辑文档](https://prod.cursor.com/help/grok-bot/edit-bot)明确右键选择 Rename Bot 或双击侧栏名称可改名。项目已实现这两种重命名入口、Pin/Unpin、Hide from sidebar/Show in sidebar 和服务端持久化；分组、未读、复制会话 ID 与删除仍未实现，菜单灰显是项目当前状态，不代表官方截图的样式或能力。截图中的图标及菜单文字位置仍需进一步对图，不能视为像素级完成。
 
 T2 本机文件 SHA-256 `030451a3c29bcf0d9ee4313ccdf8bc4bdcbd908eaafe6d8d032f276fbea423fb`。连续帧中 `02:57.611` 的旧版深色新聊天菜单显示 `Create new Bot` 高亮；`02:57.644` 为 `New Bot / Creating...`，`02:57.678` 已显示带问候的 Bot 对话。画面在相邻帧内跳过等待过程，可能经过剪辑，不能用来推断创建速度或后台保存时机。右下角讲解者遮挡部分应用区域；该旧版与较新文档存在版本差异。02:35–02:45 片段主要显示产品网页而非完整客户端操作。
+
+T3 的本地视频 SHA-256 为 `89d83206087ddcbca3be240c9a5b32f5a6ac779d4cbfecf2f3d0ffe5fb150aa1`。03:45、05:15、06:15 三个 5 秒片段各提取 120 个原始视频帧。05:17.192 的原尺寸帧中尚未打开连接器弹窗；05:17.234 首次显示 `Connect Apps`。弹窗包含搜索、分类、Bot 模板、`26 connected` 与应用卡片，底层聊天同时变暗。画面来自较新第三方教程嵌套演示客户端，不能由它推断弹窗的精确像素尺寸或当前官方实现。06:15 片段未观察到明显状态切换。
+
+T4 本地视频 SHA-256 为 `ac0ad52aef8c2f9d1cc475f6665fdec44d667dc24f9306d73628bf504fde7b03`。原视频 21:31.533，30 fps。已对 00:00–00:05、02:00–02:05、05:18–05:23、08:03–08:08、13:44–13:49、16:22–16:27、19:19–19:24 七段各提取 150 帧，合计 1050 帧；每段的全尺寸 PNG、源时间戳、逐帧 SHA-256 和联系图都保存在被 Git 忽略的本机 `research/frames/nate-*` 目录。联系图中逐帧检查了这些窗口；不是全片逐帧检查。
+
+- `02:02.000` 原尺寸帧展示 Bot 聊天与右侧 Settings：名称、可选标签、Description、通知开关及底部 `Share as template`；左侧还有 Bot 小组/分区。此为 2026-08-31 录制画面，较新的官方文档不再把 Description 页面描述为当前个人 Bot 配置，必须按版本区分。
+- `05:18.333` 帧展示 Bot 用消息区说明 shared/global memory 与该 Bot 私有 memory；这是视频里的产品回答，不是可直接采信的技术实现证明。
+- `08:03.000` 帧显示 Windows 文件管理器覆盖在 Bot 界面之上，右侧 Computer 预览可见，画面是讲者操作的电脑环境示例。
+- `13:44.333` 帧可见名为 `Webhook` 的 Bot、侧栏中的 `Channels`/`Unassigned` 分区、Routine `Form webhook intake` 和电脑预览。
+- `16:22–16:27` 选取窗口以讲解目录幻灯片为主，未观察到可以作为具体界面依据的状态。
+- `19:19.000` 帧同时展示桌面聊天与一部手机上的 Bot 对话；侧栏可见 `Content`、`General`、`Hidden Bots` 等区域。它只能说明讲解画面展示了两种客户端视图，不能证明同步协议和实时性。
 
 V1 `22:38–22:43` 新提取并逐张检查 150 帧联系图，期间右侧始终为 Bot 信息和 Computer 预览；`22:40.000` 原尺寸帧可见名称输入、三个标签以及灰色屏幕占位。对照配置 `research/comparisons/101-details.json` 与 `101-new-chat.json` 分别生成本机叠图和差异图。新聊天截图按 `22:08.633` 对照的阈值诊断为约 2.76% 像素超过 32 色阶；电脑详情画面调整后约 3.40%。视频经过缩放压缩且原始视口未知，这些数值不是像素级一致性的验收结论。
 
