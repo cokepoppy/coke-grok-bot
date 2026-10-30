@@ -70,4 +70,9 @@ export class BotStore {
     const [result] = await this.pool.execute<import('mysql2').ResultSetHeader>('UPDATE bots SET label=? WHERE id=? AND tenant_id=? AND owner_id=?', [clean, id, session.tenantId, session.userId]);
     return result.affectedRows > 0;
   }
+  async setAvatar(session: Session, id: string, shape: BotShape, color: string): Promise<boolean> {
+    if (!shapes.has(shape) || !/^#[0-9a-fA-F]{6}$/.test(color)) throw new Error('Invalid bot avatar');
+    const [result] = await this.pool.execute<import('mysql2').ResultSetHeader>('UPDATE bots SET shape=?, color=? WHERE id=? AND tenant_id=? AND owner_id=?', [shape, color.toLowerCase(), id, session.tenantId, session.userId]);
+    return result.affectedRows > 0;
+  }
 }

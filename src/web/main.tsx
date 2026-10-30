@@ -9,6 +9,8 @@ type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'co
 type Approval = { id: string; action: string; status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired'; hasScreenshot?: boolean };
 type PreviewState = { bots: Bot[]; activeId: string; messages: Record<string, Message[]>; showOnboarding: Record<string, boolean> };
 type IconName = 'search' | 'plus' | 'mic' | 'sound' | 'close' | 'panel' | 'share' | 'screen' | 'arrow' | 'smile' | 'reply' | 'more';
+const avatarShapes:Shape[]=['cloud','drop','hex','round','triangle'];
+const avatarColors=['#a382ef','#4c8ff4','#5ac0ae','#f7b447','#e95568','#a48a6d','#080808','#e96aa7'];
 
 const STORAGE_KEY = 'coke-grok-bot:desktop-preview:v1';
 const primary: Bot = { id: 'bobo', name: 'bobo', label: 'life stabilizer', color: '#4c8ff4', shape: 'cloud', group: '', preview: '' };
@@ -137,6 +139,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
   const [panel, setPanel] = useState(false);
+  const [avatarEditor,setAvatarEditor]=useState<{id:string;shape:Shape;color:string}|null>(null);
+  const [savingAvatar,setSavingAvatar]=useState(false);
+  const avatarSavingRef=useRef(false);
   const [tab, setTab] = useState<'Details' | 'Library' | 'Computer'>('Computer');
   const [draft, setDraft] = useState('');
   const [customAnswer, setCustomAnswer] = useState('');
@@ -234,6 +239,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     return () => controller.abort();
   }, [remote, active?.id]);
   useEffect(() => { setDraft(''); setCustomAnswer(''); setNotice(false); }, [state.activeId]);
+  useEffect(() => { setAvatarEditor(null); }, [state.activeId]);
   useEffect(() => { if(newChat) recipientInput.current?.focus(); }, [newChat]);
   useEffect(() => {
     const onKeyDown = (event:KeyboardEvent) => {
@@ -373,6 +379,19 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     });
     labelQueue.current[id]=next;void next.finally(()=>{if(labelQueue.current[id]===next)delete labelQueue.current[id]});
   }
+  async function saveAvatar() {
+    if(!avatarEditor||avatarSavingRef.current)return;
+    const selected={...avatarEditor};avatarSavingRef.current=true;setSavingAvatar(true);setBotError('');
+    try{
+      if(remote){
+        const response=await fetch(`${import.meta.env.BASE_URL}api/bots/${selected.id}`,{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({shape:selected.shape,color:selected.color})});
+        if(!response.ok)throw new Error('avatar update failed');
+      }
+      setState(current=>({...current,bots:current.bots.map(bot=>bot.id===selected.id?{...bot,shape:selected.shape,color:selected.color}:bot)}));
+      setAvatarEditor(current=>current?.id===selected.id?null:current);
+    }catch{setBotError('Could not save the Bot picture. Please try again.')}
+    finally{avatarSavingRef.current=false;setSavingAvatar(false)}
+  }
   const composerDisabled = remote && (sending || history.id !== active?.id || history.status !== 'ready' || piFeature === 'loading' || piFeature === 'error' || (piFeature === 'enabled' && (runHistory.id !== active?.id || runHistory.status !== 'ready')));
   if (botStatus === 'loading') return <main className="auth-page"><div className="auth-card">Loading your Bots…</div></main>;
   if (botStatus === 'error') return <main className="auth-page"><div className="auth-card"><p role="alert">Could not load your Bots.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></div></main>;
@@ -425,9 +444,10 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
             </div>
             <form className="composer" onSubmit={event => { event.preventDefault(); void addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} disabled={composerDisabled} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() ? <button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote ? (piFeature === 'enabled' ? 'Send task' : 'Save message') : 'Save local message'}><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
           </section>
-          {panel && <aside className="details-panel" aria-label="Bot details"><Avatar bot={active} size={86} /><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => void saveBotName()} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && piFeature === 'enabled' ? <ComputerPanel name={active.name} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
+          {panel && <aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" aria-label="Change Bot picture" onClick={()=>setAvatarEditor({id:active.id,shape:active.shape,color:active.color})}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => void saveBotName()} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && piFeature === 'enabled' ? <ComputerPanel name={active.name} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
         </div>
       </>}
+      {avatarEditor && <div className="avatar-overlay" onMouseDown={event=>{if(event.target===event.currentTarget&&!savingAvatar)setAvatarEditor(null)}}><section className="avatar-dialog" role="dialog" aria-modal="true" aria-labelledby="avatar-dialog-title" onKeyDown={event=>{if(event.key==='Escape'&&!savingAvatar)setAvatarEditor(null)}}><header><h2 id="avatar-dialog-title">Bot picture</h2><IconButton name="close" label="Close picture editor" onClick={()=>{if(!savingAvatar)setAvatarEditor(null)}} /></header><div className="avatar-preview"><Avatar bot={avatarEditor} size={96} /></div><p>Shape</p><div className="avatar-choices">{avatarShapes.map(shape=><button key={shape} type="button" aria-label={`Shape ${shape}`} aria-pressed={avatarEditor.shape===shape} onClick={()=>setAvatarEditor(current=>current?{...current,shape}:null)}><Avatar bot={{shape,color:avatarEditor.color}} size={38} /></button>)}</div><p>Color</p><div className="avatar-choices">{avatarColors.map(color=><button key={color} type="button" className="avatar-color" aria-label={`Color ${color}`} aria-pressed={avatarEditor.color===color} onClick={()=>setAvatarEditor(current=>current?{...current,color}:null)}><span style={{background:color}} /></button>)}</div><footer><button type="button" disabled={savingAvatar} onClick={()=>setAvatarEditor(null)}>Cancel</button><button type="button" disabled={savingAvatar} onClick={()=>void saveAvatar()}>Set avatar</button></footer></section></div>}
     </main>
   </div>;
 }

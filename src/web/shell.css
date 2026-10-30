@@ -83,6 +83,23 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .composer .voice-button, .send-button { width: 40px; height: 40px; padding: 8px; border: 0; border-radius: 50%; color: white; background: #050505; }
 .send-button svg { width: 100%; height: 100%; }
 .details-panel { flex: 0 0 43%; max-width: 530px; padding: 85px 20px 20px; border-left: 1px solid #eee; display: flex; flex-direction: column; align-items: center; }
+.avatar-edit { padding: 0; border: 0; border-radius: 50%; background: transparent; }
+.avatar-edit:hover { filter: brightness(.95); }
+.avatar-overlay { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: #0006; }
+.avatar-dialog { width: min(430px,100%); padding: 20px; border-radius: 16px; background: #fcfcfc; box-shadow: 0 16px 45px #0003; }
+.avatar-dialog header { display: flex; justify-content: space-between; align-items: center; }
+.avatar-dialog h2 { margin: 0; font-size: 19px; font-weight: 600; }
+.avatar-dialog header .icon-button { width: 30px; height: 30px; padding: 7px; border: 0; background: transparent; }
+.avatar-preview { display: grid; place-items: center; min-height: 128px; }
+.avatar-dialog p { margin: 14px 0 8px; font-size: 14px; color: #666; }
+.avatar-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.avatar-choices button { display: grid; place-items: center; width: 48px; height: 48px; padding: 3px; border: 1px solid transparent; border-radius: 9px; background: #f2f2f2; }
+.avatar-choices button[aria-pressed='true'] { border: 2px solid #5c55a8; }
+.avatar-color span { width: 28px; height: 28px; border-radius: 50%; }
+.avatar-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.avatar-dialog footer button { border: 1px solid #ddd; border-radius: 8px; padding: 8px 14px; background: #fff; }
+.avatar-dialog footer button:last-child { color: #fff; border-color: #111; background: #111; }
+.avatar-dialog footer button:disabled { opacity: .5; }
 .bot-name { margin-top: 17px; width: 100%; border: 0; background: transparent; text-align: center; font-size: 23px; }
 .bot-label { margin-top: 9px; width: 100%; padding: 0; border: 0; text-align: center; color: #777; background: transparent; font-size: 15px; }
 .bot-label::placeholder { color: #777; opacity: 1; }

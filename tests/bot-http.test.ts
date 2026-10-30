@@ -40,6 +40,13 @@ test('bot API uses session ownership and enforces origin for writes', async () =
     assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({label:'x'.repeat(61)})})).status,400);
     assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({name:'N',label:'L'})})).status,400);
     assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({label:''})})).status,200);
+    const avatar=JSON.stringify({shape:'triangle',color:'#12ABEF'});
+    assert.equal((await request(`/api/bots/${bot.id}`,b,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:avatar})).status,404);
+    assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin:'https://evil.example','content-type':'application/json'},body:avatar})).status,403);
+    assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:avatar})).status,200);
+    const updatedAvatar=(await (await request('/api/bots',a)).json() as {bots:{shape:string;color:string}[]}).bots[0];assert.deepEqual({shape:updatedAvatar.shape,color:updatedAvatar.color},{shape:'triangle',color:'#12abef'});
+    assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({shape:'script',color:'#ffffff'})})).status,400);
+    assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({shape:'round',color:'url(evil)'})})).status,400);
     const messagesPath = `/api/bots/${bot.id}/messages`;
     const messageBody = JSON.stringify({text:'Private message'});
     assert.equal((await request(messagesPath)).status,401);

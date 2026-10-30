@@ -47,12 +47,18 @@ try {
   await page.getByLabel('Bot label').fill('analyst');
   await page.getByLabel('Bot label').press('Enter');
   assert.equal(await page.locator('.bot-row.selected').getByText('analyst').count(), 1);
+  await page.getByRole('button', { name: 'Change Bot picture' }).click();
+  await page.getByRole('button', { name: 'Shape triangle' }).click();
+  await page.getByRole('button', { name: 'Color #5ac0ae' }).click();
+  await page.getByRole('button', { name: 'Set avatar' }).click();
+  assert.equal(await page.locator('.bot-row.selected .avatar path').first().getAttribute('fill'), '#5ac0ae');
   await page.getByRole('button', { name: 'Hide bot details' }).click();
   await page.getByLabel('Message Local Research').fill('Local-only test message');
   await page.getByRole('button', { name: 'Save local message' }).click();
   await page.getByText('No message was sent to an Agent', { exact: false }).waitFor();
   await page.reload({ waitUntil: 'networkidle' });
   assert.equal(await page.locator('.bot-row.selected').getByText('analyst').count(), 1);
+  assert.equal(await page.locator('.bot-row.selected .avatar path').first().getAttribute('fill'), '#5ac0ae');
   assert.equal(await page.locator('.conversation').getByText('Local-only test message', { exact: true }).count(), 1);
   await page.getByRole('button', { name: /New Bot.*Ready for a conversation/ }).click();
   assert.equal(await page.locator('.conversation').getByText('Local-only test message', { exact: true }).count(), 0);
