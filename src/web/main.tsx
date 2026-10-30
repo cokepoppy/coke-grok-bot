@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { avatarPaths } from './avatar-paths';
+import { WebsiteDemoApp } from './website-demo';
 import './shell.css';
 
 type Shape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle' | 'oval' | 'square' | 'pill' | 'spark' | 'heart' | 'flower' | 'pentagon' | 'star';
@@ -619,4 +620,10 @@ function AuthenticatedApp() {
   return <main className="auth-page"><div className="auth-card"><h1>Coke Grok Bot</h1>{status === 'loading' ? <p>Checking your session…</p> : status === 'error' ? <><p role="alert">The sign-in service is unavailable.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></> : <><p>Sign in to continue to the local preview.</p>{authError && <p role="alert">{authError}</p>}<a href={`${import.meta.env.BASE_URL}api/auth/google/start`}>Continue with Google</a></>}</div></main>;
 }
 
-createRoot(document.getElementById('root')!).render(import.meta.env.VITE_REQUIRE_AUTH === 'true' ? <AuthenticatedApp /> : <PreviewApp />);
+function AppRoot() {
+  if (import.meta.env.VITE_REQUIRE_AUTH === 'true') return <AuthenticatedApp />;
+  if (new URLSearchParams(window.location.search).get('reference') === 'website-demo') return <WebsiteDemoApp />;
+  return <PreviewApp />;
+}
+
+createRoot(document.getElementById('root')!).render(<AppRoot />);

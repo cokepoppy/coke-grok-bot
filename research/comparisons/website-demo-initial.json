@@ -1,0 +1,9 @@
+{
+  "id": "grok-bot-website-demo-initial",
+  "reference": "../reference-images/grok-bot-website-demo-initial.png",
+  "referenceRect": { "x": 0, "y": 0, "width": 1955, "height": 1145 },
+  "implementationRect": { "x": 0, "y": 0, "width": 1956, "height": 1145 },
+  "output": "../../artifacts/reference-comparison/website-demo-initial",
+  "threshold": 32,
+  "note": "The reference is a user-provided crop from the official x.ai/bot embedded product demo. Its original CSS viewport, DPR, browser font rasterization, and lower clipped content are unknown. The local capture uses a 1470x864 CSS viewport at DPR 2. Metrics and overlays are diagnostic only, not proof of exact pixel parity."
+}

@@ -179,3 +179,13 @@ Routine 使用 `Settings > Bot > Timezone` 时区；新建的定时任务等到�
 用户于本轮提供的 Chrome 截图为 2940×1728 像素。截图中红框是标注，不属于产品；已把红框内应用窗裁为本机忽略文件 `research/reference-images/grok-bot-website-demo-initial.png`（1955×1145 像素，源区域约从 x=478、y=508 开始）。可见应用窗的左栏分界约在裁图 x=560，即宽度约占 28.6%，聊天区约占 71.4%；应用窗总宽约 1955 截图像素。窗口标题栏约 90 截图像素高，包含红黄绿窗控件、加号、Bot 名称和开屏幕图标。以上均为截图像素估算，原 Chrome CSS 视口和 DPR 未知，不能当作 CSS token。
 
 在本机 Chrome 同为 2940×1728 的视口观察 `/?reference=101-new-bot`：页面把 Bot 工作区铺满内容视口，左栏固定 350 CSS px，主区显示 bobo/New Bot 等 101 教程预览数据和黄色本地预览提示；官网截图则是有圆角边框和标题栏、宽度约占可用视口 2/3 的嵌入式应用窗，默认选中 Sales Outbound，并有黑色任务气泡、灰色状态消息和 Computer 任务卡。此对比证明两个截图不是同一组件状态/尺寸；下一版视觉夹具应单独构造 Sales Outbound 网站演示初始状态，并另测打开 computer、screen overlay 与 New agent 空会话，不能借用 101 新建 Bot 状态冒充官网演示。
+
+### x.ai 官网交互演示 UI 夹具
+
+2026-10-30 根据用户提供的 [x.ai/bot 页面截图](https://x.ai/bot)建立单独的 `/?reference=website-demo` React/CSS 夹具，不覆盖原有的 `/?reference=101-new-bot` 教程预览。夹具只在开发/本地测试构建 (`VITE_REQUIRE_AUTH` 未启用) 可访问；启用认证的应用先进入认证路由，不能用此参考参数绕过登录。官网公开页文本提到 Bots 并行工作、在真实应用中使用电脑、Routine 教学和长期记忆；该产品说明用于解释演示内容，不代替屏幕交互证据。[Grok Bot 官方页面](https://x.ai/bot)
+
+- 初始态复刻 Sales Outbound 会话：左侧 Bot 列表/搜索和圆角演示窗；黑色用户任务、系统改名提示、连接状态和 Computer 任务卡。Bot 行距、头像尺寸、标题栏/分栏和消息气泡按用户截图逐轮调整。
+- 自动化覆盖初始态、展开 Computer/Routines 侧栏、打开/关闭 screen overlay、关闭后显示四条预置结果、新建 New agent 空会话及打开其 Computer 面板。测试保存对应截图到被忽略的 `artifacts/ui/`。
+- `research/comparisons/website-demo-initial.json` 比较用户截图裁切与本地演示窗顶部 1956×1145 区域。2026-10-30 最新一次局部视觉迭代的阈值 32 指标为 MAE 9.43、变化像素 6.70%。截图的 Chrome CSS 视口、DPR 与字体栅格化未知，这些指标仅用于迭代；头像细节、内嵌电脑屏幕插画、裁切以下内容仍与来源存在可见差异，不能称为像素级一致。
+- 当前本机浏览器控制仍被 Codex Work 设置拒绝；本轮另开无用户会话的 headless Chrome 直访 x.ai 时收到 Cloudflare `Sorry, you have been blocked` 页面。官网文本提取和用户截图可用于基线，但这不等于本轮逐帧观察了官网动画。先前记录的稳定 Computer、screen、New agent 状态来自本机浏览器成功操作记录；电脑侧栏/弹层的原站中间帧、缓动曲线和时长仍未取到。实现中的转场参数是临时近似值。
+- 本地图片对比：`npm run compare:reference -- research/comparisons/website-demo-initial.json artifacts/ui/grok-bot-website-demo-window.png`。测试路由不写 API、MySQL 或租户数据，不能代表真实 Bot 运行验收。

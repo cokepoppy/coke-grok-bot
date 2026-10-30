@@ -172,9 +172,53 @@ try {
   await recipient.fill('maya');
   assert.equal(await reference.locator('.new-chat-menu').getByText('maya', { exact: true }).count(), 1);
   await recipient.press('Escape');
+
+  const websiteDemoContext = await browser.newContext({ viewport: { width: 1470, height: 864 }, deviceScaleFactor: 2, reducedMotion: 'reduce' });
+  const websiteDemo = await websiteDemoContext.newPage();
+  websiteDemo.on('pageerror', error => errors.push(error.message));
+  await websiteDemo.goto(`${base}/?reference=website-demo`, { waitUntil: 'networkidle' });
+  const demoWindow = websiteDemo.locator('.grok-demo-window');
+  await websiteDemo.locator('.site-demo-user-message').waitFor();
+  assert.match(await websiteDemo.locator('.site-demo-user-message').innerText(), /Overnight pipeline generation and outbound\./);
+  assert.equal(await websiteDemo.getByRole('button', { name: /Sales Outbound, Done\./ }).count(), 1);
+  assert.equal(await websiteDemo.locator('.site-demo-agent-row').count(), 7);
+  await mkdir('artifacts/ui', { recursive: true });
+  await demoWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-window.png', scale: 'device' });
+
+  await websiteDemo.getByRole('button', { name: "Open Sales Outbound's computer" }).click();
+  await websiteDemo.waitForTimeout(320);
+  assert.equal(await websiteDemo.getByRole('complementary', { name: 'Computer and routines' }).count(), 1);
+  assert.equal(await websiteDemo.locator('.site-demo-sidebar').evaluate(element => element.classList.contains('collapsed')), true);
+  await websiteDemo.locator('.site-demo-layout').screenshot({ path: 'artifacts/ui/grok-bot-website-demo-computer.png', scale: 'device' });
+  await websiteDemo.getByRole('button', { name: 'Open screen' }).first().click();
+  await websiteDemo.getByRole('dialog', { name: 'Sales Outbound computer screen' }).waitFor();
+  assert.equal(await websiteDemo.getByText('36 drafts queued', { exact: true }).count(), 1);
+  await websiteDemo.locator('.site-demo-screen-overlay').screenshot({ path: 'artifacts/ui/grok-bot-website-demo-screen.png', scale: 'device' });
+  await websiteDemo.getByRole('button', { name: 'Close screen' }).click();
+  await websiteDemo.getByLabel('Task results').getByText('52 accounts', { exact: false }).waitFor();
+
+  await websiteDemo.getByRole('button', { name: 'Hide computer' }).click();
+  await websiteDemo.waitForTimeout(320);
+  await websiteDemo.getByRole('button', { name: 'New agent', exact: true }).click();
+  await websiteDemo.getByRole('dialog', { name: 'Search or create agents' }).getByRole('button', { name: 'Create new agent' }).click();
+  await websiteDemo.getByText('Message New agent', { exact: true }).waitFor();
+  await websiteDemo.locator('.grok-demo-window').screenshot({ path: 'artifacts/ui/grok-bot-website-demo-new-agent.png', scale: 'device' });
+  await websiteDemo.getByRole('button', { name: /Sales Outbound, Done\./ }).click();
+  assert.equal(await websiteDemo.locator('.site-demo-agent-row[aria-label="New agent"]').count(), 1);
+  await websiteDemo.locator('.site-demo-agent-row[aria-label="New agent"]').click();
+  await websiteDemo.getByText('Message New agent', { exact: true }).waitFor();
+  await websiteDemo.locator('.site-demo-new-agent').click();
+  await websiteDemo.getByRole('textbox', { name: 'Search or create agents' }).fill('Chief');
+  await websiteDemo.getByRole('button', { name: 'Chief', exact: true }).click();
+  assert.equal(await websiteDemo.getByRole('button', { name: 'Open Chief\'s computer' }).count(), 1);
+  await websiteDemo.locator('.site-demo-agent-row[aria-label="New agent"]').click();
+  await websiteDemo.getByRole('button', { name: "Open New agent's computer" }).click();
+  assert.equal(await websiteDemo.getByRole('complementary', { name: 'Computer and routines' }).count(), 1);
+  await websiteDemoContext.close();
+
   assert.deepEqual(errors, []);
   await context.close();
-  console.log('UI E2E passed: local preview labeling, create/rename, messages, reload, switching, browser-profile isolation, narrow-layout sanity, reference screenshot, no page errors.');
+  console.log('UI E2E passed: local preview labeling, create/rename, messages, reload, switching, browser-profile isolation, narrow-layout sanity, 101 reference screenshot, Grok Bot website-demo initial/computer/screen/results/New agent states, no page errors.');
 } finally {
   if (browser) await browser.close();
   child.kill('SIGTERM');
