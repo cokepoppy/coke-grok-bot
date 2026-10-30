@@ -1,6 +1,7 @@
 import { desktopIdentity, desktopResources, splitDesktopResources } from './desktop-resources.ts';
 import type { DesktopConnection, DesktopConnections } from './pi-executor.ts';
 import type { RunOwner } from './run-store.ts';
+import type {NamespaceBootstrapConnection} from './namespace-bootstrap-service.ts';
 
 export type KubernetesObject = Record<string, unknown>;
 export interface DesktopKubernetes {
@@ -12,14 +13,16 @@ export interface DesktopKubernetes {
 
 /** Create only this user's resources; refuse drift rather than overwrite state or data. */
 export class DesktopProvisioner implements DesktopConnections {
-  constructor(private readonly kube:DesktopKubernetes,private readonly signingKey:Buffer,private readonly options:{image:string;controlNamespace:string;gatewayCA:string;split?:boolean}) {}
+  constructor(private readonly kube:DesktopKubernetes,private readonly signingKey:Buffer,private readonly options:{image:string;controlNamespace:string;gatewayCA:string;split?:boolean;bootstrap?:NamespaceBootstrapConnection}) {}
   async connect(owner:RunOwner,signal:AbortSignal):Promise<DesktopConnection> {
     if(signal.aborted) throw new Error('Desktop provisioning cancelled');
     const identity=desktopIdentity(owner,this.signingKey);
+    if(this.options.bootstrap && await this.options.bootstrap.ensure(owner,signal)!==identity.namespace)throw new Error('Namespace bootstrap returned the wrong owner');
     const resources=this.options.split ? splitDesktopResources(identity,this.options) : desktopResources(identity,this.options);
     for(const expected of resources) {
       if(signal.aborted) throw new Error('Desktop provisioning cancelled');
       const kind=String(expected.kind), metadata=expected.metadata as {name:string;namespace?:string};
+      if(kind==='Namespace' && this.options.bootstrap)continue;
       const namespace=kind==='Namespace'?null:metadata.namespace || null;
       let actual=await this.kube.get(kind,namespace,metadata.name,signal);
       if(!actual) {

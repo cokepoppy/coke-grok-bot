@@ -39,3 +39,10 @@ test('split provisioning waits for both Pods and returns the scoped Agent servic
  const result=await provisioner.connect(owner,new AbortController().signal);assert.equal(result.agentUrl.hostname,`agent.${identity.namespace}.svc.cluster.local`);
  assert.equal(kube.creates,10);assert.equal(kube.ready,2);await provisioner.connect(owner,new AbortController().signal);assert.equal(kube.creates,10);assert.equal(kube.ready,4);
 });
+test('provisioner delegates namespace creation and rejects a different owner',async()=>{
+ const owner={tenantId:randomUUID(),userId:randomUUID()},key=randomBytes(32),identity=desktopIdentity(owner,key),kube=new FakeKube(),signal=new AbortController().signal;let called=0;
+ const bootstrap={ensure:async(selected:typeof owner)=>{called++;assert.deepEqual(selected,owner);return identity.namespace}};
+ const provisioner=new DesktopProvisioner(kube,key,{...options,split:true,bootstrap});await provisioner.connect(owner,signal);
+ assert.equal(called,1);assert.equal(kube.objects.has(kube.key('Namespace',null,identity.namespace)),false);assert.equal(kube.creates,9);
+ const wrong=new DesktopProvisioner(new FakeKube(),key,{...options,split:true,bootstrap:{ensure:async()=>`grok-user-${'a'.repeat(32)}`}});await assert.rejects(wrong.connect(owner,signal),/wrong owner/);
+});

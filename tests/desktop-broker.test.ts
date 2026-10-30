@@ -11,6 +11,9 @@ import {request} from 'node:https';
 import type {AddressInfo} from 'node:net';
 import {DesktopBrokerClient} from '../src/server/desktop-broker-client.ts';
 import {createDesktopProvisioningBroker} from '../src/server/desktop-provisioning-broker.ts';
+import {createNamespaceBootstrapService} from '../src/server/namespace-bootstrap-service.ts';
+import {NamespaceBootstrapClient} from '../src/server/namespace-bootstrap-client.ts';
+import {desktopOwnerHash} from '../src/server/desktop-resources.ts';
 
 test('broker accepts only authenticated owner identities and verifies the returned desktop',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'grok-broker-test-')),keyPath=join(dir,'key.pem'),certPath=join(dir,'cert.pem');
@@ -29,5 +32,18 @@ test('broker accepts only authenticated owner identities and verifies the return
   assert.equal(result.agentToken,agentToken);assert.match(result.agentUrl.hostname,/^agent\.grok-user-[a-f0-9]{32}\.svc\.cluster\.local$/);assert.equal(calls,1);
   await assert.rejects(new DesktopBrokerClient(base,cert,randomBytes(32).toString('base64url')).connect(owner,new AbortController().signal));
   assert.throws(()=>new DesktopBrokerClient('http://localhost/',cert,capability));
+ }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(dir,{recursive:true,force:true})}
+});
+
+test('namespace bootstrap service authenticates requests and binds its result to the owner',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'grok-namespace-client-')),keyPath=join(dir,'key.pem'),certPath=join(dir,'cert.pem');
+ await promisify(execFile)('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',keyPath,'-out',certPath,'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1']);
+ const key=await readFile(keyPath),cert=await readFile(certPath),token=randomBytes(32).toString('base64url'),owner={tenantId:randomUUID(),userId:randomUUID()},expected=`grok-user-${desktopOwnerHash(owner)}`;let calls=0;
+ const server=createNamespaceBootstrapService({key,cert},token,{ensure:async selected=>{calls++;return `grok-user-${desktopOwnerHash(selected)}`}});server.listen(0,'127.0.0.1');await once(server,'listening');const base=`https://127.0.0.1:${(server.address() as AddressInfo).port}/`;
+ try{
+  const client=new NamespaceBootstrapClient(base,cert,token);assert.equal(await client.ensure(owner,new AbortController().signal),expected);assert.equal(calls,1);
+  await assert.rejects(new NamespaceBootstrapClient(base,cert,randomBytes(32).toString('base64url')).ensure(owner,new AbortController().signal));assert.equal(calls,1);
+  const wrong=createNamespaceBootstrapService({key,cert},token,{ensure:async()=>`grok-user-${'a'.repeat(32)}`});wrong.listen(0,'127.0.0.1');await once(wrong,'listening');
+  try{await assert.rejects(new NamespaceBootstrapClient(`https://127.0.0.1:${(wrong.address() as AddressInfo).port}/`,cert,token).ensure(owner,new AbortController().signal),/Invalid namespace bootstrap response/)}finally{await new Promise<void>(resolve=>wrong.close(()=>resolve()))}
  }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(dir,{recursive:true,force:true})}
 });
