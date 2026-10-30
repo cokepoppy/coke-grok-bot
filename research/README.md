@@ -9,7 +9,7 @@
 | O1 | [官方产品文档](https://docs.x.ai/grok-bot/overview) | 已读取 Bot、聊天、电脑、文件和技能相关页面 | 行为参考，不是界面像素证据 | 版本有变化时重查 |
 | V1 | [官方 Grok Bot 101](https://www.youtube.com/watch?v=8xXhE25vJZY)，2026-10-06 | 已完整下载本机 MKV；1920×1080、30 fps、3400.761 秒 | 22:08–22:23、26:48–27:53 共 2400 帧已审阅联系图，关键切换另审阅原尺寸 PNG；电脑阶段其余时间有单帧初查 | 其余视频和接管前后的完整路径尚未逐帧审阅 |
 | V2 | [官方 Grok Bot 201](https://www.youtube.com/watch?v=rOVomdnWhjQ)，2026-10-21 | 已完整下载本机 MKV；1920×1080、25 fps、3326.421 秒 | 已按约 30 秒间隔浏览整体联系图，并取 01:15、14:45 各 25 帧；两个时间点仅查看第一张原尺寸帧 | 多 Bot、群聊和工作流还需逐帧分析；不能把上传日期当成客户端版本日期 |
-| V3 | [官方 Introducing Grok Bot](https://www.youtube.com/watch?v=F1_0Lkp16Rc)，2026-08-11 | 已完整下载本机 MKV；3840×2160、24 fps、106.001 秒 | 开头约 0–13 秒按 1 fps 粗看，为宣传片镜头 | 全片逐帧与宣传场景归类；不能以宣传镜头推断真实客户端交互 |
+| V3 | [官方 Introducing Grok Bot](https://www.youtube.com/watch?v=F1_0Lkp16Rc)，2026-08-11 | 已完整下载本机 MKV；3840×2160、24 fps、106.001 秒 | 0–53.08 秒通过 51 张联系图预览，逐张包含连续 25 个源帧；按用户于 2026-10-30 的指示停止，不作 UI 或交互基准 | 53.08–106.00 秒未审阅；宣传镜头屏幕细节不清，不继续逐帧分析 |
 | T1 | [Charlie Chang：The ONLY Grok Bot Tutorial You Need 2026](https://www.youtube.com/watch?v=q1IwR88mhaA)，2026-09-30 | 已完整下载本机 MKV；1920×1080、24000/1001 fps、840.621 秒；公开索引查询于 2026-10-30，播放量报告约 19.2–36.7 万、频道约 146 万订阅，索引数值明显冲突 | 全片按 10 秒采样联系图浏览；01:35–02:00 共 600 帧已逐张查看联系图，关键帧再看原尺寸图 | 后续按原视频核对电脑操作、设置、Routine、多 Bot；第三方解释不是官方协议证明 |
 | T2 | [Tech With Tim：What You Need to Know About Grok Bot](https://www.youtube.com/watch?v=ezANo2RNryU)，2026-08-28 | 已完整下载；1920×1080、30000/1001 fps、748.601 秒；公开索引查询于 2026-10-30，约 4.85–5.97 万播放、约 208–211 万频道订阅，索引数值有差异 | 全片约每 10 秒采样浏览；02:35–02:45、02:55–03:00 共 450 帧已查看联系图；另核对 02:57 的五张原尺寸帧 | 按需逐帧研究电脑、教学任务和例行任务；第三方视频不能证明当前产品行为 |
 | T3 | [Founders School：The ONLY Grok Bot Tutorial You Need](https://www.youtube.com/watch?v=ifW-Aj9LOXQ)，2026-10-25 | 已下载本机 MKV；1920×1080、6930/289 fps（约 24 fps）、1583.981 秒；公开索引在 2026-10-30 显示约 2.72–6.67 万播放、约 2800 频道订阅，索引数值有差异 | 全片按 10 秒联系图初查；03:45、05:15、06:15 三段各 120 帧已逐帧查看；05:17.192–05:17.234 核对原尺寸连续帧 | 新版连接器和协作演示；第三方演示不是当前官方交互的单独证明 |
@@ -132,3 +132,50 @@ V1 `27:43–27:48` 的 150 帧已查看六张联系图：教学状态横条和�
 V1 `27:48–27:53` 的 150 帧已查看六张联系图：教学顶栏和红框仍在，Google Forms 标题字段发生编辑；该区间未观察到教学结束的界面切换。输入细节和后台行为仍需原尺寸及后续片段确认。
 
 [官方 Bot 文档](https://docs.x.ai/grok-bot/bots)说明置顶的 Bot 位于侧栏顶部，隐藏后 Bot 及其历史和例行任务保留；[0.57.0 更新记录](https://x.ai/changelog/bot)说明 Hidden Bots 在侧栏底部可折叠，并可从菜单恢复。本项目保存置顶与隐藏状态，隐藏列表提供恢复入口，保持现有聊天；具体置顶分区及隐藏列表外观仍缺少足够画面，现有布局是临时实现。项目尚无完整通知与例行任务系统，不能声称验证了官方的隐藏通知或 Routine 行为。
+
+## 2026-10-30 官方 Routine 文档核对
+
+[官方 Skills and routines 文档](https://docs.x.ai/grok-bot/skills-routines-and-automations)最后更新于 2026-10-28。桌面端在 Bot 名称打开详情后，Routine 位于 `Details`：每行显示名称与运行时间，或 `Paused`，并有暂停/恢复开关；空状态为 `Ask in chat to set a routine`。打开一行可见 `Instruction`、`When to run`，Webhook 触发时另显示 `Webhook`；底部操作为 `Pause/Resume`、有条件显示的 `Test`、会在聊天中发起编辑请求的 `Edit`、以及确认后删除。右键行有对应操作。
+
+Routine 使用 `Settings > Bot > Timezone` 时区；新建的定时任务等到下一个计划时间才运行，`Test` 会立即运行真实工作，可能访问网站、修改文件或调用已连接工具。事件触发仅处理创建触发器之后的新活动。官方文档还列出每 Bot 最多 50 条、每条保留最近 20 次记录、定时最短间隔 5 分钟；失败原因和运行状态也会进入历史。演示教学最多记录 10 分钟的可见电脑交互、不录麦克风，并先生成待检查的技能草稿，不应跳过复核而直接定时执行。
+
+截至本次代码核对，当前预览的 `Details` 面板仍显示 `Routines and connections are not available in this preview.`；`src/server` 中没有 Routine 的持久化、API 或调度实现。因此此处是尚未完成的 UI 与真实逻辑，不应只补一个可点击但不运行的外观面板。高播放量 How I AI 录像中的 Routine 画面作为补充 UI 证据，官方文档作为当前行为基准；旧版深色录屏不能覆盖 2026-10-28 后的现行规则。
+
+## 2026-10-30 新建 Bot 画面对照
+
+`npm run test:ui` 在 1584×994 桌面视口核对 V1 `22:20` 的新建 Bot 画面：侧栏、问候气泡、引导卡片和输入栏的基准矩形均在 1 CSS 像素内；`npm run compare:reference -- research/comparisons/101-newbot.json artifacts/ui/reference-101-actual.png` 的诊断结果为 MAE 5.237、阈值 32 下 3.08% 像素变化。来源是官方 `Grok Bot 101` 操作教程帧，视频缩放、压缩及原始 CSS 视口未知，所以这些结果只支持继续迭代，不证明绝对像素一致。按用户要求，官方 `Introducing Grok Bot` 宣传片不再作为界面判断依据。
+
+## 2026-10-30 官方首页交互演示核对
+
+在 Chrome 直接打开 [x.ai/bot](https://x.ai/bot)，检查用户截图红框中的 `Meet Grok Bot` 主演示。屏幕捕获为 2940×1728 像素；CSS 视口和 DPR 未单独测量。页面下方另有 `Play launch trailer` 按钮，它属于不同的视频区块，不作为主演示的交互证据。
+
+主演示不是单张静态图：Chrome 无障碍树能读到 `New agent`、`Open Sales Outbound's computer`、`Open screen` 等按钮和输入框；点击后内容和布局会变化。初始 Sales Outbound 对话在空闲观察约 17 秒没有自动推进。当前可重复的状态路径：
+
+1. 初始为左侧搜索/Bot 会话列表、中央 Sales Outbound 对话及电脑任务卡片；输入框固定在对话底部。
+2. 点击 `Open Sales Outbound's computer` 后，按钮变为 `Hide computer`，侧栏收成 Bot 图标栏，右侧出现电脑预览和 `Routines`，其中有 `Overnight outbound`。
+3. 点击 `Open screen` 后，页面加深色遮罩并打开大尺寸电脑画面；画面上叠放 CRM 窗口和 Outreach queue，列出联系人及 `Draft`，底部显示 `36 drafts queued`、`0 sent`。点击 `Close screen` 返回电脑预览；对话区域滚到结果摘要，显示 Salesforce 52 accounts、Hex 3 segments、LinkedIn 跳过 4 个近期联系对象、Sequencer 排入 36 个草稿且 0 sent。
+4. 点击 `New agent` 打开 `To: Search or create agents` 选择层，列出 `Create new agent` 和现有 Bot。只检查了列表搜索态并退出，没有创建 Bot。
+
+这证明主演示有可访问且可点击的交互状态，不是单纯的视频播放框；它内部究竟使用 React、SVG、CSS 动画或其他实现尚未从源代码核实。空闲时没有观察到自动换场；点击后的最终布局已核对，但过渡时长和中间动画帧尚未量测。当前参考应按可重复的网页 UI 状态机记录，不能把这些预置的示例消息、任务计数或电脑画面当作真实 Grok Bot 运行证据。复刻时可用 TypeScript/React 组件表达侧栏、对话、电脑抽屉和屏幕模态框，以显式状态驱动切换；屏幕中的 CRM/队列先按示意素材单独标注，待取得更清晰证据再定像素细节。
+
+### 本次 Chrome 实测补充
+
+2026-10-30 再次在已打开的 Chrome 标签页实操了上述状态。系统截图为 2940×1728 设备像素；浏览器 CSS 视口/DPR 未读到，因此以下位置仅按截图像素和比例描述，不用作 CSS 数值。初始演示窗约占屏幕宽度的 2/3，左侧 Bot 列表约占演示窗宽度的 29%，聊天区约占 71%。
+
+- 点击 `Open Sales Outbound's computer` 后，完整文字列表缩为约 9% 宽的头像栏，聊天区约 64%，右侧电脑详情约 27%；聊天消息区和输入栏同时随宽度重排。详情面板包含屏幕预览、`Routines` 标题与 `Overnight outbound` 行。
+- 点击 `Open screen` 后，暗色遮罩只覆盖演示窗圆角边界内；中心弹层展示桌面壁纸、叠放的 CRM/Outreach 窗口、联系人 `Draft` 状态，以及 `36 drafts queued / 0 sent`。弹层同时提供 `Close screen`。
+- 关闭屏幕弹层后，电脑详情仍打开，聊天滚到 `Salesforce → list pulled · 52 accounts`、`Hex → 3 lookalike segments`、`LinkedIn → 4 profiles skipped`、`Sequencer → 36 drafts queued · 0 sent` 的结果摘要；这些仍是网站预置示例数据。
+
+本次通过 Chrome 原生可访问性树读到了操作按钮与界面文本，并用截图确认最终布局；连续取图时浏览器控制会等待页面状态稳定，所以没有取到 CSS 动画的中间帧，也没有测出动效时长/曲线。可以确定这是网页里可操作的交互演示；布局变化确实由控件触发。转场是否为特定 CSS/JS 动画、每帧位置和缓动参数仍待直接逐帧捕获，不能声称已完成帧精确复刻。
+
+补充尝试：从初始布局点击 `Open Sales Outbound's computer` 后，连续请求 5 张 Chrome 原生截图，单次截图调用等待页面约 0.2 秒；全部样本都已处于稳定的电脑侧栏状态，没有覆盖转场过程。因此证据确认它是可交互网页，但截图采样仍不足以分析转场逐帧或判断具体前端动画实现。浏览器已恢复在默认的无电脑侧栏状态。
+
+2026-10-30 补查 `New agent`：打开 `To: Search or create agents` 选择层后点 `Create new agent`，演示窗内新增 `New agent` 侧栏条目并打开空白会话，显示 `Open New agent's computer` 与 `Message New agent`。未提交消息，也未观察到真实模型或后端任务；这只证明官网演示中的可见状态更新，数据是否持久化未知。重新选择 `Sales Outbound` 后，预置销售演示会话恢复。此流程与 101 教程中的真实 Bot 创建/命名/头像流程不是同一证据，不可相互替代。
+
+当前本地 `/?reference=101-new-bot` 预览与此基准在信息架构上明显不同：本地页是全屏双栏 Bot 聊天，官网演示则是在官网正文内居中的有限宽度应用窗，初始左栏含搜索和 Bot 会话，中央为多条已完成任务消息，右侧电脑栏及屏幕弹层按操作展开。后续视觉工作需先明确比较的是官网嵌入式演示视口还是原生桌面客户端，再按同尺寸、同状态截取本地画面；不能把当前预览页截图直接与整页官网截图混比。
+
+### 用户提供的同尺寸截图基准
+
+用户于本轮提供的 Chrome 截图为 2940×1728 像素。截图中红框是标注，不属于产品；已把红框内应用窗裁为本机忽略文件 `research/reference-images/grok-bot-website-demo-initial.png`（1955×1145 像素，源区域约从 x=478、y=508 开始）。可见应用窗的左栏分界约在裁图 x=560，即宽度约占 28.6%，聊天区约占 71.4%；应用窗总宽约 1955 截图像素。窗口标题栏约 90 截图像素高，包含红黄绿窗控件、加号、Bot 名称和开屏幕图标。以上均为截图像素估算，原 Chrome CSS 视口和 DPR 未知，不能当作 CSS token。
+
+在本机 Chrome 同为 2940×1728 的视口观察 `/?reference=101-new-bot`：页面把 Bot 工作区铺满内容视口，左栏固定 350 CSS px，主区显示 bobo/New Bot 等 101 教程预览数据和黄色本地预览提示；官网截图则是有圆角边框和标题栏、宽度约占可用视口 2/3 的嵌入式应用窗，默认选中 Sales Outbound，并有黑色任务气泡、灰色状态消息和 Computer 任务卡。此对比证明两个截图不是同一组件状态/尺寸；下一版视觉夹具应单独构造 Sales Outbound 网站演示初始状态，并另测打开 computer、screen overlay 与 New agent 空会话，不能借用 101 新建 Bot 状态冒充官网演示。

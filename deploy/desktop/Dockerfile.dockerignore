@@ -6,3 +6,6 @@
 !deploy/desktop/cloud-kernel-adapter.mjs
 !deploy/desktop/computer-worker.mjs
 !deploy/desktop/guarded-computer.mjs
+!deploy/desktop/dsh-runtime/
+!deploy/desktop/dsh-runtime/package.json
+!deploy/desktop/dsh-runtime/package-lock.json

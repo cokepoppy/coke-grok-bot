@@ -15,11 +15,13 @@ test('run API is authenticated, owner-scoped, origin-protected and idempotent',a
  await ids.migrate();await bots.migrate();await runs.migrate();
  const net=await import('node:net'),reservation=net.createServer();reservation.listen(0,'127.0.0.1');await once(reservation,'listening');const httpPort=(reservation.address() as import('node:net').AddressInfo).port;await new Promise<void>(resolve=>reservation.close(()=>resolve()));
  const origin=`http://127.0.0.1:${httpPort}`,base=origin+'/grok-bot',provider:IdentityProvider={authorizationUrl:()=>'',exchange:async()=>({})};
- const server=createAuthServer(new GoogleAuthService(ids,provider,base),base,undefined,bots,runs);server.listen(httpPort,'127.0.0.1');await once(server,'listening');
+ const server=createAuthServer(new GoogleAuthService(ids,provider,base),base,undefined,bots,runs,undefined,undefined,'dsh');server.listen(httpPort,'127.0.0.1');await once(server,'listening');
  const login=async(subject:string)=>{const id=await ids.signInGoogle({subject,email:`${subject}@example.test`,name:subject}),token=randomBytes(32).toString('base64url');await ids.createSession(createHash('sha256').update(token).digest('hex'),id.userId,id.tenantId,new Date(Date.now()+60000));return {id,cookie:`coke_grok_session=${token}`}};
  try{
   const a=await login('a'),b=await login('b');const bot=await bots.create({...a.id,email:'a@example.test',name:'A',role:'owner'},{name:'A',shape:'round',color:'#abcdef'});
   const path=`/api/bots/${bot.id}/runs`,request=(path:string,cookie='',init:RequestInit={})=>fetch(base+path,{...init,headers:{cookie,...init.headers}});
+  assert.equal((await request('/api/auth/features')).status,401);
+  const features=await request('/api/auth/features',a.cookie);assert.equal(features.status,200);assert.deepEqual(await features.json(),{agent:true,engine:'dsh'});
   const requestId=randomUUID(),payload=JSON.stringify({requestId,prompt:'Hello'}),post=(cookie:string,body=payload,from=origin)=>request(path,cookie,{method:'POST',headers:{origin:from,'content-type':'application/json'},body});
   assert.equal((await request(path)).status,401);assert.equal((await post(a.cookie,payload,'https://evil.example')).status,403);assert.equal((await post(b.cookie)).status,404);
   const first=await post(a.cookie),firstBody=await first.json() as {run:{id:string}};assert.equal(first.status,200);

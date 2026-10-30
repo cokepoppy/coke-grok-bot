@@ -5,7 +5,7 @@ import type { Pool } from 'mysql2/promise';
 import { ModelGateway } from './model-gateway.ts';
 import { RunStore } from './run-store.ts';
 import { RunScheduler } from './run-scheduler.ts';
-import { PiExecutor } from './pi-executor.ts';
+import { DshExecutor, PiExecutor } from './pi-executor.ts';
 import { DesktopBrokerClient } from './desktop-broker-client.ts';
 import { ApprovalStore } from './approval-store.ts';
 import { ComputerBridge } from './computer-bridge.ts';
@@ -18,7 +18,7 @@ async function privateFile(path:string):Promise<Buffer>{
  const metadata=await stat(path);if(!metadata.isFile()||(metadata.mode&0o077)!==0)throw new Error('Runtime secret file permissions are not private');
  const value=await readFile(path);if(!value.length||value.length>16384)throw new Error('Invalid runtime secret file');return value;
 }
-export interface PiRuntime { runs:RunStore; approvals:ApprovalStore; computer:UserComputer; close():Promise<void> }
+export interface PiRuntime { runs:RunStore; approvals:ApprovalStore; computer:UserComputer; engine:'pi'|'dsh'; close():Promise<void> }
 /** Opt-in only. Caller supplies Kubernetes service account with separately audited permissions. */
 export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env):Promise<PiRuntime|null>{
  if(env.COKE_GROK_PI_ENABLED!=='1')return null;
@@ -26,6 +26,8 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  // the provisioning broker and its cluster permissions are not yet production-validated.
  // Refuse production startup until those boundaries are implemented and tested.
  if(env.NODE_ENV==='production')throw new Error('Pi runtime is not ready for production');
+ const engine=(env.COKE_GROK_AGENT_ENGINE?.trim()||'pi');
+ if(engine!=='pi'&&engine!=='dsh')throw new Error('COKE_GROK_AGENT_ENGINE must be pi or dsh');
  const providerKey=(await privateFile(required(env,'COKE_GROK_MODEL_KEY_FILE'))).toString('utf8').trim();
  const signingKey=await privateFile(required(env,'COKE_GROK_DESKTOP_SIGNING_KEY_FILE'));
  const tlsKey=await privateFile(required(env,'COKE_GROK_GATEWAY_TLS_KEY_FILE'));
@@ -51,10 +53,13 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
   return new HttpGuardedComputerWorker(owner,new URL(`http://desktop.${identity.namespace}.svc.cluster.local:8082/`),identity.controlToken,'00000000-0000-4000-8000-000000000000');
  });
  const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals,bridge);
- const scheduler=new RunScheduler(runs,new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID')),{concurrency:2,leaseSeconds:30});
+ const executor=engine==='dsh'
+  ? new DshExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'))
+  : new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'));
+ const scheduler=new RunScheduler(runs,executor,{concurrency:2,leaseSeconds:30});
  const server=gateway.createServer({key:tlsKey,cert});
  try{server.listen(3002,'0.0.0.0');await once(server,'listening')}catch(error){gateway.close();server.close();throw error}
  const timer=setInterval(()=>{void scheduler.tick().catch(()=>console.error('Pi scheduler polling failed.'))},2000);timer.unref();
  const screenshotCleanup=setInterval(()=>{void approvals.purgeExpiredScreenshots().catch(()=>console.error('Approval screenshot cleanup failed.'))},60000);screenshotCleanup.unref();
- return {runs,approvals,computer,async close(){clearInterval(timer);clearInterval(screenshotCleanup);await scheduler.stop();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
+ return {runs,approvals,computer,engine,async close(){clearInterval(timer);clearInterval(screenshotCleanup);await scheduler.stop();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
 }

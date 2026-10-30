@@ -3,6 +3,7 @@ import {X509Certificate,createPrivateKey} from 'node:crypto';
 import {DesktopKubernetesClient} from './desktop-kubernetes.ts';
 import {NamespaceBootstrap} from './namespace-bootstrap.ts';
 import {createNamespaceBootstrapService} from './namespace-bootstrap-service.ts';
+import {NamespaceAdmissionPreflight} from './namespace-admission-preflight.ts';
 
 function required(name:string):string{const value=process.env[name]?.trim();if(!value)throw new Error(`Missing ${name}`);return value}
 async function privateFile(name:string):Promise<Buffer>{const path=required(name),metadata=await stat(path);if(!metadata.isFile()||(metadata.mode&0o077)!==0)throw new Error('Private bootstrap file required');const value=await readFile(path);if(!value.length||value.length>16384)throw new Error('Invalid bootstrap file');return value}
@@ -14,7 +15,9 @@ async function main(){
  if(!certificate.checkHost(host)||!certificate.checkPrivateKey(createPrivateKey(key))||Date.parse(certificate.validFrom)>Date.now()||Date.parse(certificate.validTo)<=Date.now())throw new Error('Invalid bootstrap certificate');
  const token=(await privateFile('COKE_GROK_BOOTSTRAP_TOKEN_FILE')).toString('utf8').trim(),ca=await readFile(required('COKE_GROK_KUBE_CA_FILE')),tokenFile=required('COKE_GROK_KUBE_TOKEN_FILE');
  const kube=new DesktopKubernetesClient(required('COKE_GROK_KUBE_URL'),ca,async()=>(await readFile(tokenFile,'utf8')).trim());
- const bootstrap=new NamespaceBootstrap(kube,{controlNamespace:namespace,brokerServiceAccount:required('COKE_GROK_BROKER_SERVICE_ACCOUNT'),brokerRole:required('COKE_GROK_BROKER_ROLE')});
+ const options={controlNamespace:namespace,bootstrapServiceAccount:required('COKE_GROK_BOOTSTRAP_SERVICE_ACCOUNT'),brokerServiceAccount:required('COKE_GROK_BROKER_SERVICE_ACCOUNT'),bootstrapRole:required('COKE_GROK_BOOTSTRAP_ROLE'),brokerRole:required('COKE_GROK_BROKER_ROLE'),policyPrefix:required('COKE_GROK_BOOTSTRAP_POLICY_PREFIX')};
+ const preflight=new NamespaceAdmissionPreflight(kube,options);await preflight.verify(AbortSignal.timeout(30_000));
+ const bootstrap=new NamespaceBootstrap(kube,{...options,verifyAdmission:signal=>preflight.verify(signal)});
  const server=createNamespaceBootstrapService({key,cert},token,bootstrap);server.listen(3004,'0.0.0.0',()=>console.log('Namespace bootstrap service listening on port 3004'));
  for(const signal of ['SIGTERM','SIGINT'] as const)process.once(signal,()=>server.close());
 }

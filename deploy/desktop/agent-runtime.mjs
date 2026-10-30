@@ -271,7 +271,7 @@ async function executeKernel(input, requestSignal, slot) {
       if (dingtalkMinutesBridge) result = redactSecret(result, dingtalkMinutesBridge.token);
       if (dingtalkSecretaryBridge) result = redactSecret(result, dingtalkSecretaryBridge.token);
     } catch { throw new Error('Agent adapter must return a JSON decision'); }
-    if (!['done', 'waiting', 'scheduled', 'delegating'].includes(result.status) || typeof result.message !== 'string' || !result.message.trim()) throw new Error('Agent adapter returned an invalid decision');
+    if (!['done', 'failed', 'waiting', 'scheduled', 'delegating'].includes(result.status) || typeof result.message !== 'string' || !result.message.trim()) throw new Error('Agent adapter returned an invalid decision');
     return { taskId, ...result, engine, message: result.message.slice(0, 20_000), sessionId: typeof result.sessionId === 'string' ? result.sessionId : null };
   } finally {
     clearTimeout(timer); clearInterval(controlPoll);

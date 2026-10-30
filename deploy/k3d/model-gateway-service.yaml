@@ -1,0 +1,13 @@
+# Cluster-internal only. Do not add this service to the public Ingress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: coke-grok-model
+spec:
+  type: ClusterIP
+  selector:
+    app: coke-grok-auth
+  ports:
+    - name: https
+      port: 3002
+      targetPort: model

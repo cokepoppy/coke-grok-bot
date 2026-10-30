@@ -41,3 +41,9 @@ test('Pi dispatch fails closed for wrong owner, transport error or interrupted d
  const transport=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>{calls++;throw new Error('unconfirmed')});
  await assert.rejects(transport.execute(owner,run,new AbortController().signal,randomUUID()));assert.equal(calls,2);gateway.close();
 });
+
+test('Pi reports a confirmed failure as failed rather than completed',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{const body=JSON.parse(String(init?.body));assert.match(body.prompt,/use failed if it could not be completed/i);return Response.json({status:'failed',message:'Could not access the requested page.'})});
+ try{assert.deepEqual(await executor.execute(owner,run,new AbortController().signal,randomUUID()),{status:'failed',result:'Could not access the requested page.'})}finally{gateway.close()}
+});

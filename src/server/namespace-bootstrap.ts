@@ -5,12 +5,14 @@ import type {RunOwner} from './run-store.ts';
 
 /** Create or verify only deterministic owner resources, without replacing existing objects. */
 export class NamespaceBootstrap {
- constructor(private readonly kube:Pick<DesktopKubernetes,'get'|'create'>,private readonly options:{controlNamespace:string;brokerServiceAccount:string;brokerRole:string}){}
+ constructor(private readonly kube:Pick<DesktopKubernetes,'get'|'create'>,private readonly options:{controlNamespace:string;brokerServiceAccount:string;brokerRole:string;verifyAdmission?:(signal:AbortSignal)=>Promise<void>}){}
  async ensure(owner:RunOwner,signal:AbortSignal):Promise<string>{
   const ownerHash=desktopOwnerHash(owner),namespace=`grok-user-${ownerHash}`;
+  if(this.options.verifyAdmission)await this.options.verifyAdmission(signal);
   const expectedNamespace:KubernetesObject={apiVersion:'v1',kind:'Namespace',metadata:{name:namespace,labels:{'app.kubernetes.io/managed-by':'coke-grok-bot','coke-grok-bot.io/owner-hash':ownerHash}}};
   await this.ensureObject(expectedNamespace,null,signal);
-  await this.ensureObject(personalDesktopBinding(namespace,this.options),namespace,signal);
+  const {controlNamespace,brokerServiceAccount,brokerRole}=this.options;
+  await this.ensureObject(personalDesktopBinding(namespace,{controlNamespace,brokerServiceAccount,brokerRole}),namespace,signal);
   return namespace;
  }
  private async ensureObject(expected:KubernetesObject,namespace:string|null,signal:AbortSignal):Promise<void>{

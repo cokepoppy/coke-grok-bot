@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {NamespaceBootstrap} from '../src/server/namespace-bootstrap.ts';
 import {namespaceBootstrapResources} from '../src/server/namespace-bootstrap-resources.ts';
 import type {KubernetesObject} from '../src/server/desktop-provisioner.ts';
+import {NamespaceAdmissionPreflight} from '../src/server/namespace-admission-preflight.ts';
 
 test('personal namespace bootstrap creates only owner resources and refuses changed bindings',async()=>{
  const objects=new Map<string,KubernetesObject>(),created:string[]=[];
@@ -20,4 +21,22 @@ test('personal namespace bootstrap creates only owner resources and refuses chan
  const abort=new AbortController();abort.abort();await assert.rejects(bootstrap.ensure(owner,abort.signal),/cancelled/);
  assert.throws(()=>namespaceBootstrapResources({controlNamespace:'bad"principal',bootstrapServiceAccount:'bootstrap',brokerServiceAccount:'broker',bootstrapRole:'bootstrap-role',brokerRole:'desktop-role',policyPrefix:'policy'}));
  assert.throws(()=>namespaceBootstrapResources({controlNamespace:'control',bootstrapServiceAccount:'same',brokerServiceAccount:'same',bootstrapRole:'bootstrap-role',brokerRole:'desktop-role',policyPrefix:'policy'}));
+});
+
+test('bootstrap checks both admission policies before creating any resources',async()=>{
+ const probes:string[]=[];let namespaceAllowed=false,bindingAllowed=false,creates=0;
+ const options={controlNamespace:'control',bootstrapServiceAccount:'bootstrap',brokerServiceAccount:'broker',bootstrapRole:'bootstrap-role',brokerRole:'desktop-role',policyPrefix:'policy'},resources=namespaceBootstrapResources(options);
+ const preflight=new NamespaceAdmissionPreflight({get:async(kind,_namespace,name)=>resources.find(item=>item.kind===kind&&(item.metadata as {name:string}).name===name)||null,admissionDenies:async(_object,policy,binding)=>{assert.equal(policy,binding);probes.push(policy);return policy.endsWith('-namespace')?namespaceAllowed:bindingAllowed}},options);
+ const kube={get:async()=>null,create:async()=>{creates++;return true}},owner={tenantId:randomUUID(),userId:randomUUID()};
+ const bootstrap=new NamespaceBootstrap(kube,{controlNamespace:'control',brokerServiceAccount:'broker',brokerRole:'desktop-role',verifyAdmission:signal=>preflight.verify(signal)}),signal=new AbortController().signal;
+ await assert.rejects(bootstrap.ensure(owner,signal),/Namespace admission/);assert.equal(creates,0);
+ namespaceAllowed=true;await assert.rejects(bootstrap.ensure(owner,signal),/Role binding admission/);assert.equal(creates,0);
+ bindingAllowed=true;await preflight.verify(signal);assert.deepEqual(probes.slice(-2),['policy-namespace','policy-binding']);
+});
+
+test('admission preflight rejects changed policy even when probes would deny',async()=>{
+ const options={controlNamespace:'control',bootstrapServiceAccount:'bootstrap',brokerServiceAccount:'broker',bootstrapRole:'bootstrap-role',brokerRole:'desktop-role',policyPrefix:'policy'},resources=namespaceBootstrapResources(options);
+ const policy=resources.find(item=>item.kind==='ValidatingAdmissionPolicy')!;(policy.spec as {failurePolicy:string}).failurePolicy='Ignore';let probes=0;
+ const preflight=new NamespaceAdmissionPreflight({get:async(kind,_namespace,name)=>resources.find(item=>item.kind===kind&&(item.metadata as {name:string}).name===name)||null,admissionDenies:async()=>{probes++;return true}},options);
+ await assert.rejects(preflight.verify(new AbortController().signal),/does not match/);assert.equal(probes,0);
 });

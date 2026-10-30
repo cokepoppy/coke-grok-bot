@@ -5,7 +5,7 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Type } from 'typebox';
 
-const decisionStatuses = new Set(['done', 'waiting', 'scheduled', 'delegating']);
+const decisionStatuses = new Set(['done', 'failed', 'waiting', 'scheduled', 'delegating']);
 const piTools = ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls'];
 const secretEnvironmentName = /(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)/i;
 
@@ -353,9 +353,13 @@ async function runDsh(input, cwd, config, injectedSdk) {
   for (const plugin of pluginFiles) await writeFile(path.join(home, plugin.file), plugin.source, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
 
   const launchEnvironment = createDshEnvironment(home, config, browserBridge);
-  const args = ['--profile', process.env.DOTS_DSH_PROFILE || 'sdk', '--patch', patchFile];
   const harness = new sdk.DeepSeekHarness({
-    launch: { command: process.env.DOTS_DSH_BIN || 'dsh', args, cwd, env: launchEnvironment },
+    dshBin: process.env.DOTS_DSH_BIN || undefined,
+    profile: process.env.DOTS_DSH_PROFILE || 'sdk',
+    patches: [patchFile],
+    dshHome: home,
+    processCwd: cwd,
+    env: launchEnvironment,
     cwd,
     provider: 'coke-dots-shared',
     model: config.model,
@@ -883,7 +887,8 @@ function parseDecision(text) {
     throw new Error(`Agent did not return a structured result${preview}`);
   }
   const value = JSON.parse(match[0]);
-  if (!decisionStatuses.has(value.status) || typeof value.message !== 'string' || !value.message.trim()) throw new Error('Agent returned an invalid task decision');
+  if (!decisionStatuses.has(value.status)) throw new Error('Agent returned an invalid task decision status');
+  if (typeof value.message !== 'string' || !value.message.trim()) throw new Error(`Agent returned an invalid task decision message (${value.message == null ? 'missing' : typeof value.message === 'string' ? 'empty' : 'wrong type'}; error field ${typeof value.error === 'string' ? 'present' : 'absent'})`);
   return value;
 }
 

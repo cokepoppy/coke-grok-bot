@@ -11,11 +11,12 @@ import {namespaceBootstrapResources,personalDesktopBinding} from '../src/server/
 const image=process.env.COKE_GROK_DESKTOP_TEST_IMAGE;if(!image||!/^coke-grok-desktop:sha-[a-f0-9]{40}$/.test(image))throw new Error('Pinned test desktop image required');
 const id=randomBytes(6).toString('hex'),control=`grok-dynamic-test-${id}`,policyPrefix=`grok-dynamic-${id}`,bootstrapRole=`grok-bootstrap-${id}`,brokerRole=`grok-desktop-${id}`,testImage=`grok-dynamic-integration:${id}`,owner={tenantId:randomUUID(),userId:randomUUID()},desktop=`grok-user-${desktopOwnerHash(owner)}`,dir=await mkdtemp(join(tmpdir(),'grok-dynamic-k3d-'));
 const options={controlNamespace:control,bootstrapServiceAccount:'bootstrap',brokerServiceAccount:'broker',bootstrapRole,brokerRole,policyPrefix},principal=`system:serviceaccount:${control}:bootstrap`;
-let controlCreated=false,desktopEligible=false;const created:{kind:string;name:string}[]=[];
+let controlCreated=false,desktopEligible=false;const created:{kind:string;name:string}[]=[],extraDesktops:string[]=[];
 async function exec(command:string,args:string[],input?:string,timeout=120_000){const child=spawn(command,args,{stdio:['pipe','pipe','pipe']});let out='';for(const stream of [child.stdout,child.stderr]){stream.setEncoding('utf8');stream.on('data',c=>{out=(out+c).slice(-20000)})}child.stdin.end(input);const timer=setTimeout(()=>child.kill('SIGKILL'),timeout);try{const [code]=await once(child,'close') as [number|null];return {code:code??1,out}}finally{clearTimeout(timer)}}
 async function run(command:string,args:string[],input?:string,timeout?:number){const result=await exec(command,args,input,timeout);if(result.code!==0)throw new Error(`${command} test operation failed: ${result.out.slice(-1000)}`);return result.out}
 const dryRun=(object:unknown)=>exec('kubectl',[`--as=${principal}`,'create','-f','-','--dry-run=server'],JSON.stringify(object));
 async function waitDenied(object:unknown){for(let i=0;i<40;i++){const result=await dryRun(object);if(result.code!==0&&result.out.includes('ValidatingAdmissionPolicy'))return;await new Promise(resolve=>setTimeout(resolve,500))}throw new Error('Admission policy did not enforce the test identity')}
+async function waitAllowed(object:unknown){for(let i=0;i<40;i++){const result=await dryRun(object);if(result.code===0)return;await new Promise(resolve=>setTimeout(resolve,500))}throw new Error('Admission policy removal was not observed')}
 try{
  assert.equal((await run('kubectl',['config','current-context'])).trim(),'k3d-tp1121-sandbox-dev');
  const before=await exec('kubectl',['get','namespace',desktop,'--ignore-not-found','-o','name']);assert.equal(before.code,0);assert.equal(before.out.trim(),'');desktopEligible=true;
@@ -34,21 +35,54 @@ try{
  ];
  await run('kubectl',['create','-f','-'],JSON.stringify({apiVersion:'v1',kind:'List',items:secretObjects}));
  for(const object of namespaceBootstrapResources(options)){const kind=String(object.kind),name=String((object.metadata as {name:string}).name);await run('kubectl',['create','-f','-'],JSON.stringify(object));created.push({kind,name})}
- await waitDenied({apiVersion:'v1',kind:'Namespace',metadata:{name:`other-${id}`}});
- const wrongBinding=personalDesktopBinding(desktop,options) as any;wrongBinding.metadata.namespace='coke-grok-bot';await waitDenied(wrongBinding);
+ const wrongNamespace={apiVersion:'v1',kind:'Namespace',metadata:{name:`other-${id}`}};await waitDenied(wrongNamespace);
+ const wrongBinding=personalDesktopBinding(desktop,options) as any;wrongBinding.metadata.namespace=control;await waitDenied(wrongBinding);
  const commonSecurity={runAsNonRoot:true,runAsUser:1000,seccompProfile:{type:'RuntimeDefault'}},containerSecurity={allowPrivilegeEscalation:false,readOnlyRootFilesystem:true,capabilities:{drop:['ALL']}};
- const bootstrapPod={apiVersion:'v1',kind:'Pod',metadata:{...meta('bootstrap'),labels:{app:'bootstrap'}},spec:{serviceAccountName:'bootstrap',restartPolicy:'Never',securityContext:commonSecurity,containers:[{name:'bootstrap',image:testImage,imagePullPolicy:'Never',env:[{name:'TEST_CONTROL_NAMESPACE',value:control},{name:'TEST_BROKER_ROLE',value:brokerRole}],ports:[{containerPort:3004,name:'https'}],readinessProbe:{tcpSocket:{port:3004},periodSeconds:2},securityContext:containerSecurity,volumeMounts:[{name:'secret',mountPath:'/run/test-secret',readOnly:true}]}],volumes:[{name:'secret',secret:{secretName:'bootstrap-test-secret'}}]}};
+ const bootstrapPod={apiVersion:'v1',kind:'Pod',metadata:{...meta('bootstrap'),labels:{app:'bootstrap'}},spec:{serviceAccountName:'bootstrap',restartPolicy:'Never',securityContext:commonSecurity,containers:[{name:'bootstrap',image:testImage,imagePullPolicy:'Never',env:[{name:'TEST_CONTROL_NAMESPACE',value:control},{name:'TEST_BOOTSTRAP_ROLE',value:bootstrapRole},{name:'TEST_BROKER_ROLE',value:brokerRole},{name:'TEST_POLICY_PREFIX',value:policyPrefix}],ports:[{containerPort:3004,name:'https'}],readinessProbe:{tcpSocket:{port:3004},periodSeconds:2},securityContext:containerSecurity,volumeMounts:[{name:'secret',mountPath:'/run/test-secret',readOnly:true}]}],volumes:[{name:'secret',secret:{secretName:'bootstrap-test-secret'}}]}};
  const service={apiVersion:'v1',kind:'Service',metadata:meta('coke-grok-namespace-bootstrap'),spec:{selector:{app:'bootstrap'},ports:[{port:3004,targetPort:'https'}]}};
  await run('kubectl',['create','-f','-'],JSON.stringify({apiVersion:'v1',kind:'List',items:[bootstrapPod,service]}));
  await run('kubectl',['-n',control,'wait','--for=condition=Ready','pod/bootstrap','--timeout=120s'],undefined,130_000);
+ // Pod readiness and Service endpoint propagation are independent.
+ let endpoint='';for(let i=0;i<60;i++){endpoint=(await run('kubectl',['-n',control,'get','endpoints','coke-grok-namespace-bootstrap','-o','jsonpath={.subsets[0].addresses[0].ip}'])).trim();if(endpoint)break;await new Promise(resolve=>setTimeout(resolve,500))}assert.ok(endpoint,'bootstrap Service has no ready endpoint');
  const brokerPod={apiVersion:'v1',kind:'Pod',metadata:meta('broker-test'),spec:{serviceAccountName:'broker',restartPolicy:'Never',securityContext:commonSecurity,containers:[{name:'broker',image:testImage,imagePullPolicy:'Never',command:['node','/app/broker.mjs'],env:[{name:'TEST_TENANT_ID',value:owner.tenantId},{name:'TEST_USER_ID',value:owner.userId},{name:'TEST_DESKTOP_IMAGE',value:image},{name:'TEST_CONTROL_NAMESPACE',value:control},{name:'TEST_BOOTSTRAP_URL',value:`https://${serviceHost}:3004/`}],securityContext:containerSecurity,resources:{requests:{cpu:'20m',memory:'64Mi'},limits:{cpu:'1',memory:'256Mi'}},volumeMounts:[{name:'secret',mountPath:'/run/test-secret',readOnly:true}]}],volumes:[{name:'secret',secret:{secretName:'broker-test-secret'}}]}};
- await run('kubectl',['create','-f','-'],JSON.stringify(brokerPod));
- let phase='';for(let i=0;i<240;i++){phase=(await run('kubectl',['-n',control,'get','pod','broker-test','-o','jsonpath={.status.phase}'])).trim();if(['Succeeded','Failed'].includes(phase))break;await new Promise(resolve=>setTimeout(resolve,1000))}
- if(phase!=='Succeeded'){const log=await exec('kubectl',['-n',control,'logs','broker-test']);throw new Error(`Dynamic broker test did not succeed (${phase}): ${log.out.slice(-2000)}`)}
- const log=await run('kubectl',['-n',control,'logs','broker-test']);assert.equal(log.trim(),'Dynamic provisioning K3D test passed: separate service accounts, TLS namespace bootstrap, personal desktop creation and repeated access.');console.log(log.trim());
+ async function runBroker(pod:any,expected:string){
+  const name=pod.metadata.name;await run('kubectl',['create','-f','-'],JSON.stringify(pod));
+  let phase='';for(let i=0;i<240;i++){phase=(await run('kubectl',['-n',control,'get','pod',name,'-o','jsonpath={.status.phase}'])).trim();if(['Succeeded','Failed'].includes(phase))break;await new Promise(resolve=>setTimeout(resolve,1000))}
+  if(phase!=='Succeeded'){const log=await exec('kubectl',['-n',control,'logs',name]);throw new Error(`Dynamic broker test did not succeed (${phase}): ${log.out.slice(-2000)}`)}
+  const log=await run('kubectl',['-n',control,'logs',name]);assert.equal(log.trim(),expected);
+ }
+ await runBroker(brokerPod,'Dynamic provisioning K3D test passed: separate service accounts, TLS namespace bootstrap, personal desktop creation and repeated access.');
+ // A weakened policy can still deny the invalid probe. The service must detect definition drift before creating a namespace.
+ const policyName=`${policyPrefix}-namespace`;
+ await run('kubectl',['patch','validatingadmissionpolicy',policyName,'--type=merge','-p',JSON.stringify({spec:{failurePolicy:'Ignore'}})]);
+ await waitDenied(wrongNamespace);
+ const driftOwner={tenantId:randomUUID(),userId:randomUUID()},driftDesktop=`grok-user-${desktopOwnerHash(driftOwner)}`;extraDesktops.push(driftDesktop);
+ const driftPod=structuredClone(brokerPod) as any;driftPod.metadata.name='broker-denied-drift';
+ for(const entry of driftPod.spec.containers[0].env){if(entry.name==='TEST_TENANT_ID')entry.value=driftOwner.tenantId;if(entry.name==='TEST_USER_ID')entry.value=driftOwner.userId}
+ driftPod.spec.containers[0].env.push({name:'TEST_EXPECT_DENY',value:'1'});
+ await runBroker(driftPod,'Admission preflight K3D test passed: missing policy stopped provisioning.');
+ const afterDrift=await exec('kubectl',['get','namespace',driftDesktop,'--ignore-not-found','-o','name']);assert.equal(afterDrift.code,0);assert.equal(afterDrift.out.trim(),'');
+ await run('kubectl',['patch','validatingadmissionpolicy',policyName,'--type=merge','-p',JSON.stringify({spec:{failurePolicy:'Fail'}})]);
+ await waitDenied(wrongNamespace);
+ async function testMissingPolicy(suffix:string,probe:unknown){
+  const bindingName=`${policyPrefix}-${suffix}`;await run('kubectl',['delete','validatingadmissionpolicybinding',bindingName,'--wait=true']);await waitAllowed(probe);
+  const blockedOwner={tenantId:randomUUID(),userId:randomUUID()},blockedDesktop=`grok-user-${desktopOwnerHash(blockedOwner)}`;
+  const beforeBlocked=await exec('kubectl',['get','namespace',blockedDesktop,'--ignore-not-found','-o','name']);assert.equal(beforeBlocked.code,0);assert.equal(beforeBlocked.out.trim(),'');extraDesktops.push(blockedDesktop);
+  const blocked=structuredClone(brokerPod) as any;blocked.metadata.name=`broker-denied-${suffix}`;
+  for(const entry of blocked.spec.containers[0].env){if(entry.name==='TEST_TENANT_ID')entry.value=blockedOwner.tenantId;if(entry.name==='TEST_USER_ID')entry.value=blockedOwner.userId}
+  blocked.spec.containers[0].env.push({name:'TEST_EXPECT_DENY',value:'1'});
+  await runBroker(blocked,'Admission preflight K3D test passed: missing policy stopped provisioning.');
+  const afterBlocked=await exec('kubectl',['get','namespace',blockedDesktop,'--ignore-not-found','-o','name']);assert.equal(afterBlocked.code,0);assert.equal(afterBlocked.out.trim(),'');
+ }
+ await testMissingPolicy('namespace',wrongNamespace);
+ const namespaceBinding=namespaceBootstrapResources(options).find(object=>object.kind==='ValidatingAdmissionPolicyBinding'&&(object.metadata as {name:string}).name===`${policyPrefix}-namespace`);assert.ok(namespaceBinding);
+ await run('kubectl',['create','-f','-'],JSON.stringify(namespaceBinding));await waitDenied(wrongNamespace);
+ await testMissingPolicy('binding',wrongBinding);
+ console.log('Dynamic provisioning and admission preflight K3D test passed: both missing policies prevented creation.');
 }finally{
  for(const object of created.reverse())await exec('kubectl',['delete',object.kind,object.name,'--wait=false'],undefined,20_000);
  if(desktopEligible)await exec('kubectl',['delete','namespace',desktop,'--wait=false','--ignore-not-found'],undefined,20_000);
+ for(const namespace of extraDesktops)await exec('kubectl',['delete','namespace',namespace,'--wait=false','--ignore-not-found'],undefined,20_000);
  if(controlCreated)await exec('kubectl',['delete','namespace',control,'--wait=false'],undefined,20_000);
  await rm(dir,{recursive:true,force:true});
 }

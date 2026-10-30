@@ -4,6 +4,8 @@ namespace: coke-grok-bot
 resources:
   - auth.yaml
   - auth-ingress.yaml
+  - model-gateway-service.yaml
+  - auth-network-policy.yaml
 images:
   - name: coke-grok-auth
     newName: coke-grok-auth

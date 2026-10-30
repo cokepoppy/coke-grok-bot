@@ -25,9 +25,10 @@
     "test:model-gateway": "node --import tsx --test tests/model-gateway.test.ts",
     "test:run-store": "node --import tsx --test tests/run-store.test.ts",
     "test:pi-k3d": "node --import tsx tests/pi-k3d-gateway.e2e.ts",
+    "test:pi-failure-k3d": "node --import tsx tests/pi-failure-k3d.e2e.ts",
     "test:desktop-k3d": "node --import tsx tests/desktop-k3d.e2e.ts",
     "test:desktop-resources": "node --import tsx --test tests/desktop-resources.test.ts",
-    "test:runtime": "node --import tsx --test tests/model-gateway.test.ts tests/desktop-resources.test.ts tests/desktop-provisioner.test.ts tests/desktop-kubernetes.test.ts tests/desktop-broker.test.ts tests/namespace-bootstrap.test.ts tests/namespace-start.test.ts tests/pi-executor.test.ts tests/pi-runtime.test.ts tests/computer-action.test.ts tests/computer-bridge.test.ts tests/user-computer-http.test.ts tests/guarded-worker.test.ts tests/guarded-computer.test.mjs",
+    "test:runtime": "node --import tsx --test tests/model-gateway.test.ts tests/desktop-resources.test.ts tests/desktop-provisioner.test.ts tests/desktop-kubernetes.test.ts tests/desktop-broker.test.ts tests/namespace-bootstrap.test.ts tests/namespace-start.test.ts tests/pi-executor.test.ts tests/dsh-executor.test.ts tests/cloud-kernel-adapter-dsh.test.mjs tests/pi-runtime.test.ts tests/computer-action.test.ts tests/computer-bridge.test.ts tests/user-computer-http.test.ts tests/guarded-worker.test.ts tests/guarded-computer.test.mjs",
     "test:runtime-mysql": "node --import tsx --test tests/run-store.test.ts tests/run-store-order.test.ts tests/run-scheduler.test.ts tests/run-http.test.ts tests/run-pipeline.test.ts tests/approval-store.test.ts tests/approval-http.test.ts tests/approval-gateway.test.ts tests/computer-broker.test.ts tests/computer-gateway.test.ts",
     "test:run-browser": "node --import tsx tests/run-browser.e2e.ts",
     "test:provisioner-k3d": "node --import tsx tests/desktop-provisioner-k3d.e2e.ts",
@@ -58,6 +59,7 @@
     "playwright-core": "1.56.1",
     "pngjs": "7.0.0",
     "tsx": "4.23.15",
+    "typebox": "1.3.27",
     "typescript": "5.9.3",
     "vite": "7.3.7"
   }

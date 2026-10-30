@@ -175,7 +175,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [draft, setDraft] = useState('');
   const [customAnswer, setCustomAnswer] = useState('');
   const [notice, setNotice] = useState(false);
-  const [piFeature, setPiFeature] = useState<'loading' | 'enabled' | 'disabled' | 'error'>(remote ? 'loading' : 'disabled');
+  const [agentFeature, setAgentFeature] = useState<'loading' | 'enabled' | 'disabled' | 'error'>(remote ? 'loading' : 'disabled');
+  const [agentEngine, setAgentEngine] = useState<'pi' | 'dsh' | null>(null);
   const [runHistory, setRunHistory] = useState<{ id: string; status: 'loading' | 'ready' | 'error'; runs: AgentRun[] }>({ id: '', status: 'loading', runs: [] });
   const [runRefresh, setRunRefresh] = useState(0);
   const [runApprovals, setRunApprovals] = useState<Record<string, Approval[]>>({});
@@ -222,13 +223,17 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     if (!remote) return;
     const controller = new AbortController();
     fetch(`${import.meta.env.BASE_URL}api/auth/features`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
-      .then(async response => { if (response.status === 404) return { pi: false }; if (!response.ok) throw new Error('features unavailable'); return response.json() as Promise<{ pi: boolean }>; })
-      .then(value => { if (typeof value.pi !== 'boolean') throw new Error('invalid features'); setPiFeature(value.pi ? 'enabled' : 'disabled'); })
-      .catch(error => { if (error.name !== 'AbortError') setPiFeature('error'); });
+      .then(async response => { if (response.status === 404) return { agent: false, engine: null }; if (!response.ok) throw new Error('features unavailable'); return response.json() as Promise<{ agent: boolean; engine: unknown }>; })
+      .then(value => {
+        if (typeof value.agent !== 'boolean' || (value.agent && value.engine !== 'pi' && value.engine !== 'dsh') || (!value.agent && value.engine !== null)) throw new Error('invalid features');
+        setAgentEngine(value.agent ? value.engine as 'pi' | 'dsh' : null);
+        setAgentFeature(value.agent ? 'enabled' : 'disabled');
+      })
+      .catch(error => { if (error.name !== 'AbortError') setAgentFeature('error'); });
     return () => controller.abort();
   }, [remote]);
   useEffect(() => {
-    if (!remote || piFeature !== 'enabled' || botStatus !== 'ready' || !active?.id) return;
+    if (!remote || agentFeature !== 'enabled' || botStatus !== 'ready' || !active?.id) return;
     const id = active.id, controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     setRunHistory({ id, status: 'loading', runs: [] });
@@ -256,7 +261,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     };
     void load();
     return () => { controller.abort(); if (timer) clearTimeout(timer); };
-  }, [remote, piFeature, botStatus, active?.id, runRefresh]);
+  }, [remote, agentFeature, botStatus, active?.id, runRefresh]);
   useEffect(() => {
     if (!remote || !active?.id) return;
     const id = active.id, controller = new AbortController();
@@ -364,11 +369,11 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     if (remote) {
       const id = active.id;
       if (sendingRef.current || history.id !== id || history.status !== 'ready') return;
-      if (piFeature === 'loading' || piFeature === 'error' || (piFeature === 'enabled' && (runHistory.id !== id || runHistory.status !== 'ready'))) return;
+      if (agentFeature === 'loading' || agentFeature === 'error' || (agentFeature === 'enabled' && (runHistory.id !== id || runHistory.status !== 'ready'))) return;
       if (clean.length > 10000) { setBotError('Message is too long.'); return; }
       sendingRef.current = true; setSending(true); setBotError('');
       try {
-        if (piFeature === 'enabled') {
+        if (agentFeature === 'enabled') {
           const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${id}/runs`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: crypto.randomUUID(), prompt: clean }) });
           if (!response.ok) throw new Error('run submission failed');
           const { run } = await response.json() as { run: AgentRun };
@@ -386,7 +391,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         if (activeIdRef.current === id) { setDraft(''); setCustomAnswer(''); setNotice(true); }
       } catch {
         uncertainMutation.current = true;
-        if (piFeature === 'enabled') setRunHistory(current => ({ ...current, id, status: 'error' }));
+        if (agentFeature === 'enabled') setRunHistory(current => ({ ...current, id, status: 'error' }));
         else setHistory({ id, status: 'error' });
         setBotError('Submission could not be confirmed. Refresh and check the history before trying again.');
       } finally { sendingRef.current = false; setSending(false); }
@@ -499,7 +504,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const renderBotRow=(bot:Bot)=><div className="bot-row-wrap" key={bot.id}><button ref={element=>{sidebarRows.current[bot.id]=element}} type="button" className={`bot-row ${!newChat && bot.id === active?.id ? 'selected' : ''}`} aria-haspopup="menu" onClick={() => selectBot(bot.id)} onContextMenu={event=>{event.preventDefault();setSidebarMenu({id:bot.id,x:Math.max(0,Math.min(event.clientX,window.innerWidth-200)),y:Math.max(0,Math.min(event.clientY,window.innerHeight-265))})}}>
           <Avatar bot={bot} size={46} /><span className="bot-row-content"><span className="bot-row-title"><span onDoubleClick={event=>{event.stopPropagation();beginSidebarRename(bot.id)}}>{bot.name}</span>{bot.label && <small>{bot.label}</small>}</span><span className="bot-preview">{bot.preview}</span></span>
         </button>{sidebarRename?.id===bot.id && <input ref={sidebarInput} className="sidebar-rename" aria-label="Rename Bot" maxLength={60} value={sidebarRename.value} onChange={event=>{const edit={id:bot.id,value:event.target.value};sidebarRenameRef.current=edit;setSidebarRename(edit)}} onBlur={event=>finishSidebarRename(bot.id,event.currentTarget.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur()}else if(event.key==='Escape'){event.preventDefault();sidebarRenameRef.current=null;setSidebarRename(null);sidebarRows.current[bot.id]?.focus()}}} />}</div>;
-  const composerDisabled = remote && (sending || history.id !== active?.id || history.status !== 'ready' || piFeature === 'loading' || piFeature === 'error' || (piFeature === 'enabled' && (runHistory.id !== active?.id || runHistory.status !== 'ready')));
+  const composerDisabled = remote && (sending || history.id !== active?.id || history.status !== 'ready' || agentFeature === 'loading' || agentFeature === 'error' || (agentFeature === 'enabled' && (runHistory.id !== active?.id || runHistory.status !== 'ready')));
   if (botStatus === 'loading') return <main className="auth-page"><div className="auth-card">Loading your Bots…</div></main>;
   if (botStatus === 'error') return <main className="auth-page"><div className="auth-card"><p role="alert">Could not load your Bots.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></div></main>;
 
@@ -531,8 +536,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       <button type="button" role="menuitem" disabled title="Not available yet" className="danger"><BotMenuIcon name="delete" />Delete</button>
     </div>}
     <main className="main-shell">
-      {!reference && <div className="preview-notice" role="status">{remote ? (piFeature === 'enabled' ? 'Pi 任务在你的云电脑执行；同一台电脑的任务会排队。' : 'Bot 和消息保存在服务器；尚未连接云电脑或 Agent。原预览数据仍在本地，不会自动导入。') : '本地界面预览：数据仅保存在当前浏览器，尚未连接云电脑或 Agent。'}</div>}
-      {remote && piFeature === 'error' && <div role="alert">Could not check Agent availability. Refresh to try again.</div>}
+      {!reference && <div className="preview-notice" role="status">{remote ? (agentFeature === 'enabled' ? `${agentEngine === 'dsh' ? 'DeepSeek Harness' : 'Pi'} 任务在你的云电脑执行；同一台电脑的任务会排队。` : 'Bot 和消息保存在服务器；尚未连接云电脑或 Agent。原预览数据仍在本地，不会自动导入。') : '本地界面预览：数据仅保存在当前浏览器，尚未连接云电脑或 Agent。'}</div>}
+      {remote && agentFeature === 'error' && <div role="alert">Could not check Agent availability. Refresh to try again.</div>}
       {botError && !createDialog && <div role="alert">{botError}</div>}
       {newChat || !active ? <div className="new-chat-view" onKeyDown={event=>{if(event.key==='Escape'&&active){setNewChat(false);setRecipientQuery('')}}}>
         <div className="new-chat-head"><label>To: <input ref={recipientInput} aria-label="Start a chat with" placeholder="Start a chat with..." value={recipientQuery} onChange={event=>setRecipientQuery(event.target.value)} /></label><IconButton name="close" label="Close new chat" onClick={() => {setNewChat(false);setRecipientQuery('')}} /></div>
@@ -548,21 +553,21 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
               {remote && history.id === active.id && history.status === 'error' && <div role="alert">Could not confirm message history. Refresh to check it.</div>}
               {messages.length > 0 && <div className="date-line">{reference ? 'Today 1:26 PM' : 'Today'}</div>}
               {messages.map(message => <div key={message.id} className={`message-line ${message.role}`}><div className="message-bubble">{message.text}</div>{message.role === 'bot' && <div className="message-actions"><Icon name="smile" /><Icon name="reply" /><Icon name="more" /></div>}</div>)}
-              {remote && piFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.map(run => <React.Fragment key={run.id}><div className="message-line user"><div className="message-bubble">{run.prompt}</div></div><div className="message-line bot"><div className="message-bubble"><span className="run-status">{({ queued: 'Queued · waiting for your computer', running: 'Working on your computer', completed: 'Completed', failed: 'Failed', unknown: 'Outcome unknown · check before retrying' } as const)[run.status]}</span>{run.result && <p>{run.result}</p>}{(runApprovals[run.id] || []).filter(approval => approval.status === 'pending').map(approval => <ApprovalCard key={approval.id} approval={approval} disabled={Boolean(decidingApproval) || runHistory.status !== 'ready'} decide={decision => void decideApproval(approval.id, decision)} />)}</div></div></React.Fragment>)}
-              {remote && piFeature === 'enabled' && runHistory.id === active.id && runHistory.status === 'error' && <div role="alert">Could not confirm task history. Refresh to check it before submitting again.</div>}
+              {remote && agentFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.map(run => <React.Fragment key={run.id}><div className="message-line user"><div className="message-bubble">{run.prompt}</div></div><div className="message-line bot"><div className="message-bubble"><span className="run-status">{({ queued: 'Queued · waiting for your computer', running: 'Working on your computer', completed: 'Completed', failed: 'Failed', unknown: 'Outcome unknown · check before retrying' } as const)[run.status]}</span>{run.result && <p>{run.result}</p>}{(runApprovals[run.id] || []).filter(approval => approval.status === 'pending').map(approval => <ApprovalCard key={approval.id} approval={approval} disabled={Boolean(decidingApproval) || runHistory.status !== 'ready'} decide={decision => void decideApproval(approval.id, decision)} />)}</div></div></React.Fragment>)}
+              {remote && agentFeature === 'enabled' && runHistory.id === active.id && runHistory.status === 'error' && <div role="alert">Could not confirm task history. Refresh to check it before submitting again.</div>}
               {state.showOnboarding[active.id] && <div className="onboarding-card">
                 <div className="onboarding-title">What do you want me helping with most right now?<IconButton name="close" label="Dismiss suggestions" onClick={() => setState(current => ({ ...current, showOnboarding: { ...current.showOnboarding, [active.id]: false } }))} /></div>
                 <div className="choice-list">{['Work & projects', 'Email & Slack', 'Calendar & scheduling', 'Research & writing', 'Something else'].map((option, index) => <button key={option} type="button" onClick={() => addMessage(option)}><span className="choice-key">{String.fromCharCode(65 + index)}</span><span>{option}{index === 4 && <small>I’ll tell you in chat</small>}</span></button>)}</div>
                 <form onSubmit={event => { event.preventDefault(); addMessage(customAnswer); }}><input aria-label="Type your own answer" placeholder="Type your own answer" value={customAnswer} onChange={event => setCustomAnswer(event.target.value)} /></form>
                 <div className="card-actions" aria-hidden="true"><Icon name="smile" /><Icon name="reply" /><Icon name="more" /></div>
               </div>}
-              {!reference && !messages.length && !(piFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.length) && <div className="empty-chat"><Avatar bot={active} size={52} /><p>Start a conversation with {active.name}.</p>{piFeature !== 'enabled' && <small>This local preview does not connect to a model.</small>}</div>}
+              {!reference && !messages.length && !(agentFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.length) && <div className="empty-chat"><Avatar bot={active} size={52} /><p>Start a conversation with {active.name}.</p>{agentFeature !== 'enabled' && <small>This local preview does not connect to a model.</small>}</div>}
               {notice && <div className="local-feedback" role="status">{remote ? 'No message was sent to an Agent.' : 'This is a local preview. No message was sent to an Agent or external service.'}</div>}
               <div ref={messagesEnd} />
             </div>
-            <form className="composer" onSubmit={event => { event.preventDefault(); void addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} disabled={composerDisabled} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() ? <button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote ? (piFeature === 'enabled' ? 'Send task' : 'Save message') : 'Save local message'}><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
+            <form className="composer" onSubmit={event => { event.preventDefault(); void addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} disabled={composerDisabled} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() ? <button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote ? (agentFeature === 'enabled' ? 'Send task' : 'Save message') : 'Save local message'}><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
           </section>
-          {panel && <aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" ref={avatarButton} aria-label="Change Bot picture" onClick={openAvatar}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => saveBotName(active.id,active.name)} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && piFeature === 'enabled' ? <ComputerPanel name={active.name} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
+          {panel && <aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" ref={avatarButton} aria-label="Change Bot picture" onClick={openAvatar}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => saveBotName(active.id,active.name)} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && agentFeature === 'enabled' ? <ComputerPanel name={active.name} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
         </div>
       </>}
       {createDialog && <div className="create-overlay" onMouseDown={event=>{if(event.target===event.currentTarget&&!savingBot)setCreateDialog(null)}}><form className="create-dialog" role="dialog" aria-modal="true" aria-labelledby="create-title" onSubmit={event=>{event.preventDefault();void createBot(createDialog)}} onKeyDown={handleCreateDialogKey}>

@@ -9,7 +9,7 @@ import {parseUserAction,type UserComputer} from './user-computer.ts';
 import { parsePublicUrl } from './public-url.ts';
 
 // Mount only behind a trusted proxy that preserves the configured Host.
-export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer) {
+export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi') {
   const origin = parsePublicUrl(publicOrigin);
   return createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -26,7 +26,7 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         const session = await auth.session(req);
         if (!session) { res.writeHead(401, { 'Cache-Control': 'no-store' }); return res.end(); }
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-        return res.end(JSON.stringify({ pi: Boolean(runs) }));
+        return res.end(JSON.stringify({ agent: Boolean(runs), engine: runs ? agentEngine : null }));
       }
       if (req.method === 'POST' && url.pathname === `${origin.prefix}/api/auth/logout`) return await auth.logout(req, res);
       const computerPath=`${origin.prefix}/api/computer`;
