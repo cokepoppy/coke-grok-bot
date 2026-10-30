@@ -146,6 +146,10 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
             if (body.label.trim().length > 60) return reply(400, { error: 'Invalid bot' });
             return await bots.setLabel(session, botMatch![1], body.label) ? reply(200, { ok: true }) : reply(404, { error: 'Not found' });
           }
+          if (Object.keys(body).length === 1 && (typeof body.pinned === 'boolean' || typeof body.hidden === 'boolean')) {
+            const field = typeof body.pinned === 'boolean' ? 'pinned' : 'hidden';
+            return await bots.setSidebarState(session, botMatch![1], field, body[field] as boolean) ? reply(200, { ok: true }) : reply(404, { error: 'Not found' });
+          }
           if (Object.keys(body).sort().join(',') === 'color,shape' && typeof body.color === 'string' && typeof body.shape === 'string') {
             if (!/^#[0-9a-fA-F]{6}$/.test(body.color) || !['cloud','drop','hex','round','triangle','oval','square','pill'].includes(body.shape)) return reply(400, { error: 'Invalid bot' });
             return await bots.setAvatar(session, botMatch![1], body.shape as BotShape, body.color) ? reply(200, { ok: true }) : reply(404, { error: 'Not found' });

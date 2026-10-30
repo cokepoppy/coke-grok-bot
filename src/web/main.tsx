@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './shell.css';
 
 type Shape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle' | 'oval' | 'square' | 'pill';
-type Bot = { id: string; name: string; label: string; color: string; shape: Shape; group: string; preview: string };
+type Bot = { id: string; name: string; label: string; color: string; shape: Shape; group: string; preview: string; pinned?: boolean; hidden?: boolean };
 type Message = { id: string; role: 'user' | 'bot'; text: string };
 type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null };
 type Approval = { id: string; action: string; status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired'; hasScreenshot?: boolean };
@@ -153,6 +153,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
   const [panel, setPanel] = useState(false);
+  const [hiddenOpen,setHiddenOpen]=useState(false);
+  const sidebarQueue=useRef<Record<string,Promise<void>>>({});
+  const sidebarSequence=useRef<Record<string,number>>({});
   const [sidebarMenu,setSidebarMenu]=useState<{id:string;x:number;y:number}|null>(null);
   const [sidebarRename,setSidebarRename]=useState<{id:string;value:string}|null>(null);
   const sidebarRenameRef=useRef<{id:string;value:string}|null>(null);
@@ -189,6 +192,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const activeIdRef = useRef(active?.id); activeIdRef.current = active?.id;
   const messages = active ? state.messages[active.id] || [] : [];
   const filtered = state.bots.filter(bot => !(reference && newChat && bot.id === 'new') && `${bot.name} ${bot.label}`.toLowerCase().includes(query.toLowerCase()));
+  const visibleBots = filtered.filter(bot=>!bot.hidden).sort((a,b)=>Number(Boolean(b.pinned))-Number(Boolean(a.pinned)));
+  const hiddenBots = filtered.filter(bot=>bot.hidden);
+  const menuBot = sidebarMenu ? state.bots.find(bot=>bot.id===sidebarMenu.id) : undefined;
 
   useEffect(() => {
     if (reference) return;
@@ -422,6 +428,20 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     });
     labelQueue.current[id]=next;void next.finally(()=>{if(labelQueue.current[id]===next)delete labelQueue.current[id]});
   }
+  function changeSidebarState(id:string,field:'pinned'|'hidden',value:boolean) {
+    setSidebarMenu(null);setBotError('');
+    setState(current=>({...current,bots:current.bots.map(bot=>bot.id===id?{...bot,[field]:value}:bot)}));
+    if(!remote)return;
+    const key=`${id}:${field}`,sequence=(sidebarSequence.current[key]||0)+1;
+    sidebarSequence.current[key]=sequence;
+    const next=(sidebarQueue.current[key]||Promise.resolve()).then(async()=>{
+      try {
+        const response=await fetch(`${import.meta.env.BASE_URL}api/bots/${id}`,{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({[field]:value})});
+        if(!response.ok)throw new Error('sidebar update failed');
+      }catch{if(sidebarSequence.current[key]===sequence)setBotError('Could not confirm the sidebar change was saved. Refresh to check.')}
+    });
+    sidebarQueue.current[key]=next;void next.finally(()=>{if(sidebarQueue.current[key]===next)delete sidebarQueue.current[key]});
+  }
   function openAvatar() {
     if (!active) return;
     const selected = { id: active.id, shape: active.shape, color: active.color };
@@ -453,6 +473,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     avatarQueue.current[selected.id] = next;
     void next.finally(() => { if (avatarQueue.current[selected.id] === next) delete avatarQueue.current[selected.id]; });
   }
+  const renderBotRow=(bot:Bot)=><div className="bot-row-wrap" key={bot.id}><button ref={element=>{sidebarRows.current[bot.id]=element}} type="button" className={`bot-row ${!newChat && bot.id === active?.id ? 'selected' : ''}`} aria-haspopup="menu" onClick={() => selectBot(bot.id)} onContextMenu={event=>{event.preventDefault();setSidebarMenu({id:bot.id,x:Math.max(0,Math.min(event.clientX,window.innerWidth-200)),y:Math.max(0,Math.min(event.clientY,window.innerHeight-265))})}}>
+          <Avatar bot={bot} size={46} /><span className="bot-row-content"><span className="bot-row-title"><span onDoubleClick={event=>{event.stopPropagation();beginSidebarRename(bot.id)}}>{bot.name}</span>{bot.label && <small>{bot.label}</small>}</span><span className="bot-preview">{bot.preview}</span></span>
+        </button>{sidebarRename?.id===bot.id && <input ref={sidebarInput} className="sidebar-rename" aria-label="Rename Bot" maxLength={60} value={sidebarRename.value} onChange={event=>{const edit={id:bot.id,value:event.target.value};sidebarRenameRef.current=edit;setSidebarRename(edit)}} onBlur={event=>finishSidebarRename(bot.id,event.currentTarget.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur()}else if(event.key==='Escape'){event.preventDefault();sidebarRenameRef.current=null;setSidebarRename(null);sidebarRows.current[bot.id]?.focus()}}} />}</div>;
   const composerDisabled = remote && (sending || history.id !== active?.id || history.status !== 'ready' || piFeature === 'loading' || piFeature === 'error' || (piFeature === 'enabled' && (runHistory.id !== active?.id || runHistory.status !== 'ready')));
   if (botStatus === 'loading') return <main className="auth-page"><div className="auth-card">Loading your Bots…</div></main>;
   if (botStatus === 'error') return <main className="auth-page"><div className="auth-card"><p role="alert">Could not load your Bots.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></div></main>;
@@ -465,16 +488,15 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       <div className="sidebar-scroll">
         {reference && <><div className="section-line"><span>OLD</span><span>3</span></div><div className="section-line"><span>MISC</span><span>3</span></div></>}
         <div className="section-line unassigned"><span>Unassigned</span></div>
-        {filtered.map(bot => <div className="bot-row-wrap" key={bot.id}><button ref={element=>{sidebarRows.current[bot.id]=element}} type="button" className={`bot-row ${!newChat && bot.id === active?.id ? 'selected' : ''}`} aria-haspopup="menu" onClick={() => selectBot(bot.id)} onContextMenu={event=>{event.preventDefault();setSidebarMenu({id:bot.id,x:Math.max(0,Math.min(event.clientX,window.innerWidth-200)),y:Math.max(0,Math.min(event.clientY,window.innerHeight-265))})}}>
-          <Avatar bot={bot} size={46} /><span className="bot-row-content"><span className="bot-row-title"><span onDoubleClick={event=>{event.stopPropagation();beginSidebarRename(bot.id)}}>{bot.name}</span>{bot.label && <small>{bot.label}</small>}</span><span className="bot-preview">{bot.preview}</span></span>
-        </button>{sidebarRename?.id===bot.id && <input ref={sidebarInput} className="sidebar-rename" aria-label="Rename Bot" maxLength={60} value={sidebarRename.value} onChange={event=>{const edit={id:bot.id,value:event.target.value};sidebarRenameRef.current=edit;setSidebarRename(edit)}} onBlur={event=>finishSidebarRename(bot.id,event.currentTarget.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur()}else if(event.key==='Escape'){event.preventDefault();sidebarRenameRef.current=null;setSidebarRename(null);sidebarRows.current[bot.id]?.focus()}}} />}</div>)}
+        {visibleBots.map(renderBotRow)}
+        {hiddenBots.length>0 && <><button type="button" className="hidden-section" aria-expanded={hiddenOpen} onClick={()=>setHiddenOpen(value=>!value)}><span>{hiddenOpen?'⌄':'›'}&nbsp; Hidden Bots</span><span>{hiddenBots.length}</span></button>{hiddenOpen && hiddenBots.map(renderBotRow)}</>}
         {filtered.length === 0 && <p className="empty-list">No matching bots</p>}
       </div>
       {reference && <button type="button" className="more-unreads">↓&nbsp; More unreads</button>}
       <div className="sidebar-footer"><div className="account-dot">{account ? account.name.slice(0, 1).toUpperCase() : "M"}</div>{account && <button type="button" className="logout-button" onClick={onLogout}>Sign out</button>}<button type="button" className="connect-button" onClick={() => setNotice(true)}>Connect apps <span aria-hidden="true">◈◉▣</span></button></div>
     </aside>
     {sidebarMenu && <div ref={sidebarMenuElement} role="menu" aria-label="Bot actions" className="sidebar-context-menu" style={{left:sidebarMenu.x,top:sidebarMenu.y}} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();const id=sidebarMenu.id;setSidebarMenu(null);sidebarRows.current[id]?.focus()}}}>
-      <button type="button" role="menuitem" disabled title="Not available yet"><BotMenuIcon name="pin" />Pin</button>
+      <button type="button" role="menuitem" onClick={()=>menuBot&&changeSidebarState(menuBot.id,'pinned',!menuBot.pinned)}><BotMenuIcon name="pin" />{menuBot?.pinned?'Unpin':'Pin'}</button>
       <button type="button" role="menuitem" disabled title="Not available yet"><BotMenuIcon name="folder" />Move to new section</button>
       <button type="button" role="menuitem" disabled title="Not available yet"><BotMenuIcon name="unread" />Mark as Unread</button>
       <div className="sidebar-menu-divider" />
@@ -482,7 +504,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       <div className="sidebar-menu-divider" />
       <button type="button" role="menuitem" disabled title="Not available yet"><BotMenuIcon name="copy" />Copy conversation ID</button>
       <div className="sidebar-menu-divider" />
-      <button type="button" role="menuitem" disabled title="Not available yet"><BotMenuIcon name="hide" />Hide from sidebar</button>
+      <button type="button" role="menuitem" onClick={()=>menuBot&&changeSidebarState(menuBot.id,'hidden',!menuBot.hidden)}><BotMenuIcon name="hide" />{menuBot?.hidden?'Show in sidebar':'Hide from sidebar'}</button>
       <button type="button" role="menuitem" disabled title="Not available yet" className="danger"><BotMenuIcon name="delete" />Delete</button>
     </div>}
     <main className="main-shell">

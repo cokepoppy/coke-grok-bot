@@ -24,7 +24,7 @@ T1 `01:45.522` 菜单中 `Create new Bot` 保持高亮；紧接着 `01:45.564` �
 
 [官方 0.56.0 更新记录](https://x.ai/changelog/bot)称形状和颜色的每次选择会立刻生效，快速连续选择也应生效；本项目按此改为立即显示并顺序保存。遇到写入结果不明时提示刷新检查，不自动重复写入。官方文档对 Generate 和 Upload 则明确提及 Set avatar；较早的 [0.71.2 用户论坛回复](https://forum.cursor.com/t/unable-to-tag-custom-bot-categories-or-edit-bot-avatar-color-and-shape/175031)曾描述形状颜色后再点 Set avatar，与更新记录存在差异，本次将立即应用作为当前交互基准。官方图片仅能证明图片中的八种形状和十一种颜色；更新记录还提及其他形状，不能推断这张图片覆盖了所有版本。
 
-[Cursor 官方侧栏菜单文档](https://prod.cursor.com/help/grok-bot/how-to)提供了 [右键菜单截图](https://prod.cursor.com/docs-static/images/grok-bot/sidebar-bot-menu-light.png)，原图 449×580、SHA-256 `de90489936681e7c894920a1c33850947c74943fb3d943fe6bf698d644f67c10`；菜单本体约占 x=25–423、y=25–553，图片缩放比例和实际打开位置未标明。[官方 Bot 编辑文档](https://prod.cursor.com/help/grok-bot/edit-bot)明确右键选择 Rename Bot 或双击侧栏名称可改名。项目已实现这两种入口和服务端持久化；Pin、分组、未读、复制会话 ID、隐藏与删除仍未实现，菜单灰显是项目当前状态，不代表官方截图的样式或能力。截图中的图标及菜单文字位置仍需进一步对图，不能视为像素级完成。
+[Cursor 官方侧栏菜单文档](https://prod.cursor.com/help/grok-bot/how-to)提供了 [右键菜单截图](https://prod.cursor.com/docs-static/images/grok-bot/sidebar-bot-menu-light.png)，原图 449×580、SHA-256 `de90489936681e7c894920a1c33850947c74943fb3d943fe6bf698d644f67c10`；菜单本体约占 x=25–423、y=25–553，图片缩放比例和实际打开位置未标明。[官方 Bot 编辑文档](https://prod.cursor.com/help/grok-bot/edit-bot)明确右键选择 Rename Bot 或双击侧栏名称可改名。项目已实现这两种重命名入口、Pin/Unpin、Hide from sidebar/Show in sidebar 和服务端持久化；分组、未读、复制会话 ID 与删除仍未实现，菜单灰显是项目当前状态，不代表官方截图的样式或能力。截图中的图标及菜单文字位置仍需进一步对图，不能视为像素级完成。
 
 T2 本机文件 SHA-256 `030451a3c29bcf0d9ee4313ccdf8bc4bdcbd908eaafe6d8d032f276fbea423fb`。连续帧中 `02:57.611` 的旧版深色新聊天菜单显示 `Create new Bot` 高亮；`02:57.644` 为 `New Bot / Creating...`，`02:57.678` 已显示带问候的 Bot 对话。画面在相邻帧内跳过等待过程，可能经过剪辑，不能用来推断创建速度或后台保存时机。右下角讲解者遮挡部分应用区域；该旧版与较新文档存在版本差异。02:35–02:45 片段主要显示产品网页而非完整客户端操作。
 
@@ -109,3 +109,5 @@ V1 `27:38–27:43` 的 150 帧已查看六张联系图：教学状态顶栏和�
 V1 `27:43–27:48` 的 150 帧已查看六张联系图：教学状态横条和红框仍在，表单编辑区域先后切换焦点；缩略图不足以核对输入内容或学习结果。
 
 V1 `27:48–27:53` 的 150 帧已查看六张联系图：教学顶栏和红框仍在，Google Forms 标题字段发生编辑；该区间未观察到教学结束的界面切换。输入细节和后台行为仍需原尺寸及后续片段确认。
+
+[官方 Bot 文档](https://docs.x.ai/grok-bot/bots)说明置顶的 Bot 位于侧栏顶部，隐藏后 Bot 及其历史和例行任务保留；[0.57.0 更新记录](https://x.ai/changelog/bot)说明 Hidden Bots 在侧栏底部可折叠，并可从菜单恢复。本项目保存置顶与隐藏状态，隐藏列表提供恢复入口，保持现有聊天；具体置顶分区及隐藏列表外观仍缺少足够画面，现有布局是临时实现。项目尚无完整通知与例行任务系统，不能声称验证了官方的隐藏通知或 Routine 行为。

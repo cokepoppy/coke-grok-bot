@@ -20,6 +20,8 @@ test('personal bots persist and are scoped to tenant and owner', async () => {
     const session = (x: typeof a): Session => ({ ...x, email: 'test@example.test', name: 'Test', role: 'owner' });
     const bot = await store.create(session(a), { name: ' Maya ', color: '#ABC123', shape: 'hex' });
     assert.equal(bot.name, 'Maya'); assert.equal(bot.color, '#abc123');
+    await pool.execute('DROP TABLE bot_sidebar_state');
+    await store.migrate();
     assert.deepEqual(await store.list(session(a)), [bot]); assert.deepEqual(await store.list(session(b)), []);
     assert.equal(await store.rename(session(b), bot.id, 'Intruder'), false);
     assert.equal(await store.rename(session(a), bot.id, 'Renamed'), true);
@@ -27,6 +29,14 @@ test('personal bots persist and are scoped to tenant and owner', async () => {
     const message = await store.addMessage(session(a), bot.id, ' A private note ');
     assert.equal(message?.text, 'A private note');
     assert.deepEqual(await store.messages(session(a), bot.id), [message]);
+    assert.equal(await store.setSidebarState(session(b), bot.id, 'hidden', true), false);
+    assert.equal(await store.setSidebarState(session(a), bot.id, 'hidden', true), true);
+    assert.equal(await store.setSidebarState(session(a), bot.id, 'pinned', true), true);
+    assert.equal(await store.setSidebarState(session(a), bot.id, 'hidden', true), true);
+    assert.deepEqual({pinned:(await store.list(session(a)))[0].pinned,hidden:(await store.list(session(a)))[0].hidden},{pinned:true,hidden:true});
+    assert.deepEqual(await store.messages(session(a), bot.id), [message]);
+    assert.equal(await store.setSidebarState(session(a), bot.id, 'hidden', false), true);
+    assert.equal((await store.list(session(a)))[0].pinned, true);
     assert.equal(await store.messages(session(b), bot.id), null);
     assert.equal(await store.addMessage(session(b), bot.id, 'Intrusion'), null);
     await assert.rejects(store.addMessage(session(a), bot.id, ' '.repeat(3)));
