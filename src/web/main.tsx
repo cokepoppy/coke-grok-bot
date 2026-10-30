@@ -67,9 +67,9 @@ function Icon({ name }: { name: IconName }) {
 
 function Avatar({ bot, size = 44 }: { bot: Pick<Bot, 'color' | 'shape'>; size?: number }) {
   const paths: Record<Shape, string> = {
-    cloud: 'M7 28C4 21 7 13 13 10c5-4 11-4 17-3 6-3 12 0 15 5 6 3 10 9 9 15-1 6-5 9-10 11-4 6-11 9-18 8-5 3-12 2-16-1C4 41 3 34 7 28Z',
-    drop: 'M27 4c-5 1-8 7-12 13C8 27 8 33 12 39c4 7 16 9 25 4 8-4 12-13 8-21C41 14 34 5 27 4Z',
-    hex: 'M17 5 34 6 45 16 47 30 38 43 22 47 9 39 5 24 10 12Z',
+    cloud: 'M10 22C8 13 15 8 22 9c4-4 11-4 15 1 7-1 12 4 12 10 7 5 5 15-2 18-2 7-10 9-16 6-5 4-12 2-15-2C6 43 2 36 5 29c1-3 3-5 5-7Z',
+    drop: 'M27 3c-3 0-5 4-8 8L10 23C1 36 10 48 27 50c17-2 26-14 17-27L35 11c-3-4-5-8-8-8Z',
+    hex: 'M23 4c3-2 5-2 8 0l14 9c3 2 4 4 4 7v15c0 3-1 5-4 7l-14 8c-3 2-5 2-8 0L9 42c-3-2-4-4-4-7V20c0-3 1-5 4-7Z',
     round: 'M27 4C13 4 4 14 4 27s10 23 23 23 23-10 23-23S40 4 27 4Z',
     oval: 'M27 5C13 5 3 15 4 27c1 13 13 21 26 21 13 0 21-8 21-20C51 16 40 5 27 5Z',
     square: 'M15 6h24c7 0 10 4 10 11v22c0 7-4 10-11 10H16C9 49 5 45 5 38V17C5 10 8 6 15 6Z',
@@ -78,9 +78,7 @@ function Avatar({ bot, size = 44 }: { bot: Pick<Bot, 'color' | 'shape'>; size?: 
   };
   return <svg width={size} height={size} viewBox="0 0 54 54" className="avatar" aria-hidden="true">
     <path fill={bot.color} d={paths[bot.shape] || paths.round} />
-    {bot.shape === 'cloud'
-      ? <g fill="#fff" transform="rotate(-24 34 22)"><rect x="27" y="15" width="5" height="13" rx="2.5" /><rect x="38" y="15" width="5" height="13" rx="2.5" /></g>
-      : <g fill="#fff" transform="rotate(-24 27 27)"><rect x="19" y="18" width="6" height="15" rx="3" /><rect x="31" y="18" width="6" height="15" rx="3" /></g>}
+    <g fill="#fff" transform="rotate(-24 33 21)"><rect x="25" y="16" width="4" height="10" rx="2" /><rect x="37" y="16" width="4" height="10" rx="2" /></g>
   </svg>;
 }
 
@@ -143,8 +141,11 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [query, setQuery] = useState('');
   const [panel, setPanel] = useState(false);
   const [avatarEditor,setAvatarEditor]=useState<{id:string;shape:Shape;color:string}|null>(null);
-  const [savingAvatar,setSavingAvatar]=useState(false);
-  const avatarSavingRef=useRef(false);
+  const avatarEditorRef=useRef<{id:string;shape:Shape;color:string}|null>(null);
+  const avatarQueue=useRef<Record<string,Promise<void>>>({});
+  const avatarSequence=useRef<Record<string,number>>({});
+  const avatarButton=useRef<HTMLButtonElement>(null);
+  const avatarDialog=useRef<HTMLElement>(null);
   const [tab, setTab] = useState<'Details' | 'Library' | 'Computer'>('Computer');
   const [draft, setDraft] = useState('');
   const [customAnswer, setCustomAnswer] = useState('');
@@ -242,7 +243,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     return () => controller.abort();
   }, [remote, active?.id]);
   useEffect(() => { setDraft(''); setCustomAnswer(''); setNotice(false); }, [state.activeId]);
-  useEffect(() => { setAvatarEditor(null); }, [state.activeId]);
+  useEffect(() => { avatarEditorRef.current=null; setAvatarEditor(null); }, [state.activeId]);
+  useEffect(() => { if (avatarEditor) avatarDialog.current?.focus(); }, [avatarEditor?.id]);
   useEffect(() => { if(newChat) recipientInput.current?.focus(); }, [newChat]);
   useEffect(() => {
     const onKeyDown = (event:KeyboardEvent) => {
@@ -382,18 +384,36 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     });
     labelQueue.current[id]=next;void next.finally(()=>{if(labelQueue.current[id]===next)delete labelQueue.current[id]});
   }
-  async function saveAvatar() {
-    if(!avatarEditor||avatarSavingRef.current)return;
-    const selected={...avatarEditor};avatarSavingRef.current=true;setSavingAvatar(true);setBotError('');
-    try{
-      if(remote){
-        const response=await fetch(`${import.meta.env.BASE_URL}api/bots/${selected.id}`,{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({shape:selected.shape,color:selected.color})});
-        if(!response.ok)throw new Error('avatar update failed');
+  function openAvatar() {
+    if (!active) return;
+    const selected = { id: active.id, shape: active.shape, color: active.color };
+    avatarEditorRef.current = selected; setAvatarEditor(selected);
+  }
+  function closeAvatar() {
+    avatarEditorRef.current = null; setAvatarEditor(null);
+    avatarButton.current?.focus();
+  }
+  function chooseAvatar(change: Partial<Pick<Bot, 'shape' | 'color'>>) {
+    const previous = avatarEditorRef.current;
+    if (!previous) return;
+    const selected = { ...previous, ...change };
+    if (selected.shape === previous.shape && selected.color === previous.color) return;
+    avatarEditorRef.current = selected; setAvatarEditor(selected); setBotError('');
+    setState(current => ({ ...current, bots: current.bots.map(bot => bot.id === selected.id ? { ...bot, shape: selected.shape, color: selected.color } : bot) }));
+    if (!remote) return;
+    const sequence = (avatarSequence.current[selected.id] || 0) + 1;
+    avatarSequence.current[selected.id] = sequence;
+    const next = (avatarQueue.current[selected.id] || Promise.resolve()).then(async () => {
+      try {
+        const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${selected.id}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shape: selected.shape, color: selected.color }) });
+        if (!response.ok) throw new Error('avatar update failed');
+        if (avatarSequence.current[selected.id] === sequence) setBotError('');
+      } catch {
+        if (avatarSequence.current[selected.id] === sequence) setBotError('Could not confirm the Bot picture was saved. Refresh to check.');
       }
-      setState(current=>({...current,bots:current.bots.map(bot=>bot.id===selected.id?{...bot,shape:selected.shape,color:selected.color}:bot)}));
-      setAvatarEditor(current=>current?.id===selected.id?null:current);
-    }catch{setBotError('Could not save the Bot picture. Please try again.')}
-    finally{avatarSavingRef.current=false;setSavingAvatar(false)}
+    });
+    avatarQueue.current[selected.id] = next;
+    void next.finally(() => { if (avatarQueue.current[selected.id] === next) delete avatarQueue.current[selected.id]; });
   }
   const composerDisabled = remote && (sending || history.id !== active?.id || history.status !== 'ready' || piFeature === 'loading' || piFeature === 'error' || (piFeature === 'enabled' && (runHistory.id !== active?.id || runHistory.status !== 'ready')));
   if (botStatus === 'loading') return <main className="auth-page"><div className="auth-card">Loading your Bots…</div></main>;
@@ -447,10 +467,10 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
             </div>
             <form className="composer" onSubmit={event => { event.preventDefault(); void addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} disabled={composerDisabled} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() ? <button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote ? (piFeature === 'enabled' ? 'Send task' : 'Save message') : 'Save local message'}><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
           </section>
-          {panel && <aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" aria-label="Change Bot picture" onClick={()=>setAvatarEditor({id:active.id,shape:active.shape,color:active.color})}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => void saveBotName()} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && piFeature === 'enabled' ? <ComputerPanel name={active.name} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
+          {panel && <aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" ref={avatarButton} aria-label="Change Bot picture" onClick={openAvatar}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => void saveBotName()} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && piFeature === 'enabled' ? <ComputerPanel name={active.name} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
         </div>
       </>}
-      {avatarEditor && <div className="avatar-overlay" onMouseDown={event=>{if(event.target===event.currentTarget&&!savingAvatar)setAvatarEditor(null)}}><section className="avatar-dialog" role="dialog" aria-modal="true" aria-label="Bot picture" onKeyDown={event=>{if(event.key==='Escape'&&!savingAvatar)setAvatarEditor(null)}}><header className="avatar-tabs"><button type="button" className="selected" aria-current="true">Bot</button><button type="button" disabled title="Not available yet">Generate</button><button type="button" disabled title="Not available yet">Upload</button><button type="button" disabled title="Not available yet">Reset</button></header><div className="avatar-shapes">{avatarShapes.map(shape=><button key={shape} type="button" aria-label={`Shape ${shape}`} aria-pressed={avatarEditor.shape===shape} disabled={savingAvatar} onClick={()=>setAvatarEditor(current=>current?{...current,shape}:null)}><Avatar bot={{shape,color:avatarEditor.color}} size={40} /></button>)}</div><div className="avatar-colors">{avatarColors.map(color=><button key={color} type="button" className="avatar-color" aria-label={`Color ${color}`} aria-pressed={avatarEditor.color.toLowerCase()===color} disabled={savingAvatar} onClick={()=>setAvatarEditor(current=>current?{...current,color}:null)}><span style={{background:color}} /></button>)}</div><footer><button type="button" disabled={savingAvatar} onClick={()=>setAvatarEditor(null)}>Cancel</button><button type="button" disabled={savingAvatar} onClick={()=>void saveAvatar()}>Set avatar</button></footer></section></div>}
+      {avatarEditor && <div className="avatar-overlay" onMouseDown={event=>{if(event.target===event.currentTarget)closeAvatar()}}><section className="avatar-dialog" ref={avatarDialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Bot picture" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();closeAvatar()}else if(event.key==='Tab'){const choices=Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));const first=choices[0],last=choices.at(-1);if(event.shiftKey&&(document.activeElement===first||document.activeElement===event.currentTarget)){event.preventDefault();last?.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}}}}><header className="avatar-tabs"><button type="button" className="selected" aria-current="true">Bot</button><button type="button" disabled title="Not available yet">Generate</button><button type="button" disabled title="Not available yet">Upload</button><button type="button" disabled title="Not available yet">Reset</button></header><div className="avatar-shapes">{avatarShapes.map(shape=><button key={shape} type="button" aria-label={`Shape ${shape}`} aria-pressed={avatarEditor.shape===shape} onClick={()=>chooseAvatar({shape})}><Avatar bot={{shape,color:avatarEditor.color}} size={40} /></button>)}</div><div className="avatar-colors">{avatarColors.map(color=><button key={color} type="button" className="avatar-color" aria-label={`Color ${color}`} aria-pressed={avatarEditor.color.toLowerCase()===color} onClick={()=>chooseAvatar({color})}><span style={{background:color}} /></button>)}</div></section></div>}
     </main>
   </div>;
 }

@@ -48,6 +48,13 @@ try {
   await page.getByLabel('Bot label').press('Enter');
   assert.equal(await page.locator('.bot-row.selected').getByText('analyst').count(), 1);
   await page.getByRole('button', { name: 'Change Bot picture' }).click();
+  await page.keyboard.press('Shift+Tab');
+  assert.equal(await page.getByRole('button', { name: 'Color #959595' }).evaluate(element => element === document.activeElement), true);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.getByRole('button', { name: 'Bot', exact: true }).evaluate(element => element === document.activeElement), true);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.getByRole('button', { name: 'Change Bot picture' }).evaluate(element => element === document.activeElement), true);
+  await page.getByRole('button', { name: 'Change Bot picture' }).click();
   assert.equal(await page.locator('.avatar-shapes button').count(), 8);
   assert.equal(await page.locator('.avatar-colors button').count(), 11);
   await page.getByRole('button', { name: 'Shape square' }).click();
@@ -56,7 +63,8 @@ try {
   await page.locator('.avatar-dialog').screenshot({ path: 'artifacts/ui/avatar-picker.png' });
   await page.getByRole('button', { name: 'Shape triangle' }).click();
   await page.getByRole('button', { name: 'Color #1cc3b0' }).click();
-  await page.getByRole('button', { name: 'Set avatar' }).click();
+  await page.getByRole('button', { name: 'Color #1cc3b0' }).press('Escape');
+  assert.equal(await page.getByRole('button', { name: 'Change Bot picture' }).evaluate(element => element === document.activeElement), true);
   assert.equal(await page.locator('.bot-row.selected .avatar path').first().getAttribute('fill'), '#1cc3b0');
   await page.getByRole('button', { name: 'Hide bot details' }).click();
   await page.getByLabel('Message Local Research').fill('Local-only test message');

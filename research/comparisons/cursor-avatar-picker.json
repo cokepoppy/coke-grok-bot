@@ -1,0 +1,9 @@
+{
+  "id": "cursor-docs-avatar-picker-light",
+  "reference": "../reference-images/cursor-avatar-picker-light.png",
+  "referenceRect": { "x": 0, "y": 0, "width": 577, "height": 568 },
+  "implementationRect": { "x": 0, "y": 0, "width": 290, "height": 284 },
+  "output": "../../artifacts/reference-comparison/cursor-avatar-picker",
+  "threshold": 32,
+  "note": "Official documentation image is scaled to the local screenshot; original display scale and browser rendering are unknown. The result is diagnostic, not proof of pixel equality."
+}
