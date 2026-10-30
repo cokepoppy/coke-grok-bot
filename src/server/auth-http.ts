@@ -5,10 +5,11 @@ import type { GoogleAuthService } from './google-auth.ts';
 import type { BotStore, BotShape } from './bot-store.ts';
 import { RunRequestConflict, type RunStore } from './run-store.ts';
 import type { ApprovalStore } from './approval-store.ts';
+import {parseUserAction,type UserComputer} from './user-computer.ts';
 import { parsePublicUrl } from './public-url.ts';
 
 // Mount only behind a trusted proxy that preserves the configured Host.
-export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore) {
+export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer) {
   const origin = parsePublicUrl(publicOrigin);
   return createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -28,6 +29,27 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         return res.end(JSON.stringify({ pi: Boolean(runs) }));
       }
       if (req.method === 'POST' && url.pathname === `${origin.prefix}/api/auth/logout`) return await auth.logout(req, res);
+      const computerPath=`${origin.prefix}/api/computer`;
+      if(computer && [computerPath,`${computerPath}/screenshot`,`${computerPath}/control`,`${computerPath}/action`].includes(url.pathname)) {
+        const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value))};
+        const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated'});
+        const signal=AbortSignal.timeout(20_000);
+        if(req.method==='GET' && url.pathname===computerPath)return reply(200,await computer.control(session,signal));
+        if(req.method==='GET' && url.pathname===`${computerPath}/screenshot`){
+          const image=await computer.screenshot(session,signal);res.writeHead(200,{'Content-Type':'image/png','Content-Length':image.length,'Cache-Control':'no-store'});return res.end(image);
+        }
+        if(req.method!=='POST'||![`${computerPath}/control`,`${computerPath}/action`].includes(url.pathname))return reply(405,{error:'Method not allowed'});
+        if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
+        if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return reply(415,{error:'Expected JSON'});
+        let size=0;const chunks:Buffer[]=[];for await(const chunk of req){size+=chunk.length;if(size>8192)return reply(413,{error:'Request too large'});chunks.push(chunk)}
+        let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return reply(400,{error:'Invalid JSON'})}
+        if(url.pathname===`${computerPath}/control`){
+          if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||((body as {owner?:unknown}).owner!=='agent'&&(body as {owner?:unknown}).owner!=='user'))return reply(400,{error:'Invalid control'});
+          return reply(200,await computer.setControl(session,(body as {owner:'agent'|'user'}).owner,signal));
+        }
+        let action;try{action=parseUserAction(body)}catch{return reply(400,{error:'Invalid computer action'})}
+        await computer.action(session,action,signal);return reply(200,{ok:true});
+      }
       const botPath = `${origin.prefix}/api/bots`;
       const botMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})$`));
       const messageMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/messages$`));

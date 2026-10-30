@@ -20,6 +20,7 @@ import {HttpGuardedComputerWorker} from '../src/server/guarded-worker.ts';
 import {desktopIdentity,splitDesktopResources} from '../src/server/desktop-resources.ts';
 import {GoogleAuthService,type IdentityProvider} from '../src/server/google-auth.ts';
 import {createAuthServer} from '../src/server/auth-http.ts';
+import {UserComputer} from '../src/server/user-computer.ts';
 const mysqlPort=Number(process.env.COKE_GROK_TEST_MYSQL_PORT),keyFile=process.env.COKE_GROK_MODEL_KEY_FILE,image=process.env.COKE_GROK_DESKTOP_TEST_IMAGE;
 if(!mysqlPort||!keyFile||!image)throw new Error('Disposable MySQL, private model key and pinned desktop image required');
 const dir=await mkdtemp(join(tmpdir(),'grok-mediated-pi-')),db=`grok_mediated_${randomUUID().replaceAll('-','')}`;
@@ -47,7 +48,9 @@ try{
  await run('kubectl',['create','-f','-'],JSON.stringify(resources[0]));namespaceCreated=true;await run('kubectl',['create','-f','-'],JSON.stringify({apiVersion:'v1',kind:'List',items:resources.slice(1)}));
  await run('kubectl',['-n',namespace,'rollout','status','deployment/agent','--timeout=150s'],undefined,160_000);await run('kubectl',['-n',namespace,'rollout','status','deployment/desktop','--timeout=150s'],undefined,160_000);
  const pod=(await run('kubectl',['-n',namespace,'get','pods','-l','app=grok-agent','-o','jsonpath={.items[0].metadata.name}'])).trim();workerPort=await portForward('desktop',8082);const agentPort=await portForward('agent',8083);
- const reserve=netServer();reserve.listen(0,'127.0.0.1');await once(reserve,'listening');const apiPort=(reserve.address() as import('node:net').AddressInfo).port;await new Promise<void>(resolve=>reserve.close(()=>resolve()));const origin=`http://127.0.0.1:${apiPort}`,base=origin+'/grok-bot',provider:IdentityProvider={authorizationUrl:()=>'',exchange:async()=>({})};server=createAuthServer(new GoogleAuthService(ids,provider,base),base,undefined,bots,runs,approvals);server.listen(apiPort,'127.0.0.1');await once(server,'listening');
+ const reserve=netServer();reserve.listen(0,'127.0.0.1');await once(reserve,'listening');const apiPort=(reserve.address() as import('node:net').AddressInfo).port;await new Promise<void>(resolve=>reserve.close(()=>resolve()));const origin=`http://127.0.0.1:${apiPort}`,base=origin+'/grok-bot',provider:IdentityProvider={authorizationUrl:()=>'',exchange:async()=>({})};
+ const userComputer=new UserComputer(scope=>new HttpGuardedComputerWorker(scope,new URL(`http://desktop.${namespace}.svc.cluster.local:8082/`),identity.controlToken,randomUUID(),workerTransport));
+ server=createAuthServer(new GoogleAuthService(ids,provider,base),base,undefined,bots,runs,approvals,userComputer);server.listen(apiPort,'127.0.0.1');await once(server,'listening');
  const apiCookie=`coke_grok_session=${cookie}`,path=`${base}/api/bots/${bot.id}/runs`,requestId=randomUUID();
  const submit=await fetch(path,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({requestId,prompt:'Use computer_browser to inspect the current page and click the button named Submit test. Inspect the page again and report success only if it says MEDIATED_CLICK_OK.'})});assert.equal(submit.status,200);const {run:task}=await submit.json() as {run:{id:string}};
  const fixture=`<!doctype html><title>Mediated test</title><button onclick="document.getElementById('result').textContent='MEDIATED_CLICK_OK '+(++window.clickCount)">Submit test</button><p id="result">Waiting</p><script>window.clickCount=0</script>`;
@@ -77,10 +80,14 @@ try{
   const result=await fetch(path,{headers:{cookie:apiCookie}}),row=(await result.json() as {runs:{id:string;status:string}[]}).runs.find(x=>x.id===second.id);if(row?.status==='unknown'||row?.status==='failed'||row?.status==='completed')break;await sleep(1000);
  }
  assert.equal(pending,true);
- assert.equal((await workerRequest('/v1/control',{owner:'user'})).status,200);
+ const userPost=(path:string,body:unknown)=>fetch(`${base}/api/computer/${path}`,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify(body)});
+ assert.equal((await fetch(`${base}/api/computer/screenshot`)).status,401);
+ const userScreen=await fetch(`${base}/api/computer/screenshot`,{headers:{cookie:apiCookie}});assert.equal(userScreen.status,200);assert.equal(userScreen.headers.get('content-type'),'image/png');
+ assert.equal((await userPost('control',{owner:'user'})).status,200);
  let interrupted='';for(let i=0;i<30;i++){const result=await fetch(path,{headers:{cookie:apiCookie}}),rows=(await result.json() as {runs:{id:string;status:string}[]}).runs;interrupted=rows.find(x=>x.id===second.id)?.status||'';if(interrupted==='unknown')break;await sleep(1000)}assert.equal(interrupted,'unknown');
- assert.equal((await workerRequest('/v1/control',{owner:'agent'})).status,200);
+ assert.equal((await userPost('action',{action:'press',key:'Escape'})).status,200);
+ assert.equal((await userPost('control',{owner:'agent'})).status,200);
  const afterTakeover=await workerRequest('/v1/guarded/inspect'),afterView=await afterTakeover.json() as {text?:string};assert.ok(afterView.text?.includes('MEDIATED_CLICK_OK 1'));assert.equal(afterView.text?.includes('MEDIATED_CLICK_OK 2'),false);
  await scheduler.tick();await sleep(1000);const confirmed=await fetch(path,{headers:{cookie:apiCookie}}),confirmedRows=(await confirmed.json() as {runs:{id:string;status:string}[]}).runs;assert.equal(confirmedRows.find(x=>x.id===second.id)?.status,'unknown');
- console.log(`Mediated Pi test passed: separate K3D Pods, approval before one real browser click, and running-task takeover without a second click; model calls ${modelCalls}.`);
+ console.log(`Mediated Pi test passed: separate K3D Pods, approved real browser click, authenticated desktop viewing and keyboard action, and takeover without a second click; model calls ${modelCalls}.`);
 }finally{await scheduler?.stop();if(server)await new Promise<void>(resolve=>server!.close(()=>resolve()));for(const p of forwards)p.kill('SIGTERM');gateway?.close();if(gatewayServer)await new Promise<void>(resolve=>gatewayServer!.close(()=>resolve()));if(namespaceCreated)await exec('kubectl',['delete','namespace',namespace,'--wait=false'],undefined,20_000);await pool?.end();if(dbCreated)await admin?.query(`DROP DATABASE \`${db}\``);await admin?.end();await rm(dir,{recursive:true,force:true})}

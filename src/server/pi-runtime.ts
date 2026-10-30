@@ -12,13 +12,14 @@ import { ApprovalStore } from './approval-store.ts';
 import { ComputerBridge } from './computer-bridge.ts';
 import { desktopIdentity } from './desktop-resources.ts';
 import { HttpGuardedComputerWorker } from './guarded-worker.ts';
+import { UserComputer } from './user-computer.ts';
 
 function required(env:NodeJS.ProcessEnv,key:string):string { const value=env[key]?.trim();if(!value)throw new Error(`Missing ${key}`);return value; }
 async function privateFile(path:string):Promise<Buffer>{
  const metadata=await stat(path);if(!metadata.isFile()||(metadata.mode&0o077)!==0)throw new Error('Runtime secret file permissions are not private');
  const value=await readFile(path);if(!value.length||value.length>16384)throw new Error('Invalid runtime secret file');return value;
 }
-export interface PiRuntime { runs:RunStore; approvals:ApprovalStore; close():Promise<void> }
+export interface PiRuntime { runs:RunStore; approvals:ApprovalStore; computer:UserComputer; close():Promise<void> }
 /** Opt-in only. Caller supplies Kubernetes service account with separately audited permissions. */
 export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env):Promise<PiRuntime|null>{
  if(env.COKE_GROK_PI_ENABLED!=='1')return null;
@@ -47,11 +48,16 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
   const identity=desktopIdentity(scope.owner,signingKey);
   return new HttpGuardedComputerWorker(scope.owner,new URL(`http://desktop.${identity.namespace}.svc.cluster.local:8082/`),identity.controlToken,scope.runId);
  });
+ const computer=new UserComputer(owner=>{
+  const identity=desktopIdentity(owner,signingKey);
+  // The task identifier is unused by the user-facing methods; it is required by the scoped worker constructor.
+  return new HttpGuardedComputerWorker(owner,new URL(`http://desktop.${identity.namespace}.svc.cluster.local:8082/`),identity.controlToken,'00000000-0000-4000-8000-000000000000');
+ });
  const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals,bridge);
  const scheduler=new RunScheduler(runs,new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID')),{concurrency:2,leaseSeconds:30});
  const server=gateway.createServer({key:tlsKey,cert});
  try{server.listen(3002,'0.0.0.0');await once(server,'listening')}catch(error){gateway.close();server.close();throw error}
  const timer=setInterval(()=>{void scheduler.tick().catch(()=>console.error('Pi scheduler polling failed.'))},2000);timer.unref();
  const screenshotCleanup=setInterval(()=>{void approvals.purgeExpiredScreenshots().catch(()=>console.error('Approval screenshot cleanup failed.'))},60000);screenshotCleanup.unref();
- return {runs,approvals,async close(){clearInterval(timer);clearInterval(screenshotCleanup);await scheduler.stop();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
+ return {runs,approvals,computer,async close(){clearInterval(timer);clearInterval(screenshotCleanup);await scheduler.stop();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
 }

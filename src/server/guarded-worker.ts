@@ -48,6 +48,22 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>1024*1024)throw new Error('Computer screenshot too large');
   const bytes=Buffer.from(await response.arrayBuffer());if(!bytes.length||bytes.length>1024*1024)throw new Error('Computer screenshot too large');return bytes;
  }
+ async userScreenshot(signal:AbortSignal):Promise<Buffer>{
+  const response=await this.request(new URL('/v1/screenshot',this.endpoint),{headers:{authorization:`Bearer ${this.controlToken}`},signal,redirect:'error'});
+  if(!response.ok||response.headers.get('content-type')?.split(';')[0]!=='image/png')throw new Error('Computer screenshot unavailable');
+  const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>1024*1024)throw new Error('Computer screenshot too large');
+  const image=Buffer.from(await response.arrayBuffer());if(!image.length||image.length>1024*1024)throw new Error('Computer screenshot too large');return image;
+ }
+ async setControl(owner:'agent'|'user',signal:AbortSignal):Promise<{owner:'agent'|'user'}>{
+  const response=await this.request(new URL('/v1/control',this.endpoint),{method:'POST',headers:{authorization:`Bearer ${this.controlToken}`,'content-type':'application/json'},body:JSON.stringify({owner}),signal,redirect:'error'});
+  if(!response.ok)throw new Error('Computer control unavailable');
+  const result:unknown=await response.json();if(!result||typeof result!=='object'||(result as {owner?:unknown}).owner!==owner)throw new Error('Computer control was not confirmed');return {owner};
+ }
+ async userAction(action:UserComputerAction,signal:AbortSignal):Promise<void>{
+  const response=await this.request(new URL('/v1/commands',this.endpoint),{method:'POST',headers:{authorization:`Bearer ${this.controlToken}`,'content-type':'application/json'},body:JSON.stringify({...action,actor:'user'}),signal,redirect:'error'});
+  if(!response.ok)throw new Error('Computer action was not confirmed');
+  const result:unknown=await response.json();if(!result||typeof result!=='object'||(result as {ready?:unknown}).ready!==true)throw new Error('Computer action was not confirmed');
+ }
  async performIfUnchanged(input:unknown,expected:ComputerState,signal:AbortSignal):Promise<unknown>{
   if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Invalid computer action');
   const action=input as Record<string,unknown>;
@@ -57,3 +73,4 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   const value:unknown=await response.json();if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid computer result');return value;
  }
 }
+export type UserComputerAction={action:'click';x:number;y:number}|{action:'type';text:string}|{action:'press';key:string};

@@ -13,6 +13,7 @@ import { RunScheduler } from '../src/server/run-scheduler.ts';
 import { ApprovalStore } from '../src/server/approval-store.ts';
 import { GoogleAuthService,type IdentityProvider } from '../src/server/google-auth.ts';
 import { createAuthServer } from '../src/server/auth-http.ts';
+import { UserComputer } from '../src/server/user-computer.ts';
 const mysqlPort=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);if(!mysqlPort)throw new Error('Disposable MySQL port required');
 async function freePort(){const s=createServer();s.listen(0,'127.0.0.1');await once(s,'listening');const p=(s.address() as import('node:net').AddressInfo).port;await new Promise<void>(resolve=>s.close(()=>resolve()));return p}
 const frontPort=await freePort(),backPort=await freePort(),identityPort=await freePort(),origin=`http://127.0.0.1:${frontPort}`,base='/grok-bot/',publicUrl=origin+base;
@@ -21,10 +22,13 @@ const pool=mysql.createPool({host:'127.0.0.1',port:mysqlPort,user:'root',databas
 const flows=new Map<string,{nonce:string;challenge:string}>();let state='',identity='alice';
 const provider:IdentityProvider={authorizationUrl(s,nonce,challenge){flows.set(s,{nonce,challenge});return `http://127.0.0.1:${identityPort}/?state=${s}`},async exchange(code,verifier){const f=flows.get(state)!;assert.equal(createHash('sha256').update(verifier).digest('base64url'),f.challenge);return {sub:code,email:`${code}@example.test`,email_verified:true,name:code,nonce:f.nonce}}};
 const identityServer=createHttpServer((req,res)=>{state=new URL(req.url||'/',`http://127.0.0.1:${identityPort}`).searchParams.get('state')!;res.writeHead(302,{Location:`${publicUrl}auth/google/callback?state=${state}&code=${identity}`});res.end()});identityServer.listen(identityPort,'127.0.0.1');await once(identityServer,'listening');
-const backend=createAuthServer(new GoogleAuthService(store,provider,publicUrl),publicUrl,undefined,bots,runs,approvals);backend.listen(backPort,'127.0.0.1');await once(backend,'listening');
+const uiImage=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a18sAAAAASUVORK5CYII=','base64');
+const computerOwners=new Map<string,'agent'|'user'>(),computerActions:string[]=[];
+const computer=new UserComputer(owner=>({control:async()=>({owner:computerOwners.get(owner.userId)||'agent'}),userScreenshot:async()=>uiImage,setControl:async value=>{computerOwners.set(owner.userId,value);return {owner:value}},userAction:async action=>{assert.equal(computerOwners.get(owner.userId),'user');computerActions.push(action.action)}}));
+const backend=createAuthServer(new GoogleAuthService(store,provider,publicUrl),publicUrl,undefined,bots,runs,approvals,computer);backend.listen(backPort,'127.0.0.1');await once(backend,'listening');
 const vite=spawn(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port',String(frontPort),'--strictPort'],{env:{...process.env,VITE_REQUIRE_AUTH:'true',VITE_BASE_PATH:base,VITE_AUTH_PROXY_TARGET:`http://127.0.0.1:${backPort}`},stdio:'ignore'});
 let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);let executions=0;
-const testImage=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a18sAAAAASUVORK5CYII=','base64');
+const testImage=uiImage;
 const testAction=JSON.stringify({kind:'browser',action:'click',arguments:{target:'Submit the test action'},page:'https://example.test/',screenshotSha256:createHash('sha256').update(testImage).digest('hex')});
 const scheduler=new RunScheduler(runs,{execute:async (_owner,run)=>{executions++;const [rows]=await pool.execute<import('mysql2/promise').RowDataPacket[]>('SELECT lease_id FROM agent_runs WHERE id=?',[run.id]);const lease=String(rows[0].lease_id),proposal=await approvals.propose(run.id,lease,testAction,20,testImage);assert.ok(proposal);await gate;assert.equal(await approvals.consume(run.id,lease,proposal.id,testAction),true);return {status:'completed',result:`Done: ${run.prompt}`}}},{concurrency:2,leaseSeconds:30});
 let browser;
@@ -32,6 +36,7 @@ try{
  for(let i=0;i<100;i++){try{if((await fetch(publicUrl)).ok)break}catch{}if(i===99)throw new Error('Vite did not start');await new Promise(resolve=>setTimeout(resolve,100))}
  browser=await chromium.launch({executablePath:process.env.CHROME_BIN||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});const context=await browser.newContext(),page=await context.newPage();page.setDefaultTimeout(8000);
  await page.goto(publicUrl);await page.getByRole('link',{name:'Continue with Google'}).click();await page.getByRole('button',{name:'Create new Bot'}).click();
+ await page.getByRole('button',{name:'Show bot details'}).click();await page.getByRole('img',{name:'Current computer screen'}).waitFor();await page.getByRole('button',{name:'Take control'}).click();await page.getByText('You are in control',{exact:false}).waitFor();await page.getByRole('img',{name:'Current computer screen'}).click();await page.waitForFunction(()=>!document.querySelector<HTMLButtonElement>('.computer-controls button')?.disabled);await page.getByLabel('Type on computer').fill('hello');await page.getByRole('button',{name:'Type',exact:true}).click();await page.waitForFunction(()=>!document.querySelector<HTMLButtonElement>('.computer-controls button')?.disabled);assert.deepEqual(computerActions,['click','type']);await page.getByRole('button',{name:'Return to Bot'}).click();await page.getByText('Bot is in control',{exact:false}).waitFor();await page.getByRole('button',{name:'Hide bot details'}).click();
  const field=page.getByLabel('Message New Bot');await field.fill('Test queued task');await page.getByRole('button',{name:'Send task'}).click();
  await page.getByText('Queued · waiting for your computer').waitFor();await scheduler.tick();await page.getByText('Working on your computer').waitFor();
  await page.getByText('Browser: click').waitFor();const image=page.getByRole('img',{name:'Computer screen when this action was requested'});await image.waitFor();await page.waitForFunction(()=>{const image=document.querySelector('.approval-card img') as HTMLImageElement|null;return Boolean(image?.complete && image.naturalWidth)});assert.equal(await page.getByRole('button',{name:'Approve',exact:true}).isEnabled(),true);let decisionPosts=0;
@@ -44,5 +49,5 @@ try{
  await page.getByLabel('Message New Bot').fill('Uncertain submission');await page.getByRole('button',{name:'Send task'}).click();await page.getByText('Submission could not be confirmed. Refresh and check the history before trying again.').waitFor();
  await page.waitForTimeout(2300);assert.equal(posts,1);assert.equal(await page.getByLabel('Message New Bot').isDisabled(),true);await page.unroute('**/api/bots/*/runs');await page.reload();await page.getByText('Uncertain submission').waitFor();assert.equal(posts,1);
  identity='bob';await page.goto(`${publicUrl}api/auth/google/start`);await page.getByRole('button',{name:'Sign out'}).waitFor();assert.equal(await page.getByText('Test queued task').count(),0);
- await context.close();console.log('Browser run UI passed with simulated identity and executor: queued, running, approval, completed, refresh, ambiguous submission and account isolation.');
+ await context.close();console.log('Browser run UI passed with simulated identity and executor: desktop preview, takeover, click and type, queued, running, approval, refresh, ambiguous submission and account isolation.');
 }finally{release();await scheduler.stop();if(browser)await browser.close();vite.kill('SIGTERM');await new Promise<void>(resolve=>backend.close(()=>resolve()));await new Promise<void>(resolve=>identityServer.close(()=>resolve()));await pool.end();await admin.query(`DROP DATABASE \`${database}\``);await admin.end()}
