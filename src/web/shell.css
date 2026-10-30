@@ -84,7 +84,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .send-button svg { width: 100%; height: 100%; }
 .details-panel { flex: 0 0 43%; max-width: 530px; padding: 85px 20px 20px; border-left: 1px solid #eee; display: flex; flex-direction: column; align-items: center; }
 .bot-name { margin-top: 17px; width: 100%; border: 0; background: transparent; text-align: center; font-size: 23px; }
-.bot-label { margin-top: 9px; color: #777; font-size: 15px; }
+.bot-label { margin-top: 9px; width: 100%; padding: 0; border: 0; text-align: center; color: #777; background: transparent; font-size: 15px; }
+.bot-label::placeholder { color: #777; opacity: 1; }
 .tabs { display: flex; gap: 6px; margin: 23px 0 24px; }
 .tabs button { border: 0; background: transparent; padding: 7px 8px; border-radius: 6px; font-size: 16px; color: #555; }
 .tabs button.active { color: #111; background: #ededed; }

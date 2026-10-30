@@ -44,11 +44,15 @@ try {
   await page.getByText('What do you want me helping with most right now?', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Show bot details' }).click();
   await page.getByLabel('Bot name').fill('Local Research');
+  await page.getByLabel('Bot label').fill('analyst');
+  await page.getByLabel('Bot label').press('Enter');
+  assert.equal(await page.locator('.bot-row.selected').getByText('analyst').count(), 1);
   await page.getByRole('button', { name: 'Hide bot details' }).click();
   await page.getByLabel('Message Local Research').fill('Local-only test message');
   await page.getByRole('button', { name: 'Save local message' }).click();
   await page.getByText('No message was sent to an Agent', { exact: false }).waitFor();
   await page.reload({ waitUntil: 'networkidle' });
+  assert.equal(await page.locator('.bot-row.selected').getByText('analyst').count(), 1);
   assert.equal(await page.locator('.conversation').getByText('Local-only test message', { exact: true }).count(), 1);
   await page.getByRole('button', { name: /New Bot.*Ready for a conversation/ }).click();
   assert.equal(await page.locator('.conversation').getByText('Local-only test message', { exact: true }).count(), 0);

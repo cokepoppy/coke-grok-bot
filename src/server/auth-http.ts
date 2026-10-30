@@ -138,11 +138,15 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
           let body: Record<string, unknown>;
           try { const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8')); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(); body = parsed as Record<string, unknown>; }
           catch { return reply(400, { error: 'Invalid JSON' }); }
-          if (typeof body.name !== 'string') return reply(400, { error: 'Invalid bot' });
           if (req.method === 'POST') {
-            if (typeof body.color !== 'string' || typeof body.shape !== 'string' || !body.name.trim() || body.name.trim().length > 60 || !/^#[0-9a-fA-F]{6}$/.test(body.color) || !['cloud','drop','hex','round','triangle'].includes(body.shape)) return reply(400, { error: 'Invalid bot' });
+            if (typeof body.name !== 'string' || typeof body.color !== 'string' || typeof body.shape !== 'string' || !body.name.trim() || body.name.trim().length > 60 || !/^#[0-9a-fA-F]{6}$/.test(body.color) || !['cloud','drop','hex','round','triangle'].includes(body.shape)) return reply(400, { error: 'Invalid bot' });
             return reply(201, { bot: await bots.create(session, { name: body.name, color: body.color, shape: body.shape as BotShape }) });
           }
+          if (Object.keys(body).length === 1 && typeof body.label === 'string') {
+            if (body.label.trim().length > 60) return reply(400, { error: 'Invalid bot' });
+            return await bots.setLabel(session, botMatch![1], body.label) ? reply(200, { ok: true }) : reply(404, { error: 'Not found' });
+          }
+          if (Object.keys(body).length !== 1 || typeof body.name !== 'string') return reply(400, { error: 'Invalid bot' });
           if (!body.name.trim() || body.name.trim().length > 60) return reply(400, { error: 'Invalid bot' });
           return await bots.rename(session, botMatch![1], body.name) ? reply(200, { ok: true }) : reply(404, { error: 'Not found' });
         }

@@ -155,6 +155,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const recipientInput = useRef<HTMLInputElement>(null);
   const savedNames = useRef<Record<string, string>>({});
   const renameQueue = useRef<Record<string, Promise<void>>>({});
+  const savedLabels = useRef<Record<string, string>>({});
+  const labelQueue = useRef<Record<string, Promise<void>>>({});
   const active = state.bots.find(bot => bot.id === state.activeId) || state.bots[0];
   const activeIdRef = useRef(active?.id); activeIdRef.current = active?.id;
   const messages = active ? state.messages[active.id] || [] : [];
@@ -173,6 +175,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         if (!Array.isArray(bots)) throw new Error('invalid bots');
         const mapped = bots.map(bot => ({ ...bot, preview: 'Start a conversation' }));
         savedNames.current = Object.fromEntries(mapped.map(bot => [bot.id, bot.name]));
+        savedLabels.current = Object.fromEntries(mapped.map(bot => [bot.id, bot.label]));
         setState(current => ({ ...current, bots: mapped, activeId: mapped.some(bot => bot.id === current.activeId) ? current.activeId : mapped[0]?.id || '' }));
         setBotStatus('ready');
       }).catch(error => { if (error.name !== 'AbortError') setBotStatus('error'); });
@@ -259,6 +262,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         if (!response.ok) throw new Error('create failed');
         const { bot } = await response.json() as { bot: Omit<Bot, 'preview'> };
         savedNames.current[bot.id] = bot.name;
+        savedLabels.current[bot.id] = bot.label;
         setState(current => ({ ...current, bots: [{ ...bot, preview: 'Start a conversation' }, ...current.bots], activeId: bot.id }));
         setNewChat(false); setPanel(false);
       } catch { setBotError('Could not create the Bot. Please try again.'); }
@@ -351,6 +355,24 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     renameQueue.current[id] = next;
     void next.finally(() => { if (renameQueue.current[id] === next) delete renameQueue.current[id]; });
   }
+  function saveBotLabel() {
+    if(!active)return;
+    const id=active.id,draftLabel=active.label,label=draftLabel.trim();
+    if(!remote){setState(current=>({...current,bots:current.bots.map(bot=>bot.id===id&&bot.label===draftLabel?{...bot,label}:bot)}));return}
+    const previous=labelQueue.current[id] || Promise.resolve();
+    const next=previous.then(async()=>{
+      try{
+        const response=await fetch(`${import.meta.env.BASE_URL}api/bots/${id}`,{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({label})});
+        if(!response.ok)throw new Error('label update failed');
+        savedLabels.current[id]=label;
+        setState(current=>({...current,bots:current.bots.map(bot=>bot.id===id&&bot.label===draftLabel?{...bot,label}:bot)}));
+      }catch{
+        setState(current=>({...current,bots:current.bots.map(bot=>bot.id===id&&bot.label===draftLabel?{...bot,label:savedLabels.current[id]||''}:bot)}));
+        setBotError('Could not save the Bot label. Please try again.');
+      }
+    });
+    labelQueue.current[id]=next;void next.finally(()=>{if(labelQueue.current[id]===next)delete labelQueue.current[id]});
+  }
   const composerDisabled = remote && (sending || history.id !== active?.id || history.status !== 'ready' || piFeature === 'loading' || piFeature === 'error' || (piFeature === 'enabled' && (runHistory.id !== active?.id || runHistory.status !== 'ready')));
   if (botStatus === 'loading') return <main className="auth-page"><div className="auth-card">Loading your Bots…</div></main>;
   if (botStatus === 'error') return <main className="auth-page"><div className="auth-card"><p role="alert">Could not load your Bots.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></div></main>;
@@ -403,7 +425,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
             </div>
             <form className="composer" onSubmit={event => { event.preventDefault(); void addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} disabled={composerDisabled} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() ? <button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote ? (piFeature === 'enabled' ? 'Send task' : 'Save message') : 'Save local message'}><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
           </section>
-          {panel && <aside className="details-panel" aria-label="Bot details"><Avatar bot={active} size={86} /><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => void saveBotName()} /><span className="bot-label">{active.label || 'Add a label'}</span><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && piFeature === 'enabled' ? <ComputerPanel name={active.name} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
+          {panel && <aside className="details-panel" aria-label="Bot details"><Avatar bot={active} size={86} /><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => void saveBotName()} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && piFeature === 'enabled' ? <ComputerPanel name={active.name} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
         </div>
       </>}
     </main>

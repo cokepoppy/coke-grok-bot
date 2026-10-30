@@ -10,13 +10,15 @@
 | V1 | [官方 Grok Bot 101](https://www.youtube.com/watch?v=8xXhE25vJZY)，2026-10-06 | 已完整下载本机 MKV；1920×1080、30 fps、3400.761 秒 | 22:08–22:23、26:48–27:53 共 2400 帧已审阅联系图，关键切换另审阅原尺寸 PNG；电脑阶段其余时间有单帧初查 | 其余视频和接管前后的完整路径尚未逐帧审阅 |
 | V2 | [官方 Grok Bot 201](https://www.youtube.com/watch?v=rOVomdnWhjQ)，2026-10-21 | 已完整下载本机 MKV；1920×1080、25 fps、3326.421 秒 | 已按约 30 秒间隔浏览整体联系图，并取 01:15、14:45 各 25 帧；两个时间点仅查看第一张原尺寸帧 | 多 Bot、群聊和工作流还需逐帧分析；不能把上传日期当成客户端版本日期 |
 | V3 | [官方 Introducing Grok Bot](https://www.youtube.com/watch?v=F1_0Lkp16Rc)，2026-08-11 | 已完整下载本机 MKV；3840×2160、24 fps、106.001 秒 | 开头约 0–13 秒按 1 fps 粗看，为宣传片镜头 | 全片逐帧与宣传场景归类；不能以宣传镜头推断真实客户端交互 |
-| T1 | [Charlie Chang：The ONLY Grok Bot Tutorial You Need 2026](https://www.youtube.com/watch?v=q1IwR88mhaA)，2026-09-30 | 已完整下载本机 MKV；1920×1080、24000/1001 fps、840.621 秒；2026-10-30 查询时约 39.3 万播放、146 万频道订阅 | 全片按 10 秒采样联系图浏览；01:35–01:45 两段共 240 帧已逐张查看联系图，切换帧再看原尺寸图 | 后续按原视频核对电脑操作、设置、Routine、多 Bot；第三方解释不是官方协议证明 |
+| T1 | [Charlie Chang：The ONLY Grok Bot Tutorial You Need 2026](https://www.youtube.com/watch?v=q1IwR88mhaA)，2026-09-30 | 已完整下载本机 MKV；1920×1080、24000/1001 fps、840.621 秒；2026-10-30 查询时约 39.3 万播放、146 万频道订阅 | 全片按 10 秒采样联系图浏览；01:35–02:00 共 600 帧已逐张查看联系图，关键帧再看原尺寸图 | 后续按原视频核对电脑操作、设置、Routine、多 Bot；第三方解释不是官方协议证明 |
 | T2 | [Tech With Tim：What You Need to Know About Grok Bot](https://www.youtube.com/watch?v=ezANo2RNryU)，2026-08-28 | 2026-10-30 元数据查询时约 5.97 万播放、211 万频道订阅 | 已获取元数据，尚未下载或观看画面 | 下载后重点查看电脑操作和教学任务，不把章节目录当作观看证据 |
 | T3 | [Founders School：The ONLY Grok Bot Tutorial You Need](https://www.youtube.com/watch?v=ifW-Aj9LOXQ)，2026-10-25 | 2026-10-30 元数据查询时约 6.67 万播放、2800 频道订阅 | 已获取元数据，尚未下载或观看画面 | 后续核对新版协作与例行任务；频道订阅量较少但视频较新 |
 
 本机视频文件的 SHA-256：V1 `270123c76fb7f9a4818f7770d4e5754f3097d06770ad95b817ed0825dbce9231`；V2 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`；V3 `1d6cc00c197d14fb96715a7200f8e95aadf7260d722715b078c8515f54b73a60`。这是当前下载及封装的文件哈希，不代表其他清晰度版本。
 
 T1 本机文件 SHA-256：`2cbb5f133a0c9743f2d52453a561331fbe0e97d4a271f76569166508880bd0ac`。T1 `01:42.561` 原尺寸帧仍是深色聊天，光标位于侧栏 `+`；下一帧 `01:42.603` 已切到新聊天选择界面，顶部是 `To: Search or create Bots`，菜单有 `Create new Bot`、`Create group chat` 和已有 Bot，底部显示 `Message Bot` 输入区。相邻帧说明可见界面转换，不单独证明鼠标按键事件。视频刻意模糊了部分聊天和 Bot 信息，且录制者头像遮挡右下角；不能用该段作为浅色主题的精确布局基准。录制版与官方 101 的浅色界面也有版本差异，不能仅由颜色判断差异来源。
+
+T1 `01:45.522` 菜单中 `Create new Bot` 保持高亮；紧接着 `01:45.564` 切到新 Bot 聊天，左侧出现 `New Bot`，聊天内容尚未生成，随后出现问候和用途选择卡片。`01:52.946` 的旧版设置面板显示 `Name`、`Label (optional)`、`Description` 和通知开关；`01:55.449` 可见名称已经改为 `Executive Assistant`。这证明视频录制版本的可见状态与改名路径；不能推断后台保存时机。当前官方文档最近更新于 2026-10-28，称个人 Bot 已不再有 description 或 Bot settings 页面，但名称和标签仍可通过详情编辑；因此不把该视频中的旧版 Description 界面当作当前个人 Bot 的功能规范。
 
 V1 `22:38–22:43` 新提取并逐张检查 150 帧联系图，期间右侧始终为 Bot 信息和 Computer 预览；`22:40.000` 原尺寸帧可见名称输入、三个标签以及灰色屏幕占位。对照配置 `research/comparisons/101-details.json` 与 `101-new-chat.json` 分别生成本机叠图和差异图。新聊天截图按 `22:08.633` 对照的阈值诊断为约 2.76% 像素超过 32 色阶；电脑详情画面调整后约 3.40%。视频经过缩放压缩且原始视口未知，这些数值不是像素级一致性的验收结论。
 

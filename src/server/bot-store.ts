@@ -64,4 +64,10 @@ export class BotStore {
     const [result] = await this.pool.execute<import('mysql2').ResultSetHeader>('UPDATE bots SET name=? WHERE id=? AND tenant_id=? AND owner_id=?', [clean, id, session.tenantId, session.userId]);
     return result.affectedRows > 0;
   }
+  async setLabel(session: Session, id: string, label: string): Promise<boolean> {
+    const clean = label.trim();
+    if (clean.length > 60) throw new Error('Invalid bot label');
+    const [result] = await this.pool.execute<import('mysql2').ResultSetHeader>('UPDATE bots SET label=? WHERE id=? AND tenant_id=? AND owner_id=?', [clean, id, session.tenantId, session.userId]);
+    return result.affectedRows > 0;
+  }
 }

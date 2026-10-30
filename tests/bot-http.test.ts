@@ -34,6 +34,12 @@ test('bot API uses session ownership and enforces origin for writes', async () =
     assert.deepEqual((await (await request('/api/bots',b)).json() as {bots:unknown[]}).bots,[]);
     assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({name:'Updated'})})).status,200);
     assert.equal((await (await request('/api/bots',a)).json() as {bots:{name:string}[]}).bots[0].name,'Updated');
+    assert.equal((await request(`/api/bots/${bot.id}`,b,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({label:'Stolen'})})).status,404);
+    assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({label:'  Research  '})})).status,200);
+    assert.equal((await (await request('/api/bots',a)).json() as {bots:{label:string}[]}).bots[0].label,'Research');
+    assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({label:'x'.repeat(61)})})).status,400);
+    assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({name:'N',label:'L'})})).status,400);
+    assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({label:''})})).status,200);
     const messagesPath = `/api/bots/${bot.id}/messages`;
     const messageBody = JSON.stringify({text:'Private message'});
     assert.equal((await request(messagesPath)).status,401);
