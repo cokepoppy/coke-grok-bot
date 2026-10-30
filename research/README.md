@@ -24,6 +24,8 @@ T1 `01:45.522` 菜单中 `Create new Bot` 保持高亮；紧接着 `01:45.564` �
 
 [官方 0.56.0 更新记录](https://x.ai/changelog/bot)称形状和颜色的每次选择会立刻生效，快速连续选择也应生效；本项目按此改为立即显示并顺序保存。遇到写入结果不明时提示刷新检查，不自动重复写入。官方文档对 Generate 和 Upload 则明确提及 Set avatar；较早的 [0.71.2 用户论坛回复](https://forum.cursor.com/t/unable-to-tag-custom-bot-categories-or-edit-bot-avatar-color-and-shape/175031)曾描述形状颜色后再点 Set avatar，与更新记录存在差异，本次将立即应用作为当前交互基准。官方图片仅能证明图片中的八种形状和十一种颜色；更新记录还提及其他形状，不能推断这张图片覆盖了所有版本。
 
+[Cursor 官方侧栏菜单文档](https://prod.cursor.com/help/grok-bot/how-to)提供了 [右键菜单截图](https://prod.cursor.com/docs-static/images/grok-bot/sidebar-bot-menu-light.png)，原图 449×580、SHA-256 `de90489936681e7c894920a1c33850947c74943fb3d943fe6bf698d644f67c10`；菜单本体约占 x=25–423、y=25–553，图片缩放比例和实际打开位置未标明。[官方 Bot 编辑文档](https://prod.cursor.com/help/grok-bot/edit-bot)明确右键选择 Rename Bot 或双击侧栏名称可改名。项目已实现这两种入口和服务端持久化；Pin、分组、未读、复制会话 ID、隐藏与删除仍未实现，菜单灰显是项目当前状态，不代表官方截图的样式或能力。截图中的图标及菜单文字位置仍需进一步对图，不能视为像素级完成。
+
 T2 本机文件 SHA-256 `030451a3c29bcf0d9ee4313ccdf8bc4bdcbd908eaafe6d8d032f276fbea423fb`。连续帧中 `02:57.611` 的旧版深色新聊天菜单显示 `Create new Bot` 高亮；`02:57.644` 为 `New Bot / Creating...`，`02:57.678` 已显示带问候的 Bot 对话。画面在相邻帧内跳过等待过程，可能经过剪辑，不能用来推断创建速度或后台保存时机。右下角讲解者遮挡部分应用区域；该旧版与较新文档存在版本差异。02:35–02:45 片段主要显示产品网页而非完整客户端操作。
 
 V1 `22:38–22:43` 新提取并逐张检查 150 帧联系图，期间右侧始终为 Bot 信息和 Computer 预览；`22:40.000` 原尺寸帧可见名称输入、三个标签以及灰色屏幕占位。对照配置 `research/comparisons/101-details.json` 与 `101-new-chat.json` 分别生成本机叠图和差异图。新聊天截图按 `22:08.633` 对照的阈值诊断为约 2.76% 像素超过 32 色阶；电脑详情画面调整后约 3.40%。视频经过缩放压缩且原始视口未知，这些数值不是像素级一致性的验收结论。

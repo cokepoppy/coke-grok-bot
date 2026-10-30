@@ -18,6 +18,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .sidebar-scroll { position: absolute; top: 252px; bottom: 64px; left: 0; right: 0; overflow-y: auto; padding: 0 15px; scrollbar-width: thin; }
 .section-line { display: flex; align-items: center; justify-content: space-between; height: 51px; padding: 0 10px; color: #666; font-size: 14px; }
 .section-line.unassigned { height: 45px; }
+.bot-row-wrap { position: relative; }
+.sidebar-rename { position: absolute; z-index: 2; left: 64px; top: 15px; width: calc(100% - 74px); height: 25px; padding: 1px 3px; border: 1px solid #888; border-radius: 4px; background: #fff; color: #151515; font-size: 18px; }
+.sidebar-context-menu { position: fixed; z-index: 30; width: 200px; padding: 6px 8px; border: 1px solid #e3e3e3; border-radius: 12px; background: #fafafa; box-shadow: 0 9px 25px #0002; }
+.sidebar-context-menu button { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 7px; border: 0; border-radius: 5px; color: #171717; text-align: left; background: transparent; font-size: 13px; white-space: nowrap; }
+.sidebar-context-menu button:not(:disabled):hover, .sidebar-context-menu button:not(:disabled):focus-visible { background: #ededed; }
+.sidebar-context-menu button:disabled { color: #999; cursor: default; }
+.sidebar-context-menu button.danger { color: #d9878e; }
+.sidebar-menu-icon { flex: none; width: 14px; height: 14px; }
+.sidebar-menu-divider { height: 1px; background: #d9d9d9; margin: 4px 5px; }
 .bot-row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; height: 73px; padding: 6px 10px; border: 0; border-radius: 9px; text-align: left; color: inherit; background: transparent; }
 .bot-row:hover { background: #eaeaea; }
 .bot-row.selected { background: #e1e1e1; }

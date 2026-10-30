@@ -36,6 +36,15 @@ try{
  for(let i=0;i<100;i++){try{if((await fetch(publicUrl)).ok)break}catch{}if(i===99)throw new Error('Vite did not start');await new Promise(resolve=>setTimeout(resolve,100))}
  browser=await chromium.launch({executablePath:process.env.CHROME_BIN||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});const context=await browser.newContext(),page=await context.newPage();page.setDefaultTimeout(8000);
  await page.goto(publicUrl);await page.getByRole('link',{name:'Continue with Google'}).click();await page.getByRole('button',{name:'Create new Bot'}).click();
+ await page.locator('.bot-row.selected .bot-row-title > span').dblclick();await page.getByLabel('Rename Bot').fill('First bot');
+ const firstRename=page.waitForResponse(response=>response.request().method()==='PATCH'&&response.request().postDataJSON().name==='First bot');await page.getByLabel('Rename Bot').press('Enter');assert.equal((await firstRename).status(),200);
+ await page.getByRole('button',{name:'New chat'}).click();await page.getByRole('button',{name:'Create new Bot'}).click();
+ await page.locator('.bot-row').filter({hasText:'First bot'}).click({button:'right'});await page.getByRole('menuitem',{name:'Rename Bot'}).click();await page.getByLabel('Rename Bot').fill('Alpha bot');
+ const otherRename=page.waitForResponse(response=>response.request().method()==='PATCH'&&response.request().postDataJSON().name==='Alpha bot');await page.getByLabel('Rename Bot').press('Enter');assert.equal((await otherRename).status(),200);
+ assert.equal(await page.locator('.bot-row.selected').getByText('New Bot').count(),1);await page.reload();await page.locator('.bot-row').getByText('Alpha bot').waitFor();assert.equal(await page.locator('.bot-row.selected').getByText('New Bot').count(),1);
+ let renameAttempts=0;await page.route('**/api/bots/*',async route=>{if(route.request().method()!=='PATCH')return route.continue();renameAttempts++;await route.fetch();await route.fulfill({status:503,body:'{}'})});
+ await page.locator('.bot-row').filter({hasText:'Alpha bot'}).click({button:'right'});await page.getByRole('menuitem',{name:'Rename Bot'}).click();await page.getByLabel('Rename Bot').fill('Confirmed after reload');await page.getByLabel('Rename Bot').press('Enter');
+ await page.getByText('Could not confirm the Bot name was saved. Refresh to check.').waitFor();assert.equal(renameAttempts,1);await page.unroute('**/api/bots/*');await page.reload();await page.locator('.bot-row').getByText('Confirmed after reload').waitFor();assert.equal(await page.locator('.bot-row.selected').getByText('New Bot').count(),1);
  await page.getByRole('button',{name:'Show bot details'}).click();await page.getByLabel('Bot label').fill('research');const savedLabel=page.waitForResponse(response=>response.request().method()==='PATCH' && response.url().includes('/api/bots/'));await page.getByLabel('Bot label').press('Enter');assert.equal((await savedLabel).status(),200);
  await page.getByRole('button',{name:'Change Bot picture'}).click();
  let releaseAvatar!:()=>void; const avatarGate=new Promise<void>(resolve=>releaseAvatar=resolve); let avatarRequests=0;

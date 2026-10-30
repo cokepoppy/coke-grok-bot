@@ -86,6 +86,19 @@ function IconButton({ name, label, onClick, className = '' }: { name: IconName; 
   return <button type="button" className={`icon-button ${className}`} aria-label={label} title={label} onClick={onClick}><Icon name={name} /></button>;
 }
 
+function BotMenuIcon({name}:{name:'pin'|'folder'|'unread'|'rename'|'copy'|'hide'|'delete'}) {
+  const paths:Record<typeof name,React.ReactNode>={
+    pin:<><path d="m9 4 2-2 8 8-2 2-2-1-3 4-1 3-4-4-4 5-1-1 5-4-4-4 3-1 4-3z" /></>,
+    folder:<><path d="M3 18V5a2 2 0 0 1 2-2h5l2 2h6a2 2 0 0 1 2 2v4M3 18h8M17 14v7M13.5 17.5h7" /></>,
+    unread:<><path d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5zM10 20h4" /><circle cx="19" cy="5" r="2" fill="currentColor" stroke="none" /></>,
+    rename:<><path d="M19 13v6H4V4h7M11 15l-3 1 1-3 8-8 2 2zM16 6l2 2" /></>,
+    copy:<><rect x="8" y="3" width="12" height="14" rx="1" /><path d="M5 7H4v13h12v-1" /></>,
+    hide:<><path d="M3 3l18 18M4 7a15 15 0 0 0-2 5s3 6 10 6a11 11 0 0 0 4-1M8 5a12 12 0 0 1 4-1c7 0 10 8 10 8a13 13 0 0 1-3 4M10 10a3 3 0 0 0 4 4" /></>,
+    delete:<><path d="M4 6h16M9 3h6M7 6l1 14h8l1-14M10 10v7M14 10v7" /></>,
+  };
+  return <svg className="sidebar-menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
+
 type Account = { userId: string; tenantId: string; email: string; name: string; role: string };
 
 function ApprovalCard({approval, disabled, decide}: {approval:Approval; disabled:boolean; decide:(decision:'approved'|'denied')=>void}) {
@@ -140,6 +153,12 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
   const [panel, setPanel] = useState(false);
+  const [sidebarMenu,setSidebarMenu]=useState<{id:string;x:number;y:number}|null>(null);
+  const [sidebarRename,setSidebarRename]=useState<{id:string;value:string}|null>(null);
+  const sidebarRenameRef=useRef<{id:string;value:string}|null>(null);
+  const sidebarInput=useRef<HTMLInputElement>(null);
+  const sidebarMenuElement=useRef<HTMLDivElement>(null);
+  const sidebarRows=useRef<Record<string,HTMLButtonElement|null>>({});
   const [avatarEditor,setAvatarEditor]=useState<{id:string;shape:Shape;color:string}|null>(null);
   const avatarEditorRef=useRef<{id:string;shape:Shape;color:string}|null>(null);
   const avatarQueue=useRef<Record<string,Promise<void>>>({});
@@ -246,6 +265,13 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   useEffect(() => { avatarEditorRef.current=null; setAvatarEditor(null); }, [state.activeId]);
   useEffect(() => { if (avatarEditor) avatarDialog.current?.focus(); }, [avatarEditor?.id]);
   useEffect(() => { if(newChat) recipientInput.current?.focus(); }, [newChat]);
+  useEffect(() => { if(sidebarRename){ sidebarInput.current?.focus(); sidebarInput.current?.select(); } }, [sidebarRename?.id]);
+  useEffect(() => {
+    if(!sidebarMenu)return;
+    sidebarMenuElement.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    const onPointer=(event:PointerEvent)=>{if(!sidebarMenuElement.current?.contains(event.target as Node))setSidebarMenu(null)};
+    document.addEventListener('pointerdown',onPointer);return()=>document.removeEventListener('pointerdown',onPointer);
+  },[sidebarMenu]);
   useEffect(() => {
     const onKeyDown = (event:KeyboardEvent) => {
       if((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase()==='n' && !sendingRef.current) {
@@ -344,9 +370,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     if (!active) return;
     setState(current => ({ ...current, bots: current.bots.map(bot => bot.id === active.id ? { ...bot, name: name.slice(0, 60) } : bot) }));
   }
-  function saveBotName() {
-    if (!remote || !active) return;
-    const id = active.id, draftName = active.name, name = draftName.trim();
+  function saveBotName(id: string, draftName: string) {
+    const name = draftName.trim();
+    if (!remote) { if (name) setState(current=>({...current,bots:current.bots.map(bot=>bot.id===id&&bot.name===draftName?{...bot,name}:bot)})); return; }
     const restore = () => setState(current => ({ ...current, bots: current.bots.map(bot => bot.id === id && bot.name === draftName ? { ...bot, name: savedNames.current[id] || 'New Bot' } : bot) }));
     if (!name) {
       setBotError('Bot name cannot be empty.');
@@ -361,10 +387,22 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         if (!response.ok) throw new Error('rename failed');
         savedNames.current[id] = name;
         setState(current => ({ ...current, bots: current.bots.map(bot => bot.id === id && bot.name === draftName ? { ...bot, name } : bot) }));
-      } catch { restore(); setBotError('Could not save the Bot name. Please try again.'); }
+      } catch { setBotError('Could not confirm the Bot name was saved. Refresh to check.'); }
     });
     renameQueue.current[id] = next;
     void next.finally(() => { if (renameQueue.current[id] === next) delete renameQueue.current[id]; });
+  }
+  function beginSidebarRename(id:string) {
+    const bot=state.bots.find(item=>item.id===id);if(!bot)return;
+    const edit={id,value:bot.name};sidebarRenameRef.current=edit;setSidebarRename(edit);setSidebarMenu(null);
+  }
+  function finishSidebarRename(id:string,value:string) {
+    if(sidebarRenameRef.current?.id!==id)return;
+    sidebarRenameRef.current=null;setSidebarRename(null);
+    const name=value.trim();
+    if(!name){setBotError('Bot name cannot be empty.');return}
+    setState(current=>({...current,bots:current.bots.map(bot=>bot.id===id?{...bot,name:value}:bot)}));
+    saveBotName(id,value);
   }
   function saveBotLabel() {
     if(!active)return;
@@ -427,14 +465,26 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       <div className="sidebar-scroll">
         {reference && <><div className="section-line"><span>OLD</span><span>3</span></div><div className="section-line"><span>MISC</span><span>3</span></div></>}
         <div className="section-line unassigned"><span>Unassigned</span></div>
-        {filtered.map(bot => <button key={bot.id} type="button" className={`bot-row ${!newChat && bot.id === active?.id ? 'selected' : ''}`} onClick={() => selectBot(bot.id)}>
-          <Avatar bot={bot} size={46} /><span className="bot-row-content"><span className="bot-row-title">{bot.name}{bot.label && <small>{bot.label}</small>}</span><span className="bot-preview">{bot.preview}</span></span>
-        </button>)}
+        {filtered.map(bot => <div className="bot-row-wrap" key={bot.id}><button ref={element=>{sidebarRows.current[bot.id]=element}} type="button" className={`bot-row ${!newChat && bot.id === active?.id ? 'selected' : ''}`} aria-haspopup="menu" onClick={() => selectBot(bot.id)} onContextMenu={event=>{event.preventDefault();setSidebarMenu({id:bot.id,x:Math.max(0,Math.min(event.clientX,window.innerWidth-200)),y:Math.max(0,Math.min(event.clientY,window.innerHeight-265))})}}>
+          <Avatar bot={bot} size={46} /><span className="bot-row-content"><span className="bot-row-title"><span onDoubleClick={event=>{event.stopPropagation();beginSidebarRename(bot.id)}}>{bot.name}</span>{bot.label && <small>{bot.label}</small>}</span><span className="bot-preview">{bot.preview}</span></span>
+        </button>{sidebarRename?.id===bot.id && <input ref={sidebarInput} className="sidebar-rename" aria-label="Rename Bot" maxLength={60} value={sidebarRename.value} onChange={event=>{const edit={id:bot.id,value:event.target.value};sidebarRenameRef.current=edit;setSidebarRename(edit)}} onBlur={event=>finishSidebarRename(bot.id,event.currentTarget.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur()}else if(event.key==='Escape'){event.preventDefault();sidebarRenameRef.current=null;setSidebarRename(null);sidebarRows.current[bot.id]?.focus()}}} />}</div>)}
         {filtered.length === 0 && <p className="empty-list">No matching bots</p>}
       </div>
       {reference && <button type="button" className="more-unreads">↓&nbsp; More unreads</button>}
       <div className="sidebar-footer"><div className="account-dot">{account ? account.name.slice(0, 1).toUpperCase() : "M"}</div>{account && <button type="button" className="logout-button" onClick={onLogout}>Sign out</button>}<button type="button" className="connect-button" onClick={() => setNotice(true)}>Connect apps <span aria-hidden="true">◈◉▣</span></button></div>
     </aside>
+    {sidebarMenu && <div ref={sidebarMenuElement} role="menu" aria-label="Bot actions" className="sidebar-context-menu" style={{left:sidebarMenu.x,top:sidebarMenu.y}} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();const id=sidebarMenu.id;setSidebarMenu(null);sidebarRows.current[id]?.focus()}}}>
+      <button type="button" role="menuitem" disabled title="Not available yet"><BotMenuIcon name="pin" />Pin</button>
+      <button type="button" role="menuitem" disabled title="Not available yet"><BotMenuIcon name="folder" />Move to new section</button>
+      <button type="button" role="menuitem" disabled title="Not available yet"><BotMenuIcon name="unread" />Mark as Unread</button>
+      <div className="sidebar-menu-divider" />
+      <button type="button" role="menuitem" onClick={()=>beginSidebarRename(sidebarMenu.id)}><BotMenuIcon name="rename" />Rename Bot</button>
+      <div className="sidebar-menu-divider" />
+      <button type="button" role="menuitem" disabled title="Not available yet"><BotMenuIcon name="copy" />Copy conversation ID</button>
+      <div className="sidebar-menu-divider" />
+      <button type="button" role="menuitem" disabled title="Not available yet"><BotMenuIcon name="hide" />Hide from sidebar</button>
+      <button type="button" role="menuitem" disabled title="Not available yet" className="danger"><BotMenuIcon name="delete" />Delete</button>
+    </div>}
     <main className="main-shell">
       {!reference && <div className="preview-notice" role="status">{remote ? (piFeature === 'enabled' ? 'Pi 任务在你的云电脑执行；同一台电脑的任务会排队。' : 'Bot 和消息保存在服务器；尚未连接云电脑或 Agent。原预览数据仍在本地，不会自动导入。') : '本地界面预览：数据仅保存在当前浏览器，尚未连接云电脑或 Agent。'}</div>}
       {remote && piFeature === 'error' && <div role="alert">Could not check Agent availability. Refresh to try again.</div>}
@@ -467,7 +517,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
             </div>
             <form className="composer" onSubmit={event => { event.preventDefault(); void addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} disabled={composerDisabled} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() ? <button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote ? (piFeature === 'enabled' ? 'Send task' : 'Save message') : 'Save local message'}><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
           </section>
-          {panel && <aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" ref={avatarButton} aria-label="Change Bot picture" onClick={openAvatar}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => void saveBotName()} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && piFeature === 'enabled' ? <ComputerPanel name={active.name} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
+          {panel && <aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" ref={avatarButton} aria-label="Change Bot picture" onClick={openAvatar}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => saveBotName(active.id,active.name)} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && piFeature === 'enabled' ? <ComputerPanel name={active.name} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
         </div>
       </>}
       {avatarEditor && <div className="avatar-overlay" onMouseDown={event=>{if(event.target===event.currentTarget)closeAvatar()}}><section className="avatar-dialog" ref={avatarDialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Bot picture" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();closeAvatar()}else if(event.key==='Tab'){const choices=Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));const first=choices[0],last=choices.at(-1);if(event.shiftKey&&(document.activeElement===first||document.activeElement===event.currentTarget)){event.preventDefault();last?.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}}}}><header className="avatar-tabs"><button type="button" className="selected" aria-current="true">Bot</button><button type="button" disabled title="Not available yet">Generate</button><button type="button" disabled title="Not available yet">Upload</button><button type="button" disabled title="Not available yet">Reset</button></header><div className="avatar-shapes">{avatarShapes.map(shape=><button key={shape} type="button" aria-label={`Shape ${shape}`} aria-pressed={avatarEditor.shape===shape} onClick={()=>chooseAvatar({shape})}><Avatar bot={{shape,color:avatarEditor.color}} size={40} /></button>)}</div><div className="avatar-colors">{avatarColors.map(color=><button key={color} type="button" className="avatar-color" aria-label={`Color ${color}`} aria-pressed={avatarEditor.color.toLowerCase()===color} onClick={()=>chooseAvatar({color})}><span style={{background:color}} /></button>)}</div></section></div>}
