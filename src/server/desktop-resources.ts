@@ -3,10 +3,14 @@ import type { Session } from './tenant-store.ts';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export interface DesktopIdentity { namespace: string; ownerHash: string; workerToken: string; agentToken: string; controlToken: string }
+export function desktopOwnerHash(session:Pick<Session,'tenantId'|'userId'>):string {
+  if(!uuid.test(session.tenantId)||!uuid.test(session.userId))throw new Error('Invalid desktop identity');
+  return createHash('sha256').update(`${session.tenantId.toLowerCase()}:${session.userId.toLowerCase()}`).digest('hex').slice(0,32);
+}
 export function desktopIdentity(session: Pick<Session,'tenantId'|'userId'>, signingKey: Buffer): DesktopIdentity {
-  if (!uuid.test(session.tenantId) || !uuid.test(session.userId) || signingKey.length < 32) throw new Error('Invalid desktop identity');
+  if (signingKey.length < 32) throw new Error('Invalid desktop identity');
   const subject = `${session.tenantId.toLowerCase()}:${session.userId.toLowerCase()}`;
-  const ownerHash = createHash('sha256').update(subject).digest('hex').slice(0,32);
+  const ownerHash = desktopOwnerHash(session);
   const token = (role: string) => createHmac('sha256',signingKey).update(`coke-grok-desktop:${role}:${subject}`).digest('base64url');
   return { namespace:`grok-user-${ownerHash}`, ownerHash, workerToken:token('worker'), agentToken:token('agent'), controlToken:token('control') };
 }

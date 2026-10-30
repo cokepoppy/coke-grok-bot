@@ -10,6 +10,7 @@ const types:Record<string,{path:string;namespaced:boolean}>={
  NetworkPolicy:{path:'/apis/networking.k8s.io/v1/namespaces/{namespace}/networkpolicies',namespaced:true},
  Deployment:{path:'/apis/apps/v1/namespaces/{namespace}/deployments',namespaced:true},
  Service:{path:'/api/v1/namespaces/{namespace}/services',namespaced:true},
+ RoleBinding:{path:'/apis/rbac.authorization.k8s.io/v1/namespaces/{namespace}/rolebindings',namespaced:true},
 };
 const safeName=/^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$/;
 /** Narrow in-cluster API client; no shell, credentials in arguments, object logs, or overwrite. */

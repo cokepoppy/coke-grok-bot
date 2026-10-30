@@ -44,6 +44,7 @@ export function matchesExpectedResource(expected:KubernetesObject,actual:Kuberne
     return expected.type===actual.type && Boolean(values&&data) && Object.entries(values).every(([key,value])=>typeof data[key]==='string'&&data[key]===Buffer.from(value).toString('base64'));
   }
   if(expected.kind==='ConfigMap' && !isSubset(expected.data,actual.data)) return false;
+  if(expected.kind==='RoleBinding') return isSubset(expected.roleRef,actual.roleRef) && isSubset(expected.subjects,actual.subjects);
   return expected.spec===undefined || isSubset(expected.spec,actual.spec);
 }
 function isSubset(expected:unknown,actual:unknown):boolean {
