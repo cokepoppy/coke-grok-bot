@@ -191,9 +191,19 @@ try {
   assert.equal(await websiteDemo.locator('.site-demo-sidebar').evaluate(element => element.classList.contains('collapsed')), true);
   await websiteDemo.locator('.site-demo-layout').screenshot({ path: 'artifacts/ui/grok-bot-website-demo-computer.png', scale: 'device' });
   await websiteDemo.getByRole('button', { name: 'Open screen' }).first().click();
-  await websiteDemo.getByRole('dialog', { name: 'Sales Outbound computer screen' }).waitFor();
-  assert.equal(await websiteDemo.getByText('36 drafts queued', { exact: true }).count(), 1);
+  const screenDialog = websiteDemo.getByRole('dialog', { name: 'Sales Outbound computer screen' });
+  await screenDialog.waitFor();
+  assert.equal(await screenDialog.getByText('36 drafts queued', { exact: true }).count(), 1);
   await websiteDemo.locator('.site-demo-screen-overlay').screenshot({ path: 'artifacts/ui/grok-bot-website-demo-screen.png', scale: 'device' });
+  await websiteDemo.getByRole('button', { name: 'Hide Drafts queue' }).click();
+  assert.equal(await screenDialog.locator('.site-demo-window-front').count(), 0);
+  await websiteDemo.getByRole('button', { name: 'Hide CRM portal' }).click();
+  assert.equal(await screenDialog.locator('.site-demo-window-back').count(), 0);
+  await websiteDemo.getByRole('button', { name: 'Show CRM portal' }).click();
+  assert.equal(await screenDialog.locator('.site-demo-window-back').count(), 1);
+  await websiteDemo.getByRole('button', { name: 'Show Drafts queue' }).click();
+  assert.equal(await screenDialog.locator('.site-demo-window-front').count(), 1);
+  assert.equal(await screenDialog.getByText('36 drafts queued', { exact: true }).count(), 1);
   await websiteDemo.getByRole('button', { name: 'Close screen' }).click();
   await websiteDemo.getByLabel('Task results').getByText('52 accounts', { exact: false }).waitFor();
 

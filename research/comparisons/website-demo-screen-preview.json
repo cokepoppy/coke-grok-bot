@@ -1,0 +1,9 @@
+{
+  "id": "grok-bot-website-demo-screen-preview",
+  "reference": "../reference-images/grok-bot-website-demo-initial.png",
+  "referenceRect": { "x": 624, "y": 751, "width": 794, "height": 394 },
+  "implementationRect": { "x": 624, "y": 751, "width": 794, "height": 394 },
+  "output": "../../artifacts/reference-comparison/website-demo-screen-preview",
+  "threshold": 32,
+  "note": "Same-coordinate comparison isolates the screen preview visible inside the Computer card in the local initial-state capture (artifacts/ui/grok-bot-website-demo-window.png). The source depicts the initial state; do not compare this crop against the opened full-screen screen state. The bottom of the source preview is clipped; source CSS viewport, DPR, and color rendering remain unknown, so this score is diagnostic only."
+}

@@ -1,0 +1,9 @@
+{
+  "id": "grok-bot-website-demo-computer-card",
+  "reference": "../reference-images/grok-bot-website-demo-initial.png",
+  "referenceRect": { "x": 600, "y": 620, "width": 840, "height": 525 },
+  "implementationRect": { "x": 600, "y": 620, "width": 840, "height": 525 },
+  "output": "../../artifacts/reference-comparison/website-demo-computer-card",
+  "threshold": 32,
+  "note": "Same-coordinate comparison of the user-provided official x.ai/bot demo crop and the Computer card visible in the local initial-state capture (artifacts/ui/grok-bot-website-demo-window.png). The source depicts the initial state; do not compare this crop against the expanded Computer sidebar or full-screen screen state. The source CSS viewport, DPR, and font rasterization are unknown; this score is diagnostic, not proof of pixel parity."
+}

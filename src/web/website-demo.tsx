@@ -41,19 +41,37 @@ function Waveform() {
   return <div className="site-demo-waveform" aria-hidden="true">{[4, 6, 9, 12, 8, 14, 10, 6, 12, 15, 9, 5, 11, 14, 8, 5].map((height, index) => <i key={index} style={{ '--bar-height': `${height}px`, '--bar-delay': `${index * 45}ms` } as React.CSSProperties} />)}</div>;
 }
 
-function ComputerScreen({ large = false }: { large?: boolean }) {
+function ComputerScreen({ large = false, showCrm = true, showDraftsQueue = true }: { large?: boolean; showCrm?: boolean; showDraftsQueue?: boolean }) {
   return <div className={`site-demo-desktop ${large ? 'large' : ''}`} aria-label="Example computer screen">
     <div className="site-demo-mountain" />
-    <div className="site-demo-window-back">
-      <div className="site-demo-window-controls"><i /><i /><i /></div>
-      <div className="site-demo-placeholder wide" /><div className="site-demo-placeholder short" />
-      <div className="site-demo-checklist">{Array.from({ length: 7 }, (_, index) => <span key={index}><b>✓</b><i /></span>)}</div>
-    </div>
-    <div className="site-demo-window-front">
-      <div className="site-demo-window-controls"><i /><i /><i /></div>
-      <div className="site-demo-mini-title">Outreach queue</div>
-      {['Priya Natarajan', 'Marcus Webb', 'Elena Sørensen', 'Daniel Alvarez'].map(name => <div className="site-demo-contact" key={name}><b /> <span>{name}</span><small>Draft</small></div>)}
-    </div>
+    {showCrm && <div className="site-demo-window-back">
+      <div className="site-demo-window-controls"><i /><i /><i /><span className="site-demo-window-title-placeholder" /></div>
+      <div className="site-demo-back-body">
+        <aside className="site-demo-back-nav" aria-hidden="true">{['70%', '57%', '80%', '62%', '78%', '50%', '65%'].map((width, index) => <i key={index} style={{ width }} />)}</aside>
+        <div className="site-demo-back-sheet">
+          <div className="site-demo-back-sheet-head"><i /><i /></div>
+          <div className="site-demo-checklist">{Array.from({ length: 11 }, (_, index) => <span key={index}><b>✓</b><em /><i /></span>)}</div>
+          <div className="site-demo-back-foot">52 accounts</div>
+        </div>
+      </div>
+    </div>}
+    {showDraftsQueue && <div className="site-demo-window-front">
+      <div className="site-demo-window-controls"><i /><i /><i /><span className="site-demo-window-title-placeholder" /></div>
+      <div className="site-demo-mini-title"><span>Outreach queue</span><i /></div>
+      {[['Priya Natarajan', '82%'], ['Marcus Webb', '64%'], ['Elena Sørensen', '74%'], ['Daniel Alvarez', '58%']].map(([name, lineWidth]) => <div className="site-demo-contact" key={name}><b /><span className="site-demo-contact-copy"><span>{name}</span><i style={{ width: lineWidth }} /></span><small>Draft</small></div>)}
+      <div className="site-demo-queue-foot"><span>36 drafts queued</span><span>0 sent</span></div>
+    </div>}
+  </div>;
+}
+
+function ComputerAppDock({ showCrm, showDraftsQueue, toggleCrm, toggleDraftsQueue }: { showCrm: boolean; showDraftsQueue: boolean; toggleCrm: () => void; toggleDraftsQueue: () => void }) {
+  return <div className="site-demo-app-dock" role="toolbar" aria-label="Applications">
+    <button type="button" aria-label={`${showCrm ? 'Hide' : 'Show'} CRM portal`} aria-pressed={showCrm} onClick={toggleCrm}>
+      <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17" /><circle className="site-demo-compass-ring" cx="20" cy="20" r="12.5" /><path className="site-demo-compass-needle" d="m25.8 13.8-4.4 9-7.2 3.4 3.6-7.4z" /></svg>
+    </button>
+    <button type="button" aria-label={`${showDraftsQueue ? 'Hide' : 'Show'} Drafts queue`} aria-pressed={showDraftsQueue} onClick={toggleDraftsQueue}>
+      <svg viewBox="0 0 40 40" aria-hidden="true"><rect x="3" y="3" width="34" height="34" rx="9" /><path className="site-demo-mail" d="m8 13 12 9 12-9M8 13v14h24V13" /></svg>
+    </button>
   </div>;
 }
 
@@ -70,6 +88,8 @@ export function WebsiteDemoApp() {
   const [active, setActive] = useState('sales');
   const [computerOpen, setComputerOpen] = useState(false);
   const [screenOpen, setScreenOpen] = useState(false);
+  const [showCrm, setShowCrm] = useState(true);
+  const [showDraftsQueue, setShowDraftsQueue] = useState(true);
   const [screenResultsVisible, setScreenResultsVisible] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -91,6 +111,12 @@ export function WebsiteDemoApp() {
     setComputerOpen(false);
     setScreenOpen(false);
     setPickerOpen(false);
+  }
+
+  function openScreen() {
+    setShowCrm(true);
+    setShowDraftsQueue(true);
+    setScreenOpen(true);
   }
 
   return <main className="site-demo-stage">
@@ -131,7 +157,7 @@ export function WebsiteDemoApp() {
               <article className="site-demo-computer-card">
                 <div className="site-demo-computer-card-heading"><strong>Computer</strong><span><i />Done</span></div>
                 <p>Sign in to Salesforce so I can see the accounts you own.</p>
-                <button type="button" className="site-demo-open-screen" aria-label="Open screen" onClick={() => setScreenOpen(true)}><ComputerScreen /></button>
+                <button type="button" className="site-demo-open-screen" aria-label="Open screen" onClick={openScreen}><ComputerScreen /></button>
               </article>
               {screenResultsVisible && <div className="site-demo-result-summary" aria-label="Task results">
                 <p>Salesforce <span>list pulled · 52 accounts</span></p>
@@ -145,7 +171,7 @@ export function WebsiteDemoApp() {
         </section>
 
         {computerOpen && <aside className="site-demo-computer-panel" aria-label="Computer and routines">
-          <div className="site-demo-panel-label">Computer</div><button type="button" className="site-demo-panel-screen" aria-label="Open screen" onClick={() => setScreenOpen(true)}><ComputerScreen /></button>
+          <div className="site-demo-panel-label">Computer</div><button type="button" className="site-demo-panel-screen" aria-label="Open screen" onClick={openScreen}><ComputerScreen /></button>
           {!isNewAgent && <><div className="site-demo-routines-title">Routines</div><button type="button" className="site-demo-routine"><span>Overnight outbound</span><small>Every day</small></button></>}
         </aside>}
       </div>
@@ -154,7 +180,10 @@ export function WebsiteDemoApp() {
       {pickerOpen && <NewAgentPicker close={() => setPickerOpen(false)} create={createAgent} select={selectAgent} />}
       {screenOpen && <div className="site-demo-screen-overlay" role="dialog" aria-label={`${isNewAgent ? 'New agent' : selected.name} computer screen`}>
         <button type="button" className="site-demo-close-screen" aria-label="Close screen" onClick={() => { setScreenOpen(false); setScreenResultsVisible(true); }}>×</button>
-        <div className="site-demo-large-desktop"><ComputerScreen large /><div className="site-demo-draft-count"><span>36 drafts queued</span><span>0 sent</span></div></div>
+        <div className="site-demo-large-desktop">
+          <ComputerScreen large showCrm={showCrm} showDraftsQueue={showDraftsQueue} />
+          <ComputerAppDock showCrm={showCrm} showDraftsQueue={showDraftsQueue} toggleCrm={() => setShowCrm(value => !value)} toggleDraftsQueue={() => setShowDraftsQueue(value => !value)} />
+        </div>
       </div>}
     </section>
   </main>;
