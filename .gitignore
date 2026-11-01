@@ -4,7 +4,6 @@ dist/
 coverage/
 artifacts/
 data/
-releases/
 .env
 .env.*
 !.env.example
@@ -18,3 +17,10 @@ research/comparisons/local/
 
 # Reference screenshots are for local comparison only.
 research/reference-images/
+
+# Keep checkpoint metadata and small artifacts versioned; large OCI image
+# archives remain in the local release directory for recovery.
+!releases/
+!releases/**/artifacts/
+!releases/**/artifacts/**
+releases/**/images/*.tar

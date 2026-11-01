@@ -1,0 +1,19 @@
+# Local K3D path routing. Apply in the same dedicated namespace as auth.yaml.
+# Configure COKE_GROK_PUBLIC_ORIGIN and build VITE_BASE_PATH with /grok-bot/.
+# The external TLS proxy must preserve Host and the complete path.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: coke-grok-auth
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
+          - path: /grok-bot
+            pathType: Prefix
+            backend:
+              service:
+                name: coke-grok-auth
+                port:
+                  name: http

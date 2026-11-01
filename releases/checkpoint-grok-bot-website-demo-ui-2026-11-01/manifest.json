@@ -1,0 +1,61 @@
+{
+  "name": "checkpoint-grok-bot-website-demo-ui-2026-11-01",
+  "checkpointTag": "checkpoint/grok-bot-website-demo-ui-2026-11-01",
+  "sourceCommit": "ea13873",
+  "sourceCommitFull": "ea138734a12e8150b5926c77241086eb8d4123d5",
+  "baseMainCommit": "d5fe64ed2c706a77a5e904d0e98504b2ce2d5d01",
+  "builtAtUtc": "2026-11-01T00:02:52.553756674Z",
+  "platform": "linux/arm64",
+  "databaseSchema": "unchanged; no migration in this UI-only checkpoint",
+  "image": {
+    "name": "coke-grok-auth",
+    "tag": "checkpoint-website-demo-ui-2026-11-01",
+    "sourceTag": "sha-ea13873",
+    "imageId": "sha256:0b8861ee1e26c4144b2b70385a077ef8acf04d7324d665df9a933e8f1ea71b78",
+    "configDigest": "sha256:807d63144a9093afea0bc1eade1ad1e82a610d35f5132208feafca942fd81fd5",
+    "baseImage": "node:24-bookworm-slim@sha256:2af38505da611a8d2729ed2b6235f04613a4d5cf8b9340d3ca7b0ac54d1462a5",
+    "archive": "images/coke-grok-auth-ui-checkpoint-linux-arm64.tar"
+  },
+  "rollback": {
+    "imageTag": "coke-grok-auth:sha-5b66393",
+    "dockerImageId": "sha256:907fd460a285a2b6cf5b51aa944d04eeb88f2dc29b91b4054db54821f8a9acb1",
+    "observedPodImageId": "sha256:10d074ab31d0c35d3b5a42a87ac7d269214a239c9987f920a9118d1747d20abd",
+    "rootfsDiffIdsMatchRunningPod": true,
+    "verifiedLayerCount": 9,
+    "databaseAndPvcAction": "none"
+  },
+  "deployment": {
+    "clusterContext": "k3d-tp1121-sandbox-dev",
+    "clusterName": "tp1121-sandbox-dev",
+    "namespace": "coke-grok-bot",
+    "applied": false,
+    "observedBeforeCheckpoint": {
+      "deployment": "coke-grok-auth",
+      "readyReplicas": 1,
+      "desiredReplicas": 1,
+      "imageTag": "coke-grok-auth:sha-5b66393"
+    },
+    "vpsRole": "HTTPS reverse proxy and tunnel only; unchanged"
+  },
+  "build": {
+    "command": "VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build:deployment",
+    "result": "passed",
+    "uiE2eAndBuild": "passed earlier on this source state; details in research/README.md",
+    "fixedScreenshotComparison": {
+      "mae": 5.821758,
+      "changedPixelRatioThreshold32": 0.042910,
+      "maximumChannelDelta": 242,
+      "result": "diagnostic only; not pixel-perfect"
+    }
+  },
+  "artifacts": {
+    "source": "source/coke-grok-bot-ea13873.tar.gz",
+    "deploymentBundle": "artifacts/dist-ea13873.tar.gz",
+    "deploymentFiles": "deploy/",
+    "scripts": "scripts/",
+    "operationsLog": "docs/operations.md",
+    "checksums": "SHA256SUMS"
+  },
+  "secretsIncluded": false,
+  "userDataIncluded": false
+}
