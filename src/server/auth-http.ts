@@ -8,7 +8,7 @@ import type { ApprovalStore } from './approval-store.ts';
 import {parseUserAction,type UserComputer} from './user-computer.ts';
 import { parsePublicUrl } from './public-url.ts';
 import { cleanUploadName, uploadExtension, WorkspaceFileStore, validateUploadSize } from './file-store.ts';
-import type { WorkspaceFileTransport } from './workspace-file-client.ts';
+import { WorkspaceFileTransportError, type WorkspaceFileTransport } from './workspace-file-client.ts';
 
 // Mount only behind a trusted proxy that preserves the configured Host.
 export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi', files?:WorkspaceFileStore, workspaceFiles?:WorkspaceFileTransport) {
@@ -83,7 +83,11 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
             const stored={...file,sha256:receipt.sha256};
             if(!await files.saveUpload(session,stored)){await workspaceFiles.removeUpload(session,file.id,uploadExtension(name),AbortSignal.timeout(30_000)).catch(()=>undefined);return reply(404,{error:'Not found'})}
             return reply(201,{file:{id:stored.id,name:stored.name,mimeType:stored.mimeType,size:stored.size,sha256:stored.sha256,kind:stored.kind}});
-          }catch(error){return reply(error instanceof Error&&/Invalid|too large|size limit/i.test(error.message)?400:503,{error:error instanceof Error&&/Invalid|too large|size limit/i.test(error.message)?'Invalid file metadata':'File upload failed'})}
+          }catch(error){
+            const invalid=error instanceof Error&&/Invalid|too large|size limit/i.test(error.message);
+            console.error('Workspace file upload failed',{diagnostic:error instanceof WorkspaceFileTransportError?error.diagnosticCode:'UPLOAD_INTERNAL'});
+            return reply(invalid?400:503,{error:invalid?'Invalid file metadata':'File upload failed'});
+          }
         }
         if(req.method!=='GET')return reply(405,{error:'Method not allowed'});
         const file=await files.fileForDownload(session,fileDownloadMatch![1]);if(!file)return reply(404,{error:'Not found'});

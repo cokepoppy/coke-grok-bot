@@ -6,13 +6,28 @@ import type { DesktopConnections } from './pi-executor.ts';
 export interface WorkspaceUploadResult { size: number; sha256: string }
 export interface WorkspaceDownload { body: IncomingMessage; size: number }
 
+export class WorkspaceFileTransportError extends Error {
+  constructor(readonly diagnosticCode: string) {
+    super('Workspace file transport failed');
+    this.name = 'WorkspaceFileTransportError';
+  }
+}
+
+function networkDiagnostic(error: unknown): string {
+  if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' && /^[A-Z0-9_]{1,48}$/.test(error.code)) return `AGENT_NETWORK_${error.code}`;
+  return 'AGENT_NETWORK_ERROR';
+}
+
 /** Streams file bytes between the authenticated web request and the owner's private K3D Agent Pod. */
 export class WorkspaceFileTransport {
   constructor(private readonly desktops: DesktopConnections, private readonly request: typeof httpRequest = httpRequest) {}
 
   async upload(owner: RunOwner, input: { id: string; extension: string; mimeType: string; size: number; body: IncomingMessage }, signal: AbortSignal): Promise<WorkspaceUploadResult> {
-    const { endpoint, token } = await this.connection(owner, signal);
-    if (!/^[a-f0-9-]{36}$/i.test(input.id) || (input.extension && !/^[a-z0-9]{1,12}$/i.test(input.extension)) || !Number.isSafeInteger(input.size) || input.size < 1 || !/^[\w.+-]+\/[\w.+-]+$/.test(input.mimeType)) throw new Error('Invalid workspace upload');
+    let connection: { endpoint: URL; token: string };
+    try { connection = await this.connection(owner, signal); }
+    catch { throw new WorkspaceFileTransportError('BROKER_CONNECT'); }
+    const { endpoint, token } = connection;
+    if (!/^[a-f0-9-]{36}$/i.test(input.id) || (input.extension && !/^[a-z0-9]{1,12}$/i.test(input.extension)) || !Number.isSafeInteger(input.size) || input.size < 1 || !/^[\w.+-]+\/[\w.+-]+$/.test(input.mimeType)) throw new WorkspaceFileTransportError('INVALID_UPLOAD');
     const suffix = input.extension ? `.${input.extension.toLowerCase()}` : '';
     const target = new URL(`/v1/workspace/uploads/${input.id}${suffix}`, endpoint);
     return new Promise<WorkspaceUploadResult>((resolve, reject) => {
@@ -27,24 +42,24 @@ export class WorkspaceFileTransport {
       const upstream = this.request(target, { method: 'PUT', headers: { authorization: `Bearer ${token}`, 'content-type': input.mimeType, 'content-length': String(input.size) }, signal, timeout: 5 * 60_000 }, response => {
         const chunks: Buffer[] = []; let received = 0;
         response.on('data', (chunk: Buffer) => { received += chunk.length; if (received > 4096) { response.destroy(new Error('Agent response too large')); return; } chunks.push(chunk); });
-        response.on('error', error => finish(error));
+        response.on('error', error => finish(new WorkspaceFileTransportError(networkDiagnostic(error))));
         response.on('end', () => {
-          if (response.statusCode !== 201) return finish(new Error('Workspace upload failed'));
+          if (response.statusCode !== 201) return finish(new WorkspaceFileTransportError(`AGENT_HTTP_${response.statusCode || 0}`));
           try {
             const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
             if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
             const result = value as { size?: unknown; sha256?: unknown };
             if (result.size !== input.size || typeof result.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(result.sha256)) throw new Error();
             finish(undefined, { size: result.size, sha256: result.sha256.toLowerCase() });
-          } catch { finish(new Error('Invalid workspace upload receipt')); }
+          } catch { finish(new WorkspaceFileTransportError('AGENT_INVALID_RECEIPT')); }
         });
       });
-      const onAbort = () => { upstream.destroy(new Error('Workspace upload was cancelled')); input.body.destroy(); };
+      const onAbort = () => { upstream.destroy(); input.body.destroy(); finish(new WorkspaceFileTransportError('CANCELLED')); };
       const onBodyAborted = () => upstream.destroy(new Error('Client upload was interrupted'));
       signal.addEventListener('abort', onAbort, { once: true });
       input.body.once('aborted', onBodyAborted);
-      upstream.on('error', error => finish(error));
-      upstream.on('timeout', () => upstream.destroy(new Error('Agent upload timed out')));
+      upstream.on('error', error => finish(new WorkspaceFileTransportError(networkDiagnostic(error))));
+      upstream.on('timeout', () => { upstream.destroy(); finish(new WorkspaceFileTransportError('AGENT_TIMEOUT')); });
       input.body.on('error', error => upstream.destroy(error));
       input.body.pipe(upstream);
     });
