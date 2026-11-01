@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: private-secrets
-          image: coke-grok-desktop-broker:sha-ba9b386732a8b060f3d7a20b3b4fb4e86db7db75
+          image: coke-grok-desktop-broker:sha-766e026ac6a19a8587853f09f387df6ebd58a1f9
           imagePullPolicy: Never
           command: ["/bin/sh", "-ec", "umask 077; for name in cert.pem key.pem token desktop-signing-key gateway-cert.pem bootstrap-cert.pem bootstrap-token; do cp /source/$name /private/$name; done; chmod 600 /private/*; chown 1000:1000 /private/*"]
           securityContext:
@@ -48,7 +48,7 @@ spec:
               mountPath: /private
       containers:
         - name: broker
-          image: coke-grok-desktop-broker:sha-ba9b386732a8b060f3d7a20b3b4fb4e86db7db75
+          image: coke-grok-desktop-broker:sha-766e026ac6a19a8587853f09f387df6ebd58a1f9
           imagePullPolicy: Never
           ports:
             - name: https
