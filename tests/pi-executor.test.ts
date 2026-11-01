@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { ModelGateway } from '../src/server/model-gateway.ts';
 import { PiExecutor } from '../src/server/pi-executor.ts';
 import { RunDiagnosticError } from '../src/server/run-diagnostics.ts';
+import type { BotMemory, BotMemoryStore } from '../src/server/bot-memory-store.ts';
 import type { AgentRun, RunOwner } from '../src/server/run-store.ts';
 const owner:RunOwner={tenantId:randomUUID(),userId:randomUUID()};
 const hash=createHash('sha256').update(`${owner.tenantId}:${owner.userId}`).digest('hex').slice(0,32);
@@ -59,4 +60,33 @@ test('Pi forwards tenant attachment metadata and returns only Agent-reported art
   const body=JSON.parse(String(init?.body));assert.deepEqual(body.attachments,attached.files.filter(file=>file.kind==='input').map(({kind,...file})=>file));return Response.json({status:'done',message:'Read the file and wrote a summary.',files:[artifact]});
  });
  try{assert.deepEqual(await executor.execute(owner,attached,new AbortController().signal,randomUUID()),{status:'completed',result:'Read the file and wrote a summary.',artifacts:[artifact]})}finally{gateway.close()}
+});
+
+test('Pi persists an explicit durable memory request before dispatch and reports the committed result',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const leaseId=randomUUID(),stored:BotMemory={id:randomUUID(),title:'Bot preference',content:'when I ask for an acceptance marker, use exactly GKBOT_TEST_MARKER.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+ const memoryCalls:Array<{scope:unknown;title:unknown;content:unknown}>=[];
+ const memories={list:async()=>[],remember:async(scope:unknown,title:unknown,content:unknown)=>{memoryCalls.push({scope,title,content});return stored},forget:async()=>true} as unknown as BotMemoryStore;
+ const explicitRun={...run,prompt:'Please remember this lasting preference for this Bot: when I ask for an acceptance marker, use exactly GKBOT_TEST_MARKER. This is a synthetic test value, not a secret. Confirm after saving it. Do not use the computer.'};
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
+  const body=JSON.parse(String(init?.body));assert.equal(body.memory.mode,'mediated');assert.match(body.prompt,/Saved memory for this Bot/);assert.match(body.prompt,/GKBOT_TEST_MARKER/);return Response.json({status:'done',message:'I will use GKBOT_TEST_MARKER.'});
+ },memories);
+ try{
+  const result=await executor.execute(owner,explicitRun,new AbortController().signal,leaseId);
+  assert.equal(memoryCalls.length,1);assert.equal(memoryCalls[0].title,'Bot preference');assert.match(String(memoryCalls[0].content),/GKBOT_TEST_MARKER/);
+  assert.deepEqual(memoryCalls[0].scope,{runId:run.id,leaseId,botId:run.botId,owner});assert.equal(result.result,'I will use GKBOT_TEST_MARKER.\n\nSaved to this Bot’s memory.');
+ }finally{gateway.close()}
+});
+
+test('Pi never persists a sensitive explicit memory and reports that accurately',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const memoryCalls:{remember:number}={remember:0};
+ const memories={list:async()=>[],remember:async()=>{memoryCalls.remember++;return null},forget:async()=>true} as unknown as BotMemoryStore;
+ const sensitiveRun={...run,prompt:'Please remember this lasting preference for this Bot: my password is synthetic-placeholder-value. This is a synthetic test value, not a secret. Confirm after saving it. Do not use the computer.'};
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
+  const body=JSON.parse(String(init?.body));assert.match(body.prompt,/explicit memory request was not saved because it contains sensitive information/i);return Response.json({status:'done',message:'Saved successfully.'});
+ },memories);
+ try{
+  const result=await executor.execute(owner,sensitiveRun,new AbortController().signal,randomUUID());assert.equal(memoryCalls.remember,0);assert.match(result.result,/This memory was not saved/);
+ }finally{gateway.close()}
 });

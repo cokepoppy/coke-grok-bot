@@ -2,9 +2,11 @@ import type { AgentRun, RunOwner } from './run-store.ts';
 import type { RunExecutor, ExecutionResult } from './run-scheduler.ts';
 import type { ModelGateway } from './model-gateway.ts';
 import type { BotMemoryStore } from './bot-memory-store.ts';
+import { containsSensitiveData } from './bot-memory-store.ts';
 import type { BotMemoryRunScope } from './bot-memory-bridge.ts';
 import { createHash } from 'node:crypto';
 import { agentHttpDiagnostic, RunDiagnosticError } from './run-diagnostics.ts';
+import { explicitMemoryRequest } from './explicit-memory-request.ts';
 
 export interface DesktopConnection { agentUrl: URL; agentToken: string }
 export interface DesktopConnections { connect(owner:RunOwner, signal:AbortSignal):Promise<DesktopConnection> }
@@ -25,17 +27,32 @@ export class DesktopAgentExecutor implements RunExecutor {
     if(endpoint.protocol!=='http:' || ![`desktop.grok-user-${ownerHash}.svc.cluster.local`,`agent.grok-user-${ownerHash}.svc.cluster.local`].includes(endpoint.hostname) || endpoint.port!=='8083' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || endpoint.pathname!=='/' || !/^[A-Za-z0-9_-]{43}$/.test(desktop.agentToken)) throw new Error('Invalid desktop endpoint');
     const memoryScope:BotMemoryRunScope={runId:run.id,leaseId,botId:run.botId,owner};
     let storedMemories:Awaited<ReturnType<BotMemoryStore['list']>>=[];
+    let explicitMemorySave:'saved'|'blocked'|'unavailable'|null=null;
     if(this.memories) {
       try { storedMemories=await this.memories.list(memoryScope); }
       catch { throw new RunDiagnosticError('bot_memory_preload_failed'); }
       if(!storedMemories)throw new RunDiagnosticError('bot_memory_scope_invalid');
+      const explicit=explicitMemoryRequest(run.prompt);
+      if(explicit) {
+        if(containsSensitiveData(`${explicit.title}\n${explicit.content}`)) explicitMemorySave='blocked';
+        else {
+          try {
+            const saved=await this.memories.remember(memoryScope,explicit.title,explicit.content);
+            if(saved) {
+              explicitMemorySave='saved';
+              storedMemories=[saved,...storedMemories.filter(memory=>memory.id!==saved.id)];
+            } else explicitMemorySave='unavailable';
+          } catch { explicitMemorySave='unavailable'; }
+        }
+      }
     }
     let capability:string;
     try { capability=this.gateway.issue({ttlMs:14*60_000,calls:100,scope:{...memoryScope}}); }
     catch { throw new RunDiagnosticError('capability_issue_failed'); }
     try {
       const memoryContext=this.memories?formatBotMemory(storedMemories||[]):'';
-      const prompt=`${memoryContext}${run.prompt}\n\nWhen your work finishes, return a JSON object with exactly these fields: {"status":"done" or "failed","message":"<the user-facing result>"}. Use done only if the requested work succeeded; use failed if it could not be completed, and explain what happened. Report actual outcomes only.`;
+      const explicitNotice=explicitMemorySave==='saved'?'\n\nThe control plane has already persisted the user’s explicit memory request for this Bot. Confirm that accurately.':explicitMemorySave==='blocked'?'\n\nThe explicit memory request was not saved because it contains sensitive information. Do not claim that it was saved.':explicitMemorySave==='unavailable'?'\n\nThe control plane could not confirm that the explicit memory request was saved. Do not claim that it was saved.':'';
+      const prompt=`${memoryContext}${run.prompt}${explicitNotice}\n\nWhen your work finishes, return a JSON object with exactly these fields: {"status":"done" or "failed","message":"<the user-facing result>"}. Use done only if the requested work succeeded; use failed if it could not be completed, and explain what happened. Report actual outcomes only.`;
       const attachments=run.files.filter(file=>file.kind==='input').map(file=>({id:file.id,name:file.name,mimeType:file.mimeType,size:file.size,sha256:file.sha256,storageKey:file.storageKey}));
       let response:Response;
       try {
@@ -53,7 +70,11 @@ export class DesktopAgentExecutor implements RunExecutor {
       const result=value as {status?:unknown;message?:unknown;pausedForControl?:unknown;files?:unknown};
       // A pause may have interrupted an operation after a side effect. Reconciliation is required.
       if (!['done','failed'].includes(String(result.status)) || result.pausedForControl===true || typeof result.message!=='string' || !result.message.trim()) throw new RunDiagnosticError('agent_result_unconfirmed');
-      const safe=result.message.split(capability).join('[redacted]').split(desktop.agentToken).join('[redacted]').slice(0,20000);
+      let safe=result.message.split(capability).join('[redacted]').split(desktop.agentToken).join('[redacted]').slice(0,20000);
+      if(explicitMemorySave==='saved') safe+=/\p{Script=Han}/u.test(run.prompt)?'\n\n已保存到此 Bot 的记忆中。':'\n\nSaved to this Bot’s memory.';
+      else if(explicitMemorySave==='blocked') safe+=/\p{Script=Han}/u.test(run.prompt)?'\n\n这条记忆未保存；密码、密钥和联系方式应存放在 Vault 中。':'\n\nThis memory was not saved; keep passwords, keys, and contact details in the Vault.';
+      else if(explicitMemorySave==='unavailable') safe+=/\p{Script=Han}/u.test(run.prompt)?'\n\n我无法确认这条记忆已保存，请稍后重试。':'\n\nI could not confirm that this memory was saved. Please try again later.';
+      safe=safe.slice(0,20000);
       return {status:result.status==='done'?'completed':'failed',result:safe,...(result.status==='done'&&Array.isArray(result.files)?{artifacts:result.files}:{})};
     } finally { this.gateway.revoke(capability); }
   }

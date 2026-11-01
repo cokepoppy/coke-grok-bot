@@ -210,3 +210,11 @@ Google 登录的公网 Bot 1030 上，一条仅要求保存合成测试偏好的
 为定位公网 `unknown` 而不保存模型错误正文、任务提示词或密钥，调度器现在把 Agent 连接、记忆预加载、Agent HTTP 状态、响应校验、租约丢失、用户中断和结果写回等失败映射到固定枚举码，并写入 `agent_run_events.detail`。普通未分类异常只记录为 `executor_error`；Agent 4xx 只保存状态类别。`npm run test:runtime`（53）、`COKE_GROK_TEST_MYSQL_PORT=50762 npm run test:runtime-mysql`（14）和 `npx tsc --noEmit` 通过。
 
 该诊断版 Auth 镜像 `coke-grok-auth:sha-d636ac4` 已导入 K3D，并只滚动 `coke-grok-auth` Deployment 到 1/1 Ready；公网 readiness 为 204，重启日志只含一条启动行且无错误。Agent、Desktop Broker、namespace bootstrap、用户 Desktop Pod 和 workspace PVC 未重启或改动。现有 Bot 1030 只读 unknown 仍 pending；部署后未创建新任务，因为 CUA 仍禁用本地浏览器控制，无法在签名态 UI 中完成 owner recovery 或提交新的授权任务。诊断码不追溯旧运行，需在用户队列恢复后对新的 unknown 读取 `agent_run_events.detail` 才能定位阶段。
+
+### 2026-11-01 明确记忆请求的持久化候选修复
+
+为区分 Agent 失败与模型漏调工具，通过公网域名用独立合成身份各发送一次无副作用的记忆保存任务。两次 Pi 任务都完成，第二次模型还在回复中复述了 marker，但 `bot_memories` 仍为空且没有失败诊断码；这证明不能把模型的文字确认当成持久化证据。临时用户、Bot、运行、消息和它自己的 K3D namespace 均已清理，没有重放旧任务或改动真实用户队列。
+
+当前未提交候选在 Auth 的 Pi/DSH executor 增加服务端显式请求兜底：只识别用户直接消息开头的、未否定的长期偏好/规则等保存指令；内容仍通过 `BotMemoryStore` 的同一 owner、Bot、run、lease 校验和敏感数据筛查。写入完成后再派发 Agent，并把确定的保存状态放入上下文及最终回复；内容被拦截或写入未确认时明确告知用户，避免模型误称已保存。其他自主记忆判断仍由 `bot_memory` 工具完成；随附引用、网页/文件内容不会触发这个显式解析器。
+
+验证：`npm run test:runtime`（58）、`COKE_GROK_TEST_MYSQL_PORT=50762 npm run test:runtime-mysql`（14）、`npx tsc --noEmit` 和完整部署构建通过。固定公网 Agent 镜像的隔离 K3D Pi/DSH 记忆保存、跨运行召回与 Bot 隔离测试通过（8 次模型调用）。该 Auth 修复尚未部署至公网候选，且当前 Work 仍禁用本地浏览器控制，因此尚无已登录 Google UI 的公网 E2E 证据；不能据此宣布记忆功能验收或打 Bot Memory checkpoint tag。
