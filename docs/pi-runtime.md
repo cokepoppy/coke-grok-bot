@@ -187,6 +187,14 @@ Product behavior and source limits are recorded in `research/README.md`: officia
 
 真实集成测试最初暴露出一处 runtime 转发缺口：Pi/DSH memory adapters 已注册，但 Agent 主进程没有把 `memory.mode` 传入子进程。现已修复并增加 `tests/agent-runtime-memory.test.mjs`，只接受 `mediated` 模式且只转发该 allowlisted 字段；Pi、DSH 回归测试均通过。
 
-固定候选 Agent 镜像 `coke-grok-desktop:sha-1ad636bc3b941eb24034c5831a842095bda941f5` 已在隔离 K3D 用户 namespace 中通过真实 Pi/DSH + DeepSeek E2E（27 次模型调用）：复核了分离的 Agent/Desktop Pod、真实浏览器/桌面/终端操作、截图绑定审批和用户接管中断；Pi 保存一条 Bot 记忆，DSH 保存另一条，后续 Pi 运行取回两条；第二个 Bot 的数据库记录数为 0。该 E2E namespace、10 GiB 测试 PVC 与临时数据库已删除。公网候选尚未滚动；已有 E2E Test Bot、浏览器登录态、线上 MySQL 和 10 GiB 桌面 PVC 保持未改动。
+固定候选 Agent 镜像 `coke-grok-desktop:sha-1ad636bc3b941eb24034c5831a842095bda941f5` 已在隔离 K3D 用户 namespace 中通过真实 Pi/DSH + DeepSeek E2E（27 次模型调用）：复核了分离的 Agent/Desktop Pod、真实浏览器/桌面/终端操作、截图绑定审批和用户接管中断；Pi 保存一条 Bot 记忆，DSH 保存另一条，后续 Pi 运行取回两条；第二个 Bot 的数据库记录数为 0。该 E2E namespace、10 GiB 测试 PVC 与临时数据库已删除。
 
-当前源码测试通过：`npm run test:runtime`（53）、`COKE_GROK_TEST_MYSQL_PORT=50762 npm run test:runtime-mysql`（14）、`COKE_GROK_TEST_MYSQL_PORT=50762 npm run test:run-browser`、`npm run test:ui`、`npm test`、`npm run build:deployment`。它们覆盖 Agent runtime 透传、Bot/租户隔离、live-lease、模型网关、Pi/DSH 工具、敏感数据拒绝和刷新安全的模拟 UI 流程。仍需在已登录公网 Chrome 中实测记忆保存、跨运行召回和清除；不要把本地/K3D 结果描述为公网验收或完整 Grok Bot 等价。在用户最终验收之前，不创建 checkpoint tag、发布目录或恢复记忆。
+当前源码测试通过：`npm run test:runtime`（53）、`COKE_GROK_TEST_MYSQL_PORT=50762 npm run test:runtime-mysql`（14）、`COKE_GROK_TEST_MYSQL_PORT=50762 npm run test:run-browser`、`npm run test:ui`、`npm test`、`npm run build:deployment`。它们覆盖 Agent runtime 透传、Bot/租户隔离、live-lease、模型网关、Pi/DSH 工具、敏感数据拒绝和刷新安全的模拟 UI 流程。不要把本地/K3D 结果描述为公网验收或完整 Grok Bot 等价。
+
+### 2026-11-01 已登录公网 Bot Memory 候选复核
+
+公网候选已滚动到本机 K3D：Auth `coke-grok-auth:sha-14c7229d6557c614d7af986ed873ad416b9e1ad0` 为 1/1 Ready、readiness 返回 204；个人 Agent `coke-grok-desktop:sha-8fccb502ae2205e1279a8d99b55b5212bc8f28d9` 与 Desktop `coke-grok-desktop:sha-889648b1dfa6049eee2eb989700325e8097252dc` 均为 1/1 Ready。未重启 K3D 或清理个人电脑；原 Desktop Pod UID `182718d4-1b6b-4abe-9880-5603720a9026` 未变，10 GiB `workspace` PVC UID `636987df-fa44-45f8-be00-bd8e88282b89` 仍 Bound。
+
+Google 登录的公网 Bot 1030 上，一条仅要求保存合成测试偏好的任务和随后一条只读记忆查询都很快变成 `unknown`，二者都没有结果；对测试标记的数据库核对显示没有保存记录。两条运行都经历 queued → running → unknown，约 1–2 秒内进入 unknown。第一条经过复核后由 owner 确认未知并恢复队列；第二条只读查询仍是 pending，继续阻塞队列。Agent 只记录启动行，当前调度器会隐藏执行异常，故根因尚未定位。没有重试，也没有删除现有记忆或用户数据。尝试检查页面时 CUA 返回 Work 设置禁用本地浏览器控制，无法继续通过已登录 Chrome 完成恢复/召回验收。
+
+因此真实隔离 K3D Pi/DSH 记忆验证已通过，公网候选服务 Ready，但公网记忆保存、召回与清除没有验收通过。当前实现仍是候选；保持唯一分支 `codex/grok-bot-bot-memory`，不把该公网状态描述为成功，也不在此状态创建“通过验收”的 tag、发布目录或正式回退记忆。
