@@ -149,7 +149,7 @@ The first public computer request returned `Service unavailable`. Inspection fou
 
 After the correction, same-origin `GET /api/computer` returned `{"owner":"agent"}`, `GET /api/computer/screenshot` returned the real 1440x900 Chromium desktop, and a fresh signed-in page load showed the Bot computer preview with `Bot is in control`. Agent and Desktop are both 1/1 on `coke-grok-desktop:sha-889648b1dfa6049eee2eb989700325e8097252dc`; the existing 10 GiB workspace PVC remains Bound.
 
-One explicitly read-only public computer task was submitted once. It persisted, but the UI and MySQL-backed run history report `unknown`; the event sequence is queued → running → unknown and has no result. Do not retry this non-idempotent request automatically. The public computer-control and screenshot path now pass, but a successful public Pi response is not proven. The unknown run is unresolved and the scheduler blocks more runs for that user; recovery currently requires an explicit, reviewed resolution path, which this branch does not yet provide. No runtime tag/release or merge to `main` should be made on this evidence.
+During the initial public computer smoke, one explicitly read-only task persisted as `unknown`, with events queued → running → unknown and no result. At that point the scheduler correctly blocked additional runs and there was no owner recovery UI, so automatic retry was avoided. The owner-confirmed recovery candidate below later resolved this state by preserving the original unknown record and completing a separate replacement. This paragraph records the initial failure state; see the candidate evidence below for the current result.
 
 ## 2026-11-01 owner-confirmed unknown-run recovery candidate
 
