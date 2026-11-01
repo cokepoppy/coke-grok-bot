@@ -5,7 +5,7 @@ import {once} from 'node:events';
 import assert from 'node:assert/strict';
 import {desktopIdentity,splitDesktopResources} from '../src/server/desktop-resources.ts';
 const image=process.env.COKE_GROK_DESKTOP_TEST_IMAGE;if(!image)throw new Error('Pinned desktop image required');
-const identity=desktopIdentity({tenantId:randomUUID(),userId:randomUUID()},randomBytes(32));let created=false,forward:import('node:child_process').ChildProcess|undefined;
+const identity=desktopIdentity({tenantId:randomUUID(),userId:randomUUID()},randomBytes(32)),screenId=randomUUID();let created=false,forward:import('node:child_process').ChildProcess|undefined;
 async function exec(args:string[],input?:string,timeout=120_000){const child=spawn('kubectl',args,{stdio:['pipe','pipe','pipe']});let out='';child.stdout.setEncoding('utf8');child.stdout.on('data',c=>{out+=c});child.stderr.resume();child.stdin.end(input);const timer=setTimeout(()=>child.kill('SIGKILL'),timeout);try{const [code]=await once(child,'close') as [number|null];return {code:code??1,out}}finally{clearTimeout(timer)}}
 async function run(args:string[],input?:string,timeout?:number){const r=await exec(args,input,timeout);if(r.code!==0)throw new Error(`Kubernetes test failed: ${args.slice(0,3).join(' ')}`);return r.out}
 try{
@@ -24,7 +24,7 @@ try{
  const controlPresent=await run(['-n',identity.namespace,'exec',agent,'-c','agent','--','node','-e',"process.stdout.write(process.env.COKE_GROK_CONTROL_TOKEN?'present':'absent')"]);assert.equal(controlPresent,'absent');
  forward=spawn('kubectl',['-n',identity.namespace,'port-forward','service/desktop',':8082'],{stdio:['ignore','pipe','pipe']});forward.stderr!.resume();
  const port=await new Promise<number>((resolve,reject)=>{let out='';forward!.stdout!.on('data',c=>{out+=String(c);const m=out.match(/127\.0\.0\.1:(\d+) -> 8082/);if(m)resolve(Number(m[1]))});forward!.once('exit',()=>reject(new Error('Port-forward exited')));setTimeout(()=>reject(new Error('Port-forward timeout')),15000).unref()});
- const change=(owner:string)=>fetch(`http://127.0.0.1:${port}/v1/control`,{method:'POST',headers:{authorization:`Bearer ${identity.controlToken}`,'content-type':'application/json'},body:JSON.stringify({owner}),signal:AbortSignal.timeout(5000)});
+ const change=(owner:string)=>fetch(`http://127.0.0.1:${port}/v1/control`,{method:'POST',headers:{authorization:`Bearer ${identity.controlToken}`,'x-coke-grok-screen-id':screenId,'content-type':'application/json'},body:JSON.stringify({owner}),signal:AbortSignal.timeout(5000)});
  assert.equal((await change('user')).status,200);assert.equal((await change('agent')).status,200);
  await run(['-n',identity.namespace,'rollout','restart','deployment/agent']);await run(['-n',identity.namespace,'rollout','status','deployment/agent','--timeout=150s'],undefined,160_000);
  const newAgent=await find('grok-agent','metadata.name'),persisted=await run(['-n',identity.namespace,'exec',newAgent,'-c','agent','--','node','-e',"process.stdout.write(require('fs').readFileSync('/workspace/shared-test.txt','utf8'))"]);assert.equal(persisted,'SHARED_OK');

@@ -47,12 +47,12 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  await approvals.purgeExpiredScreenshots();
  const bridge=new ComputerBridge(runs,approvals,scope=>{
   const identity=desktopIdentity(scope.owner,signingKey);
-  return new HttpGuardedComputerWorker(scope.owner,new URL(`http://desktop.${identity.namespace}.svc.cluster.local:8082/`),identity.controlToken,scope.runId);
+  return new HttpGuardedComputerWorker(scope.owner,scope.botId,new URL(`http://desktop.${identity.namespace}.svc.cluster.local:8082/`),identity.controlToken,scope.runId);
  });
- const computer=new UserComputer(owner=>{
+ const computer=new UserComputer((owner,botId)=>{
   const identity=desktopIdentity(owner,signingKey);
   // The task identifier is unused by the user-facing methods; it is required by the scoped worker constructor.
-  return new HttpGuardedComputerWorker(owner,new URL(`http://desktop.${identity.namespace}.svc.cluster.local:8082/`),identity.controlToken,'00000000-0000-4000-8000-000000000000');
+  return new HttpGuardedComputerWorker(owner,botId,new URL(`http://desktop.${identity.namespace}.svc.cluster.local:8082/`),identity.controlToken,'00000000-0000-4000-8000-000000000000');
  },async(owner,signal)=>{await provisioner.connect(owner,signal)});
  const memoryBridge=new BotMemoryBridge(memories);
  const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals,bridge,memoryBridge);

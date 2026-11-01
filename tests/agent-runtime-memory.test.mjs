@@ -34,17 +34,17 @@ test('Agent runtime forwards only mediated Bot memory to Pi and DSH adapters',as
     }
     assert.equal(ready,true,'Agent runtime must become ready');
     for(const engine of ['pi','dsh']){
-      const taskId=randomUUID(),extra='memory-extra-field-must-not-reach-adapter';
-      const response=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId,cwd:`tasks/${taskId}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},memory:{mode:'mediated',token:extra}})});
+      const taskId=randomUUID(),botId=randomUUID(),extra='memory-extra-field-must-not-reach-adapter';
+      const response=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId,botId,screenId:botId,cwd:`tasks/${taskId}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},memory:{mode:'mediated',token:extra}})});
       assert.equal(response.status,200);assert.equal((await response.json()).status,'done');
       const captured=JSON.parse(await readFile(join(dir,`${taskId}.json`),'utf8'));
       assert.deepEqual(captured.memory,{mode:'mediated'},`${engine} must receive only the validated memory mode`);
       assert.equal(JSON.stringify(captured).includes(extra),false,`${engine} must not receive caller-supplied bridge credentials`);
-      const plainTask=randomUUID();
-      const plain=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId:plainTask,cwd:`tasks/${plainTask}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'}})});
+      const plainTask=randomUUID(),plainBot=randomUUID();
+      const plain=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId:plainTask,botId:plainBot,screenId:plainBot,cwd:`tasks/${plainTask}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'}})});
       assert.equal(plain.status,200);const plainInput=JSON.parse(await readFile(join(dir,`${plainTask}.json`),'utf8'));assert.equal(Object.hasOwn(plainInput,'memory'),false);
-      const invalidTask=randomUUID();
-      const invalid=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId:invalidTask,cwd:`tasks/${invalidTask}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},memory:{mode:'untrusted',token:extra}})});
+      const invalidTask=randomUUID(),invalidBot=randomUUID();
+      const invalid=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId:invalidTask,botId:invalidBot,screenId:invalidBot,cwd:`tasks/${invalidTask}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},memory:{mode:'untrusted',token:extra}})});
       assert.equal(invalid.status,400);assert.equal(await access(join(dir,`${invalidTask}.json`)).then(()=>true,()=>false),false,'invalid memory bridge input must fail before starting an adapter');
     }
   }finally{

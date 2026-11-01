@@ -43,7 +43,7 @@ try{
  const identity=desktopIdentity(owner,randomBytes(32));namespace=identity.namespace;
  const cert=join(dir,'cert.pem'),key=join(dir,'key.pem');await run('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',key,'-out',cert,'-days','1','-subj','/CN=host.k3d.internal','-addext','subjectAltName=DNS:host.k3d.internal']);
  let workerPort=0;const workerTransport:typeof fetch=async(url,init)=>fetch(`http://127.0.0.1:${workerPort}${new URL(String(url)).pathname}`,init);
- const bridge=new ComputerBridge(runs,approvals,scope=>new HttpGuardedComputerWorker(scope.owner,new URL(`http://desktop.${namespace}.svc.cluster.local:8082/`),identity.controlToken,scope.runId,workerTransport));
+ const bridge=new ComputerBridge(runs,approvals,scope=>new HttpGuardedComputerWorker(scope.owner,scope.botId,new URL(`http://desktop.${namespace}.svc.cluster.local:8082/`),identity.controlToken,scope.runId,workerTransport));
  const captureScreenshot=bridge.screenshot.bind(bridge),inspectComputer=bridge.inspect.bind(bridge);
  bridge.screenshot=async(...args:Parameters<typeof bridge.screenshot>)=>{dshComputerScreenshots++;return captureScreenshot(...args)};
  bridge.inspect=async(...args:Parameters<typeof bridge.inspect>)=>{dshComputerInspections++;return inspectComputer(...args)};
@@ -61,12 +61,12 @@ try{
  await run('kubectl',['-n',namespace,'rollout','status','deployment/agent','--timeout=150s'],undefined,160_000);await run('kubectl',['-n',namespace,'rollout','status','deployment/desktop','--timeout=150s'],undefined,160_000);
  const pod=(await run('kubectl',['-n',namespace,'get','pods','-l','app=grok-agent','-o','jsonpath={.items[0].metadata.name}'])).trim();workerPort=await portForward('desktop',8082);const agentPort=await portForward('agent',8083);
  const reserve=netServer();reserve.listen(0,'127.0.0.1');await once(reserve,'listening');const apiPort=(reserve.address() as import('node:net').AddressInfo).port;await new Promise<void>(resolve=>reserve.close(()=>resolve()));const origin=`http://127.0.0.1:${apiPort}`,base=origin+'/grok-bot',provider:IdentityProvider={authorizationUrl:()=>'',exchange:async()=>({})};
- const userComputer=new UserComputer(scope=>new HttpGuardedComputerWorker(scope,new URL(`http://desktop.${namespace}.svc.cluster.local:8082/`),identity.controlToken,randomUUID(),workerTransport));
+ const userComputer=new UserComputer((scope,botId)=>new HttpGuardedComputerWorker(scope,botId,new URL(`http://desktop.${namespace}.svc.cluster.local:8082/`),identity.controlToken,randomUUID(),workerTransport));
  server=createAuthServer(new GoogleAuthService(ids,provider,base),base,undefined,bots,runs,approvals,userComputer);server.listen(apiPort,'127.0.0.1');await once(server,'listening');
  const apiCookie=`coke_grok_session=${cookie}`,path=`${base}/api/bots/${bot.id}/runs`,requestId=randomUUID();
  const submitRun=async(botId:string,prompt:string)=>{const response=await fetch(`${base}/api/bots/${botId}/runs`,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({requestId:randomUUID(),prompt})});assert.equal(response.status,200);return (await response.json() as {run:{id:string}}).run};
  const awaitRun=async(botId:string,runId:string)=>{const url=`${base}/api/bots/${botId}/runs`;for(let i=0;i<240;i++){const response=await fetch(url,{headers:{cookie:apiCookie}}),rows=(await response.json() as {runs:{id:string;status:string;result:string|null}[]}).runs,found=rows.find(value=>value.id===runId);assert.ok(found);if(found.status==='completed')return found;if(found.status==='failed'||found.status==='unknown')throw new Error(`Memory E2E task ended ${found.status}; resultLength=${found.result?.length||0}; memoryCalls=${JSON.stringify(memoryCalls)}`);await sleep(1000)}throw new Error(`Memory E2E task timed out; memoryCalls=${JSON.stringify(memoryCalls)}`)};
- const userPost=(route:string,body:unknown)=>fetch(`${base}/api/computer/${route}`,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify(body)});
+ const userPost=(route:string,body:unknown)=>fetch(`${base}/api/bots/${bot.id}/computer/${route}`,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify(body)});
  const executor=new PiExecutor({connect:async()=>({agentUrl:new URL(`http://agent.${namespace}.svc.cluster.local:8083/`),agentToken:identity.agentToken})},gateway,`https://host.k3d.internal:${gatewayAddr.port}/v1`,'deepseek-v4.1-flash',async(url,init)=>fetch(`http://127.0.0.1:${agentPort}${new URL(String(url)).pathname}`,init),memories);
  const dshRequest:typeof fetch=async(url,init)=>fetch(`http://127.0.0.1:${agentPort}${new URL(String(url)).pathname}`,init);
  const dshExecutor=new DshExecutor({connect:async()=>({agentUrl:new URL(`http://agent.${namespace}.svc.cluster.local:8083/`),agentToken:identity.agentToken})},gateway,`https://host.k3d.internal:${gatewayAddr.port}/v1`,'deepseek-v4.1-flash',dshRequest,memories);
@@ -74,7 +74,7 @@ try{
  const submit=await fetch(path,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({requestId,prompt:'Use computer_browser to inspect the current page. The Submit test button increments a counter, so click it exactly once and never click it again. After that, inspect the page and report success only if it says MEDIATED_CLICK_OK.'})});assert.equal(submit.status,200);const {run:task}=await submit.json() as {run:{id:string}};
  const fixture=`<!doctype html><title>Mediated test</title><button onclick="document.getElementById('result').textContent='MEDIATED_CLICK_OK '+(++window.clickCount)">Submit test</button><p id="result">Waiting</p><script>window.clickCount=0</script>`;
  await run('kubectl',['-n',namespace,'exec',pod,'-c','agent','--','node','-e',`const f=require('fs'),p='/workspace/tasks/${task.id}';f.mkdirSync(p,{recursive:true,mode:0o770});f.writeFileSync(p+'/fixture.html',${JSON.stringify(fixture)},{mode:0o664})`]);
- const workerRequest=(path:string,body?:unknown)=>fetch(`http://127.0.0.1:${workerPort}${path}`,{method:body===undefined?'GET':'POST',headers:{authorization:`Bearer ${identity.controlToken}`,...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});
+ const workerRequest=(path:string,body?:unknown)=>fetch(`http://127.0.0.1:${workerPort}${path}`,{method:body===undefined?'GET':'POST',headers:{authorization:`Bearer ${identity.controlToken}`,'x-coke-grok-screen-id':bot.id,...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});
  const snap=await workerRequest('/v1/guarded/snapshot');assert.equal(snap.status,200);const open=await workerRequest('/v1/guarded/execute',{expected:await snap.json(),action:{kind:'browser',action:'open_artifact',taskId:task.id,path:'fixture.html'}});assert.equal(open.status,200);await sleep(1500);
  scheduler=new RunScheduler(runs,executor,{concurrency:1,leaseSeconds:30});await scheduler.tick();let approved=0,status='';
  for(let i=0;i<220;i++){
@@ -169,6 +169,7 @@ try{
  await scheduler.stop();scheduler=new RunScheduler(runs,executor,{concurrency:1,leaseSeconds:30});
  }
  if(memoryOnly)scheduler=new RunScheduler(runs,executor,{concurrency:1,leaseSeconds:30});
+ if(!scheduler)throw new Error('Run scheduler was not configured for this test');
  const piMarker=`GROK_MEMORY_PI_${randomUUID().replaceAll('-','').slice(0,16)}`;
  const piMemorySave=await submitRun(bot.id,`Please remember this lasting preference for this Bot: when I ask for an acceptance marker, use exactly ${piMarker}. This is a synthetic test value, not a secret. Confirm after saving it. Do not use the computer.`);
  await scheduler.tick();const piMemorySaved=await awaitRun(bot.id,piMemorySave.id);assert.ok(piMemorySaved.result?.includes(piMarker));const [piMemoryRows]=await pool.execute('SELECT memory_text FROM bot_memories WHERE bot_id=? AND memory_text LIKE ?',[bot.id,`%${piMarker}%`]) as [Array<{memory_text:string}>,unknown];assert.ok(piMemoryRows.length>0,'Pi must persist the direct-user memory through bot_memory');

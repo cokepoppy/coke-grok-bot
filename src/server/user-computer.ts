@@ -12,10 +12,11 @@ export interface UserComputerWorker {
 export class UserComputer {
  private readonly preparing=new Map<string,Promise<void>>();
  constructor(
-  private readonly worker:(owner:Pick<Session,'tenantId'|'userId'>)=>UserComputerWorker,
+  private readonly worker:(owner:Pick<Session,'tenantId'|'userId'>,botId:string)=>UserComputerWorker,
   private readonly ensure?: (owner:Pick<Session,'tenantId'|'userId'>,signal:AbortSignal)=>Promise<void>,
  ){}
- private async getWorker(owner:Session,signal:AbortSignal):Promise<UserComputerWorker>{
+ private async getWorker(owner:Session,botId:string,signal:AbortSignal):Promise<UserComputerWorker>{
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(botId))throw new Error('Invalid Bot screen');
   if(this.ensure){
    const key=`${owner.tenantId.toLowerCase()}:${owner.userId.toLowerCase()}`;
    let pending=this.preparing.get(key);
@@ -26,12 +27,12 @@ export class UserComputer {
    await pending;
    if(signal.aborted)throw new Error('Computer request was cancelled');
   }
-  return this.worker(owner);
+  return this.worker(owner,botId);
  }
- async control(owner:Session,signal:AbortSignal){return (await this.getWorker(owner,signal)).control(signal)}
- async screenshot(owner:Session,signal:AbortSignal){return (await this.getWorker(owner,signal)).userScreenshot(signal)}
- async setControl(owner:Session,value:'agent'|'user',signal:AbortSignal){return (await this.getWorker(owner,signal)).setControl(value,signal)}
- async action(owner:Session,input:unknown,signal:AbortSignal){return (await this.getWorker(owner,signal)).userAction(parseUserAction(input),signal)}
+ async control(owner:Session,botId:string,signal:AbortSignal){return (await this.getWorker(owner,botId,signal)).control(signal)}
+ async screenshot(owner:Session,botId:string,signal:AbortSignal){return (await this.getWorker(owner,botId,signal)).userScreenshot(signal)}
+ async setControl(owner:Session,botId:string,value:'agent'|'user',signal:AbortSignal){return (await this.getWorker(owner,botId,signal)).setControl(value,signal)}
+ async action(owner:Session,botId:string,input:unknown,signal:AbortSignal){return (await this.getWorker(owner,botId,signal)).userAction(parseUserAction(input),signal)}
 }
 
 export function parseUserAction(value:unknown):UserComputerAction {

@@ -86,3 +86,32 @@ test('runs are deduplicated, isolated, serialized per computer and never silentl
     const outputFile=completedFiles.find(file=>file.kind==='output')!;assert.equal((await runs.fileForDownload(sa,outputFile.id))?.storageKey,`tasks/${attachedRun.id}/artifacts/summary.txt`);assert.equal(await runs.fileForDownload(sb,outputFile.id),null);
   } finally { await pool.end(); await admin.query(`DROP DATABASE \`${database}\``); await admin.end(); }
 });
+
+test('separate Bot screens can be leased in parallel while each Bot queue remains serial',async()=>{
+  const database=`grok_screen_runs_${randomUUID().replaceAll('-','')}`,admin=await mysql.createConnection({host:'127.0.0.1',port,user:'root'});
+  await admin.query(`CREATE DATABASE \`${database}\``);
+  const pool=mysql.createPool({host:'127.0.0.1',port,user:'root',database,timezone:'Z',connectionLimit:8});
+  try{
+    const identities=new TenantStore(pool);await identities.migrate();const bots=new BotStore(pool);await bots.migrate();const runs=new RunStore(pool);await runs.migrate();
+    const identity=await identities.signInGoogle({subject:'bot-screens',email:'screens@example.test',name:'Screen Owner'}),session:Session={...identity,email:'screens@example.test',name:'Screen Owner',role:'owner'};
+    const botA=await bots.create(session,{name:'A',shape:'hex',color:'#abcdef'}),botB=await bots.create(session,{name:'B',shape:'round',color:'#abcdef'});
+    const first=await runs.create(session,botA.id,randomUUID(),'A first'),queuedSame=await runs.create(session,botA.id,randomUUID(),'A second'),parallel=await runs.create(session,botB.id,randomUUID(),'B first'),queuedB=await runs.create(session,botB.id,randomUUID(),'B second');
+    assert.ok(first&&queuedSame&&parallel&&queuedB);
+    const screens=await runs.queuedScreens(10);assert.deepEqual(new Set(screens.map(screen=>screen.botId)),new Set([botA.id,botB.id]));
+    const [claimA,claimB]=await Promise.all([runs.claimNext({...session,botId:botA.id},30),runs.claimNext({...session,botId:botB.id},30)]);
+    assert.equal(claimA?.run.id,first.id);assert.equal(claimB?.run.id,parallel.id);
+    assert.equal(await runs.claimNext({...session,botId:botA.id},30),null);
+    assert.equal(await runs.hasLiveLease(session,claimA!.run.id,claimA!.leaseId,botA.id),true);
+    assert.equal(await runs.hasLiveLease(session,claimA!.run.id,claimA!.leaseId,botB.id),false);
+    assert.equal(await runs.markUnknown(claimA!.run.id,claimA!.leaseId),true);
+    assert.deepEqual((await runs.queuedScreens(10)).map(screen=>screen.botId),[]);
+    assert.equal(await runs.finish(claimB!.run.id,claimB!.leaseId,'completed','B finished'),true);
+    assert.deepEqual((await runs.queuedScreens(10)).map(screen=>screen.botId),[botB.id]);
+    const nextB=await runs.claimNext({...session,botId:botB.id},30);assert.equal(nextB?.run.id,queuedB.id);
+    assert.equal(await runs.finish(nextB!.run.id,nextB!.leaseId,'completed','B second finished'),true);
+    await runs.resolveUnknown(session,claimA!.run.id,'acknowledge');
+    assert.deepEqual((await runs.queuedScreens(10)).map(screen=>screen.botId),[botA.id]);
+    const nextA=await runs.claimNext({...session,botId:botA.id},30);assert.equal(nextA?.run.id,queuedSame.id);
+    assert.equal(await runs.finish(nextA!.run.id,nextA!.leaseId,'completed','A second finished'),true);
+  }finally{await pool.end();await admin.query(`DROP DATABASE \`${database}\``);await admin.end()}
+});

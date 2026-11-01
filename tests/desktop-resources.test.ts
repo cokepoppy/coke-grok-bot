@@ -20,6 +20,7 @@ test('desktop identities separate users and tenants and resources do not expose 
  assert.equal(pod.containers[1].securityContext.readOnlyRootFilesystem,true);
  assert.deepEqual(pod.containers[1].env.find((entry:any)=>entry.name==='DOTS_DESKTOP_AGENT_ADAPTERS').value.split(','),['pi','dsh']);
  assert.deepEqual(Object.keys(JSON.parse(pod.containers[1].env.find((entry:any)=>entry.name==='DOTS_AGENT_KERNELS_JSON').value)).sort(),['dsh','pi']);
+ assert.equal(pod.containers[0].env.find((entry:any)=>entry.name==='COKE_DESKTOP_SCREEN_SLOTS').value,'8');
  assert.equal(JSON.stringify(resources).includes('COKE_GROK_MODEL_KEY'),false);
  assert.throws(()=>desktopResources(identity,{image:'coke-grok-desktop:latest',controlNamespace:'coke-grok-bot',gatewayCA:'BEGIN CERTIFICATE'}));
 });

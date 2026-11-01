@@ -41,7 +41,7 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
       automountServiceAccountToken:false,securityContext:{runAsNonRoot:true,fsGroup:1000,seccompProfile:{type:'RuntimeDefault'}},
       containers:[
         {name:'desktop',image:options.image,imagePullPolicy:'Never',
-          env:[secretEnv('LINUX_DESKTOP_WORKER_TOKEN','worker'),secretEnv('DOTS_AGENT_RUNTIME_TOKEN','agent'),...(options.guarded?[secretEnv('COKE_GROK_CONTROL_TOKEN','control'),{name:'COKE_GROK_GUARDED_MODE',value:'1'}]:[]),{name:'COKE_DESKTOP_VNC_AUTH_MODE',value:'gateway'},{name:'COKE_DESKTOP_RESOLUTION',value:'1440x900'},{name:'COKE_DESKTOP_CHROME_NO_SANDBOX',value:'1'}],
+          env:[secretEnv('LINUX_DESKTOP_WORKER_TOKEN','worker'),secretEnv('DOTS_AGENT_RUNTIME_TOKEN','agent'),...(options.guarded?[secretEnv('COKE_GROK_CONTROL_TOKEN','control'),{name:'COKE_GROK_GUARDED_MODE',value:'1'}]:[]),{name:'COKE_DESKTOP_VNC_AUTH_MODE',value:'gateway'},{name:'COKE_DESKTOP_RESOLUTION',value:'1440x900'},{name:'COKE_DESKTOP_SCREEN_SLOTS',value:'8'},{name:'COKE_DESKTOP_CHROME_NO_SANDBOX',value:'1'}],
           securityContext:security(1000,false),resources:{requests:{cpu:'200m',memory:'512Mi'},limits:{cpu:'2',memory:'2Gi'}},
           ports:[{name:'novnc',containerPort:6080},{name:'worker',containerPort:8082}],
           startupProbe:{httpGet:{path:'/healthz',port:8082},periodSeconds:5,timeoutSeconds:5,failureThreshold:36},

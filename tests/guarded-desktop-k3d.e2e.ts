@@ -4,7 +4,7 @@ import {once} from 'node:events';
 import assert from 'node:assert/strict';
 import {desktopIdentity,desktopResources} from '../src/server/desktop-resources.ts';
 const image=process.env.COKE_GROK_DESKTOP_TEST_IMAGE;if(!image)throw new Error('Pinned desktop image required');
-const identity=desktopIdentity({tenantId:randomUUID(),userId:randomUUID()},randomBytes(32));let created=false,forward:import('node:child_process').ChildProcess|undefined;
+const identity=desktopIdentity({tenantId:randomUUID(),userId:randomUUID()},randomBytes(32)),screenId=randomUUID();let created=false,forward:import('node:child_process').ChildProcess|undefined;
 async function exec(args:string[],input?:string,timeout=120_000){const child=spawn('kubectl',args,{stdio:['pipe','pipe','pipe']});let out='';child.stdout.setEncoding('utf8');child.stdout.on('data',chunk=>{out+=chunk});child.stderr.resume();child.stdin.end(input);const timer=setTimeout(()=>child.kill('SIGKILL'),timeout);try{const [code]=await once(child,'close') as [number|null];return {code:code??1,out}}finally{clearTimeout(timer)}}
 async function run(args:string[],input?:string,timeout?:number){const r=await exec(args,input,timeout);if(r.code!==0)throw new Error(`Kubernetes test failed: ${args.slice(0,3).join(' ')}`);return r.out}
 try{
@@ -17,7 +17,7 @@ try{
  await run(['-n',identity.namespace,'exec',pod,'-c','agent','--','node','-e',`const f=require('fs'),p='/workspace/tasks/${taskId}';f.mkdirSync(p,{recursive:true,mode:0o770});f.writeFileSync(p+'/guard.html',${JSON.stringify(fixture)},{mode:0o664})`]);
  forward=spawn('kubectl',['-n',identity.namespace,'port-forward','service/desktop',':8082'],{stdio:['ignore','pipe','pipe']});forward.stderr!.resume();
  const port=await new Promise<number>((resolve,reject)=>{let out='';forward!.stdout!.on('data',chunk=>{out+=String(chunk);const m=out.match(/127\.0\.0\.1:(\d+) -> 8082/);if(m)resolve(Number(m[1]))});forward!.once('exit',()=>reject(new Error('Port-forward exited')));setTimeout(()=>reject(new Error('Port-forward timed out')),15000).unref()});
- const request=(path:string,token:string,body?:unknown)=>fetch(`http://127.0.0.1:${port}${path}`,{method:body===undefined?'GET':'POST',headers:{authorization:`Bearer ${token}`,...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(15000)});
+ const request=(path:string,token:string,body?:unknown)=>fetch(`http://127.0.0.1:${port}${path}`,{method:body===undefined?'GET':'POST',headers:{authorization:`Bearer ${token}`,'x-coke-grok-screen-id':screenId,...(body===undefined?{}:{'content-type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(15000)});
  assert.equal((await request('/v1/guarded/snapshot',identity.workerToken)).status,403);
  assert.equal((await request('/v1/browser',identity.workerToken,{action:'inspect'})).status,403);
  assert.equal((await request('/v1/commands',identity.controlToken,{action:'click',actor:'agent',x:1,y:1})).status,403);

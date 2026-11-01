@@ -85,8 +85,8 @@ export class ModelGateway {
       }
       if (computerRoute) {
         const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
-        if(!this.computer||!grant.scope?.owner)return fail(404);
-        const scope:RunScope={...grant.scope,owner:grant.scope.owner};
+        if(!this.computer||!grant.scope?.owner||!grant.scope.botId)return fail(404);
+        const scope:RunScope={...grant.scope,owner:grant.scope.owner,botId:grant.scope.botId};
         const disconnected=new AbortController();res.once('close',()=>disconnected.abort());
         const signal=AbortSignal.any([grant.abort.signal,disconnected.signal,AbortSignal.timeout(30_000)]);
         try {

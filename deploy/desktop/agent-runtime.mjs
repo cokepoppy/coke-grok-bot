@@ -30,7 +30,9 @@ const mimeByExtension = new Map(Object.entries({
 }));
 const allowedEngines = new Set(String(process.env.DOTS_DESKTOP_AGENT_ADAPTERS || '').split(',').map(value => value.trim()).filter(value => ['pi', 'dsh'].includes(value)));
 const configured = parseAdapterConfig(process.env.DOTS_AGENT_KERNELS_JSON || '{}');
-let active = null;
+const maxParallelTasks = Number(process.env.COKE_GROK_AGENT_PARALLELISM || 2);
+if (!Number.isSafeInteger(maxParallelTasks) || maxParallelTasks < 1 || maxParallelTasks > 2) throw new Error('COKE_GROK_AGENT_PARALLELISM must be 1 or 2');
+const active = new Map();
 const queue = [];
 
 if (!token) throw new Error('DOTS_AGENT_RUNTIME_TOKEN is required');
@@ -61,11 +63,11 @@ async function readJson(req) {
   return chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
 }
 
-async function controlOwner(modelConfig) {
+async function controlOwner(modelConfig, screenId) {
   const mediated = process.env.COKE_GROK_MEDIATED_COMPUTER === '1';
   const target = mediated ? `${modelConfig.baseUrl}/computer/control` : `http://127.0.0.1:${workerPort}/v1/control`;
   const credential = mediated ? modelConfig.apiKey : process.env.LINUX_DESKTOP_WORKER_TOKEN;
-  const response = await fetch(target, { headers: { authorization: `Bearer ${credential}` }, signal: AbortSignal.timeout(3000), redirect:'error' });
+  const response = await fetch(target, { headers: { authorization: `Bearer ${credential}`,...(!mediated?{'x-coke-grok-screen-id':screenId}:{}) }, signal: AbortSignal.timeout(3000), redirect:'error' });
   if (!response.ok) throw new Error('desktop control state is unavailable');
   return (await response.json()).owner;
 }
@@ -322,7 +324,10 @@ function sanitizeAdapterDiagnostic(value, secrets = []) {
 function runKernel(input, requestSignal) {
   return new Promise((resolve, reject) => {
     if (requestSignal?.aborted) return reject(new Error('Agent task was cancelled'));
-    const entry = { input, requestSignal, resolve, reject, onAbort: null };
+    const botId=String(input.botId||''),screenId=String(input.screenId||botId);
+    if(!fileIdPattern.test(botId)||screenId!==botId)return reject(new Error('A matching Bot screen id is required'));
+    if(queue.length>=100)return reject(new Error('Agent task queue is full'));
+    const entry = { input, botId, requestSignal, resolve, reject, onAbort: null };
     entry.onAbort = () => {
       const index = queue.indexOf(entry);
       if (index < 0) return;
@@ -335,17 +340,26 @@ function runKernel(input, requestSignal) {
   });
 }
 
-async function drainQueue() {
-  if (active || !queue.length) return;
-  const entry = queue.shift();
-  const slot = { taskId: String(entry.input.taskId || ''), child: null, abort: null, interruptedByUser: false };
-  active = slot;
+function drainQueue() {
+  while(active.size<maxParallelTasks) {
+    const index=queue.findIndex(entry=>!active.has(entry.botId));
+    if(index<0)return;
+    const entry=queue.splice(index,1)[0];
+    entry.requestSignal?.removeEventListener('abort',entry.onAbort);
+    if(entry.requestSignal?.aborted){entry.reject(new Error('Agent task was cancelled'));continue;}
+    const slot = { botId:entry.botId, taskId: String(entry.input.taskId || ''), child: null, abort: null, interruptedByUser: false };
+    active.set(entry.botId,slot);
+    void executeQueued(entry,slot);
+  }
+}
+
+async function executeQueued(entry,slot) {
   try { entry.resolve(await executeKernel(entry.input, entry.requestSignal, slot)); }
   catch (error) { entry.reject(error); }
   finally {
-    entry.requestSignal?.removeEventListener('abort', entry.onAbort);
-    active = null;
-    void drainQueue();
+    entry.requestSignal?.removeEventListener('abort',entry.onAbort);
+    if(active.get(entry.botId)===slot)active.delete(entry.botId);
+    drainQueue();
   }
 }
 
@@ -357,6 +371,8 @@ async function executeKernel(input, requestSignal, slot) {
   if (!adapter) throw new Error(`Agent kernel '${engine}' is enabled but no adapter is installed in this image`);
   const taskId = String(input.taskId || '');
   if (!/^[a-f0-9-]{8,64}$/i.test(taskId)) throw new Error('Task id is invalid');
+  const botId=String(input.botId||''),screenId=String(input.screenId||botId);
+  if(!fileIdPattern.test(botId)||screenId!==botId||slot.botId!==botId)throw new Error('A matching Bot screen id is required');
   const prompt = String(input.prompt || '').trim();
   if (!prompt || prompt.length > 20_000) throw new Error('Task prompt must contain 1–20000 characters');
   if (requestSignal?.aborted) throw new Error('Agent task was cancelled');
@@ -366,7 +382,7 @@ async function executeKernel(input, requestSignal, slot) {
   const dingtalkCalendarBridge = validateDingTalkCalendarBridge(input.dingtalkCalendarBridge);
   const dingtalkMinutesBridge = validateDingTalkMinutesBridge(input.dingtalkMinutesBridge);
   const dingtalkSecretaryBridge = validateDingTalkSecretaryBridge(input.dingtalkSecretaryBridge);
-  if (await controlOwner(modelConfig) !== 'agent') return { taskId, status: 'waiting', pausedForControl: true, message: '电脑目前由你控制。我已暂停这项工作；交还电脑后点击“继续”即可恢复。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
+  if (await controlOwner(modelConfig,screenId) !== 'agent') return { taskId, status: 'waiting', pausedForControl: true, message: '电脑目前由你控制。我已暂停这项工作；交还电脑后点击“继续”即可恢复。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
 
   const cwd = await safeTaskWorkspace(input.cwd, taskId);
   const attachments = await prepareTaskAttachments(input.attachments, cwd);
@@ -393,13 +409,14 @@ async function executeKernel(input, requestSignal, slot) {
   child.stdout.on('data', chunk => { stdout = (stdout + chunk.toString()).slice(-500_000); });
   child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-8_000); });
   child.stdin.end(JSON.stringify({
-    engine, prompt: `${prompt}${attachmentPrompt}`, cwd, workspace, taskId, attachments,
+    engine, prompt: `${prompt}${attachmentPrompt}`, cwd, workspace, taskId, botId, screenId, attachments,
     sessionId: typeof input.sessionId === 'string' ? input.sessionId : null,
     modelConfig,
     ...(memory ? { memory } : {}),
-    computer: process.env.COKE_GROK_MEDIATED_COMPUTER === '1' ? { mode:'mediated', gatewayUrl:modelConfig.baseUrl, gatewayToken:modelConfig.apiKey } : {
+    computer: process.env.COKE_GROK_MEDIATED_COMPUTER === '1' ? { mode:'mediated', gatewayUrl:modelConfig.baseUrl, gatewayToken:modelConfig.apiKey, screenId } : {
       baseUrl: `http://127.0.0.1:${workerPort}`,
       workerToken: process.env.LINUX_DESKTOP_WORKER_TOKEN,
+      screenId,
       actions: ['navigate', 'click', 'type', 'screenshot'],
     },
     ...(dingtalkDocumentsBridge ? { dingtalkDocumentsBridge } : {}),
@@ -408,7 +425,7 @@ async function executeKernel(input, requestSignal, slot) {
     ...(dingtalkSecretaryBridge ? { dingtalkSecretaryBridge } : {}),
   }));
   const timer = setTimeout(() => child.kill('SIGTERM'), 14 * 60_000);
-  const controlPoll = setInterval(() => { void controlOwner(modelConfig).then(owner => { if (owner === 'user') pauseActive(); }).catch(() => child.kill('SIGTERM')); }, 1500);
+  const controlPoll = setInterval(() => { void controlOwner(modelConfig,screenId).then(owner => { if (owner === 'user') pauseActive(botId); }).catch(() => child.kill('SIGTERM')); }, 1500);
   const onRequestAbort = () => abort.abort();
   requestSignal?.addEventListener('abort', onRequestAbort, { once: true });
   abort.signal.addEventListener('abort', () => { child.kill('SIGTERM'); setTimeout(() => child.kill('SIGKILL'), 2000).unref(); }, { once: true });
@@ -467,10 +484,19 @@ async function enableIncidentGitAccess(childEnv) {
   return socket;
 }
 
-function pauseActive() {
-  if (!active?.child) return;
-  active.interruptedByUser = true;
-  active.abort?.abort();
+function pauseActive(botId) {
+  const slot=active.get(botId);
+  if (!slot?.child) return false;
+  slot.interruptedByUser = true;
+  slot.abort?.abort();
+  return true;
+}
+
+function stopActive(botId) {
+  const slot=active.get(botId);
+  slot?.abort?.abort();
+  slot?.child?.kill('SIGTERM');
+  return Boolean(slot);
 }
 
 http.createServer(async (req, res) => {
@@ -507,11 +533,11 @@ http.createServer(async (req, res) => {
       }
       catch (error) { return send(res, 400, { error: error instanceof Error ? error.message.slice(0, 500) : 'Agent task failed' }); }
     }
-    if (req.method === 'POST' && pathname === '/v1/tasks/pause') { pauseActive(); return send(res, 200, { paused: Boolean(active?.child) }); }
-    if (req.method === 'POST' && pathname === '/v1/tasks/stop') {
-      active?.abort?.abort();
-      active?.child?.kill('SIGTERM');
-      return send(res, 200, { stopped: Boolean(active) });
+    if (req.method === 'POST' && ['/v1/tasks/pause','/v1/tasks/stop'].includes(pathname)) {
+      const input=await readJson(req),botId=String(input.botId||'');
+      if(!fileIdPattern.test(botId))return send(res,400,{error:'A valid Bot screen id is required'});
+      if(pathname==='/v1/tasks/pause')return send(res,200,{paused:pauseActive(botId)});
+      return send(res,200,{stopped:stopActive(botId)});
     }
     return send(res, 404, { error: 'not found' });
   } catch (error) { return send(res, 400, { error: error instanceof Error ? error.message.slice(0, 300) : 'request failed' }); }

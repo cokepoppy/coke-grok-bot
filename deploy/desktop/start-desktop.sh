@@ -3,9 +3,17 @@ set -euo pipefail
 
 export DISPLAY="${DISPLAY:-:1}"
 resolution="${COKE_DESKTOP_RESOLUTION:-1440x900}"
+screen_slots="${COKE_DESKTOP_SCREEN_SLOTS:-8}"
 start_url="${COKE_DESKTOP_START_URL:-https://example.com}"
 chrome_bin="${COKE_DESKTOP_CHROME_BIN:-/usr/bin/chromium}"
 profile_dir="$HOME/.config/chromium"
+[[ "$resolution" =~ ^([0-9]{3,4})x([0-9]{3,4})$ ]] || { echo "COKE_DESKTOP_RESOLUTION must be WxH" >&2; exit 1; }
+screen_width="${BASH_REMATCH[1]}"; screen_height="${BASH_REMATCH[2]}"
+[[ "$screen_width" -ge 640 && "$screen_width" -le 3840 && "$screen_height" -ge 480 && "$screen_height" -le 2160 ]] || { echo "COKE_DESKTOP_RESOLUTION is outside the supported range" >&2; exit 1; }
+[[ "$screen_slots" =~ ^([1-9]|1[0-6])$ ]] || { echo "COKE_DESKTOP_SCREEN_SLOTS must be between 1 and 16" >&2; exit 1; }
+screen_stride=$((screen_width + 32))
+virtual_width=$((screen_stride * screen_slots))
+[[ "$virtual_width" -le 32767 ]] || { echo "Bot screen layout exceeds the X11 display limit" >&2; exit 1; }
 mkdir -p "$HOME" "$profile_dir" "$HOME/.vnc" /workspace/.coke-desktop /tmp/.X11-unix
 chmod 0700 "$HOME"
 chmod 1777 /tmp/.X11-unix
@@ -17,7 +25,7 @@ clear-stale-grok-x11
 # Drop only process ownership links, keeping cookies, files, and preferences.
 rm -f "$profile_dir/SingletonLock" "$profile_dir/SingletonCookie" "$profile_dir/SingletonSocket"
 
-Xvfb "$DISPLAY" -screen 0 "${resolution}x24" -ac +extension GLX +render -noreset >/tmp/dots-xvfb.log 2>&1 &
+Xvfb "$DISPLAY" -screen 0 "${virtual_width}x${screen_height}x24" -ac +extension GLX +render -noreset >/tmp/dots-xvfb.log 2>&1 &
 xvfb_pid=$!
 xfce_pid=""; vnc_pid=""; websockify_pid=""; chrome_pid=""; worker_pid=""
 cleanup() {
@@ -54,7 +62,7 @@ websockify_pid=$!
 chrome_flags=(
   --disable-dev-shm-usage --disable-gpu --disable-session-crashed-bubble --no-first-run --no-default-browser-check
   --password-store=basic --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222
-  --user-data-dir="$HOME/.config/chromium" --start-maximized
+  --user-data-dir="$HOME/.config/chromium" --window-position=0,0 --window-size="${screen_width},${screen_height}"
 )
 if [[ -n "${COKE_DESKTOP_PROXY_SERVER:-}" ]]; then
   [[ "$COKE_DESKTOP_PROXY_SERVER" == "http://host.docker.internal:17891" ]] || { echo "Unsupported cloud-computer proxy endpoint" >&2; exit 1; }

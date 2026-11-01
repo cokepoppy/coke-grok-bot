@@ -1,4 +1,4 @@
-import type { AgentRun, RunOwner } from './run-store.ts';
+import type { AgentRun, RunOwner, RunScreenScope } from './run-store.ts';
 import type { RunExecutor, ExecutionResult } from './run-scheduler.ts';
 import type { ModelGateway } from './model-gateway.ts';
 import type { BotMemoryStore } from './bot-memory-store.ts';
@@ -17,8 +17,10 @@ export class DesktopAgentExecutor implements RunExecutor {
     const endpoint=new URL(gatewayUrl);
     if(endpoint.protocol!=='https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || endpoint.pathname!=='/v1' || !model || !['pi','dsh'].includes(engine)) throw new Error('Invalid Agent gateway');
   }
-  async execute(owner:RunOwner,run:AgentRun,signal:AbortSignal,leaseId:string):Promise<ExecutionResult> {
+  async execute(screen:RunScreenScope,run:AgentRun,signal:AbortSignal,leaseId:string):Promise<ExecutionResult> {
     if(signal.aborted) throw new RunDiagnosticError('execution_aborted');
+    if(run.botId!==screen.botId)throw new RunDiagnosticError('bot_memory_scope_invalid');
+    const owner:RunOwner=screen;
     let desktop:DesktopConnection;
     try { desktop=await this.desktops.connect(owner,signal); }
     catch { throw new RunDiagnosticError(signal.aborted?'execution_aborted':'desktop_connect_failed'); }
@@ -58,7 +60,7 @@ export class DesktopAgentExecutor implements RunExecutor {
       try {
         response=await this.request(new URL('/v1/tasks/run',endpoint),{
           method:'POST',redirect:'error',headers:{authorization:`Bearer ${desktop.agentToken}`,'content-type':'application/json'},
-          body:JSON.stringify({engine:this.engine,taskId:run.id,cwd:`tasks/${run.id}`,prompt,attachments,memory:this.memories?{mode:'mediated'}:undefined,modelConfig:{apiKey:capability,baseUrl:this.gatewayUrl,model:this.model}}),
+          body:JSON.stringify({engine:this.engine,taskId:run.id,botId:run.botId,screenId:run.botId,cwd:`tasks/${run.id}`,prompt,attachments,memory:this.memories?{mode:'mediated'}:undefined,modelConfig:{apiKey:capability,baseUrl:this.gatewayUrl,model:this.model}}),
           signal:AbortSignal.any([signal,AbortSignal.timeout(14*60_000)]),
         });
       } catch { throw new RunDiagnosticError(signal.aborted?'execution_aborted':'agent_transport_failed'); }

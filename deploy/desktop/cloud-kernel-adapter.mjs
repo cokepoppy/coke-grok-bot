@@ -7,6 +7,7 @@ import { Type } from 'typebox';
 import { listSharedFiles, readSharedFile, runApprovedTerminal } from './computer-tools.mjs';
 
 const decisionStatuses = new Set(['done', 'failed', 'waiting', 'scheduled', 'delegating']);
+const screenIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 // Shell execution stays disabled until individual commands have an owner approval gate.
 const piTools = ['read', 'edit', 'write', 'grep', 'find', 'ls'];
 
@@ -199,7 +200,8 @@ function validateComputerBridge(computer) {
   let url;
   try { url = new URL(computer.baseUrl); } catch { return null; }
   if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(url.hostname) || url.username || url.password || url.search || url.hash || url.pathname !== '/' || !computer.workerToken || computer.workerToken.length > 4096) return null;
-  return { baseUrl: url.origin, workerToken: computer.workerToken };
+  if (typeof computer.screenId !== 'string' || !screenIdPattern.test(computer.screenId)) return null;
+  return { baseUrl: url.origin, workerToken: computer.workerToken, screenId: computer.screenId };
 }
 
 async function mediatedAction(computer,kind,params,signal,markDenied,wasDenied) {
@@ -244,7 +246,7 @@ function computerDesktopTool(computerInput) {
     }, { additionalProperties:false }),
     async execute(_id, params, signal) {
       if (signal?.aborted) throw signal.reason || new Error('Task was stopped');
-      const headers = { authorization:`Bearer ${computer.workerToken}` };
+      const headers = { authorization:`Bearer ${computer.workerToken}`, 'x-coke-grok-screen-id':computer.screenId };
       const control = await fetch(`${computer.baseUrl}${computer.mode === 'mediated' ? '/computer/control' : '/v1/control'}`, {headers,signal});
       if (!control.ok || (await control.json()).owner !== 'agent') throw new Error('Desktop control belongs to the user');
       if (params.action === 'screenshot') {
@@ -307,7 +309,7 @@ function computerBrowserTool(computerInput, taskId) {
       }
       const response = await fetch(`${computer.baseUrl}/v1/browser`, {
         method: 'POST',
-        headers: { authorization: `Bearer ${computer.workerToken}`, 'content-type': 'application/json' },
+        headers: { authorization: `Bearer ${computer.workerToken}`, 'content-type': 'application/json', 'x-coke-grok-screen-id':computer.screenId },
         body: JSON.stringify({ ...params, taskId }),
         signal,
       });

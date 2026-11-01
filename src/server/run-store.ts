@@ -10,6 +10,7 @@ export type RecoveryState = 'none' | 'pending' | 'retried' | 'acknowledged';
 export interface AgentRun { id: string; botId: string; prompt: string; status: RunStatus; result: string | null; recoveryState: RecoveryState; replacementRunId: string | null; files: RunFile[] }
 export interface RunRecoveryResult { decision: 'retry' | 'acknowledge'; run: AgentRun | null }
 export type RunOwner = Pick<Session, 'tenantId' | 'userId'>;
+export interface RunScreenScope extends RunOwner { botId: string }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export class RunRequestConflict extends Error {}
 export class RunRecoveryConflict extends Error {}
@@ -85,6 +86,11 @@ export class RunStore {
     const files = await this.filesForRuns(this.pool,rows.map(row=>String(row.id)));
     return rows.map(row=>({...row,files:files.get(String(row.id))||[]})) as AgentRun[];
   }
+  async ownsBot(session:Pick<Session,'tenantId'|'userId'>,botId:string):Promise<boolean>{
+    if(!uuid.test(session.tenantId)||!uuid.test(session.userId)||!uuid.test(botId))return false;
+    const [rows]=await this.pool.execute<RowDataPacket[]>('SELECT id FROM bots WHERE id=? AND tenant_id=? AND owner_id=?',[botId,session.tenantId,session.userId]);
+    return rows.length===1;
+  }
   async queuedOwners(limit: number): Promise<RunOwner[]> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Invalid owner limit');
     const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT b.tenant_id AS tenantId, b.owner_id AS userId, MIN(r.sequence) AS firstRun
@@ -95,15 +101,35 @@ export class RunStore {
       ) GROUP BY b.tenant_id,b.owner_id ORDER BY firstRun LIMIT ?`, [limit]);
     return rows.map(row => ({tenantId:String(row.tenantId),userId:String(row.userId)}));
   }
-  /** A personal computer has at most one running or unresolved run across its Bots. */
-  async claimNext(session: Pick<Session,'tenantId'|'userId'>, leaseSeconds: number): Promise<{ run: AgentRun; leaseId: string } | null> {
+  /** Each Bot owns one queue/screen; different Bots belonging to the same user can run concurrently. */
+  async queuedScreens(limit: number): Promise<RunScreenScope[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Invalid screen limit');
+    const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT b.tenant_id AS tenantId,b.owner_id AS userId,b.id AS botId,MIN(r.sequence) AS firstRun
+      FROM agent_runs r JOIN bots b ON b.id=r.bot_id JOIN memberships m ON m.tenant_id=b.tenant_id AND m.user_id=b.owner_id
+      WHERE r.status='queued' AND NOT EXISTS (
+        SELECT 1 FROM agent_runs active WHERE active.bot_id=b.id AND (active.status='running' OR (active.status='unknown' AND active.recovery_state='pending'))
+      ) GROUP BY b.id,b.tenant_id,b.owner_id ORDER BY firstRun LIMIT ?`, [limit]);
+    return rows.map(row=>({tenantId:String(row.tenantId),userId:String(row.userId),botId:String(row.botId)}));
+  }
+  /** Claim one Bot's screen. Older callers may omit botId to claim the owner's serialized queue. */
+  async claimNext(session: Pick<Session,'tenantId'|'userId'> | RunScreenScope, leaseSeconds: number): Promise<{ run: AgentRun; leaseId: string } | null> {
     if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 1 || leaseSeconds > 900) throw new Error('Invalid lease');
+    const botId='botId' in session ? session.botId : undefined;
+    if(botId && !uuid.test(botId))throw new Error('Invalid screen Bot');
     return this.transaction(async connection => {
-      const [membership] = await connection.execute<RowDataPacket[]>('SELECT user_id FROM memberships WHERE tenant_id=? AND user_id=? FOR UPDATE',[session.tenantId,session.userId]);
+      const [membership] = await connection.execute<RowDataPacket[]>('SELECT user_id FROM memberships WHERE tenant_id=? AND user_id=? LOCK IN SHARE MODE',[session.tenantId,session.userId]);
       if (!membership.length) return null;
-      const [active] = await connection.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND (r.status='running' OR (r.status='unknown' AND r.recovery_state='pending')) LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
+      if(botId){
+        const [ownedBot]=await connection.execute<RowDataPacket[]>('SELECT id FROM bots WHERE id=? AND tenant_id=? AND owner_id=? FOR UPDATE',[botId,session.tenantId,session.userId]);
+        if(!ownedBot.length)return null;
+      }
+      const [active] = botId
+        ? await connection.execute<RowDataPacket[]>(`SELECT id FROM agent_runs WHERE bot_id=? AND (status='running' OR (status='unknown' AND recovery_state='pending')) LIMIT 1 FOR UPDATE`,[botId])
+        : await connection.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND (r.status='running' OR (r.status='unknown' AND r.recovery_state='pending')) LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
       if (active.length) return null;
-      const [rows] = await connection.execute<RowDataPacket[]>(`SELECT r.id,r.bot_id AS botId,r.prompt,r.status,r.result,r.recovery_state AS recoveryState,r.replacement_run_id AS replacementRunId FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND r.status='queued' ORDER BY r.sequence LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
+      const [rows] = botId
+        ? await connection.execute<RowDataPacket[]>(`SELECT id,bot_id AS botId,prompt,status,result,recovery_state AS recoveryState,replacement_run_id AS replacementRunId FROM agent_runs WHERE bot_id=? AND status='queued' ORDER BY sequence LIMIT 1 FOR UPDATE`,[botId])
+        : await connection.execute<RowDataPacket[]>(`SELECT r.id,r.bot_id AS botId,r.prompt,r.status,r.result,r.recovery_state AS recoveryState,r.replacement_run_id AS replacementRunId FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND r.status='queued' ORDER BY r.sequence LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
       if (!rows.length) return null;
       const run = rows[0] as AgentRun, leaseId = randomUUID();
       await connection.execute(`UPDATE agent_runs SET status='running',lease_id=?,lease_until=DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? SECOND) WHERE id=?`,[leaseId,leaseSeconds,run.id]);
@@ -133,9 +159,9 @@ export class RunStore {
     const [updated] = await this.pool.execute<ResultSetHeader>(`UPDATE agent_runs SET lease_until=DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? SECOND) WHERE id=? AND lease_id=? AND status='running' AND lease_until>UTC_TIMESTAMP(3)`,[leaseSeconds,runId,leaseId]);
     return updated.affectedRows === 1;
   }
-  async hasLiveLease(owner: RunOwner, runId:string, leaseId:string):Promise<boolean> {
-    if(!uuid.test(owner.tenantId)||!uuid.test(owner.userId)||!uuid.test(runId)||!uuid.test(leaseId))return false;
-    const [rows]=await this.pool.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND r.lease_id=? AND r.status='running' AND r.lease_until>UTC_TIMESTAMP(3) AND b.tenant_id=? AND b.owner_id=?`,[runId,leaseId,owner.tenantId,owner.userId]);
+  async hasLiveLease(owner: RunOwner, runId:string, leaseId:string, botId?:string):Promise<boolean> {
+    if(!uuid.test(owner.tenantId)||!uuid.test(owner.userId)||!uuid.test(runId)||!uuid.test(leaseId)||(botId!==undefined&&!uuid.test(botId)))return false;
+    const [rows]=await this.pool.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND r.lease_id=? AND r.status='running' AND r.lease_until>UTC_TIMESTAMP(3) AND b.tenant_id=? AND b.owner_id=? AND (? IS NULL OR r.bot_id=?)`,[runId,leaseId,owner.tenantId,owner.userId,botId||null,botId||null]);
     return rows.length===1;
   }
   async markUnknown(runId: string, leaseId: string, diagnosticCode: RunDiagnosticCode = 'executor_error'): Promise<boolean> {
@@ -157,7 +183,7 @@ export class RunStore {
       return rows.length;
     });
   }
-  /** The owner must explicitly acknowledge uncertainty before the per-user queue can resume. */
+  /** The owner must explicitly acknowledge uncertainty before this Bot screen queue can resume. */
   async resolveUnknown(session: Session, runId: string, decision: 'retry' | 'acknowledge'): Promise<RunRecoveryResult | null> {
     if (!uuid.test(runId) || !['retry','acknowledge'].includes(decision)) throw new Error('Invalid run recovery');
     return this.transaction(async connection => {
@@ -170,7 +196,7 @@ export class RunStore {
         if (current.recoveryState === 'acknowledged') return {decision,run:null};
         if (current.recoveryState !== 'pending') throw new RunRecoveryConflict('This unknown run already has a different resolution');
         await connection.execute(`UPDATE agent_runs SET recovery_state='acknowledged' WHERE id=? AND status='unknown' AND recovery_state='pending'`,[runId]);
-        await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','Owner reviewed the uncertain outcome and resumed the queue.')`,[runId]);
+        await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','Owner reviewed the uncertain outcome and resumed this Bot screen queue.')`,[runId]);
         return {decision,run:null};
       }
       if (current.recoveryState === 'retried' && current.replacementRunId) {

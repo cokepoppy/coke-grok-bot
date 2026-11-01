@@ -3,13 +3,13 @@ import { ComputerBroker,type GuardedComputerWorker } from './computer-broker.ts'
 import { canonicalComputerAction } from './computer-action.ts';
 import type { RunOwner,RunStore } from './run-store.ts';
 
-export interface RunScope {owner:RunOwner;runId:string;leaseId:string}
+export interface RunScope {owner:RunOwner;runId:string;leaseId:string;botId:string}
 export interface ComputerReadWorker extends GuardedComputerWorker { control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>; inspect(signal:AbortSignal):Promise<unknown>; screenshot(signal:AbortSignal):Promise<Buffer> }
 /** Only the authenticated, live run capability may call these methods. */
 export class ComputerBridge {
  constructor(private readonly runs:Pick<RunStore,'hasLiveLease'>,private readonly approvals:Pick<ApprovalStore,'propose'|'consume'|'status'>,private readonly worker:(scope:RunScope)=>ComputerReadWorker){}
  private async authorize(scope:RunScope,signal:AbortSignal):Promise<ComputerReadWorker>{
-  if(signal.aborted || !await this.runs.hasLiveLease(scope.owner,scope.runId,scope.leaseId))throw new Error('Run lease unavailable');
+  if(signal.aborted || !await this.runs.hasLiveLease(scope.owner,scope.runId,scope.leaseId,scope.botId))throw new Error('Run lease unavailable');
   return this.worker(scope);
  }
  async inspect(scope:RunScope,signal:AbortSignal):Promise<unknown>{return (await this.authorize(scope,signal)).inspect(signal)}

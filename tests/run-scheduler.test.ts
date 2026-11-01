@@ -11,7 +11,7 @@ const port=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);
 if(!port) throw new Error('Disposable MySQL port required');
 const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(fn:()=>Promise<boolean>) { for(let i=0;i<150;i++){if(await fn())return;await pause(20)} throw new Error('Condition timed out') }
-test('scheduler isolates computers, serializes each owner and preserves uncertain outcomes across restart',async()=>{
+test('scheduler runs different Bot screens in parallel, serializes each Bot and preserves uncertainty across restart',async()=>{
  const db=`grok_sched_${randomUUID().replaceAll('-','')}`, admin=await mysql.createConnection({host:'127.0.0.1',port,user:'root'});
  await admin.query(`CREATE DATABASE \`${db}\``); const pool=mysql.createPool({host:'127.0.0.1',port,user:'root',database:db,timezone:'Z',connectionLimit:8});
  let scheduler:RunScheduler|undefined;
@@ -20,15 +20,18 @@ test('scheduler isolates computers, serializes each owner and preserves uncertai
   const mkSession=async (subject:string):Promise<Session>=>({...await ids.signInGoogle({subject,email:`${subject}@example.test`,name:subject}),email:`${subject}@example.test`,name:subject,role:'owner'});
   const a=await mkSession('alice'),b=await mkSession('bob');
   const a1=await bots.create(a,{name:'A1',shape:'hex',color:'#aabbcc'}),a2=await bots.create(a,{name:'A2',shape:'hex',color:'#aabbcc'}),b1=await bots.create(b,{name:'B',shape:'hex',color:'#aabbcc'});
-  const first=await runs.create(a,a1.id,randomUUID(),'first'); const second=await runs.create(a,a2.id,randomUUID(),'second'); const other=await runs.create(b,b1.id,randomUUID(),'other'); assert.ok(first&&second&&other);
+  const first=await runs.create(a,a1.id,randomUUID(),'first'); const second=await runs.create(a,a1.id,randomUUID(),'second'); const parallel=await runs.create(a,a2.id,randomUUID(),'parallel'); const other=await runs.create(b,b1.id,randomUUID(),'other'); assert.ok(first&&second&&parallel&&other);
   let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);const calls:string[]=[];
   scheduler=new RunScheduler(runs,{execute:async (_owner,run)=>{calls.push(run.prompt);if(run.prompt==='first')await gate;if(run.prompt==='other')throw new RunDiagnosticError('agent_http_401');return {status:'completed',result:'done'}}},{concurrency:2,leaseSeconds:6});
   await Promise.all([scheduler.tick(),scheduler.tick()]);
-  await until(async()=>calls.length===2);assert.deepEqual(new Set(calls),new Set(['first','other']));
+  await until(async()=>calls.length===2);assert.deepEqual(new Set(calls),new Set(['first','parallel']));
+  await until(async()=>(await runs.list(a,a2.id))?.[0].status==='completed');
+  assert.equal(calls.includes('second'),false,'a second run on the same Bot screen must remain queued');
+  await scheduler.tick();
   await until(async()=>(await runs.list(b,b1.id))?.[0].status==='unknown');
   await scheduler.tick();assert.equal(calls.includes('second'),false);
   release();await until(async()=>(await runs.list(a,a1.id))?.[0].status==='completed');
-  await scheduler.tick();await until(async()=>(await runs.list(a,a2.id))?.[0].status==='completed');
+  await scheduler.tick();await until(async()=>(await runs.list(a,a1.id))?.[1].status==='completed');
   await scheduler.stop();scheduler=undefined;
   const restartCalls:string[]=[];scheduler=new RunScheduler(runs,{execute:async (_owner,run)=>{restartCalls.push(run.prompt);return {status:'completed',result:'done'}}},{concurrency:2,leaseSeconds:6});
   await scheduler.tick();await pause(50);assert.deepEqual(restartCalls,[]);

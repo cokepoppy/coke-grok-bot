@@ -2,12 +2,15 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { chromium } from 'playwright-core';
 import { pathToFileURL } from 'node:url';
 import { BrowserContextNotReadyError, getBrowserPage, waitForDefaultBrowserContext } from './browser-context.mjs';
 import { createRendererHealthMonitor, RendererUnresponsiveError } from './renderer-health.mjs';
+import { BotScreenCapacityError, BotScreenPages } from './bot-screen-pages.mjs';
+import { createDesktopScreenLayout, parseDesktopScreenSlots } from './desktop-screen-layout.mjs';
+import { captureDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from './desktop-input.mjs';
 import { createGuardedComputer } from '/opt/coke-grok/guarded-computer.mjs';
 
 const exec = promisify(execFile);
@@ -16,17 +19,28 @@ const port = Number(process.env.COKE_DESKTOP_WORKER_PORT || 8082);
 const guardedMode = process.env.COKE_GROK_GUARDED_MODE === '1';
 const controlToken = String(process.env.COKE_GROK_CONTROL_TOKEN || '');
 if (guardedMode && (!controlToken || controlToken === token)) throw new Error('A distinct control token is required in guarded mode');
+const screenIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const agentEndpoint = new URL(process.env.COKE_GROK_AGENT_URL || `http://127.0.0.1:${process.env.DOTS_AGENT_RUNTIME_PORT || 8083}/`);
 if (agentEndpoint.protocol !== 'http:' || agentEndpoint.username || agentEndpoint.password || agentEndpoint.search || agentEndpoint.hash || agentEndpoint.pathname !== '/' || !(agentEndpoint.hostname === '127.0.0.1' || /^agent\.grok-user-[a-f0-9]{32}\.svc\.cluster\.local$/.test(agentEndpoint.hostname)) || agentEndpoint.port !== '8083') throw new Error('Invalid agent endpoint');
-const resolution = String(process.env.COKE_DESKTOP_RESOLUTION || '1440x900').split('x').map(Number);
-let owner = 'agent';
+const screenLayout = createDesktopScreenLayout(
+  process.env.COKE_DESKTOP_RESOLUTION || '1440x900',
+  parseDesktopScreenSlots(process.env.COKE_DESKTOP_SCREEN_SLOTS || '8'),
+);
 let browser;
 let browserConnectPromise;
 let pageInitialization;
+const screenOwners = new Map();
+const guardedComputers = new Map();
 const rendererTimeoutMs = 3_000;
 const rendererHealth = createRendererHealthMonitor(rendererTimeoutMs);
 let rendererProbeFailures = 0;
 let rendererRecovery = null;
+const desktopActionGate = createDesktopActionGate();
+const screenPages = new BotScreenPages(async () => waitForDefaultBrowserContext(await connectedBrowser()), {
+  layout: screenLayout,
+  createWindow: createBrowserWindow,
+  placeWindow: placeBrowserWindow,
+});
 
 if (!token) throw new Error('LINUX_DESKTOP_WORKER_TOKEN is required');
 
@@ -47,6 +61,39 @@ async function connectedBrowser() {
   }
   browser = await browserConnectPromise;
   return browser;
+}
+
+async function placeBrowserWindow(browserPage, bounds) {
+  const session = await browserPage.context().newCDPSession(browserPage);
+  try {
+    const { windowId } = await session.send('Browser.getWindowForTarget');
+    await session.send('Browser.setWindowBounds', {
+      windowId,
+      bounds: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height, windowState: 'normal' },
+    });
+  } finally { await session.detach().catch(() => undefined); }
+}
+
+async function createBrowserWindow(context, bounds) {
+  const connected = await connectedBrowser();
+  const session = await connected.newBrowserCDPSession();
+  const pagePromise = context.waitForEvent('page', { timeout: 10_000 });
+  try {
+    const { targetId } = await session.send('Target.createTarget', {
+      url: 'about:blank', newWindow: true, left: bounds.left, top: bounds.top,
+      width: bounds.width, height: bounds.height,
+    });
+    const browserPage = await pagePromise;
+    const { windowId } = await session.send('Browser.getWindowForTarget', { targetId });
+    await session.send('Browser.setWindowBounds', {
+      windowId,
+      bounds: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height, windowState: 'normal' },
+    });
+    return browserPage;
+  } catch (error) {
+    await pagePromise.catch(() => undefined);
+    throw error;
+  } finally { await session.detach().catch(() => undefined); }
 }
 
 async function createPageWithContextRecovery() {
@@ -95,6 +142,7 @@ function clearBrowserHandles() {
   browser = undefined;
   browserConnectPromise = undefined;
   pageInitialization = undefined;
+  screenPages.clear();
 }
 
 async function recoverChromium() {
@@ -148,15 +196,61 @@ async function body(req) {
   return chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {};
 }
 
-async function screenshot() {
-  const file = `/tmp/dots-screen-${crypto.randomUUID()}.png`;
+const workspace = path.resolve(process.env.DOTS_AGENT_WORKSPACE || '/workspace');
+async function pageForScreen(screenId) {
+  if (!screenIdPattern.test(screenId)) throw new Error('Invalid Bot screen id');
   try {
-    await exec('scrot', ['-o', file], { timeout: 5000 });
-    return await fs.readFile(file);
-  } finally { await fs.rm(file, { force: true }).catch(() => undefined); }
+    return await screenPages.get(screenId);
+  } catch (error) {
+    if (!(error instanceof BrowserContextNotReadyError)) throw error;
+    process.stderr.write(`${JSON.stringify({ event: 'dots_browser_context_unavailable', at: new Date().toISOString(), recoveryAttempt: 1 })}\n`);
+    clearBrowserHandles();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    return screenPages.get(screenId);
+  }
 }
 
-const workspace = path.resolve(process.env.DOTS_AGENT_WORKSPACE || '/workspace');
+async function screenOwner(screenId) {
+  if (!screenIdPattern.test(screenId)) throw new Error('Invalid Bot screen id');
+  if (screenOwners.has(screenId)) return screenOwners.get(screenId);
+  const root = path.join(workspace, 'shared', 'computer-screens');
+  await fs.mkdir(root, { recursive: true, mode: 0o770 });
+  const realRoot = await fs.realpath(root);
+  if (realRoot !== root || (await fs.lstat(root)).isSymbolicLink()) throw new Error('Computer screen state directory is not available');
+  const file = path.join(root, `${screenId}.json`);
+  const raw = await fs.readFile(file, 'utf8').catch(error => error?.code === 'ENOENT' ? '' : Promise.reject(error));
+  let value = 'agent';
+  if (raw) {
+    try { const saved = JSON.parse(raw); if (saved?.screenId !== screenId || !['agent','user'].includes(saved.owner)) throw new Error(); value = saved.owner; }
+    catch { throw new Error('Computer screen control state is invalid'); }
+  }
+  screenOwners.set(screenId, value);
+  return value;
+}
+
+async function setScreenOwner(screenId, value) {
+  if (!['agent','user'].includes(value)) throw new Error('Invalid control owner');
+  const root = path.join(workspace, 'shared', 'computer-screens');
+  await fs.mkdir(root, { recursive: true, mode: 0o770 });
+  const realRoot = await fs.realpath(root);
+  if (realRoot !== root || (await fs.lstat(root)).isSymbolicLink()) throw new Error('Computer screen state directory is not available');
+  const file = path.join(root, `${screenId}.json`), temporary = `${file}.${crypto.randomUUID()}.tmp`;
+  await fs.writeFile(temporary, JSON.stringify({ screenId, owner: value }), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+  await fs.rename(temporary, file);
+  screenOwners.set(screenId, value);
+}
+
+function screenIdFromRequest(req) {
+  const value = req.headers['x-coke-grok-screen-id'];
+  if (typeof value !== 'string' || !screenIdPattern.test(value)) throw new Error('A valid Bot screen scope is required');
+  return value.toLowerCase();
+}
+
+async function screenshot(screenId) {
+  await pageForScreen(screenId);
+  return captureDesktopScreen(exec, await screenPages.geometry(screenId));
+}
+
 const artifactTaskId = /^[a-f0-9-]{36}$/i;
 const maxArtifactBytes = 25 * 1024 * 1024;
 const maxArtifactCount = 100;
@@ -228,41 +322,52 @@ async function resolveArtifact(taskId, relativePath) {
   return { real, mediaType };
 }
 
-async function command(input) {
+async function command(input, screenId) {
   const action = String(input.action || '');
-  const actor = input.actor === 'user' ? 'user' : 'agent';
+  const actor = input.actor === 'user' ? 'user' : 'agent', owner = await screenOwner(screenId);
   if (actor !== owner && action !== 'open') throw new Error(owner === 'user' ? 'The user currently controls this computer' : 'The agent currently controls this computer');
   if (action === 'open') {
     return rendererHealth.run(async () => {
-      const browserPage = await page();
+      const browserPage = await pageForScreen(screenId);
       await browserPage.title();
       return { ready: true };
     });
   }
+  if (['click', 'type', 'press'].includes(action)) {
+    return desktopActionGate(async () => {
+      const browserPage = await pageForScreen(screenId);
+      const bounds = await screenPages.geometry(screenId);
+      if (action === 'click') {
+        const x = Number(input.x), y = Number(input.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Click coordinates are invalid');
+        await clickDesktop(exec, bounds, Math.round(x), Math.round(y));
+      } else if (action === 'type') {
+        await withFocusedDesktopPage(browserPage, () => typeDesktop(spawn, String(input.text || '')));
+      } else {
+        await withFocusedDesktopPage(browserPage, () => pressDesktopKey(exec, String(input.key || '')));
+      }
+      const currentOwner = await screenOwner(screenId);
+      if (actor !== currentOwner) throw new Error('Computer ownership changed');
+      return {
+        ready: true,
+        url: browserPage.url(),
+        title: await rendererHealth.run(() => browserPage.title()),
+      };
+    });
+  }
+  const browserPage = await pageForScreen(screenId);
   if (action === 'open-artifact') {
     if (actor !== 'user') throw new Error('Only a user can open a task artifact in the cloud browser');
     const resolved = await resolveArtifact(String(input.taskId || ''), String(input.path || ''));
     if (!resolved.mediaType.startsWith('text/html')) throw new Error('Only HTML task files can open in the cloud browser');
-    await (await page()).goto(pathToFileURL(resolved.real).href, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await browserPage.goto(pathToFileURL(resolved.real).href, { waitUntil: 'domcontentloaded', timeout: 15000 });
   } else if (action === 'navigate') {
     const url = new URL(String(input.url || ''));
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Only credential-free HTTP and HTTPS URLs are allowed');
-    await (await page()).goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  } else if (action === 'click') {
-    const x = Number(input.x); const y = Number(input.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x > resolution[0] || y > resolution[1]) throw new Error('Click coordinates are outside the desktop');
-    await exec('xdotool', ['mousemove', String(Math.round(x)), String(Math.round(y)), 'click', '1'], { timeout: 5000 });
-  } else if (action === 'type') {
-    const text = String(input.text || '');
-    if (text.length > 2000) throw new Error('Input is too long');
-    await exec('xdotool', ['type', '--clearmodifiers', '--delay', '1', '--', text], { timeout: 15000 });
-  } else if (action === 'press') {
-    const names = { Enter: 'Return', Tab: 'Tab', Escape: 'Escape', Backspace: 'BackSpace', Delete: 'Delete', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', PageUp: 'Page_Up', PageDown: 'Page_Down', Home: 'Home', End: 'End', Space: 'space' };
-    const key = names[String(input.key)];
-    if (!key) throw new Error('Unsupported desktop key');
-    await exec('xdotool', ['key', key], { timeout: 5000 });
+    await browserPage.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
   } else throw new Error('Unsupported desktop command');
-  const browserPage = await page().catch(() => null);
+  const currentOwner = await screenOwner(screenId);
+  if (actor !== currentOwner) throw new Error('Computer ownership changed');
   return {
     ready: true,
     url: browserPage?.url() || '',
@@ -296,12 +401,12 @@ function browserLocator(browserPage, input) {
   throw new Error('A supported browser locator type is required');
 }
 
-async function agentBrowserAction(input) {
-  if (owner !== 'agent') throw new Error('The user currently controls this computer');
+async function agentBrowserAction(input, screenId) {
+  if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
   const action = String(input.action || '');
-  const browserPage = await page();
+  const browserPage = await pageForScreen(screenId);
   return rendererHealth.run(async () => {
-    if (owner !== 'agent') throw new Error('The user currently controls this computer');
+    if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
     if (action === 'inspect') {
       const snapshot = await browserPage.evaluate(() => {
         const visible = element => {
@@ -336,20 +441,20 @@ async function agentBrowserAction(input) {
     if (action === 'navigate') {
       const url = new URL(String(input.url || ''));
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.href.length > 2048) throw new Error('Only credential-free HTTP and HTTPS URLs are allowed');
-      if (owner !== 'agent') throw new Error('The user currently controls this computer');
+      if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
       await browserPage.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30_000 });
     } else if (action === 'open_artifact') {
       const taskId = String(input.taskId || '');
       if (!/^[a-f0-9-]{36}$/i.test(taskId)) throw new Error('Task id is invalid');
       const resolved = await resolveArtifact(taskId, String(input.path || ''));
       if (!resolved.mediaType.startsWith('text/html')) throw new Error('Only HTML task files can open in the cloud browser');
-      if (owner !== 'agent') throw new Error('The user currently controls this computer');
+      if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
       await browserPage.goto(pathToFileURL(resolved.real).href, { waitUntil: 'domcontentloaded', timeout: 15_000 });
     } else if (['click', 'fill', 'select', 'check', 'uncheck', 'press'].includes(action)) {
       const locator = browserLocator(browserPage, input);
       const count = await locator.count();
       if (count !== 1) throw new Error(`Browser target matched ${count} controls; inspect the page and choose a unique label or selector`);
-      if (owner !== 'agent') throw new Error('The user currently controls this computer');
+      if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
       if (action === 'click') await locator.click({ timeout: 10_000 });
       else if (action === 'fill') {
         const value = String(input.value ?? '');
@@ -374,18 +479,24 @@ async function agentBrowserAction(input) {
   });
 }
 
-const guardedComputer = createGuardedComputer({
-  readOwner: () => owner,
-  readPageUrl: async () => (await page()).url(),
-  readScreenshot: screenshot,
-  perform: async input => {
-    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid guarded action');
-    const { kind, taskId, ...parameters } = input;
-    if (kind === 'browser' && /^[a-f0-9-]{36}$/i.test(String(taskId || '')) && ['navigate','open_artifact','click','fill','select','check','uncheck','press'].includes(parameters.action)) return agentBrowserAction({ ...parameters, taskId });
-    if (kind === 'desktop' && ['click','type','press'].includes(parameters.action)) return command({ ...parameters, actor:'agent' });
-    throw new Error('Unsupported guarded action');
-  },
-});
+function guardedComputerFor(screenId) {
+  let computer = guardedComputers.get(screenId);
+  if (computer) return computer;
+  computer = createGuardedComputer({
+    readOwner: () => screenOwners.get(screenId) || 'agent',
+    readPageUrl: async () => (await pageForScreen(screenId)).url(),
+    readScreenshot: () => screenshot(screenId),
+    perform: async input => {
+      if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid guarded action');
+      const { kind, taskId, ...parameters } = input;
+      if (kind === 'browser' && /^[a-f0-9-]{36}$/i.test(String(taskId || '')) && ['navigate','open_artifact','click','fill','select','check','uncheck','press'].includes(parameters.action)) return agentBrowserAction({ ...parameters, taskId }, screenId);
+      if (kind === 'desktop' && ['click','type','press'].includes(parameters.action)) return command({ ...parameters, actor:'agent' }, screenId);
+      throw new Error('Unsupported guarded action');
+    },
+  });
+  guardedComputers.set(screenId, computer);
+  return computer;
+}
 
 http.createServer(async (req, res) => {
   try {
@@ -407,13 +518,17 @@ http.createServer(async (req, res) => {
     const isWorker = req.headers.authorization === `Bearer ${token}`;
     if (!isControl && !isWorker) return send(res, 401, { error: 'worker token is required' });
     if (guardedMode && !isControl && !(req.method === 'GET' && pathname === '/v1/control')) return send(res, 403, { error: 'control authorization is required' });
-    if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/control') return send(res, 200, {owner});
+    const needsScreen = pathname.startsWith('/v1/guarded/') || ['/v1/control','/v1/state','/v1/screenshot','/v1/commands','/v1/browser'].includes(pathname);
+    const screenId = needsScreen ? screenIdFromRequest(req) : null;
+    const guardedComputer = screenId ? guardedComputerFor(screenId) : null;
+    if (screenId) await screenOwner(screenId);
+    if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/control') return send(res, 200, {owner:await screenOwner(screenId)});
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/snapshot') return send(res, 200, await guardedComputer.snapshot());
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/snapshot-image') return send(res, 200, await guardedComputer.snapshotWithImage());
-    if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/inspect') return guardedComputer.locked(async () => send(res, 200, await agentBrowserAction({action:'inspect'})));
+    if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/inspect') return guardedComputer.locked(async () => send(res, 200, await agentBrowserAction({action:'inspect'}, screenId)));
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/screenshot') return guardedComputer.locked(async () => {
-      if (owner !== 'agent') throw new Error('The user currently controls this computer');
-      return send(res, 200, await screenshot(), 'image/png');
+      if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
+      return send(res, 200, await screenshot(screenId), 'image/png');
     });
     if (guardedMode && isControl && req.method === 'POST' && pathname === '/v1/guarded/execute') {
       const input = await body(req);
@@ -434,49 +549,50 @@ http.createServer(async (req, res) => {
       res.end(artifact.bytes);
       return;
     }
-    if (req.method === 'GET' && pathname === '/v1/control') return send(res, 200, { owner });
+    if (req.method === 'GET' && pathname === '/v1/control') return send(res, 200, { owner:await screenOwner(screenId) });
     if (req.method === 'POST' && pathname === '/v1/control') {
       const input = await body(req);
       if (input.owner !== 'agent' && input.owner !== 'user') return send(res, 400, { error: 'invalid control owner' });
       return guardedComputer.locked(async () => {
-        owner = input.owner;
-        if (owner === 'user') {
+        await setScreenOwner(screenId, input.owner);
+        if (input.owner === 'user') {
           await fetch(new URL('/v1/tasks/pause',agentEndpoint), {
-            method: 'POST', headers: { authorization: `Bearer ${process.env.DOTS_AGENT_RUNTIME_TOKEN}` }, signal: AbortSignal.timeout(1500),
+            method: 'POST', headers: { authorization: `Bearer ${process.env.DOTS_AGENT_RUNTIME_TOKEN}`,'content-type':'application/json' }, body:JSON.stringify({botId:screenId}), signal: AbortSignal.timeout(1500),
           }).catch(() => undefined);
         }
-        return send(res, 200, { owner });
+        return send(res, 200, { owner:input.owner });
       });
     }
     if (req.method === 'GET' && pathname === '/v1/state') {
       const state = await rendererHealth.run(async () => {
-        const browserPage = await page();
-        return { ready: true, owner, url: browserPage.url(), title: await browserPage.title() };
+        const browserPage = await pageForScreen(screenId);
+        return { ready: true, owner:await screenOwner(screenId), url: browserPage.url(), title: await browserPage.title() };
       });
       return send(res, 200, state);
     }
-    if (req.method === 'GET' && pathname === '/v1/screenshot') return send(res, 200, await screenshot(), 'image/png');
+    if (req.method === 'GET' && pathname === '/v1/screenshot') return send(res, 200, await screenshot(screenId), 'image/png');
     if (req.method === 'POST' && pathname === '/v1/commands') {
       const input=await body(req);
       if (guardedMode && input.actor !== 'user') return send(res, 403, {error:'Guarded actions require approval'});
-      return guardedComputer.locked(async () => send(res, 200, await command(input)));
+      return guardedComputer.locked(async () => send(res, 200, await command(input,screenId)));
     }
     if (req.method === 'POST' && pathname === '/v1/browser') {
       if (guardedMode) return send(res, 403, {error:'Guarded actions require approval'});
-      return guardedComputer.locked(async () => send(res, 200, await agentBrowserAction(await body(req))));
+      return guardedComputer.locked(async () => send(res, 200, await agentBrowserAction(await body(req),screenId)));
     }
     return send(res, 404, { error: 'not found' });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'computer command failed';
     const contextUnavailable = error instanceof BrowserContextNotReadyError;
     const rendererUnresponsive = error instanceof RendererUnresponsiveError;
+    const screenCapacity = error instanceof BotScreenCapacityError;
     if (rendererUnresponsive) {
       rendererHealth.fail();
       void recoverChromium();
     }
-    return send(res, contextUnavailable || rendererUnresponsive ? 503 : 400, {
+    return send(res, contextUnavailable || rendererUnresponsive || screenCapacity ? 503 : 400, {
       error: message.slice(0, 240),
-      ...(contextUnavailable || rendererUnresponsive ? { code: error.code } : {}),
+      ...(contextUnavailable || rendererUnresponsive || screenCapacity ? { code: error.code } : {}),
     });
   }
 }).listen(port, '0.0.0.0', () => process.stdout.write(`Dots desktop worker listening on ${port}\n`));
