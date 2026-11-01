@@ -13,7 +13,7 @@ export interface DesktopKubernetes {
 
 /** Create only this user's resources; refuse drift rather than overwrite state or data. */
 export class DesktopProvisioner implements DesktopConnections {
-  constructor(private readonly kube:DesktopKubernetes,private readonly signingKey:Buffer,private readonly options:{image:string;controlNamespace:string;gatewayCA:string;split?:boolean;bootstrap?:NamespaceBootstrapConnection}) {}
+  constructor(private readonly kube:DesktopKubernetes,private readonly signingKey:Buffer,private readonly options:{image:string;agentImage?:string;controlNamespace:string;gatewayCA:string;split?:boolean;bootstrap?:NamespaceBootstrapConnection}) {}
   async connect(owner:RunOwner,signal:AbortSignal):Promise<DesktopConnection> {
     if(signal.aborted) throw new Error('Desktop provisioning cancelled');
     const identity=desktopIdentity(owner,this.signingKey);

@@ -25,9 +25,11 @@ test('desktop identities separate users and tenants and resources do not expose 
 });
 test('experimental layout separates the Agent network from the desktop',()=>{
  const identity=desktopIdentity({tenantId:randomUUID(),userId:randomUUID()},randomBytes(32));
- const resources=splitDesktopResources(identity,{image:`coke-grok-desktop:sha-${'a'.repeat(40)}`,controlNamespace:'coke-grok-bot',gatewayCA:'-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----'});
+ const resources=splitDesktopResources(identity,{image:`coke-grok-desktop:sha-${'a'.repeat(40)}`,agentImage:`coke-grok-desktop:sha-${'b'.repeat(40)}`,controlNamespace:'coke-grok-bot',gatewayCA:'-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----'});
  const desktop=resources.find(item=>item.kind==='Deployment'&&(item.metadata as {name:string}).name==='desktop') as any;
  const agent=resources.find(item=>item.kind==='Deployment'&&(item.metadata as {name:string}).name==='agent') as any;
+ assert.match(desktop.spec.template.spec.containers[0].image,/a{40}$/);
+ assert.match(agent.spec.template.spec.containers[0].image,/b{40}$/);
  assert.deepEqual(desktop.spec.template.spec.containers.map((c:any)=>c.name),['desktop']);
  assert.deepEqual(agent.spec.template.spec.containers.map((c:any)=>c.name),['agent']);
  assert.equal(desktop.spec.template.spec.containers[0].securityContext.runAsUser,1000);
@@ -36,4 +38,5 @@ test('experimental layout separates the Agent network from the desktop',()=>{
  const policy=resources.find(item=>item.kind==='NetworkPolicy'&&(item.metadata as {name:string}).name==='agent-isolation') as any;
  assert.equal(JSON.stringify(policy.spec.egress).includes('grok-desktop'),false);
  assert.equal((resources.find(item=>item.kind==='Service'&&(item.metadata as {name:string}).name==='desktop') as any).spec.ports.some((p:any)=>p.port===8083),false);
+ assert.throws(()=>splitDesktopResources(identity,{image:'coke-grok-desktop:latest',agentImage:'coke-grok-desktop:latest',controlNamespace:'coke-grok-bot',gatewayCA:'-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----'}));
 });

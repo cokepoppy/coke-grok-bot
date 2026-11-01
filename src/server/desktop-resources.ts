@@ -60,16 +60,16 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
   ];
 }
 
-/**
- * Experimental separate-Pod layout. It is not wired into the provisioner yet:
- * Pi still needs a mediated computer bridge before it can run tasks.
- */
-export function splitDesktopResources(identity:DesktopIdentity,options:{image:string;controlNamespace:string;gatewayCA:string}):Record<string,unknown>[] {
-  const resources=structuredClone(desktopResources(identity,{...options,guarded:true}));
+/** Separate computer and Agent Pods with independently pinned runtime images. */
+export function splitDesktopResources(identity:DesktopIdentity,options:{image:string;agentImage?:string;controlNamespace:string;gatewayCA:string}):Record<string,unknown>[] {
+  const agentImage=options.agentImage ?? options.image;
+  if(!/^coke-grok-desktop:sha-[a-f0-9]{40}$/.test(agentImage))throw new Error('Invalid desktop configuration');
+  const resources=structuredClone(desktopResources(identity,{...options,image:options.image,guarded:true}));
   const ns=identity.namespace;
   const find=(kind:string,name:string)=>{const resource=resources.find(item=>item.kind===kind&&(item.metadata as {name?:string})?.name===name);if(!resource)throw new Error('Missing desktop resource');return resource as any};
   const desktop=find('Deployment','desktop'),pod=desktop.spec.template.spec;
   const [desktopContainer,agentContainer]=pod.containers;
+  agentContainer.image=agentImage;
   desktopContainer.env.push({name:'COKE_GROK_AGENT_URL',value:`http://agent.${ns}.svc.cluster.local:8083/`});
   agentContainer.env=agentContainer.env.filter((entry:{name:string})=>entry.name!=='LINUX_DESKTOP_WORKER_TOKEN');
   agentContainer.env.push({name:'COKE_GROK_MEDIATED_COMPUTER',value:'1'});
