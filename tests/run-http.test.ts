@@ -30,5 +30,13 @@ test('run API is authenticated, owner-scoped, origin-protected and idempotent',a
   assert.equal((await request(path,b.cookie)).status,404);
   assert.equal((await request(`/api/runs/${firstBody.run.id}/events`,b.cookie)).status,404);
   const events=await request(`/api/runs/${firstBody.run.id}/events`,a.cookie);assert.equal(events.status,200);assert.deepEqual((await events.json() as {events:{status:string}[]}).events.map(x=>x.status),['queued']);
+  const claim=await runs.claimNext(a.id,30);assert.ok(claim);assert.equal(claim.run.id,firstBody.run.id);assert.equal(await runs.markUnknown(claim.run.id,claim.leaseId),true);
+  const recoveryPath=`/api/runs/${firstBody.run.id}/recovery`,recovery=(cookie:string,body='{"decision":"retry"}',from=origin)=>request(recoveryPath,cookie,{method:'POST',headers:{origin:from,'content-type':'application/json'},body});
+  assert.equal((await recovery('')).status,401);assert.equal((await recovery(b.cookie)).status,404);assert.equal((await recovery(a.cookie,'{"decision":"retry"}','https://evil.example')).status,403);
+  assert.equal((await recovery(a.cookie,'{"decision":"later"}')).status,400);
+  const retried=await recovery(a.cookie);assert.equal(retried.status,200);const retriedBody=await retried.json() as {decision:string;run:{id:string;prompt:string;status:string}};assert.equal(retriedBody.decision,'retry');assert.equal(retriedBody.run.prompt,'Hello');assert.equal(retriedBody.run.status,'queued');
+  const duplicateRetry=await recovery(a.cookie);assert.equal((await duplicateRetry.json() as typeof retriedBody).run.id,retriedBody.run.id);
+  assert.equal((await request(`/api/runs/${firstBody.run.id}/recovery`,a.cookie)).status,405);
+  assert.equal((await runs.list({...a.id,email:'a@example.test',name:'A',role:'owner'},bot.id))?.find(run=>run.id===firstBody.run.id)?.recoveryState,'retried');
  }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));await pool.end();await admin.query(`DROP DATABASE \`${db}\``);await admin.end()}
 });
