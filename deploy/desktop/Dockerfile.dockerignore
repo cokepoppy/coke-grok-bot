@@ -5,6 +5,7 @@
 !deploy/desktop/agent-runtime.mjs
 !deploy/desktop/cloud-kernel-adapter.mjs
 !deploy/desktop/dsh-computer-plugin.mjs
+!deploy/desktop/dsh-memory-plugin.mjs
 !deploy/desktop/computer-worker.mjs
 !deploy/desktop/guarded-computer.mjs
 !deploy/desktop/dsh-runtime/

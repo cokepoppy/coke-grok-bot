@@ -14,6 +14,8 @@ import { HttpGuardedComputerWorker } from './guarded-worker.ts';
 import { UserComputer } from './user-computer.ts';
 import { WorkspaceFileStore } from './file-store.ts';
 import { WorkspaceFileTransport } from './workspace-file-client.ts';
+import { BotMemoryStore } from './bot-memory-store.ts';
+import { BotMemoryBridge } from './bot-memory-bridge.ts';
 
 function required(env:NodeJS.ProcessEnv,key:string):string { const value=env[key]?.trim();if(!value)throw new Error(`Missing ${key}`);return value; }
 async function privateFile(path:string):Promise<Buffer>{
@@ -39,6 +41,7 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  const gatewayUrl=`https://${gatewayHost}:3002/v1`;
  const provisioner=new DesktopBrokerClient(required(env,'COKE_GROK_BROKER_URL'),brokerCa,brokerToken);
  const runs=new RunStore(pool);await runs.migrate();
+ const memories=new BotMemoryStore(pool);await memories.migrate();
  const files=new WorkspaceFileStore(pool),workspaceFiles=new WorkspaceFileTransport(provisioner);
  const approvals=new ApprovalStore(pool);await approvals.migrate();
  await approvals.purgeExpiredScreenshots();
@@ -51,10 +54,11 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
   // The task identifier is unused by the user-facing methods; it is required by the scoped worker constructor.
   return new HttpGuardedComputerWorker(owner,new URL(`http://desktop.${identity.namespace}.svc.cluster.local:8082/`),identity.controlToken,'00000000-0000-4000-8000-000000000000');
  },async(owner,signal)=>{await provisioner.connect(owner,signal)});
- const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals,bridge);
+ const memoryBridge=new BotMemoryBridge(memories);
+ const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals,bridge,memoryBridge);
  const executor=engine==='dsh'
-  ? new DshExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'))
-  : new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'));
+  ? new DshExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories)
+  : new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories);
  const scheduler=new RunScheduler(runs,executor,{concurrency:2,leaseSeconds:30});
  const server=gateway.createServer({key:tlsKey,cert});
  try{server.listen(3002,'0.0.0.0');await once(server,'listening')}catch(error){gateway.close();server.close();throw error}

@@ -7,6 +7,7 @@ COPY --chmod=0644 deploy/desktop/agent-runtime.mjs /opt/coke-grok/agent-runtime.
 COPY --chmod=0644 deploy/desktop/cloud-kernel-adapter.mjs /opt/coke-dots/grok-kernel-adapter.mjs
 COPY --chmod=0644 deploy/desktop/computer-tools.mjs /opt/coke-dots/computer-tools.mjs
 COPY --chmod=0644 deploy/desktop/dsh-computer-plugin.mjs /opt/coke-dots/dsh-computer-plugin.mjs
+COPY --chmod=0644 deploy/desktop/dsh-memory-plugin.mjs /opt/coke-dots/dsh-memory-plugin.mjs
 COPY --chmod=0644 deploy/desktop/computer-worker.mjs /opt/coke-dots/grok-computer-worker.mjs
 COPY --chmod=0644 deploy/desktop/guarded-computer.mjs /opt/coke-grok/guarded-computer.mjs
 COPY deploy/desktop/dsh-runtime/package.json deploy/desktop/dsh-runtime/package-lock.json /opt/coke-grok/dsh-runtime/

@@ -6,28 +6,29 @@ import { pipeline } from 'node:stream/promises';
 import type { ApprovalStore } from './approval-store.ts';
 import type { ComputerBridge,RunScope } from './computer-bridge.ts';
 import type { RunOwner } from './run-store.ts';
+import type { BotMemoryBridge, BotMemoryRunScope } from './bot-memory-bridge.ts';
 
 /**
  * A run receives a short-lived capability; the upstream credential stays in
  * the control process. Never attach this server to the public ingress.
  */
-type Grant = { expires: number; remaining: number; abort: AbortController; timer: NodeJS.Timeout; scope?:{runId:string;leaseId:string;owner?:RunOwner}; approvalsRemaining:number };
+type Grant = { expires: number; remaining: number; memoryRemaining:number; abort: AbortController; timer: NodeJS.Timeout; scope?:{runId:string;leaseId:string;botId?:string;owner?:RunOwner}; approvalsRemaining:number };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export class ModelGateway {
   private readonly grants = new Map<string, Grant>();
   private readonly upstream: URL;
-  constructor(private readonly apiKey: string, upstream: string, private readonly model: string, private readonly request: typeof fetch = fetch, private readonly approvals?:ApprovalStore, private readonly computer?:ComputerBridge) {
+  constructor(private readonly apiKey: string, upstream: string, private readonly model: string, private readonly request: typeof fetch = fetch, private readonly approvals?:ApprovalStore, private readonly computer?:ComputerBridge, private readonly memories?:BotMemoryBridge) {
     this.upstream = new URL(upstream);
     if (this.upstream.protocol !== 'https:' || this.upstream.username || this.upstream.password || this.upstream.search || this.upstream.hash || !this.upstream.pathname.endsWith('/compatible-mode/v1')) throw new Error('Invalid model endpoint');
     if (!apiKey || apiKey.length > 4096 || /[\r\n]/.test(apiKey) || !model) throw new Error('Invalid model configuration');
   }
-  issue(options: { ttlMs: number; calls: number; scope?:{runId:string;leaseId:string;owner?:RunOwner} }): string {
+  issue(options: { ttlMs: number; calls: number; scope?:{runId:string;leaseId:string;botId?:string;owner?:RunOwner} }): string {
     if (!Number.isSafeInteger(options.ttlMs) || options.ttlMs < 1 || options.ttlMs > 15 * 60_000 || !Number.isSafeInteger(options.calls) || options.calls < 1 || options.calls > 100) throw new Error('Invalid capability limits');
-    if(options.scope && (!uuid.test(options.scope.runId) || !uuid.test(options.scope.leaseId) || (options.scope.owner && (!uuid.test(options.scope.owner.tenantId)||!uuid.test(options.scope.owner.userId))))) throw new Error('Invalid capability scope');
+    if(options.scope && (!uuid.test(options.scope.runId) || !uuid.test(options.scope.leaseId) || (options.scope.botId && !uuid.test(options.scope.botId)) || (options.scope.owner && (!uuid.test(options.scope.owner.tenantId)||!uuid.test(options.scope.owner.userId))))) throw new Error('Invalid capability scope');
     const token = randomBytes(32).toString('base64url');
     const timer = setTimeout(() => this.revoke(token), options.ttlMs); timer.unref();
     const scope=options.scope ? { ...options.scope, ...(options.scope.owner ? {owner:{...options.scope.owner}} : {}) } : undefined;
-    this.grants.set(token, { expires: Date.now() + options.ttlMs, remaining: options.calls, abort: new AbortController(), timer, scope, approvalsRemaining:100 });
+    this.grants.set(token, { expires: Date.now() + options.ttlMs, remaining: options.calls, memoryRemaining:100, abort: new AbortController(), timer, scope, approvalsRemaining:100 });
     return token;
   }
   revoke(token: string): void {
@@ -40,12 +41,48 @@ export class ModelGateway {
       const fail = (status: number) => { if (!res.headersSent) res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end('{"error":"Model gateway request failed"}'); };
       const approvalMatch = req.url?.match(/^\/v1\/action-approvals\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(\/consume)?$/i);
       const approvalRoute = req.url === '/v1/action-approvals' || Boolean(approvalMatch);
+      const memoryMatch=req.url?.match(/^\/v1\/bot-memory(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}))?$/i);
+      const memoryRoute=Boolean(memoryMatch);
       const computerMatch=req.url?.match(/^\/v1\/computer\/actions\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(\/execute)?$/i);
       const computerRoute=req.url==='/v1/computer/control'||req.url==='/v1/computer/inspect'||req.url==='/v1/computer/screenshot'||req.url==='/v1/computer/actions'||Boolean(computerMatch);
-      if (!approvalRoute && !computerRoute && (req.method !== 'POST' || req.url !== '/v1/chat/completions')) return fail(404);
+      const modelRoute=req.method === 'POST' && req.url === '/v1/chat/completions';
+      if (!approvalRoute && !computerRoute && !memoryRoute && !modelRoute) return fail(404);
       const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization || '')?.[1];
       const grant = token && this.grants.get(token);
-      if (!grant || grant.expires <= Date.now() || (!approvalRoute && !computerRoute && grant.remaining <= 0)) { if (token && grant) this.revoke(token); return fail(401); }
+      if (!grant || grant.expires <= Date.now() || (modelRoute && grant.remaining <= 0) || (memoryRoute && grant.memoryRemaining <= 0)) { if (token && grant) this.revoke(token); return fail(401); }
+      if (memoryRoute) {
+        const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
+        if(!this.memories||!grant.scope?.owner||!grant.scope.botId)return fail(404);
+        grant.memoryRemaining--;
+        const scope:BotMemoryRunScope={...grant.scope,owner:grant.scope.owner,botId:grant.scope.botId};
+        const disconnected=new AbortController();res.once('close',()=>disconnected.abort());
+        const signal=AbortSignal.any([grant.abort.signal,disconnected.signal,AbortSignal.timeout(10_000)]);
+        try {
+          if(req.method==='GET'&&!memoryMatch?.[1]) {
+            const memories=await this.memories.list(scope,signal);
+            return memories ? reply(200,{memories}) : fail(409);
+          }
+          if(req.method==='DELETE'&&memoryMatch?.[1]) {
+            const forgotten=await this.memories.forget(scope,memoryMatch[1],signal);
+            return forgotten===null?fail(409):forgotten?reply(200,{forgotten:true}):fail(404);
+          }
+          if(req.method!=='POST'||memoryMatch?.[1])return fail(405);
+          if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return fail(415);
+          const chunks:Buffer[]=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>8192)return fail(413);chunks.push(chunk)}
+          let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return fail(400)}
+          if(!body||typeof body!=='object'||Array.isArray(body))return fail(400);
+          const payload=body as {action?:unknown;id?:unknown;title?:unknown;content?:unknown};
+          if(payload.action==='remember') {
+            const memory=await this.memories.remember(scope,payload.title,payload.content,payload.id,signal);
+            return memory?reply(201,{memory}):fail(409);
+          }
+          if(payload.action==='forget'&&typeof payload.id==='string') {
+            const forgotten=await this.memories.forget(scope,payload.id,signal);
+            return forgotten===null?fail(409):forgotten?reply(200,{forgotten:true}):fail(404);
+          }
+          return fail(400);
+        } catch { return fail(409); }
+      }
       if (computerRoute) {
         const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
         if(!this.computer||!grant.scope?.owner)return fail(404);

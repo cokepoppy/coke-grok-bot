@@ -34,6 +34,14 @@ T1 本机文件 SHA-256：`2cbb5f133a0c9743f2d52453a561331fbe0e97d4a271f76569166
 
 T1 `01:45.522` 菜单中 `Create new Bot` 保持高亮；紧接着 `01:45.564` 切到新 Bot 聊天，左侧出现 `New Bot`，聊天内容尚未生成，随后出现问候和用途选择卡片。`01:52.946` 的旧版设置面板显示 `Name`、`Label (optional)`、`Description` 和通知开关；`01:55.449` 可见名称已经改为 `Executive Assistant`。这证明视频录制版本的可见状态与改名路径；不能推断后台保存时机。当前官方文档最近更新于 2026-10-28，称个人 Bot 已不再有 description 或 Bot settings 页面，但名称和标签仍可通过详情编辑；因此不把该视频中的旧版 Description 界面当作当前个人 Bot 的功能规范。
 
+### 2026-11-01 Bot memory 资料复核
+
+当前行为依据[官方 Create and manage Bots 文档](https://docs.x.ai/grok-bot/bots)（页面标记更新于 2026-10-28）：个人 Bot 可跨聊天保留稳定偏好、重要事实、职责/规则和带日期的工作摘要；每个 Bot 有独立记忆，少量用户事实（文档举例姓名、时区）可在本人 Bots 间共享；Bot 会自行判断是否保存，不需先询问，用户可在聊天里要求查看、更正和删除。重置会话不删除记忆，删除 Bot 会删除其记忆；密码、支付卡和联系方式应放 Vault，记忆不能替代权威来源或操作审批。
+
+T4 Nate Herk 讲解视频 `05:15.000–05:19.967` 连续 150 帧已提取并逐张检查联系图；`05:18.333` 原尺寸 1920×1080 帧另行复核（`frames/nate-computer-318/frame-000010.png`）。画面展示一个旧版 Bot 聊天回答用户关于“全局共享信息”和“仅这个 Bot 知道的记忆”如何区分的问题；右侧同时有该 Bot 设置。此帧只作为聊天式查看记忆与 per-Bot/global 概念的辅助视觉/用词证据。画面中的创作者私人信息不复制进本项目；T4 是 2026-08-31 第三方讲解，不能覆盖现行官方文档，也不能证明现在仍有相同设置页。按当前文档，个人 Bot 记忆没有独立记忆管理页，因此实现入口以聊天工具为主。
+
+这一复核仅覆盖上述 5 秒连续帧，不声称已逐帧审完 T4 全片。官方说明与旧版视频之间的版本差异保留，不混作一个画面规格。
+
 当前 [Cursor 官方编辑 Bot 文档](https://prod.cursor.com/help/grok-bot/edit-bot)包含 [桌面头像选择器截图](https://prod.cursor.com/docs-static/images/grok-bot/avatar-picker-light.png)：图片本身为 577×568，顶部有 Bot、Generate、Upload、Reset，下面有两行共八个形状以及两行共十一个颜色。源图 SHA-256 为 `36efaeba2fb86c82550e4acec4a9a225d1f8b800b115cf81f493028d021429d7`，仅保存在被 Git 忽略的本机研究目录。本项目根据该图调整了形状及颜色排列，形状轮廓仍为近似 SVG。对图配置 `research/comparisons/cursor-avatar-picker.json` 将原图缩放至本机 290×284 截图；2026-10-30 此配置在色阶阈值 32 下约 4.86% 像素不同。原图显示比例及字体渲染环境未知，这个数字只用于迭代，不能证明像素一致。背景遮罩和弹层位置仍需官方实际画面核对。Generate、Upload 和 Reset 尚未实现，按钮处于禁用状态。
 
 创建 Bot 弹窗另以 [Cursor Forum 中 0.71.2 用户截图](https://forum.cursor.com/t/button-bricked-in-grok-bot/174924)为画面参照；该图是 Windows 用户上传的界面截图，不是官方发布的截图。当前客户端将 `+` 与 Cmd/Ctrl+N 接到创建弹窗；名称、13 个形状及 11 个颜色可提交并写入用户 Bot API。头像轮廓依据该参考截图描摹，颜色从截图色块中心逐点取样。配置 `research/comparisons/cursor-0712-create-bot.json` 将弹窗对齐到 440×580；2026-10-30 色阶阈值 32 下约 4.51% 像素有明显差异，MAE 为 4.73。这个诊断跨 Windows 截图与 Mac Chromium 渲染，受未知缩放和字体影响；仅能用于迭代，不能声称像素级一致。当前 UI 自动化检查了弹窗打开、初始焦点、Tab 循环、Escape 关闭、焦点返回、创建、刷新后的持久性和预览形状/颜色。
