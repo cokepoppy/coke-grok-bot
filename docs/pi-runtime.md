@@ -218,3 +218,11 @@ Google 登录的公网 Bot 1030 上，一条仅要求保存合成测试偏好的
 当前未提交候选在 Auth 的 Pi/DSH executor 增加服务端显式请求兜底：只识别用户直接消息开头的、未否定的长期偏好/规则等保存指令；内容仍通过 `BotMemoryStore` 的同一 owner、Bot、run、lease 校验和敏感数据筛查。写入完成后再派发 Agent，并把确定的保存状态放入上下文及最终回复；内容被拦截或写入未确认时明确告知用户，避免模型误称已保存。其他自主记忆判断仍由 `bot_memory` 工具完成；随附引用、网页/文件内容不会触发这个显式解析器。
 
 验证：`npm run test:runtime`（58）、`COKE_GROK_TEST_MYSQL_PORT=50762 npm run test:runtime-mysql`（14）、`npx tsc --noEmit` 和完整部署构建通过。固定公网 Agent 镜像的隔离 K3D Pi/DSH 记忆保存、跨运行召回与 Bot 隔离测试通过（8 次模型调用）。该 Auth 修复尚未部署至公网候选，且当前 Work 仍禁用本地浏览器控制，因此尚无已登录 Google UI 的公网 E2E 证据；不能据此宣布记忆功能验收或打 Bot Memory checkpoint tag。
+
+### 2026-11-01 公网显式记忆 API 复验
+
+提交 `52cbc9f` 的 Auth 镜像 `coke-grok-auth:sha-52cbc9f` 已导入并只滚动本机 K3D `coke-grok-auth`；公网 readiness 为 204。Broker、namespace bootstrap、用户 Desktop Pod 与 workspace PVC 没有重启，用户 Desktop Pod UID 仍为 `182718d4-1b6b-4abe-9880-5603720a9026`，PVC UID 仍为 `636987df-fa44-45f8-be00-bd8e88282b89`。
+
+通过公网域名的应用 API 使用一次性合成会话，创建合成 Bot 并完成三条真实 DeepSeek Pi 任务：显式长期偏好已写入 MySQL；独立后续运行成功召回精确 marker；第二 Bot 运行没有读到该 marker。三个运行均 completed 且没有诊断码。只写入本次合成用户的数据和个人 K3D namespace，任务终止后按外键顺序删除；复核为 0 个合成账号、0 个对应记忆，临时 namespace 不存在，现存 3 completed / 3 unknown 总状态与测试前相同。未触碰旧真实用户 unknown 队列。
+
+这证明显式 Bot Memory 在公网 API / Auth / MySQL / K3D Agent 这条合成身份链路工作，不等于 Google 登录态浏览器 UI 验收。CUA 仍由 Work 设置禁用本地浏览器控制，因此尚未验证真实 Chrome 的记忆交互与 UI；Bot Memory 分支尚未由用户最终验收，也没有新的 checkpoint tag 或发布目录。
