@@ -42,6 +42,7 @@
     "test:split-desktop-k3d": "node --import tsx tests/split-desktop-k3d.e2e.ts",
     "test:pi-pipeline-k3d": "node --import tsx tests/pi-pipeline-k3d.e2e.ts",
     "test:mediated-agent-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts",
+    "test:bot-memory-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts --memory-only",
     "build:deployment": "VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build && VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true node scripts/mark-web-build.mjs && npm run build:server && npm run build:desktop-broker && npm run build:namespace-bootstrap"
   },
   "dependencies": {

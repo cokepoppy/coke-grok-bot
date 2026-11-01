@@ -198,3 +198,9 @@ Product behavior and source limits are recorded in `research/README.md`: officia
 Google 登录的公网 Bot 1030 上，一条仅要求保存合成测试偏好的任务和随后一条只读记忆查询都很快变成 `unknown`，二者都没有结果；对测试标记的数据库核对显示没有保存记录。两条运行都经历 queued → running → unknown，约 1–2 秒内进入 unknown。第一条经过复核后由 owner 确认未知并恢复队列；第二条只读查询仍是 pending，继续阻塞队列。Agent 只记录启动行，当前调度器会隐藏执行异常，故根因尚未定位。没有重试，也没有删除现有记忆或用户数据。尝试检查页面时 CUA 返回 Work 设置禁用本地浏览器控制，无法继续通过已登录 Chrome 完成恢复/召回验收。
 
 因此真实隔离 K3D Pi/DSH 记忆验证已通过，公网候选服务 Ready，但公网记忆保存、召回与清除没有验收通过。当前实现仍是候选；保持唯一分支 `codex/grok-bot-bot-memory`，不把该公网状态描述为成功，也不在此状态创建“通过验收”的 tag、发布目录或正式回退记忆。
+
+### 2026-11-01 实际部署 Agent 镜像隔离复测
+
+为排除用户 Agent 镜像本身的问题，新增 `npm run test:bot-memory-k3d` 专项入口，复用同一真实 K3D Harness，但跳过电脑终端长流程。以公网当前运行的 Agent 镜像 `coke-grok-desktop:sha-8fccb502ae2205e1279a8d99b55b5212bc8f28d9`、临时 MySQL、独立 namespace 与真实 DeepSeek 为条件，Pi 和 DSH 写入记忆、后续 Pi 跨运行取回、第二 Bot 无继承均通过（10 次模型调用）。它证明该 Agent 镜像在隔离设置下支持记忆路径，但不能替代公网 Auth/数据库/租约链路验收。
+
+同镜像的全量 `test:mediated-agent-k3d` 在本轮于 DSH 终端动作断言提前失败，未运行后续记忆断言；实际 failure 是模型提出了不符合该测试期望的终端动作，不代表记忆测试失败。该全量测试的 DSH 终端输出稳定性仍待单独处理。两次测试创建的临时 namespace/PVC 和临时 MySQL schema 均已确认清理；用户 namespace、MySQL 和原有 Desktop/PVC 未受影响。
