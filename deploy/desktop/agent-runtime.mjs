@@ -217,6 +217,16 @@ async function prepareTaskAttachments(value, taskDirectory) {
   return results;
 }
 
+function validateBotMemoryBridge(value) {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.mode !== 'mediated') {
+    throw new Error('Bot memory bridge configuration is invalid');
+  }
+  // The task capability is already in modelConfig.apiKey; forward only the
+  // allowlisted mode so caller-supplied fields can never become credentials.
+  return { mode: 'mediated' };
+}
+
 function requireModelConfig(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Shared Model API configuration is required for cloud Agent kernels');
@@ -351,6 +361,7 @@ async function executeKernel(input, requestSignal, slot) {
   if (!prompt || prompt.length > 20_000) throw new Error('Task prompt must contain 1–20000 characters');
   if (requestSignal?.aborted) throw new Error('Agent task was cancelled');
   const modelConfig = requireModelConfig(input.modelConfig);
+  const memory = validateBotMemoryBridge(input.memory);
   const dingtalkDocumentsBridge = validateDingTalkDocumentsBridge(input.dingtalkDocumentsBridge);
   const dingtalkCalendarBridge = validateDingTalkCalendarBridge(input.dingtalkCalendarBridge);
   const dingtalkMinutesBridge = validateDingTalkMinutesBridge(input.dingtalkMinutesBridge);
@@ -385,6 +396,7 @@ async function executeKernel(input, requestSignal, slot) {
     engine, prompt: `${prompt}${attachmentPrompt}`, cwd, workspace, taskId, attachments,
     sessionId: typeof input.sessionId === 'string' ? input.sessionId : null,
     modelConfig,
+    ...(memory ? { memory } : {}),
     computer: process.env.COKE_GROK_MEDIATED_COMPUTER === '1' ? { mode:'mediated', gatewayUrl:modelConfig.baseUrl, gatewayToken:modelConfig.apiKey } : {
       baseUrl: `http://127.0.0.1:${workerPort}`,
       workerToken: process.env.LINUX_DESKTOP_WORKER_TOKEN,
