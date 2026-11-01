@@ -12,4 +12,4 @@ resources:
 images:
   - name: coke-grok-auth
     newName: coke-grok-auth
-    newTag: sha-3d9f130
+    newTag: sha-d636ac4
