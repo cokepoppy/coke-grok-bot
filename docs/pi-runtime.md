@@ -207,4 +207,6 @@ Google 登录的公网 Bot 1030 上，一条仅要求保存合成测试偏好的
 
 ### 2026-11-01 未知运行的安全诊断码
 
-为定位公网 `unknown` 而不保存模型错误正文、任务提示词或密钥，调度器现在把 Agent 连接、记忆预加载、Agent HTTP 状态、响应校验、租约丢失、用户中断和结果写回等失败映射到固定枚举码，并写入 `agent_run_events.detail`。普通未分类异常只记录为 `executor_error`；Agent 4xx 只保存状态类别。`npm run test:runtime`（53）、`COKE_GROK_TEST_MYSQL_PORT=50762 npm run test:runtime-mysql`（14）和 `npx tsc --noEmit` 通过。此诊断改动尚未滚动到公网 Auth；它不能追溯解释已有的两个 unknown，需在部署后有一条新的已授权任务才能读取具体失败阶段。
+为定位公网 `unknown` 而不保存模型错误正文、任务提示词或密钥，调度器现在把 Agent 连接、记忆预加载、Agent HTTP 状态、响应校验、租约丢失、用户中断和结果写回等失败映射到固定枚举码，并写入 `agent_run_events.detail`。普通未分类异常只记录为 `executor_error`；Agent 4xx 只保存状态类别。`npm run test:runtime`（53）、`COKE_GROK_TEST_MYSQL_PORT=50762 npm run test:runtime-mysql`（14）和 `npx tsc --noEmit` 通过。
+
+该诊断版 Auth 镜像 `coke-grok-auth:sha-d636ac4` 已导入 K3D，并只滚动 `coke-grok-auth` Deployment 到 1/1 Ready；公网 readiness 为 204，重启日志只含一条启动行且无错误。Agent、Desktop Broker、namespace bootstrap、用户 Desktop Pod 和 workspace PVC 未重启或改动。现有 Bot 1030 只读 unknown 仍 pending；部署后未创建新任务，因为 CUA 仍禁用本地浏览器控制，无法在签名态 UI 中完成 owner recovery 或提交新的授权任务。诊断码不追溯旧运行，需在用户队列恢复后对新的 unknown 读取 `agent_run_events.detail` 才能定位阶段。
