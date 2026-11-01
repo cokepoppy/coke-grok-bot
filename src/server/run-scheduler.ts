@@ -5,10 +5,10 @@ export interface SchedulerStore {
   queuedOwners(limit: number): Promise<RunOwner[]>;
   claimNext(owner: RunOwner, leaseSeconds: number): Promise<{run:AgentRun;leaseId:string}|null>;
   renew(runId:string, leaseId:string, leaseSeconds:number): Promise<boolean>;
-  finish(runId:string, leaseId:string, status:'completed'|'failed', result:string): Promise<boolean>;
+  finish(runId:string, leaseId:string, status:'completed'|'failed', result:string, artifacts?:unknown): Promise<boolean>;
   markUnknown(runId:string, leaseId:string): Promise<boolean>;
 }
-export type ExecutionResult = {status:'completed'|'failed';result:string};
+export type ExecutionResult = {status:'completed'|'failed';result:string;artifacts?:unknown};
 export interface RunExecutor { execute(owner:RunOwner,run:AgentRun,signal:AbortSignal,leaseId:string):Promise<ExecutionResult> }
 
 /**
@@ -59,7 +59,7 @@ export class RunScheduler {
       const outcome = await this.executor.execute(owner,claim.run,abort.signal,claim.leaseId);
       if (leaseLost || abort.signal.aborted) { await this.store.markUnknown(claim.run.id,claim.leaseId); return; }
       if (!outcome || !['completed','failed'].includes(outcome.status) || typeof outcome.result !== 'string' || !outcome.result.trim() || outcome.result.length > 20000) throw new Error('Invalid executor result');
-      const saved = await this.store.finish(claim.run.id,claim.leaseId,outcome.status,outcome.result);
+      const saved = await this.store.finish(claim.run.id,claim.leaseId,outcome.status,outcome.result,outcome.artifacts);
       if (!saved) await this.store.markUnknown(claim.run.id,claim.leaseId);
     } catch {
       // The executor might already have performed an external side effect. Do not repeat it.

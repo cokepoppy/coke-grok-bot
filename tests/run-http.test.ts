@@ -8,14 +8,18 @@ import { BotStore } from '../src/server/bot-store.ts';
 import { RunStore } from '../src/server/run-store.ts';
 import { GoogleAuthService, type IdentityProvider } from '../src/server/google-auth.ts';
 import { createAuthServer } from '../src/server/auth-http.ts';
+import { Readable } from 'node:stream';
+import { WorkspaceFileStore } from '../src/server/file-store.ts';
+import type { WorkspaceFileTransport } from '../src/server/workspace-file-client.ts';
 const port=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);if(!port)throw new Error('Disposable MySQL port required');
 test('run API is authenticated, owner-scoped, origin-protected and idempotent',async()=>{
  const db=`grok_run_api_${randomUUID().replaceAll('-','')}`,admin=await mysql.createConnection({host:'127.0.0.1',port,user:'root'});await admin.query(`CREATE DATABASE \`${db}\``);
- const pool=mysql.createPool({host:'127.0.0.1',port,user:'root',database:db,timezone:'Z'});const ids=new TenantStore(pool),bots=new BotStore(pool),runs=new RunStore(pool);
+ const pool=mysql.createPool({host:'127.0.0.1',port,user:'root',database:db,timezone:'Z'});const ids=new TenantStore(pool),bots=new BotStore(pool),runs=new RunStore(pool),files=new WorkspaceFileStore(pool),workspace=new Map<string,Buffer>();
  await ids.migrate();await bots.migrate();await runs.migrate();
  const net=await import('node:net'),reservation=net.createServer();reservation.listen(0,'127.0.0.1');await once(reservation,'listening');const httpPort=(reservation.address() as import('node:net').AddressInfo).port;await new Promise<void>(resolve=>reservation.close(()=>resolve()));
  const origin=`http://127.0.0.1:${httpPort}`,base=origin+'/grok-bot',provider:IdentityProvider={authorizationUrl:()=>'',exchange:async()=>({})};
- const server=createAuthServer(new GoogleAuthService(ids,provider,base),base,undefined,bots,runs,undefined,undefined,'dsh');server.listen(httpPort,'127.0.0.1');await once(server,'listening');
+ const transport={async upload(_owner:any,input:any){const chunks:Buffer[]=[];for await(const chunk of input.body)chunks.push(Buffer.from(chunk));const bytes=Buffer.concat(chunks),sha256=createHash('sha256').update(bytes).digest('hex');workspace.set(`shared/uploads/${input.id}${input.extension?'.'+input.extension:''}`,bytes);return {size:bytes.length,sha256}},async download(_owner:any,key:string){const bytes=workspace.get(key);if(!bytes)throw new Error('missing');return {body:Readable.from([bytes]),size:bytes.length}},async removeUpload(){}} as unknown as WorkspaceFileTransport;
+ const server=createAuthServer(new GoogleAuthService(ids,provider,base),base,undefined,bots,runs,undefined,undefined,'dsh',files,transport);server.listen(httpPort,'127.0.0.1');await once(server,'listening');
  const login=async(subject:string)=>{const id=await ids.signInGoogle({subject,email:`${subject}@example.test`,name:subject}),token=randomBytes(32).toString('base64url');await ids.createSession(createHash('sha256').update(token).digest('hex'),id.userId,id.tenantId,new Date(Date.now()+60000));return {id,cookie:`coke_grok_session=${token}`}};
  try{
   const a=await login('a'),b=await login('b');const bot=await bots.create({...a.id,email:'a@example.test',name:'A',role:'owner'},{name:'A',shape:'round',color:'#abcdef'});
@@ -38,5 +42,20 @@ test('run API is authenticated, owner-scoped, origin-protected and idempotent',a
   const duplicateRetry=await recovery(a.cookie);assert.equal((await duplicateRetry.json() as typeof retriedBody).run.id,retriedBody.run.id);
   assert.equal((await request(`/api/runs/${firstBody.run.id}/recovery`,a.cookie)).status,405);
   assert.equal((await runs.list({...a.id,email:'a@example.test',name:'A',role:'owner'},bot.id))?.find(run=>run.id===firstBody.run.id)?.recoveryState,'retried');
+  const retryClaim=await runs.claimNext(a.id,30);assert.equal(retryClaim?.run.id,retriedBody.run.id);assert.equal(await runs.finish(retryClaim!.run.id,retryClaim!.leaseId,'completed','Explicit retry complete.'),true);
+  const uploadBytes=Buffer.from('customer notes for the Agent'),uploadPath=`/api/bots/${bot.id}/files`;
+  const uploaded=await request(uploadPath,a.cookie,{method:'POST',headers:{origin,'content-type':'text/plain','x-file-name':encodeURIComponent('notes.txt')},body:new Uint8Array(uploadBytes)});
+  assert.equal(uploaded.status,201);const uploadedFile=(await uploaded.json() as {file:{id:string;name:string}}).file;assert.equal(uploadedFile.name,'notes.txt');
+  const attachedRequest=randomUUID(),attached=await request(path,a.cookie,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({requestId:attachedRequest,prompt:'Read my notes',files:[uploadedFile.id]})});assert.equal(attached.status,200);const attachedRun=(await attached.json() as {run:{id:string;files:{id:string;kind:string}[]}}).run;assert.deepEqual(attachedRun.files.map(file=>[file.id,file.kind]),[[uploadedFile.id,'input']]);
+  assert.equal((await request(`/api/files/${uploadedFile.id}`,b.cookie)).status,404);const attachedDownload=await request(`/api/files/${uploadedFile.id}`,a.cookie);assert.equal(attachedDownload.status,200);assert.equal(await attachedDownload.text(),uploadBytes.toString());
+  const attachedClaim=await runs.claimNext(a.id,30);assert.equal(attachedClaim?.run.id,attachedRun.id);assert.equal(attachedClaim?.run.files[0].storageKey,workspace.keys().next().value);
+  const outputBytes=Buffer.from('Agent-generated summary');const outputHash=createHash('sha256').update(outputBytes).digest('hex');
+  assert.equal(await runs.finish(attachedRun.id,attachedClaim!.leaseId,'completed','I read the notes and created a summary.',[{name:'summary.txt',mimeType:'text/plain',size:outputBytes.length,sha256:outputHash,storageKey:`tasks/${attachedRun.id}/artifacts/summary.txt`}]),true);
+  workspace.set(`tasks/${attachedRun.id}/artifacts/summary.txt`,outputBytes);
+  const savedRun=(await runs.list({...a.id,email:'a@example.test',name:'A',role:'owner'},bot.id))?.find(run=>run.id===attachedRun.id);assert.equal(savedRun?.files.filter(file=>file.kind==='output').length,1);
+  const outputFile=savedRun!.files.find(file=>file.kind==='output')!;const downloaded=await request(`/api/files/${outputFile.id}`,a.cookie);assert.equal(downloaded.status,200);assert.match(downloaded.headers.get('content-disposition')||'',/inline/);assert.equal(await downloaded.text(),outputBytes.toString());
+  const unsafeBytes=Buffer.from('<script>no execution</script>'),unsafeUpload=await request(uploadPath,a.cookie,{method:'POST',headers:{origin,'content-type':'text/html','x-file-name':encodeURIComponent('unsafe.html')},body:new Uint8Array(unsafeBytes)});assert.equal(unsafeUpload.status,201);const unsafeId=(await unsafeUpload.json() as {file:{id:string}}).file.id;
+  const unsafeRun=await runs.create({...a.id,email:'a@example.test',name:'A',role:'owner'},bot.id,randomUUID(),'Inspect HTML',[unsafeId]);assert.ok(unsafeRun);const unsafeClaim=await runs.claimNext(a.id,30);assert.equal(unsafeClaim?.run.id,unsafeRun.id);assert.equal(await runs.finish(unsafeRun.id,unsafeClaim!.leaseId,'completed','Reviewed the file.'),true);
+  const unsafeFile=await request(`/api/files/${unsafeId}`,a.cookie);assert.equal(unsafeFile.status,200);assert.equal(unsafeFile.headers.get('content-type'),'application/octet-stream');assert.match(unsafeFile.headers.get('content-disposition')||'',/attachment/);
  }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));await pool.end();await admin.query(`DROP DATABASE \`${db}\``);await admin.end()}
 });

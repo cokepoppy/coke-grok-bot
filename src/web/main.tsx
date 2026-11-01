@@ -7,7 +7,8 @@ import './shell.css';
 type Shape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle' | 'oval' | 'square' | 'pill' | 'spark' | 'heart' | 'flower' | 'pentagon' | 'star';
 type Bot = { id: string; name: string; label: string; color: string; shape: Shape; group: string; preview: string; pinned?: boolean; hidden?: boolean };
 type Message = { id: string; role: 'user' | 'bot'; text: string };
-type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged'; replacementRunId: string | null };
+type RunFile = { id: string; name: string; mimeType: string; size: number; sha256: string; kind: 'input' | 'output' };
+type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged'; replacementRunId: string | null; files: RunFile[] };
 type Approval = { id: string; action: string; status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired'; hasScreenshot?: boolean };
 type PreviewState = { bots: Bot[]; activeId: string; messages: Record<string, Message[]>; showOnboarding: Record<string, boolean> };
 type IconName = 'search' | 'plus' | 'mic' | 'sound' | 'close' | 'panel' | 'share' | 'screen' | 'arrow' | 'smile' | 'reply' | 'more';
@@ -17,6 +18,14 @@ const createShapes:Shape[]=['round','oval','square','spark','cloud','heart','flo
 const createColors=['#000000','#a06b39','#fb2b3e','#fd690f','#f59312','#14c16f','#13b7a2','#1e86fc','#8f59f9','#f93498','#959595'];
 
 const STORAGE_KEY = 'coke-grok-bot:desktop-preview:v1';
+const attachmentCountLimit = 20;
+const attachmentImageLimit = 25 * 1024 * 1024;
+const attachmentImagesTotalLimit = 200 * 1024 * 1024;
+const attachmentDocumentLimit = 250 * 1024 * 1024;
+const attachmentVideoLimit = 1024 * 1024 * 1024;
+const previewVideoTypes = new Set(['video/mp4','video/webm','video/quicktime']);
+const previewAudioTypes = new Set(['audio/mpeg','audio/wav','audio/mp4','audio/ogg','audio/webm','audio/aac']);
+const previewImageTypes = new Set(['image/png','image/jpeg','image/webp','image/gif','image/avif']);
 const primary: Bot = { id: 'bobo', name: 'bobo', label: 'life stabilizer', color: '#4c8ff4', shape: 'cloud', group: '', preview: '' };
 const initialBots: Bot[] = [
   { id: 'new', name: 'New Bot', label: '', color: '#a382ef', shape: 'drop', group: 'Unassigned', preview: 'What do you want me helping ...' },
@@ -174,6 +183,10 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const avatarDialog=useRef<HTMLElement>(null);
   const [tab, setTab] = useState<'Details' | 'Library' | 'Computer'>('Computer');
   const [draft, setDraft] = useState('');
+  const [pendingFiles, setPendingFiles] = useState<Record<string, File[]>>({});
+  const [pendingRunFiles, setPendingRunFiles] = useState<Record<string, RunFile[]>>({});
+  const [previewFile, setPreviewFile] = useState<RunFile | null>(null);
+  const filePicker = useRef<HTMLInputElement>(null);
   const [customAnswer, setCustomAnswer] = useState('');
   const [notice, setNotice] = useState(false);
   const [agentFeature, setAgentFeature] = useState<'loading' | 'enabled' | 'disabled' | 'error'>(remote ? 'loading' : 'disabled');
@@ -387,21 +400,35 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   async function addMessage(text: string) {
     if (!active || uncertainMutation.current) return;
     const clean = text.trim();
-    if (!clean) return;
+    const selectedFiles = pendingFiles[active.id] || [];
+    const selectedRunFiles = pendingRunFiles[active.id] || [];
+    if (!clean && !selectedFiles.length && !selectedRunFiles.length) return;
     if (remote) {
       const id = active.id;
       if (sendingRef.current || history.id !== id || history.status !== 'ready') return;
       if (agentFeature === 'loading' || agentFeature === 'error' || (agentFeature === 'enabled' && (runHistory.id !== id || runHistory.status !== 'ready' || unresolvedOutcome))) return;
       if (clean.length > 10000) { setBotError('Message is too long.'); return; }
+      if (selectedFiles.length + selectedRunFiles.length > attachmentCountLimit) { setBotError('Attach up to 20 files per message.'); return; }
       sendingRef.current = true; setSending(true); setBotError('');
       try {
         if (agentFeature === 'enabled') {
-          const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${id}/runs`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: crypto.randomUUID(), prompt: clean }) });
+          const uploaded = [] as Array<{id:string}>;
+          for (const file of selectedFiles) {
+            const upload = await fetch(`${import.meta.env.BASE_URL}api/bots/${id}/files`, { method:'POST', credentials:'same-origin', headers:{'Content-Type':attachmentMimeType(file),'X-File-Name':encodeURIComponent(file.name)}, body:file });
+            if (!upload.ok) throw new Error('file upload failed');
+            const value = await upload.json() as {file?:{id?:unknown}};
+            if (typeof value.file?.id !== 'string') throw new Error('invalid file upload response');
+            uploaded.push({id:value.file.id});
+          }
+          const prompt = clean || 'Please review the attached file(s).';
+          const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${id}/runs`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: crypto.randomUUID(), prompt, files:[...uploaded.map(file=>file.id),...selectedRunFiles.map(file=>file.id)] }) });
           if (!response.ok) throw new Error('run submission failed');
           const { run } = await response.json() as { run: AgentRun };
           if (!run || typeof run.id !== 'string' || typeof run.prompt !== 'string') throw new Error('invalid run response');
           setRunHistory(current => ({ id, status: 'ready', runs: [...current.runs.filter(item => item.id !== run.id), run] }));
           setState(current => ({ ...current, bots: current.bots.map(bot => bot.id === id ? { ...bot, preview: clean } : bot) }));
+          setPendingFiles(current => ({...current,[id]:[]}));
+          setPendingRunFiles(current => ({...current,[id]:[]}));
           if (activeIdRef.current === id) { setDraft(''); setCustomAnswer(''); }
           setRunRefresh(value => value + 1);
           return;
@@ -421,6 +448,31 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     }
     setState(current => ({ ...current, messages: { ...current.messages, [active.id]: [...(current.messages[active.id] || []), { id: crypto.randomUUID(), role: 'user', text: clean }] }, bots: current.bots.map(bot => bot.id === active.id ? { ...bot, preview: clean } : bot), showOnboarding: { ...current.showOnboarding, [active.id]: false } }));
     setDraft(''); setCustomAnswer(''); setNotice(true);
+  }
+  function stageFiles(files: File[]) {
+    if (!active || !files.length) return;
+    const combined = [...(pendingFiles[active.id] || []), ...files];
+    if (combined.length + (pendingRunFiles[active.id] || []).length > attachmentCountLimit) { setBotError('Attach up to 20 files per message.'); return; }
+    for (const file of combined) {
+      const mimeType = attachmentMimeType(file);
+      if (!Number.isSafeInteger(file.size) || file.size < 1) { setBotError(`${file.name || 'This file'} is empty or unreadable.`); return; }
+      const limit = mimeType.startsWith('image/') ? attachmentImageLimit : mimeType.startsWith('video/') ? attachmentVideoLimit : attachmentDocumentLimit;
+      if (file.size > limit) { setBotError(`${file.name} is too large. The limit is ${mimeType.startsWith('image/') ? '25 MB per image' : mimeType.startsWith('video/') ? '1 GB per video' : '250 MB per file'}.`); return; }
+    }
+    const images = [...(pendingRunFiles[active.id] || []).filter(file=>file.mimeType.startsWith('image/')), ...combined.filter(file => attachmentMimeType(file).startsWith('image/'))];
+    if (images.reduce((total, file) => total + file.size, 0) > attachmentImagesTotalLimit) { setBotError('Images exceed the 200 MB total limit per message.'); return; }
+    setBotError('');
+    setPendingFiles(current => ({ ...current, [active.id]: combined }));
+  }
+  function reuseRunFile(file: RunFile) {
+    if (!active || agentFeature !== 'enabled') return;
+    const current = pendingRunFiles[active.id] || [];
+    if (current.some(item => item.id === file.id)) return;
+    if (current.length + (pendingFiles[active.id] || []).length >= attachmentCountLimit) { setBotError('Attach up to 20 files per message.'); return; }
+    const currentImageSize=current.filter(item=>item.mimeType.startsWith('image/')).reduce((total,item)=>total+item.size,0)+(pendingFiles[active.id]||[]).filter(item=>attachmentMimeType(item).startsWith('image/')).reduce((total,item)=>total+item.size,0);
+    if(file.mimeType.startsWith('image/')&&(file.size>attachmentImageLimit||currentImageSize+file.size>attachmentImagesTotalLimit)){setBotError('Images exceed the per-file or 200 MB total limit per message.');return}
+    setBotError('');
+    setPendingRunFiles(value => ({ ...value, [active.id]: [...(value[active.id] || []), file] }));
   }
   function renameBot(name: string) {
     if (!active) return;
@@ -570,13 +622,13 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         <div className={`chat-header ${panel ? 'panel-open' : ''}`}><button type="button" className="chat-title" onClick={() => setPanel(value => !value)}><Avatar bot={active} size={30} /><span>{active.name}</span></button></div>
         <div className="header-actions"><IconButton name="share" label="Share bot" onClick={() => setNotice(true)} /><IconButton name="panel" label={panel ? 'Hide bot details' : 'Show bot details'} onClick={() => setPanel(value => !value)} /></div>
         <div className={`workspace ${panel ? 'with-panel' : ''}`}>
-          <section className="conversation" aria-label={`Chat with ${active.name}`}>
+          <section className="conversation" aria-label={`Chat with ${active.name}`} onDragOver={event=>{if(remote&&agentFeature==='enabled'&&Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault()}} onDrop={event=>{if(!remote||agentFeature!=='enabled'||!event.dataTransfer.files.length)return;event.preventDefault();event.stopPropagation();stageFiles(Array.from(event.dataTransfer.files))}}>
             <div className="message-scroll">
               {remote && history.id === active.id && history.status === 'loading' && <div role="status">Loading messages…</div>}
               {remote && history.id === active.id && history.status === 'error' && <div role="alert">Could not confirm message history. Refresh to check it.</div>}
               {messages.length > 0 && <div className="date-line">{reference ? 'Today 1:26 PM' : 'Today'}</div>}
               {messages.map(message => <div key={message.id} className={`message-line ${message.role}`}><div className="message-bubble">{message.text}</div>{message.role === 'bot' && <div className="message-actions"><Icon name="smile" /><Icon name="reply" /><Icon name="more" /></div>}</div>)}
-              {remote && agentFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.map(run => <React.Fragment key={run.id}><div className="message-line user"><div className="message-bubble">{run.prompt}</div></div><div className="message-line bot"><div className="message-bubble"><span className="run-status">{run.status === 'unknown' && run.recoveryState === 'acknowledged' ? 'Outcome unknown · reviewed; queue resumed' : run.status === 'unknown' && run.recoveryState === 'retried' ? 'Outcome unknown · explicit retry recorded' : ({ queued: 'Queued · waiting for your computer', running: 'Working on your computer', completed: 'Completed', failed: 'Failed', unknown: 'Outcome unknown · check before retrying' } as const)[run.status]}</span>{run.result && <p>{run.result}</p>}{run.status === 'unknown' && run.recoveryState === 'pending' && <section className="run-recovery" aria-label="Review uncertain task outcome"><p>The previous task may have run even though its result was not saved. Review the computer before deciding.</p><div><button type="button" disabled={Boolean(resolvingRun) || runHistory.status !== 'ready'} onClick={() => void recoverRun(run, 'acknowledge')}>{resolvingRun === run.id ? 'Saving…' : 'I checked · continue'}</button><button type="button" disabled={Boolean(resolvingRun) || runHistory.status !== 'ready'} onClick={() => void recoverRun(run, 'retry')}>{resolvingRun === run.id ? 'Saving…' : 'Retry as a new task'}</button></div></section>}{run.status === 'unknown' && run.recoveryState === 'retried' && run.replacementRunId && <p className="run-recovery-note">A separate queued task was created; the original outcome remains in history.</p>}{(runApprovals[run.id] || []).filter(approval => approval.status === 'pending').map(approval => <ApprovalCard key={approval.id} approval={approval} disabled={Boolean(decidingApproval) || runHistory.status !== 'ready'} decide={decision => void decideApproval(approval.id, decision)} />)}</div></div></React.Fragment>)}
+              {remote && agentFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.map(run => <React.Fragment key={run.id}><div className="message-line user"><div className="message-bubble">{run.prompt}<RunFileCards files={(run.files||[]).filter(file=>file.kind==='input')} onPreview={setPreviewFile}/></div></div><div className="message-line bot"><div className="message-bubble"><span className="run-status">{run.status === 'unknown' && run.recoveryState === 'acknowledged' ? 'Outcome unknown · reviewed; queue resumed' : run.status === 'unknown' && run.recoveryState === 'retried' ? 'Outcome unknown · explicit retry recorded' : ({ queued: 'Queued · waiting for your computer', running: 'Working on your computer', completed: 'Completed', failed: 'Failed', unknown: 'Outcome unknown · check before retrying' } as const)[run.status]}</span>{run.result && <p>{run.result}</p>}<RunFileCards files={(run.files||[]).filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseRunFile}/>{run.status === 'unknown' && run.recoveryState === 'pending' && <section className="run-recovery" aria-label="Review uncertain task outcome"><p>The previous task may have run even though its result was not saved. Review the computer before deciding.</p><div><button type="button" disabled={Boolean(resolvingRun) || runHistory.status !== 'ready'} onClick={() => void recoverRun(run, 'acknowledge')}>{resolvingRun === run.id ? 'Saving…' : 'I checked · continue'}</button><button type="button" disabled={Boolean(resolvingRun) || runHistory.status !== 'ready'} onClick={() => void recoverRun(run, 'retry')}>{resolvingRun === run.id ? 'Saving…' : 'Retry as a new task'}</button></div></section>}{run.status === 'unknown' && run.recoveryState === 'retried' && run.replacementRunId && <p className="run-recovery-note">A separate queued task was created; the original outcome remains in history.</p>}{(runApprovals[run.id] || []).filter(approval => approval.status === 'pending').map(approval => <ApprovalCard key={approval.id} approval={approval} disabled={Boolean(decidingApproval) || runHistory.status !== 'ready'} decide={decision => void decideApproval(approval.id, decision)} />)}</div></div></React.Fragment>)}
               {remote && agentFeature === 'enabled' && runHistory.id === active.id && runHistory.status === 'error' && <div role="alert">Could not confirm task history. Refresh to check it before submitting again.</div>}
               {state.showOnboarding[active.id] && <div className="onboarding-card">
                 <div className="onboarding-title">What do you want me helping with most right now?<IconButton name="close" label="Dismiss suggestions" onClick={() => setState(current => ({ ...current, showOnboarding: { ...current.showOnboarding, [active.id]: false } }))} /></div>
@@ -588,7 +640,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
               {notice && <div className="local-feedback" role="status">{remote ? 'No message was sent to an Agent.' : 'This is a local preview. No message was sent to an Agent or external service.'}</div>}
               <div ref={messagesEnd} />
             </div>
-            <form className="composer" onSubmit={event => { event.preventDefault(); void addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} disabled={composerDisabled} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() ? <button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote ? (agentFeature === 'enabled' ? 'Send task' : 'Save message') : 'Save local message'}><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
+            {remote && agentFeature === 'enabled' && <input ref={filePicker} className="file-picker" type="file" multiple aria-label="Choose files to attach" onChange={event=>{stageFiles(Array.from(event.currentTarget.files||[]));event.currentTarget.value=''}}/>}
+            {remote && agentFeature === 'enabled' && ((pendingFiles[active.id]||[]).length+(pendingRunFiles[active.id]||[]).length)>0 && <div className="pending-files" aria-label="Files to attach">{(pendingRunFiles[active.id]||[]).map((file,index)=><span className="pending-file" key={`run:${file.id}`}><span>{file.name}</span><button type="button" aria-label={`Remove reused ${file.name}`} onClick={()=>setPendingRunFiles(current=>({...current,[active.id]:(current[active.id]||[]).filter((_,itemIndex)=>itemIndex!==index)}))}>×</button></span>)}{(pendingFiles[active.id]||[]).map((file,index)=><span className="pending-file" key={`local:${file.name}:${file.lastModified}:${index}`}><span>{file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={()=>setPendingFiles(current=>({...current,[active.id]:(current[active.id]||[]).filter((_,itemIndex)=>itemIndex!==index)}))}>×</button></span>)}</div>}
+            <form className="composer" onSubmit={event => { event.preventDefault(); void addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => remote && agentFeature === 'enabled' ? filePicker.current?.click() : setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} disabled={composerDisabled} onChange={event => setDraft(event.target.value)} onPaste={event=>{if(!remote||agentFeature!=='enabled')return;const pasted=Array.from(event.clipboardData.files||[]);if(!pasted.length)return;event.preventDefault();stageFiles(pasted)}} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() || (pendingFiles[active.id]||[]).length || (pendingRunFiles[active.id]||[]).length ? <button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote ? (agentFeature === 'enabled' ? 'Send task' : 'Save message') : 'Save local message'}><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
           </section>
           {panel && <aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" ref={avatarButton} aria-label="Change Bot picture" onClick={openAvatar}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => saveBotName(active.id,active.name)} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && agentFeature === 'enabled' ? <ComputerPanel name={active.name} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
         </div>
@@ -603,8 +657,37 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         <footer><button type="button" disabled={savingBot} onClick={()=>setCreateDialog(null)}>Cancel</button><button type="submit" disabled={savingBot||createUncertain||!createDialog.name.trim()}>Create</button></footer>
       </form></div>}
       {avatarEditor && <div className="avatar-overlay" onMouseDown={event=>{if(event.target===event.currentTarget)closeAvatar()}}><section className="avatar-dialog" ref={avatarDialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Bot picture" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();closeAvatar()}else if(event.key==='Tab'){const choices=Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));const first=choices[0],last=choices.at(-1);if(event.shiftKey&&(document.activeElement===first||document.activeElement===event.currentTarget)){event.preventDefault();last?.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}}}}><header className="avatar-tabs"><button type="button" className="selected" aria-current="true">Bot</button><button type="button" disabled title="Not available yet">Generate</button><button type="button" disabled title="Not available yet">Upload</button><button type="button" disabled title="Not available yet">Reset</button></header><div className="avatar-shapes">{avatarShapes.map(shape=><button key={shape} type="button" aria-label={`Shape ${shape}`} aria-pressed={avatarEditor.shape===shape} onClick={()=>chooseAvatar({shape})}><Avatar bot={{shape,color:avatarEditor.color}} size={40} /></button>)}</div><div className="avatar-colors">{avatarColors.map(color=><button key={color} type="button" className="avatar-color" aria-label={`Color ${color}`} aria-pressed={avatarEditor.color.toLowerCase()===color} onClick={()=>chooseAvatar({color})}><span style={{background:color}} /></button>)}</div></section></div>}
+      {previewFile && <FilePreviewDialog file={previewFile} onClose={()=>setPreviewFile(null)} />}
     </main>
   </div>;
+}
+
+function fileUrl(file:RunFile):string { return `${import.meta.env.BASE_URL}api/files/${file.id}`; }
+function attachmentMimeType(file:File):string {
+  if(file.type)return file.type.toLowerCase();
+  const extension=file.name.split('.').at(-1)?.toLowerCase();
+  return ({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif',avif:'image/avif',mp4:'video/mp4',m4v:'video/mp4',webm:'video/webm',mov:'video/quicktime',mp3:'audio/mpeg',wav:'audio/wav',m4a:'audio/mp4',ogg:'audio/ogg',aac:'audio/aac'} as Record<string,string>)[extension||'']||'application/octet-stream';
+}
+function previewable(file:RunFile):boolean { return previewImageTypes.has(file.mimeType)||file.mimeType==='application/pdf'||previewVideoTypes.has(file.mimeType)||previewAudioTypes.has(file.mimeType)||(['text/plain','text/csv','text/markdown','application/json'].includes(file.mimeType)&&file.size<=1024*1024); }
+function displayFileSize(size:number):string { return size<1024?`${size} B`:size<1024*1024?`${(size/1024).toFixed(0)} kB`:`${(size/1024/1024).toFixed(1)} MB`; }
+function RunFileCards({files,onPreview,onReuse}:{files:RunFile[];onPreview:(file:RunFile)=>void;onReuse?:(file:RunFile)=>void}) {
+  if(!files.length)return null;
+  return <div className="run-files">{files.map(file=><div className="run-file-card" key={file.id}>
+    <button type="button" className="run-file-preview" disabled={!previewable(file)} aria-label={`Preview ${file.name}`} onClick={()=>onPreview(file)}>
+      {previewImageTypes.has(file.mimeType)?<img src={fileUrl(file)} alt="" loading="lazy"/>:<span className="run-file-icon" aria-hidden="true">{file.mimeType==='application/pdf'?'PDF':previewVideoTypes.has(file.mimeType)?'▶ VIDEO':previewAudioTypes.has(file.mimeType)?'♫ AUDIO':file.name.split('.').at(-1)?.slice(0,5).toUpperCase()||'FILE'}</span>}
+    </button>
+    <div className="run-file-meta"><strong title={file.name}>{file.name}</strong><small>{displayFileSize(file.size)} · {file.kind==='input'?'Attached':'Result'}</small></div>
+    {onReuse&&file.kind==='output'&&<button type="button" className="run-file-action" aria-label={`Attach ${file.name} to next message`} title="Continue with this file" onClick={()=>onReuse(file)}>＋</button>}
+    <a href={fileUrl(file)} download={file.name} aria-label={`Download ${file.name}`} title="Download">↓</a>
+  </div>)}</div>;
+}
+function FilePreviewDialog({file,onClose}:{file:RunFile;onClose:()=>void}) {
+  const [text,setText]=useState<string|null>(null),[error,setError]=useState(false);
+  useEffect(()=>{if(!['text/plain','text/csv','text/markdown','application/json'].includes(file.mimeType)||file.size>1024*1024)return;const controller=new AbortController();void fetch(fileUrl(file),{credentials:'same-origin',signal:controller.signal}).then(response=>{if(!response.ok)throw new Error();return response.text()}).then(setText).catch(()=>{if(!controller.signal.aborted)setError(true)});return()=>controller.abort()},[file]);
+  return <div className="file-preview-overlay" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}><section className="file-preview-dialog" role="dialog" aria-modal="true" aria-label={`Preview ${file.name}`}>
+    <header><strong>{file.name}</strong><a href={fileUrl(file)} download={file.name}>Download</a><button type="button" aria-label="Close preview" onClick={onClose}>×</button></header>
+    {previewImageTypes.has(file.mimeType)?<img className="file-preview-image" src={fileUrl(file)} alt={file.name}/>:previewVideoTypes.has(file.mimeType)?<video className="file-preview-video" controls preload="metadata" aria-label={`Play ${file.name}`}><source src={fileUrl(file)} type={file.mimeType}/></video>:previewAudioTypes.has(file.mimeType)?<audio className="file-preview-audio" controls preload="metadata" aria-label={`Play ${file.name}`}><source src={fileUrl(file)} type={file.mimeType}/></audio>:file.mimeType==='application/pdf'?<iframe title={`Preview ${file.name}`} src={fileUrl(file)} sandbox="allow-scripts"/>:text!==null?<pre>{text}</pre>:error?<p role="alert">Preview could not be loaded.</p>:<p>Loading preview…</p>}
+  </section></div>;
 }
 
 function AuthenticatedApp() {

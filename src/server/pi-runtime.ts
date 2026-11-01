@@ -12,13 +12,15 @@ import { ComputerBridge } from './computer-bridge.ts';
 import { desktopIdentity } from './desktop-resources.ts';
 import { HttpGuardedComputerWorker } from './guarded-worker.ts';
 import { UserComputer } from './user-computer.ts';
+import { WorkspaceFileStore } from './file-store.ts';
+import { WorkspaceFileTransport } from './workspace-file-client.ts';
 
 function required(env:NodeJS.ProcessEnv,key:string):string { const value=env[key]?.trim();if(!value)throw new Error(`Missing ${key}`);return value; }
 async function privateFile(path:string):Promise<Buffer>{
  const metadata=await stat(path);if(!metadata.isFile()||(metadata.mode&0o077)!==0)throw new Error('Runtime secret file permissions are not private');
  const value=await readFile(path);if(!value.length||value.length>16384)throw new Error('Invalid runtime secret file');return value;
 }
-export interface PiRuntime { runs:RunStore; approvals:ApprovalStore; computer:UserComputer; engine:'pi'|'dsh'; close():Promise<void> }
+export interface PiRuntime { runs:RunStore; approvals:ApprovalStore; computer:UserComputer; files:WorkspaceFileStore; workspaceFiles:WorkspaceFileTransport; engine:'pi'|'dsh'; close():Promise<void> }
 /** Opt-in only. Caller supplies Kubernetes service account with separately audited permissions. */
 export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env):Promise<PiRuntime|null>{
  if(env.COKE_GROK_PI_ENABLED!=='1')return null;
@@ -37,6 +39,7 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  const gatewayUrl=`https://${gatewayHost}:3002/v1`;
  const provisioner=new DesktopBrokerClient(required(env,'COKE_GROK_BROKER_URL'),brokerCa,brokerToken);
  const runs=new RunStore(pool);await runs.migrate();
+ const files=new WorkspaceFileStore(pool),workspaceFiles=new WorkspaceFileTransport(provisioner);
  const approvals=new ApprovalStore(pool);await approvals.migrate();
  await approvals.purgeExpiredScreenshots();
  const bridge=new ComputerBridge(runs,approvals,scope=>{
@@ -57,5 +60,5 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  try{server.listen(3002,'0.0.0.0');await once(server,'listening')}catch(error){gateway.close();server.close();throw error}
  const timer=setInterval(()=>{void scheduler.tick().catch(()=>console.error('Pi scheduler polling failed.'))},2000);timer.unref();
  const screenshotCleanup=setInterval(()=>{void approvals.purgeExpiredScreenshots().catch(()=>console.error('Approval screenshot cleanup failed.'))},60000);screenshotCleanup.unref();
- return {runs,approvals,computer,engine,async close(){clearInterval(timer);clearInterval(screenshotCleanup);await scheduler.stop();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
+ return {runs,approvals,computer,files,workspaceFiles,engine,async close(){clearInterval(timer);clearInterval(screenshotCleanup);await scheduler.stop();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
 }

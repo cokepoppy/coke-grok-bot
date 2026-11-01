@@ -21,19 +21,20 @@ export class DesktopAgentExecutor implements RunExecutor {
     const capability=this.gateway.issue({ttlMs:14*60_000,calls:100,scope:{runId:run.id,leaseId,owner}});
     try {
       const prompt=`${run.prompt}\n\nWhen your work finishes, return a JSON object with exactly these fields: {"status":"done" or "failed","message":"<the user-facing result>"}. Use done only if the requested work succeeded; use failed if it could not be completed, and explain what happened. Report actual outcomes only.`;
+      const attachments=run.files.filter(file=>file.kind==='input').map(file=>({id:file.id,name:file.name,mimeType:file.mimeType,size:file.size,sha256:file.sha256,storageKey:file.storageKey}));
       const response=await this.request(new URL('/v1/tasks/run',endpoint),{
         method:'POST',redirect:'error',headers:{authorization:`Bearer ${desktop.agentToken}`,'content-type':'application/json'},
-        body:JSON.stringify({engine:this.engine,taskId:run.id,cwd:`tasks/${run.id}`,prompt,modelConfig:{apiKey:capability,baseUrl:this.gatewayUrl,model:this.model}}),
+        body:JSON.stringify({engine:this.engine,taskId:run.id,cwd:`tasks/${run.id}`,prompt,attachments,modelConfig:{apiKey:capability,baseUrl:this.gatewayUrl,model:this.model}}),
         signal:AbortSignal.any([signal,AbortSignal.timeout(14*60_000)]),
       });
       if (!response.ok) throw new Error('Desktop execution outcome could not be confirmed');
       const value:unknown=await response.json();
       if (!value || typeof value!=='object' || Array.isArray(value)) throw new Error('Invalid desktop result');
-      const result=value as {status?:unknown;message?:unknown;pausedForControl?:unknown};
+      const result=value as {status?:unknown;message?:unknown;pausedForControl?:unknown;files?:unknown};
       // A pause may have interrupted an operation after a side effect. Reconciliation is required.
       if (!['done','failed'].includes(String(result.status)) || result.pausedForControl===true || typeof result.message!=='string' || !result.message.trim()) throw new Error('Desktop outcome requires reconciliation');
       const safe=result.message.split(capability).join('[redacted]').split(desktop.agentToken).join('[redacted]').slice(0,20000);
-      return {status:result.status==='done'?'completed':'failed',result:safe};
+      return {status:result.status==='done'?'completed':'failed',result:safe,...(result.status==='done'&&Array.isArray(result.files)?{artifacts:result.files}:{})};
     } finally { this.gateway.revoke(capability); }
   }
 }

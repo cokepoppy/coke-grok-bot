@@ -7,9 +7,11 @@ import { RunRecoveryConflict, RunRequestConflict, type RunStore } from './run-st
 import type { ApprovalStore } from './approval-store.ts';
 import {parseUserAction,type UserComputer} from './user-computer.ts';
 import { parsePublicUrl } from './public-url.ts';
+import { cleanUploadName, uploadExtension, WorkspaceFileStore, validateUploadSize } from './file-store.ts';
+import type { WorkspaceFileTransport } from './workspace-file-client.ts';
 
 // Mount only behind a trusted proxy that preserves the configured Host.
-export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi') {
+export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi', files?:WorkspaceFileStore, workspaceFiles?:WorkspaceFileTransport) {
   const origin = parsePublicUrl(publicOrigin);
   return createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -53,6 +55,8 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
       }
       const botPath = `${origin.prefix}/api/bots`;
       const botMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})$`));
+      const botFilesMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/files$`));
+      const fileDownloadMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/files/([0-9a-f-]{36})$`));
       const messageMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/messages$`));
       const runMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/runs$`));
       const runEventsMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/runs/([0-9a-f-]{36})/events$`));
@@ -60,6 +64,42 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
       const approvalListMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/runs/([0-9a-f-]{36})/approvals$`));
       const approvalMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/approvals/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`, 'i'));
       const approvalScreenshotMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/approvals/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})/screenshot$`, 'i'));
+      if (files && workspaceFiles && (botFilesMatch || fileDownloadMatch)) {
+        const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value))};
+        const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated'});
+        if (botFilesMatch) {
+          if(req.method!=='POST')return reply(405,{error:'Method not allowed'});
+          if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
+          if(!await files.ownsBot(session,botFilesMatch[1])){req.resume();return reply(404,{error:'Not found'})}
+          const rawName=req.headers['x-file-name'];
+          if(typeof rawName!=='string'||rawName.length>1024){req.resume();return reply(400,{error:'Invalid file name'})}
+          let name:string,mimeType=String(req.headers['content-type']||'application/octet-stream').split(';',1)[0].trim().toLowerCase(),size=Number(req.headers['content-length']);
+          try{name=cleanUploadName(decodeURIComponent(rawName));validateUploadSize(mimeType,size)}catch{req.resume();return reply(400,{error:'Invalid file metadata'})}
+          const signal=AbortSignal.timeout(5*60_000);
+          try{
+            const file=files.newUpload(botFilesMatch[1],name,mimeType,size,'0'.repeat(64));
+            const receipt=await workspaceFiles.upload(session,{id:file.id,extension:uploadExtension(name),mimeType,size,body:req},signal);
+            if(receipt.size!==size)throw new Error('Uploaded file size did not match');
+            const stored={...file,sha256:receipt.sha256};
+            if(!await files.saveUpload(session,stored)){await workspaceFiles.removeUpload(session,file.id,uploadExtension(name),AbortSignal.timeout(30_000)).catch(()=>undefined);return reply(404,{error:'Not found'})}
+            return reply(201,{file:{id:stored.id,name:stored.name,mimeType:stored.mimeType,size:stored.size,sha256:stored.sha256,kind:stored.kind}});
+          }catch(error){return reply(error instanceof Error&&/Invalid|too large|size limit/i.test(error.message)?400:503,{error:error instanceof Error&&/Invalid|too large|size limit/i.test(error.message)?'Invalid file metadata':'File upload failed'})}
+        }
+        if(req.method!=='GET')return reply(405,{error:'Method not allowed'});
+        const file=await files.fileForDownload(session,fileDownloadMatch![1]);if(!file)return reply(404,{error:'Not found'});
+        const downloadAbort=new AbortController(),downloadTimer=setTimeout(()=>downloadAbort.abort(),5*60_000);downloadTimer.unref();
+        res.once('close',()=>{if(!res.writableEnded)downloadAbort.abort()});
+        try{
+          const workspaceFile=await workspaceFiles.download(session,file.storageKey,downloadAbort.signal);
+          const safeInline=new Set(['application/pdf','image/png','image/jpeg','image/webp','image/gif','image/avif','video/mp4','video/webm','video/quicktime','audio/mpeg','audio/wav','audio/mp4','audio/ogg','audio/webm','audio/aac','text/plain','text/csv','text/markdown','application/json']);
+          const inline=safeInline.has(file.mimeType.toLowerCase());
+          const mimeType=inline?file.mimeType.toLowerCase():'application/octet-stream';
+          const disposition=inline?'inline':'attachment';
+          const encoded=encodeURIComponent(file.name).replace(/[!'()*]/g,char=>`%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+          res.writeHead(200,{'Content-Type':mimeType,'Content-Length':workspaceFile.size,'Content-Disposition':`${disposition}; filename*=UTF-8''${encoded}`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});
+          workspaceFile.body.on('error',()=>res.destroy());workspaceFile.body.once('close',()=>clearTimeout(downloadTimer));workspaceFile.body.pipe(res);return;
+        }catch{clearTimeout(downloadTimer);return reply(404,{error:'Not found'})}
+      }
       if (approvals && (approvalListMatch || approvalMatch || approvalScreenshotMatch)) {
         const reply = (status:number, value:unknown) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(value)); };
         const session=await auth.session(req); if(!session)return reply(401,{error:'Unauthenticated'});
@@ -114,12 +154,13 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         for await(const chunk of req) { size+=chunk.length; if(size>45000)return reply(413,{error:'Request too large'}); chunks.push(chunk); }
         let body:unknown; try { body=JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return reply(400,{error:'Invalid JSON'}); }
         if(!body || typeof body!=='object' || Array.isArray(body)) return reply(400,{error:'Invalid run'});
-        const {requestId,prompt}=body as {requestId?:unknown;prompt?:unknown};
+        const {requestId,prompt,files:fileIds}=body as {requestId?:unknown;prompt?:unknown;files?:unknown};
         if(typeof requestId!=='string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId) || typeof prompt!=='string' || !prompt.trim() || prompt.trim().length>10000) return reply(400,{error:'Invalid run'});
         try {
-          const run=await runs.create(session,runMatch[1],requestId,prompt);
+          WorkspaceFileStore.validateFileIds(fileIds);
+          const run=await runs.create(session,runMatch[1],requestId,prompt,fileIds);
           return run ? reply(200,{run}) : reply(404,{error:'Not found'});
-        } catch(error) { if(error instanceof RunRequestConflict) return reply(409,{error:'Request ID already used'}); throw error; }
+        } catch(error) { if(error instanceof RunRequestConflict) return reply(409,{error:'Request ID already used'}); if(error instanceof Error&&/Invalid attachment|Attachment is unavailable|attachments exceed|per-message limit|too large|Invalid file/.test(error.message))return reply(400,{error:'Invalid attachments'});throw error; }
       }
       if (bots && messageMatch) {
         const reply = (status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };

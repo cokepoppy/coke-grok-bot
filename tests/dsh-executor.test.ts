@@ -9,7 +9,7 @@ import type { AgentRun, RunOwner } from '../src/server/run-store.ts';
 const owner:RunOwner={tenantId:randomUUID(),userId:randomUUID()};
 const hash=createHash('sha256').update(`${owner.tenantId}:${owner.userId}`).digest('hex').slice(0,32);
 const agentToken=randomBytes(32).toString('base64url');
-const run:AgentRun={id:randomUUID(),botId:randomUUID(),prompt:'Summarize the task',status:'running',result:null};
+const run:AgentRun={id:randomUUID(),botId:randomUUID(),prompt:'Summarize the task',status:'running',result:null,recoveryState:'none',replacementRunId:null,files:[]};
 const endpoint=new URL(`http://desktop.grok-user-${hash}.svc.cluster.local:8083/`);
 
 test('DeepSeek Harness dispatch is owner-scoped and revokes its model capability',async()=>{

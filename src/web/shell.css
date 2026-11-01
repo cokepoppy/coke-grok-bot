@@ -70,6 +70,34 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .run-recovery button:last-child { border-color: #292929; color: #fff; background: #292929; }
 .run-recovery button:disabled { opacity: .5; cursor: default; }
 .run-recovery-note { margin-top: 8px; color: #706b7e; font-size: 13px; }
+.file-picker { display: none; }
+.pending-files { position: absolute; left: 20px; right: 20px; bottom: 82px; display: flex; flex-wrap: wrap; gap: 6px; }
+.pending-file { display: flex; align-items: center; gap: 7px; max-width: min(320px, 100%); padding: 5px 8px 5px 11px; border: 1px solid #ddd; border-radius: 16px; background: #f5f5f5; color: #444; font-size: 12px; }
+.pending-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pending-file button { width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: #e7e7e7; color: #444; font-size: 17px; line-height: 18px; }
+.run-files { display: grid; gap: 7px; margin-top: 10px; }
+.run-file-card { display: flex; align-items: center; gap: 10px; max-width: 100%; min-width: 0; padding: 7px 10px; border: 1px solid #dedede; border-radius: 11px; background: #fff; color: #222; }
+.message-line.user .run-file-card { color: #222; }
+.run-file-preview { display: grid; flex: none; place-items: center; width: 48px; height: 48px; padding: 0; overflow: hidden; border: 0; border-radius: 6px; background: #f0f0f0; }
+.run-file-preview:disabled { cursor: default; }
+.run-file-preview img { width: 100%; height: 100%; object-fit: cover; }
+.run-file-icon { color: #65616f; font-size: 10px; font-weight: 700; }
+.run-file-meta { display: flex; flex: 1; flex-direction: column; min-width: 0; gap: 4px; }
+.run-file-meta strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.run-file-meta small { color: #777; font-size: 11px; }
+.run-file-action { display: grid; flex: none; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 50%; color: #555; background: #f3f3f3; font-size: 18px; }
+.run-file-card > a { display: grid; flex: none; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: #555; background: #f3f3f3; text-decoration: none; font-size: 18px; }
+.file-preview-overlay { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; padding: 24px; background: #0008; }
+.file-preview-dialog { display: flex; flex-direction: column; width: min(960px,100%); height: min(780px,100%); overflow: hidden; border-radius: 12px; background: #fff; box-shadow: 0 12px 40px #0004; }
+.file-preview-dialog header { display: flex; align-items: center; gap: 14px; min-height: 52px; padding: 0 16px; border-bottom: 1px solid #e8e8e8; }
+.file-preview-dialog header strong { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.file-preview-dialog header a { color: #5c5685; font-size: 13px; }
+.file-preview-dialog header button { border: 0; background: transparent; color: #555; font-size: 24px; }
+.file-preview-dialog iframe { flex: 1; width: 100%; min-height: 0; border: 0; }
+.file-preview-dialog pre { flex: 1; margin: 0; padding: 20px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 ui-monospace,monospace; }
+.file-preview-image { flex: 1; min-height: 0; max-width: 100%; max-height: calc(100% - 52px); margin: auto; object-fit: contain; }
+.file-preview-video { flex: 1; min-height: 0; width: 100%; padding: 16px; object-fit: contain; background: #111; }
+.file-preview-audio { width: min(560px, calc(100% - 32px)); margin: auto; }
 .approval-card { margin-top: 12px; padding: 12px; border: 1px solid #d9d5e4; border-radius: 10px; background: #fff; font-size: 14px; }
 .approval-card p { margin: 6px 0 10px; }
 .approval-card pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }

@@ -8,7 +8,7 @@ import type { AgentRun, RunOwner } from '../src/server/run-store.ts';
 const owner:RunOwner={tenantId:randomUUID(),userId:randomUUID()};
 const hash=createHash('sha256').update(`${owner.tenantId}:${owner.userId}`).digest('hex').slice(0,32);
 const agentToken=randomBytes(32).toString('base64url');
-const run:AgentRun={id:randomUUID(),botId:randomUUID(),prompt:'Make a file',status:'running',result:null};
+const run:AgentRun={id:randomUUID(),botId:randomUUID(),prompt:'Make a file',status:'running',result:null,recoveryState:'none',replacementRunId:null,files:[]};
 const endpoint=new URL(`http://desktop.grok-user-${hash}.svc.cluster.local:8083/`);
 
 test('Pi dispatch is once, scoped to owner and revokes its capability after completion',async()=>{
@@ -46,4 +46,14 @@ test('Pi reports a confirmed failure as failed rather than completed',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{const body=JSON.parse(String(init?.body));assert.match(body.prompt,/use failed if it could not be completed/i);return Response.json({status:'failed',message:'Could not access the requested page.'})});
  try{assert.deepEqual(await executor.execute(owner,run,new AbortController().signal,randomUUID()),{status:'failed',result:'Could not access the requested page.'})}finally{gateway.close()}
+});
+
+test('Pi forwards tenant attachment metadata and returns only Agent-reported artifact descriptors',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const attached={...run,files:[{id:randomUUID(),name:'notes.txt',mimeType:'text/plain',size:12,sha256:'a'.repeat(64),storageKey:`shared/uploads/${randomUUID()}.txt`,kind:'input' as const}]};
+ const artifact={name:'summary.txt',mimeType:'text/plain',size:9,sha256:'b'.repeat(64),storageKey:`tasks/${run.id}/artifacts/summary.txt`};
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
+  const body=JSON.parse(String(init?.body));assert.deepEqual(body.attachments,attached.files.filter(file=>file.kind==='input').map(({kind,...file})=>file));return Response.json({status:'done',message:'Read the file and wrote a summary.',files:[artifact]});
+ });
+ try{assert.deepEqual(await executor.execute(owner,attached,new AbortController().signal,randomUUID()),{status:'completed',result:'Read the file and wrote a summary.',artifacts:[artifact]})}finally{gateway.close()}
 });
