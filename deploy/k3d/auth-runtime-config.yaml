@@ -6,6 +6,6 @@ data:
   COKE_GROK_PI_ENABLED: "1"
   COKE_GROK_AGENT_ENGINE: pi
   COKE_GROK_CONTROL_NAMESPACE: coke-grok-bot
-  COKE_GROK_DESKTOP_IMAGE: coke-grok-desktop:sha-24b5078fafcc2a4ead4c0fa33d5c72aecb0809eb
+  COKE_GROK_DESKTOP_IMAGE: coke-grok-desktop:sha-889648b1dfa6049eee2eb989700325e8097252dc
   COKE_GROK_MODEL_BASE_URL: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
   COKE_GROK_MODEL_ID: deepseek-v4.1-flash

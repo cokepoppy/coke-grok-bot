@@ -63,6 +63,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .message-line.user .message-bubble { color: #fff; background: #7d68c8; }
 .run-status { display: block; color: #706b7e; font-size: 13px; font-weight: 600; }
 .message-bubble .run-status + p { margin: 6px 0 0; }
+.run-recovery { margin-top: 12px; padding: 12px; border: 1px solid #d8cdbb; border-radius: 10px; background: #fffdf8; font-size: 14px; }
+.run-recovery p, .run-recovery-note { margin: 0 0 10px; }
+.run-recovery div { display: flex; flex-wrap: wrap; gap: 8px; }
+.run-recovery button { border: 1px solid #c9c0b1; background: #fff; border-radius: 7px; padding: 6px 12px; cursor: pointer; }
+.run-recovery button:last-child { border-color: #292929; color: #fff; background: #292929; }
+.run-recovery button:disabled { opacity: .5; cursor: default; }
+.run-recovery-note { margin-top: 8px; color: #706b7e; font-size: 13px; }
 .approval-card { margin-top: 12px; padding: 12px; border: 1px solid #d9d5e4; border-radius: 10px; background: #fff; font-size: 14px; }
 .approval-card p { margin: 6px 0 10px; }
 .approval-card pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }

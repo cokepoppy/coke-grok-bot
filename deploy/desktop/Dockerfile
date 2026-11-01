@@ -5,6 +5,7 @@ RUN mkdir -p /opt/coke-grok
 COPY --chmod=0755 deploy/desktop/start-desktop.sh /usr/local/bin/start-grok-desktop
 COPY --chmod=0644 deploy/desktop/agent-runtime.mjs /opt/coke-grok/agent-runtime.mjs
 COPY --chmod=0644 deploy/desktop/cloud-kernel-adapter.mjs /opt/coke-dots/grok-kernel-adapter.mjs
+COPY --chmod=0644 deploy/desktop/computer-tools.mjs /opt/coke-dots/computer-tools.mjs
 COPY --chmod=0644 deploy/desktop/dsh-computer-plugin.mjs /opt/coke-dots/dsh-computer-plugin.mjs
 COPY --chmod=0644 deploy/desktop/computer-worker.mjs /opt/coke-dots/grok-computer-worker.mjs
 COPY --chmod=0644 deploy/desktop/guarded-computer.mjs /opt/coke-grok/guarded-computer.mjs
@@ -15,6 +16,7 @@ RUN npm ci --prefix /opt/coke-grok/dsh-runtime --omit=dev --no-audit --no-fund \
     && rm -rf /opt/coke-dots/node_modules/@deepseek-ai/dsh-sdk-client \
     && ln -s /opt/coke-grok/dsh-runtime/node_modules/@deepseek-ai/dsh-sdk-client /opt/coke-dots/node_modules/@deepseek-ai/dsh-sdk-client \
     && cd /opt/coke-grok/dsh-runtime && node --input-type=module -e 'console.log(import.meta.resolve("@deepseek-ai/dsh-sdk-client"))'
+COPY --chmod=0755 deploy/desktop/clear-stale-x11.sh /usr/local/bin/clear-stale-grok-x11
 ENV DOTS_DSH_BIN=/opt/coke-grok/dsh-runtime/node_modules/.bin/dsh
 USER 1000:1000
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/start-grok-desktop"]

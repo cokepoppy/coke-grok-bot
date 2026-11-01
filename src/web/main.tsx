@@ -7,7 +7,7 @@ import './shell.css';
 type Shape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle' | 'oval' | 'square' | 'pill' | 'spark' | 'heart' | 'flower' | 'pentagon' | 'star';
 type Bot = { id: string; name: string; label: string; color: string; shape: Shape; group: string; preview: string; pinned?: boolean; hidden?: boolean };
 type Message = { id: string; role: 'user' | 'bot'; text: string };
-type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null };
+type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged'; replacementRunId: string | null };
 type Approval = { id: string; action: string; status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired'; hasScreenshot?: boolean };
 type PreviewState = { bots: Bot[]; activeId: string; messages: Record<string, Message[]>; showOnboarding: Record<string, boolean> };
 type IconName = 'search' | 'plus' | 'mic' | 'sound' | 'close' | 'panel' | 'share' | 'screen' | 'arrow' | 'smile' | 'reply' | 'more';
@@ -102,7 +102,7 @@ function ApprovalCard({approval, disabled, decide}: {approval:Approval; disabled
   let detail: {kind?:string;action?:string;arguments?:Record<string,unknown>;page?:string}|null=null;
   try { const value=JSON.parse(approval.action); if(value && typeof value==='object' && typeof value.action==='string') detail=value; } catch { /* Legacy textual approvals. */ }
   return <div className="approval-card"><strong>Approval requested</strong>
-    {detail ? <><p>{detail.kind === 'desktop' ? 'Desktop' : 'Browser'}: {detail.action}</p>{detail.page && <p>Page: {detail.page}</p>}{detail.arguments && <pre>{JSON.stringify(detail.arguments,null,2)}</pre>}</> : <p>{approval.action}</p>}
+    {detail ? <><p>{detail.kind === 'desktop' ? 'Desktop' : detail.kind === 'terminal' ? 'Computer terminal' : 'Browser'}: {detail.action}</p>{detail.page && <p>Page: {detail.page}</p>}{detail.arguments && <pre>{detail.kind === 'terminal' ? `${String(detail.arguments.directory || 'task')} directory\n${String(detail.arguments.command || '')}` : JSON.stringify(detail.arguments,null,2)}</pre>}</> : <p>{approval.action}</p>}
     {approval.hasScreenshot && <img src={`${import.meta.env.BASE_URL}api/approvals/${approval.id}/screenshot`} alt="Computer screen when this action was requested" onLoad={()=>setImageLoaded(true)} onError={()=>setImageLoaded(false)} />}
     <div><button type="button" disabled={disabled} onClick={()=>decide('denied')}>Deny</button><button type="button" disabled={disabled || Boolean(approval.hasScreenshot && !imageLoaded)} onClick={()=>decide('approved')}>Approve</button></div>
   </div>;
@@ -182,6 +182,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [runRefresh, setRunRefresh] = useState(0);
   const [runApprovals, setRunApprovals] = useState<Record<string, Approval[]>>({});
   const [decidingApproval, setDecidingApproval] = useState<string | null>(null);
+  const [resolvingRun, setResolvingRun] = useState<string | null>(null);
   const decidingRef = useRef(false);
   const uncertainMutation = useRef(false);
   const [history, setHistory] = useState<{ id: string; status: 'loading' | 'ready' | 'error' }>({ id: '', status: 'loading' });
@@ -363,6 +364,26 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       setRunHistory(current => ({ ...current, status: 'error' }));
     } finally { decidingRef.current = false; setDecidingApproval(null); }
   }
+  async function recoverRun(run: AgentRun, decision: 'retry' | 'acknowledge') {
+    if (uncertainMutation.current || decidingRef.current || !active || run.status !== 'unknown' || run.recoveryState !== 'pending' || runHistory.id !== active.id || runHistory.status !== 'ready') return;
+    decidingRef.current = true; setResolvingRun(run.id); setBotError('');
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}api/runs/${run.id}/recovery`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision }) });
+      if (!response.ok) throw new Error('recovery could not be confirmed');
+      const result = await response.json() as { decision: 'retry' | 'acknowledge'; run: AgentRun | null };
+      if (result.decision !== decision || (decision === 'retry' && (!result.run || result.run.status !== 'queued')) || (decision === 'acknowledge' && result.run !== null)) throw new Error('invalid recovery response');
+      setRunHistory(current => {
+        const runs = current.runs.map(item => item.id === run.id ? { ...item, recoveryState: decision === 'retry' ? 'retried' as const : 'acknowledged' as const, replacementRunId: result.run?.id || null } : item);
+        if (result.run && !runs.some(item => item.id === result.run!.id)) runs.push(result.run);
+        return { ...current, runs };
+      });
+      setRunRefresh(value => value + 1);
+    } catch {
+      uncertainMutation.current = true;
+      setBotError('Recovery could not be confirmed. Refresh and check the run history before making another decision.');
+      setRunHistory(current => ({ ...current, status: 'error' }));
+    } finally { decidingRef.current = false; setResolvingRun(null); }
+  }
   async function addMessage(text: string) {
     if (!active || uncertainMutation.current) return;
     const clean = text.trim();
@@ -370,7 +391,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     if (remote) {
       const id = active.id;
       if (sendingRef.current || history.id !== id || history.status !== 'ready') return;
-      if (agentFeature === 'loading' || agentFeature === 'error' || (agentFeature === 'enabled' && (runHistory.id !== id || runHistory.status !== 'ready'))) return;
+      if (agentFeature === 'loading' || agentFeature === 'error' || (agentFeature === 'enabled' && (runHistory.id !== id || runHistory.status !== 'ready' || unresolvedOutcome))) return;
       if (clean.length > 10000) { setBotError('Message is too long.'); return; }
       sendingRef.current = true; setSending(true); setBotError('');
       try {
@@ -505,7 +526,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const renderBotRow=(bot:Bot)=><div className="bot-row-wrap" key={bot.id}><button ref={element=>{sidebarRows.current[bot.id]=element}} type="button" className={`bot-row ${!newChat && bot.id === active?.id ? 'selected' : ''}`} aria-haspopup="menu" onClick={() => selectBot(bot.id)} onContextMenu={event=>{event.preventDefault();setSidebarMenu({id:bot.id,x:Math.max(0,Math.min(event.clientX,window.innerWidth-200)),y:Math.max(0,Math.min(event.clientY,window.innerHeight-265))})}}>
           <Avatar bot={bot} size={46} /><span className="bot-row-content"><span className="bot-row-title"><span onDoubleClick={event=>{event.stopPropagation();beginSidebarRename(bot.id)}}>{bot.name}</span>{bot.label && <small>{bot.label}</small>}</span><span className="bot-preview">{bot.preview}</span></span>
         </button>{sidebarRename?.id===bot.id && <input ref={sidebarInput} className="sidebar-rename" aria-label="Rename Bot" maxLength={60} value={sidebarRename.value} onChange={event=>{const edit={id:bot.id,value:event.target.value};sidebarRenameRef.current=edit;setSidebarRename(edit)}} onBlur={event=>finishSidebarRename(bot.id,event.currentTarget.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur()}else if(event.key==='Escape'){event.preventDefault();sidebarRenameRef.current=null;setSidebarRename(null);sidebarRows.current[bot.id]?.focus()}}} />}</div>;
-  const composerDisabled = remote && (sending || history.id !== active?.id || history.status !== 'ready' || agentFeature === 'loading' || agentFeature === 'error' || (agentFeature === 'enabled' && (runHistory.id !== active?.id || runHistory.status !== 'ready')));
+  const unresolvedOutcome = agentFeature === 'enabled' && runHistory.id === active?.id && runHistory.runs.some(run => run.status === 'unknown' && run.recoveryState === 'pending');
+  const composerDisabled = remote && (sending || history.id !== active?.id || history.status !== 'ready' || agentFeature === 'loading' || agentFeature === 'error' || (agentFeature === 'enabled' && (runHistory.id !== active?.id || runHistory.status !== 'ready' || unresolvedOutcome)));
   if (botStatus === 'loading') return <main className="auth-page"><div className="auth-card">Loading your Bots…</div></main>;
   if (botStatus === 'error') return <main className="auth-page"><div className="auth-card"><p role="alert">Could not load your Bots.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></div></main>;
 
@@ -554,7 +576,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
               {remote && history.id === active.id && history.status === 'error' && <div role="alert">Could not confirm message history. Refresh to check it.</div>}
               {messages.length > 0 && <div className="date-line">{reference ? 'Today 1:26 PM' : 'Today'}</div>}
               {messages.map(message => <div key={message.id} className={`message-line ${message.role}`}><div className="message-bubble">{message.text}</div>{message.role === 'bot' && <div className="message-actions"><Icon name="smile" /><Icon name="reply" /><Icon name="more" /></div>}</div>)}
-              {remote && agentFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.map(run => <React.Fragment key={run.id}><div className="message-line user"><div className="message-bubble">{run.prompt}</div></div><div className="message-line bot"><div className="message-bubble"><span className="run-status">{({ queued: 'Queued · waiting for your computer', running: 'Working on your computer', completed: 'Completed', failed: 'Failed', unknown: 'Outcome unknown · check before retrying' } as const)[run.status]}</span>{run.result && <p>{run.result}</p>}{(runApprovals[run.id] || []).filter(approval => approval.status === 'pending').map(approval => <ApprovalCard key={approval.id} approval={approval} disabled={Boolean(decidingApproval) || runHistory.status !== 'ready'} decide={decision => void decideApproval(approval.id, decision)} />)}</div></div></React.Fragment>)}
+              {remote && agentFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.map(run => <React.Fragment key={run.id}><div className="message-line user"><div className="message-bubble">{run.prompt}</div></div><div className="message-line bot"><div className="message-bubble"><span className="run-status">{run.status === 'unknown' && run.recoveryState === 'acknowledged' ? 'Outcome unknown · reviewed; queue resumed' : run.status === 'unknown' && run.recoveryState === 'retried' ? 'Outcome unknown · explicit retry recorded' : ({ queued: 'Queued · waiting for your computer', running: 'Working on your computer', completed: 'Completed', failed: 'Failed', unknown: 'Outcome unknown · check before retrying' } as const)[run.status]}</span>{run.result && <p>{run.result}</p>}{run.status === 'unknown' && run.recoveryState === 'pending' && <section className="run-recovery" aria-label="Review uncertain task outcome"><p>The previous task may have run even though its result was not saved. Review the computer before deciding.</p><div><button type="button" disabled={Boolean(resolvingRun) || runHistory.status !== 'ready'} onClick={() => void recoverRun(run, 'acknowledge')}>{resolvingRun === run.id ? 'Saving…' : 'I checked · continue'}</button><button type="button" disabled={Boolean(resolvingRun) || runHistory.status !== 'ready'} onClick={() => void recoverRun(run, 'retry')}>{resolvingRun === run.id ? 'Saving…' : 'Retry as a new task'}</button></div></section>}{run.status === 'unknown' && run.recoveryState === 'retried' && run.replacementRunId && <p className="run-recovery-note">A separate queued task was created; the original outcome remains in history.</p>}{(runApprovals[run.id] || []).filter(approval => approval.status === 'pending').map(approval => <ApprovalCard key={approval.id} approval={approval} disabled={Boolean(decidingApproval) || runHistory.status !== 'ready'} decide={decision => void decideApproval(approval.id, decision)} />)}</div></div></React.Fragment>)}
               {remote && agentFeature === 'enabled' && runHistory.id === active.id && runHistory.status === 'error' && <div role="alert">Could not confirm task history. Refresh to check it before submitting again.</div>}
               {state.showOnboarding[active.id] && <div className="onboarding-card">
                 <div className="onboarding-title">What do you want me helping with most right now?<IconButton name="close" label="Dismiss suggestions" onClick={() => setState(current => ({ ...current, showOnboarding: { ...current.showOnboarding, [active.id]: false } }))} /></div>

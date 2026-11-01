@@ -4,10 +4,13 @@ import type { ResultSetHeader } from 'mysql2';
 import type { Session } from './tenant-store.ts';
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'unknown';
-export interface AgentRun { id: string; botId: string; prompt: string; status: RunStatus; result: string | null }
+export type RecoveryState = 'none' | 'pending' | 'retried' | 'acknowledged';
+export interface AgentRun { id: string; botId: string; prompt: string; status: RunStatus; result: string | null; recoveryState: RecoveryState; replacementRunId: string | null }
+export interface RunRecoveryResult { decision: 'retry' | 'acknowledge'; run: AgentRun | null }
 export type RunOwner = Pick<Session, 'tenantId' | 'userId'>;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export class RunRequestConflict extends Error {}
+export class RunRecoveryConflict extends Error {}
 
 /** Persistent run queue. An expired lease is unknown, never automatically retried. */
 export class RunStore {
@@ -21,6 +24,8 @@ export class RunStore {
       prompt TEXT NOT NULL,
       status ENUM('queued','running','completed','failed','unknown') NOT NULL,
       result TEXT NULL,
+      recovery_state ENUM('none','pending','retried','acknowledged') NOT NULL DEFAULT 'none',
+      replacement_run_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
       lease_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
       lease_until DATETIME(3) NULL,
       created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -30,6 +35,11 @@ export class RunStore {
       KEY bot_runs (bot_id, sequence),
       FOREIGN KEY (bot_id) REFERENCES bots(id)
     ) ENGINE=InnoDB`);
+    const [columns] = await this.pool.execute<RowDataPacket[]>(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='agent_runs'`);
+    const names = new Set(columns.map(column => String(column.COLUMN_NAME)));
+    if (!names.has('recovery_state')) await this.pool.execute(`ALTER TABLE agent_runs ADD COLUMN recovery_state ENUM('none','pending','retried','acknowledged') NOT NULL DEFAULT 'none' AFTER result`);
+    if (!names.has('replacement_run_id')) await this.pool.execute('ALTER TABLE agent_runs ADD COLUMN replacement_run_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER recovery_state');
+    await this.pool.execute(`UPDATE agent_runs SET recovery_state='pending' WHERE status='unknown' AND recovery_state='none'`);
     await this.pool.execute(`CREATE TABLE IF NOT EXISTS agent_run_events (
       sequence BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       run_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -46,13 +56,13 @@ export class RunStore {
     return this.transaction(async connection => {
       const [owned] = await connection.execute<RowDataPacket[]>('SELECT id FROM bots WHERE id=? AND tenant_id=? AND owner_id=? FOR UPDATE', [botId,session.tenantId,session.userId]);
       if (!owned.length) return null;
-      const [existing] = await connection.execute<RowDataPacket[]>('SELECT id, bot_id AS botId, prompt, status, result FROM agent_runs WHERE bot_id=? AND request_id=?', [botId,requestId]);
+      const [existing] = await connection.execute<RowDataPacket[]>('SELECT id, bot_id AS botId, prompt, status, result, recovery_state AS recoveryState, replacement_run_id AS replacementRunId FROM agent_runs WHERE bot_id=? AND request_id=?', [botId,requestId]);
       if (existing.length) {
         if (existing[0].prompt !== clean) throw new RunRequestConflict('Request ID already used with a different prompt');
         return existing[0] as AgentRun;
       }
-      const run: AgentRun = { id:randomUUID(), botId, prompt:clean, status:'queued', result:null };
-      await connection.execute('INSERT INTO agent_runs (id,bot_id,request_id,prompt,status) VALUES (?,?,?,?,?)',[run.id,botId,requestId,clean,run.status]);
+      const run: AgentRun = { id:randomUUID(), botId, prompt:clean, status:'queued', result:null, recoveryState:'none', replacementRunId:null };
+      await connection.execute('INSERT INTO agent_runs (id,bot_id,request_id,prompt,status,recovery_state) VALUES (?,?,?,?,?,?)',[run.id,botId,requestId,clean,run.status,run.recoveryState]);
       await connection.execute('INSERT INTO agent_run_events (run_id,status) VALUES (?,?)',[run.id,run.status]);
       return run;
     });
@@ -60,7 +70,7 @@ export class RunStore {
   async list(session: Session, botId: string): Promise<AgentRun[] | null> {
     const [owned] = await this.pool.execute<RowDataPacket[]>('SELECT id FROM bots WHERE id=? AND tenant_id=? AND owner_id=?',[botId,session.tenantId,session.userId]);
     if (!owned.length) return null;
-    const [rows] = await this.pool.execute<RowDataPacket[]>('SELECT id,bot_id AS botId,prompt,status,result FROM agent_runs WHERE bot_id=? ORDER BY sequence',[botId]);
+    const [rows] = await this.pool.execute<RowDataPacket[]>('SELECT id,bot_id AS botId,prompt,status,result,recovery_state AS recoveryState,replacement_run_id AS replacementRunId FROM agent_runs WHERE bot_id=? ORDER BY sequence',[botId]);
     return rows as AgentRun[];
   }
   async queuedOwners(limit: number): Promise<RunOwner[]> {
@@ -69,7 +79,7 @@ export class RunStore {
       FROM agent_runs r JOIN bots b ON b.id=r.bot_id
       WHERE r.status='queued' AND NOT EXISTS (
         SELECT 1 FROM agent_runs active JOIN bots owner_bot ON owner_bot.id=active.bot_id
-        WHERE owner_bot.tenant_id=b.tenant_id AND owner_bot.owner_id=b.owner_id AND active.status IN ('running','unknown')
+        WHERE owner_bot.tenant_id=b.tenant_id AND owner_bot.owner_id=b.owner_id AND (active.status='running' OR (active.status='unknown' AND active.recovery_state='pending'))
       ) GROUP BY b.tenant_id,b.owner_id ORDER BY firstRun LIMIT ?`, [limit]);
     return rows.map(row => ({tenantId:String(row.tenantId),userId:String(row.userId)}));
   }
@@ -79,9 +89,9 @@ export class RunStore {
     return this.transaction(async connection => {
       const [membership] = await connection.execute<RowDataPacket[]>('SELECT user_id FROM memberships WHERE tenant_id=? AND user_id=? FOR UPDATE',[session.tenantId,session.userId]);
       if (!membership.length) return null;
-      const [active] = await connection.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND r.status IN ('running','unknown') LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
+      const [active] = await connection.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND (r.status='running' OR (r.status='unknown' AND r.recovery_state='pending')) LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
       if (active.length) return null;
-      const [rows] = await connection.execute<RowDataPacket[]>(`SELECT r.id,r.bot_id AS botId,r.prompt,r.status,r.result FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND r.status='queued' ORDER BY r.sequence LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
+      const [rows] = await connection.execute<RowDataPacket[]>(`SELECT r.id,r.bot_id AS botId,r.prompt,r.status,r.result,r.recovery_state AS recoveryState,r.replacement_run_id AS replacementRunId FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND r.status='queued' ORDER BY r.sequence LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
       if (!rows.length) return null;
       const run = rows[0] as AgentRun, leaseId = randomUUID();
       await connection.execute(`UPDATE agent_runs SET status='running',lease_id=?,lease_until=DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? SECOND) WHERE id=?`,[leaseId,leaseSeconds,run.id]);
@@ -111,7 +121,7 @@ export class RunStore {
   async markUnknown(runId: string, leaseId: string): Promise<boolean> {
     if (!uuid.test(runId) || !uuid.test(leaseId)) throw new Error('Invalid lease');
     return this.transaction(async connection => {
-      const [updated] = await connection.execute<ResultSetHeader>(`UPDATE agent_runs SET status='unknown',lease_id=NULL,lease_until=NULL WHERE id=? AND lease_id=? AND status='running'`,[runId,leaseId]);
+      const [updated] = await connection.execute<ResultSetHeader>(`UPDATE agent_runs SET status='unknown',recovery_state='pending',replacement_run_id=NULL,lease_id=NULL,lease_until=NULL WHERE id=? AND lease_id=? AND status='running'`,[runId,leaseId]);
       if (!updated.affectedRows) return false;
       await connection.execute(`INSERT INTO agent_run_events (run_id,status) VALUES (?,'unknown')`,[runId]);
       return true;
@@ -121,10 +131,41 @@ export class RunStore {
     return this.transaction(async connection => {
       const [rows] = await connection.execute<RowDataPacket[]>(`SELECT id FROM agent_runs WHERE status='running' AND lease_until<=UTC_TIMESTAMP(3) ORDER BY lease_until LIMIT 100 FOR UPDATE`);
       for (const row of rows) {
-        await connection.execute(`UPDATE agent_runs SET status='unknown',lease_id=NULL,lease_until=NULL WHERE id=?`,[row.id]);
+        await connection.execute(`UPDATE agent_runs SET status='unknown',recovery_state='pending',replacement_run_id=NULL,lease_id=NULL,lease_until=NULL WHERE id=?`,[row.id]);
         await connection.execute(`INSERT INTO agent_run_events (run_id,status) VALUES (?,'unknown')`,[row.id]);
       }
       return rows.length;
+    });
+  }
+  /** The owner must explicitly acknowledge uncertainty before the per-user queue can resume. */
+  async resolveUnknown(session: Session, runId: string, decision: 'retry' | 'acknowledge'): Promise<RunRecoveryResult | null> {
+    if (!uuid.test(runId) || !['retry','acknowledge'].includes(decision)) throw new Error('Invalid run recovery');
+    return this.transaction(async connection => {
+      const [rows] = await connection.execute<RowDataPacket[]>(`SELECT r.id,r.bot_id AS botId,r.prompt,r.status,r.recovery_state AS recoveryState,r.replacement_run_id AS replacementRunId
+        FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND b.tenant_id=? AND b.owner_id=? FOR UPDATE`,[runId,session.tenantId,session.userId]);
+      if (!rows.length) return null;
+      const current = rows[0] as AgentRun;
+      if (current.status !== 'unknown') throw new RunRecoveryConflict('Only an unknown run can be resolved');
+      if (decision === 'acknowledge') {
+        if (current.recoveryState === 'acknowledged') return {decision,run:null};
+        if (current.recoveryState !== 'pending') throw new RunRecoveryConflict('This unknown run already has a different resolution');
+        await connection.execute(`UPDATE agent_runs SET recovery_state='acknowledged' WHERE id=? AND status='unknown' AND recovery_state='pending'`,[runId]);
+        await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','Owner reviewed the uncertain outcome and resumed the queue.')`,[runId]);
+        return {decision,run:null};
+      }
+      if (current.recoveryState === 'retried' && current.replacementRunId) {
+        const [replacement] = await connection.execute<RowDataPacket[]>(`SELECT id,bot_id AS botId,prompt,status,result,recovery_state AS recoveryState,replacement_run_id AS replacementRunId FROM agent_runs WHERE id=? AND bot_id=?`,[current.replacementRunId,current.botId]);
+        if (replacement.length) return {decision,run:replacement[0] as AgentRun};
+        throw new RunRecoveryConflict('The replacement run is unavailable');
+      }
+      if (current.recoveryState !== 'pending') throw new RunRecoveryConflict('This unknown run already has a different resolution');
+      const replacement: AgentRun = {id:randomUUID(),botId:current.botId,prompt:current.prompt,status:'queued',result:null,recoveryState:'none',replacementRunId:null};
+      const requestId=randomUUID();
+      await connection.execute(`INSERT INTO agent_runs (id,bot_id,request_id,prompt,status,recovery_state) VALUES (?,?,?,?,?,'none')`,[replacement.id,replacement.botId,requestId,replacement.prompt,replacement.status]);
+      await connection.execute(`UPDATE agent_runs SET recovery_state='retried',replacement_run_id=? WHERE id=? AND status='unknown' AND recovery_state='pending'`,[replacement.id,runId]);
+      await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','Owner explicitly approved a new run after reviewing the uncertain outcome.')`,[runId]);
+      await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'queued',?)`,[replacement.id,`Explicit retry of run ${runId}.`]);
+      return {decision,run:replacement};
     });
   }
   async events(session: Session, runId: string): Promise<Array<{ sequence: number; status: RunStatus; detail: string | null }> | null> {

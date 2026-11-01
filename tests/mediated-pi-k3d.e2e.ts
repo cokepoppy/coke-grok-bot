@@ -56,6 +56,7 @@ try{
  const userComputer=new UserComputer(scope=>new HttpGuardedComputerWorker(scope,new URL(`http://desktop.${namespace}.svc.cluster.local:8082/`),identity.controlToken,randomUUID(),workerTransport));
  server=createAuthServer(new GoogleAuthService(ids,provider,base),base,undefined,bots,runs,approvals,userComputer);server.listen(apiPort,'127.0.0.1');await once(server,'listening');
  const apiCookie=`coke_grok_session=${cookie}`,path=`${base}/api/bots/${bot.id}/runs`,requestId=randomUUID();
+ const userPost=(route:string,body:unknown)=>fetch(`${base}/api/computer/${route}`,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify(body)});
  const submit=await fetch(path,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({requestId,prompt:'Use computer_browser to inspect the current page and click the button named Submit test. Inspect the page again and report success only if it says MEDIATED_CLICK_OK.'})});assert.equal(submit.status,200);const {run:task}=await submit.json() as {run:{id:string}};
  const fixture=`<!doctype html><title>Mediated test</title><button onclick="document.getElementById('result').textContent='MEDIATED_CLICK_OK '+(++window.clickCount)">Submit test</button><p id="result">Waiting</p><script>window.clickCount=0</script>`;
  await run('kubectl',['-n',namespace,'exec',pod,'-c','agent','--','node','-e',`const f=require('fs'),p='/workspace/tasks/${task.id}';f.mkdirSync(p,{recursive:true,mode:0o770});f.writeFileSync(p+'/fixture.html',${JSON.stringify(fixture)},{mode:0o664})`]);
@@ -80,7 +81,7 @@ try{
  const dshRequest:typeof fetch=async(url,init)=>fetch(`http://127.0.0.1:${agentPort}${new URL(String(url)).pathname}`,init);
  const dshExecutor=new DshExecutor({connect:async()=>({agentUrl:new URL(`http://agent.${namespace}.svc.cluster.local:8083/`),agentToken:identity.agentToken})},gateway,`https://host.k3d.internal:${gatewayAddr.port}/v1`,'deepseek-v4.1-flash',dshRequest);
  scheduler=new RunScheduler(runs,dshExecutor,{concurrency:1,leaseSeconds:30});
- const dshSubmit=await fetch(path,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({requestId:randomUUID(),prompt:'Use computer_desktop screenshot to view the actual browser page and find the large green button. Click that button using computer_desktop coordinates derived from the screenshot, not computer_browser click. Wait for owner approval. Then use computer_browser inspect to confirm the page displays DSH_MEDIATED_CLICK_OK. Return success only after verifying it.'})});assert.equal(dshSubmit.status,200);const {run:dshTask}=await dshSubmit.json() as {run:{id:string}};
+ const dshSubmit=await fetch(path,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({requestId:randomUUID(),prompt:'For this task use only computer_desktop screenshot and computer_desktop click. Do not use computer_terminal, computer_files, or any shell command. Inspect the actual desktop, find the large green button, and click it using coordinates from your screenshot. Wait for owner approval. Then use computer_browser inspect to confirm DSH_MEDIATED_CLICK_OK. Do not use computer_browser click. Report success only after you inspect the result.'})});assert.equal(dshSubmit.status,200);const {run:dshTask}=await dshSubmit.json() as {run:{id:string}};
  const dshFixture=`<!doctype html><title>DSH mediated computer</title><style>html,body{width:100%;height:100%;margin:0;background:#eef3f4;font:32px sans-serif}body{display:grid;place-items:center}button{width:620px;height:240px;border:0;border-radius:32px;background:#188b62;color:white;font-size:48px;font-weight:700}#result{position:fixed;top:40px;left:40px;font-weight:700}</style><p id="result">WAITING_FOR_DSH</p><button onclick="document.getElementById('result').textContent='DSH_MEDIATED_CLICK_OK'">Run DSH computer task</button>`;
  await run('kubectl',['-n',namespace,'exec',pod,'-c','agent','--','node','-e',`const f=require('fs'),p='/workspace/tasks/${dshTask.id}';f.mkdirSync(p,{recursive:true,mode:0o770});f.writeFileSync(p+'/dsh-computer.html',${JSON.stringify(dshFixture)},{mode:0o664})`]);
  const beforeDsh=await workerRequest('/v1/guarded/snapshot');assert.equal(beforeDsh.status,200);const openedDsh=await workerRequest('/v1/guarded/execute',{expected:await beforeDsh.json(),action:{kind:'browser',action:'open_artifact',taskId:dshTask.id,path:'dsh-computer.html'}});assert.equal(openedDsh.status,200);await sleep(1500);
@@ -99,25 +100,59 @@ try{
  if(dshStatus!=='completed')throw new Error(`Mediated DSH task did not complete: ${dshStatus}; approved ${dshApprovals}; model calls ${modelCalls}`);
  assert.equal(dshApprovals,1);assert.ok(dshComputerScreenshots>0,'DSH must send a real cloud-computer screenshot to the model');assert.ok(dshComputerInspections>0,'DSH must inspect the actual Chromium page');const dshFinal=await workerRequest('/v1/guarded/inspect'),dshView=await dshFinal.json() as {text?:string};assert.ok(dshView.text?.includes('DSH_MEDIATED_CLICK_OK'));
  await scheduler.stop();scheduler=new RunScheduler(runs,executor,{concurrency:1,leaseSeconds:30});
- const takeoverFixture=`<!doctype html><title>Mediated takeover test</title><button onclick="document.getElementById('result').textContent='MEDIATED_CLICK_OK '+(++window.clickCount)">Submit test</button><p id="result">MEDIATED_CLICK_OK 1</p><script>window.clickCount=1</script>`;
- await run('kubectl',['-n',namespace,'exec',pod,'-c','agent','--','node','-e',`const f=require('fs'),p='/workspace/tasks/${task.id}';f.writeFileSync(p+'/takeover.html',${JSON.stringify(takeoverFixture)},{mode:0o664})`]);
- const beforeTakeoverPage=await workerRequest('/v1/guarded/snapshot');assert.equal(beforeTakeoverPage.status,200);const openedTakeoverPage=await workerRequest('/v1/guarded/execute',{expected:await beforeTakeoverPage.json(),action:{kind:'browser',action:'open_artifact',taskId:task.id,path:'takeover.html'}});assert.equal(openedTakeoverPage.status,200);await sleep(1500);
- const next=await fetch(path,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({requestId:randomUUID(),prompt:'Use computer_browser to inspect the current page and click the button named Submit test once. Return a short result.'})});assert.equal(next.status,200);const second=(await next.json() as {run:{id:string}}).run;
- let pending=false;
- for(let i=0;i<120;i++){
-  await scheduler.tick();const list=await fetch(`${base}/api/runs/${second.id}/approvals`,{headers:{cookie:apiCookie}}),items=(await list.json() as {approvals:{status:string}[]}).approvals;
-  if(items.some(x=>x.status==='pending')){pending=true;break}
-  const result=await fetch(path,{headers:{cookie:apiCookie}}),row=(await result.json() as {runs:{id:string;status:string}[]}).runs.find(x=>x.id===second.id);if(row?.status==='unknown'||row?.status==='failed'||row?.status==='completed')break;await sleep(1000);
+ const piTerminalFile=`pi-terminal-${task.id}.txt`;
+ const piTerminalSubmit=await fetch(path,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({requestId:randomUUID(),prompt:`Use computer_terminal once to run exactly: printf 'PI_TERMINAL_OK' > ${piTerminalFile} in the shared directory. Wait for owner approval. Then use computer_files to read ${piTerminalFile} and report its exact contents.`})});assert.equal(piTerminalSubmit.status,200);const {run:piTerminalTask}=await piTerminalSubmit.json() as {run:{id:string}};
+ await scheduler.tick();let piTerminalStatus='',piTerminalApprovals=0;
+ for(let i=0;i<180;i++){
+  const list=await fetch(`${base}/api/runs/${piTerminalTask.id}/approvals`,{headers:{cookie:apiCookie}}),items=(await list.json() as {approvals:{id:string;status:string;action:string;hasScreenshot:boolean}[]}).approvals;
+  for(const item of items.filter(value=>value.status==='pending')){
+   const description=JSON.parse(item.action) as {kind:string;action:string;arguments:{command:string;directory:string};screenshotSha256:string};
+   assert.equal(description.kind,'terminal');assert.equal(description.action,'run');assert.equal(description.arguments.directory,'shared');assert.ok(description.arguments.command.includes(piTerminalFile));assert.ok(item.hasScreenshot);
+   const screenshot=await fetch(`${base}/api/approvals/${item.id}/screenshot`,{headers:{cookie:apiCookie}});assert.equal(screenshot.status,200);assert.equal(createHash('sha256').update(Buffer.from(await screenshot.arrayBuffer())).digest('hex'),description.screenshotSha256);
+   assert.equal((await fetch(`${base}/api/approvals/${item.id}`,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({decision:'approved'})})).status,200);piTerminalApprovals++;
+  }
+  const result=await fetch(path,{headers:{cookie:apiCookie}}),rows=(await result.json() as {runs:{id:string;status:string;message?:string}[]}).runs;piTerminalStatus=rows.find(value=>value.id===piTerminalTask.id)?.status||'';if(['completed','failed','unknown'].includes(piTerminalStatus))break;await sleep(1000);
  }
- assert.equal(pending,true);
- const userPost=(path:string,body:unknown)=>fetch(`${base}/api/computer/${path}`,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify(body)});
- assert.equal((await fetch(`${base}/api/computer/screenshot`)).status,401);
- const userScreen=await fetch(`${base}/api/computer/screenshot`,{headers:{cookie:apiCookie}});assert.equal(userScreen.status,200);assert.equal(userScreen.headers.get('content-type'),'image/png');
- assert.equal((await userPost('control',{owner:'user'})).status,200);
- let interrupted='';for(let i=0;i<30;i++){const result=await fetch(path,{headers:{cookie:apiCookie}}),rows=(await result.json() as {runs:{id:string;status:string}[]}).runs;interrupted=rows.find(x=>x.id===second.id)?.status||'';if(interrupted==='unknown')break;await sleep(1000)}assert.equal(interrupted,'unknown');
- assert.equal((await userPost('action',{action:'press',key:'Escape'})).status,200);
+ if(piTerminalStatus!=='completed')throw new Error(`Mediated Pi terminal task did not complete: ${piTerminalStatus}; approvals ${piTerminalApprovals}; model calls ${modelCalls}`);
+ assert.equal(piTerminalApprovals,1);assert.equal((await run('kubectl',['-n',namespace,'exec',pod,'-c','agent','--','cat',`/workspace/shared/${piTerminalFile}`])).trim(),'PI_TERMINAL_OK');
+ await scheduler.stop();scheduler=new RunScheduler(runs,dshExecutor,{concurrency:1,leaseSeconds:30});
+ const dshTerminalFile=`dsh-terminal-${dshTask.id}.txt`;
+ const dshTerminalSubmit=await fetch(path,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({requestId:randomUUID(),prompt:`Use computer_terminal once to run exactly: printf 'DSH_TERMINAL_OK' > ${dshTerminalFile} in the shared directory. Wait for owner approval. Then use computer_files to read ${dshTerminalFile} and report its exact contents.`})});assert.equal(dshTerminalSubmit.status,200);const {run:dshTerminalTask}=await dshTerminalSubmit.json() as {run:{id:string}};
+ await scheduler.tick();let dshTerminalStatus='',dshTerminalApprovals=0,dshTerminalWriteApproved=false;
+ for(let i=0;i<180;i++){
+  const list=await fetch(`${base}/api/runs/${dshTerminalTask.id}/approvals`,{headers:{cookie:apiCookie}}),items=(await list.json() as {approvals:{id:string;status:string;action:string;hasScreenshot:boolean}[]}).approvals;
+  for(const item of items.filter(value=>value.status==='pending')){
+   const description=JSON.parse(item.action) as {kind:string;action:string;arguments:{command:string;directory:string};screenshotSha256:string};
+   assert.equal(description.kind,'terminal');assert.equal(description.action,'run');assert.equal(description.arguments.directory,'shared');
+   const command=description.arguments.command.trim();
+   const writesTarget=command.includes(dshTerminalFile)&&command.includes('DSH_TERMINAL_OK');
+   const safePreparation=/^(?:pwd|ls(?: -la|-al)?(?: \/workspace\/shared)?)$/.test(command);
+   assert.ok(writesTarget||safePreparation,'DSH must request the exact sentinel write or a harmless workspace inspection');
+   if(writesTarget)dshTerminalWriteApproved=true;
+   assert.ok(item.hasScreenshot);
+   const screenshot=await fetch(`${base}/api/approvals/${item.id}/screenshot`,{headers:{cookie:apiCookie}});assert.equal(screenshot.status,200);assert.equal(createHash('sha256').update(Buffer.from(await screenshot.arrayBuffer())).digest('hex'),description.screenshotSha256);
+   assert.equal((await fetch(`${base}/api/approvals/${item.id}`,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({decision:'approved'})})).status,200);dshTerminalApprovals++;
+  }
+  const result=await fetch(path,{headers:{cookie:apiCookie}}),rows=(await result.json() as {runs:{id:string;status:string}[]}).runs;dshTerminalStatus=rows.find(value=>value.id===dshTerminalTask.id)?.status||'';if(['completed','failed','unknown'].includes(dshTerminalStatus))break;await sleep(1000);
+ }
+ if(dshTerminalStatus!=='completed')throw new Error(`Mediated DSH terminal task did not complete: ${dshTerminalStatus}; approvals ${dshTerminalApprovals}; model calls ${modelCalls}`);
+ assert.ok(dshTerminalApprovals>=1);assert.equal(dshTerminalWriteApproved,true,'DSH must request owner approval for the sentinel write');assert.equal((await run('kubectl',['-n',namespace,'exec',pod,'-c','agent','--','cat',`/workspace/shared/${dshTerminalFile}`])).trim(),'DSH_TERMINAL_OK');
+ await scheduler.stop();scheduler=new RunScheduler(runs,executor,{concurrency:1,leaseSeconds:30});
+ const interruptedFile=`interrupted-${randomUUID()}.txt`;
+ const interruptSubmit=await fetch(path,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({requestId:randomUUID(),prompt:`Use computer_terminal once to run exactly: sleep 8 && printf SHOULD_NOT_FINISH > ${interruptedFile} in the task directory. Wait for owner approval before starting it.`})});assert.equal(interruptSubmit.status,200);const {run:interruptTask}=await interruptSubmit.json() as {run:{id:string}};
+ await scheduler.tick();let interruptApproval:{id:string}|undefined;
+ for(let i=0;i<120&&!interruptApproval;i++){
+  const list=await fetch(`${base}/api/runs/${interruptTask.id}/approvals`,{headers:{cookie:apiCookie}}),items=(await list.json() as {approvals:{id:string;status:string;action:string}[]}).approvals;
+  const pending=items.find(value=>value.status==='pending');if(pending){const description=JSON.parse(pending.action) as {kind:string;action:string;arguments:{command:string;directory:string}};assert.equal(description.kind,'terminal');assert.equal(description.arguments.directory,'task');assert.ok(description.arguments.command.includes('sleep 8'));interruptApproval={id:pending.id};break;}
+  await sleep(500);
+ }
+ assert.ok(interruptApproval,'Agent must request owner approval before starting a terminal command');
  assert.equal((await userPost('control',{owner:'agent'})).status,200);
- const afterTakeover=await workerRequest('/v1/guarded/inspect'),afterView=await afterTakeover.json() as {text?:string};assert.ok(afterView.text?.includes('MEDIATED_CLICK_OK 1'));assert.equal(afterView.text?.includes('MEDIATED_CLICK_OK 2'),false);
- await scheduler.tick();await sleep(1000);const confirmed=await fetch(path,{headers:{cookie:apiCookie}}),confirmedRows=(await confirmed.json() as {runs:{id:string;status:string}[]}).runs;assert.equal(confirmedRows.find(x=>x.id===second.id)?.status,'unknown');
- console.log(`Mediated Pi and DSH K3D tests passed: separate Pods, real DeepSeek computer and browser actions, owner approval with captured screenshots, authenticated viewing and takeover; model calls ${modelCalls}.`);
+ assert.equal((await fetch(`${base}/api/approvals/${interruptApproval.id}`,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({decision:'approved'})})).status,200);
+ await sleep(2000);assert.equal((await userPost('control',{owner:'user'})).status,200);
+ let interruptedTerminalStatus='';for(let i=0;i<30;i++){const result=await fetch(path,{headers:{cookie:apiCookie}}),rows=(await result.json() as {runs:{id:string;status:string}[]}).runs;interruptedTerminalStatus=rows.find(value=>value.id===interruptTask.id)?.status||'';if(interruptedTerminalStatus==='unknown')break;await sleep(1000)}assert.equal(interruptedTerminalStatus,'unknown');
+ await sleep(8000);const noLateWrite=await exec('kubectl',['-n',namespace,'exec',pod,'-c','agent','--','test','!','-e',`/workspace/tasks/${interruptTask.id}/${interruptedFile}`]);assert.equal(noLateWrite.code,0,'User takeover must kill an approved command before it can finish');
+ assert.equal((await userPost('control',{owner:'agent'})).status,200);
+ await scheduler.tick();await sleep(1000);const confirmed=await fetch(path,{headers:{cookie:apiCookie}}),confirmedRows=(await confirmed.json() as {runs:{id:string;status:string}[]}).runs;assert.equal(confirmedRows.find(value=>value.id===interruptTask.id)?.status,'unknown');
+ console.log(`Mediated Pi and DSH K3D tests passed: separate Pods, real DeepSeek browser/desktop/terminal/shared-file tools, exact terminal and screenshot-bound computer approvals, authenticated viewing, and takeover stopping an approved command; model calls ${modelCalls}.`);
 }finally{await scheduler?.stop();if(server)await new Promise<void>(resolve=>server!.close(()=>resolve()));for(const p of forwards)p.kill('SIGTERM');gateway?.close();if(gatewayServer)await new Promise<void>(resolve=>gatewayServer!.close(()=>resolve()));if(namespaceCreated)await exec('kubectl',['delete','namespace',namespace,'--wait=false'],undefined,20_000);await pool?.end();if(dbCreated)await admin?.query(`DROP DATABASE \`${db}\``);await admin?.end();await rm(dir,{recursive:true,force:true})}

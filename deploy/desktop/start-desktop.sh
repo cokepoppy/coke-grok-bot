@@ -9,6 +9,7 @@ profile_dir="$HOME/.config/chromium"
 mkdir -p "$HOME" "$profile_dir" "$HOME/.vnc" /workspace/.coke-desktop /tmp/.X11-unix
 chmod 0700 "$HOME"
 chmod 1777 /tmp/.X11-unix
+clear-stale-grok-x11
 
 # A recreated Pod mounts the prior Pod's persistent Chromium profile. Chrome's
 # singleton links include the old Pod name and can block CDP startup forever;

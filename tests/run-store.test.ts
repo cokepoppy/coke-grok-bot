@@ -50,7 +50,25 @@ test('runs are deduplicated, isolated, serialized per computer and never silentl
     assert.equal(await runs.finish(next.run.id,next.leaseId,'completed','late'),false);
     assert.equal(await runs.claimNext(sa,10),null);
     assert.deepEqual((await runs.events(sa,next.run.id))?.map(event => event.status),['queued','running','unknown']);
-    assert.equal((await runs.list(sa,next.run.botId))?.find(run => run.id === next.run.id)?.status,'unknown');
+    const uncertain=(await runs.list(sa,next.run.botId))?.find(run => run.id === next.run.id);
+    assert.equal(uncertain?.status,'unknown'); assert.equal(uncertain?.recoveryState,'pending');
+    assert.equal(await runs.resolveUnknown(sb,next.run.id,'acknowledge'),null);
+    assert.equal((await runs.queuedOwners(10)).some(owner=>owner.userId===sa.userId),false);
+    const retryResults=await Promise.all([runs.resolveUnknown(sa,next.run.id,'retry'),runs.resolveUnknown(sa,next.run.id,'retry')]);
+    const retry=retryResults[0];assert.ok(retry?.run);assert.equal(retry.run.status,'queued');assert.equal(retry.run.prompt,next.run.prompt);assert.equal(retryResults[1]?.run?.id,retry.run.id);
+    assert.equal((await runs.list(sa,next.run.botId))?.find(run=>run.id===next.run.id)?.recoveryState,'retried');
+    assert.equal((await runs.queuedOwners(10)).some(owner=>owner.userId===sa.userId),true);
+    const retryClaim=await runs.claimNext(sa,10);assert.equal(retryClaim?.run.id,retry.run.id);
+    assert.equal(await runs.finish(retry.run.id,retryClaim!.leaseId,'completed','explicit retry done'),true);
+
+    const ackRequest=randomUUID(),ackQueued=await runs.create(sa,bot1.id,ackRequest,'acknowledge safely');assert.ok(ackQueued);
+    const ackClaim=await runs.claimNext(sa,10);assert.ok(ackClaim);assert.equal(ackClaim.run.id,ackQueued.id);
+    assert.equal(await runs.markUnknown(ackClaim.run.id,ackClaim.leaseId),true);
+    const afterAck=await runs.create(sa,bot2.id,randomUUID(),'continue after review');assert.ok(afterAck);assert.equal(await runs.claimNext(sa,10),null);
+    const acknowledged=await runs.resolveUnknown(sa,ackClaim.run.id,'acknowledge');assert.deepEqual(acknowledged,{decision:'acknowledge',run:null});
+    assert.deepEqual(await runs.resolveUnknown(sa,ackClaim.run.id,'acknowledge'),{decision:'acknowledge',run:null});
+    assert.equal((await runs.list(sa,bot1.id))?.find(run=>run.id===ackClaim.run.id)?.recoveryState,'acknowledged');
+    const resumed=await runs.claimNext(sa,10);assert.equal(resumed?.run.id,afterAck.id);assert.equal(await runs.finish(afterAck.id,resumed!.leaseId,'completed','continued'),true);
     assert.equal(await runs.finish(otherClaim.run.id,otherClaim.leaseId,'completed','other done'),true);
   } finally { await pool.end(); await admin.query(`DROP DATABASE \`${database}\``); await admin.end(); }
 });
