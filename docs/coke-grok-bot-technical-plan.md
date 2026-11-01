@@ -192,11 +192,13 @@ releases/<checkpoint>/
 
 ## 10. 2026-11-01 实现状态更新
 
-此前实现状态段落为阶段性历史记录。最新唯一功能分支 `codex/grok-bot-shared-computer-tools` 在前序 Pi/DeepSeek Harness 与隔离电脑能力之上加入共享用户工作区的只读文件工具、逐操作审批的显式终端工具、终端取消，以及未知运行的 owner-confirmed 恢复。UI 检查点 `checkpoint/grok-bot-website-demo-ui-2026-11-01` 仍位于 `ea13873`；运行时功能尚未获得用户最终验收，不为它新增 checkpoint tag 或发布目录。
+较早的实现状态段落记录的是实验过程。当前唯一活动分支为 `codex/grok-bot-bot-memory`，本次复核 HEAD 是 `44a5858109dd0d5b02eca5d894c028f9208ab650`，远端 `main` 仍为 `78575b8bef8f64b39ff8c67b3c7782f04aa6c6e8`。已接受的主页 UI 检查点 `checkpoint/grok-bot-website-demo-ui-2026-11-01` 和独立发布目录继续作为 UI 回退点；它不覆盖 Agent、电脑或记忆候选。Bot Memory 分支尚未完成用户验收和合并，因此不得先开下一条功能分支、创建运行时 checkpoint tag 或把候选发布目录当作已验收版本。
 
-截至 2026-11-01，本分支 `8903cd3` 的运行时测试（45）、MySQL 测试（12）、浏览器 E2E、UI 测试、引用帧提取测试、部署构建均通过；前序固定镜像的真实 K3D Pi/DSH 电脑交互测试通过。恢复功能候选 `coke-grok-auth:sha-3d9f130` 已在本机 K3D Ready，公网登录态 Chrome 的 owner-confirmed 恢复流程已完成，公网 readiness 为 204。详细命令、版本、截图与流程证据见 [`docs/pi-runtime.md`](pi-runtime.md)。同一用户的 Bot 共享一台电脑；当前只能单屏，运行 UI 明确提示排队。
+代码与较早验证记录已覆盖 Pi/DeepSeek Harness、每用户 K3D 电脑供给、Chromium、`computer_browser` DOM 读取/操作、`computer_desktop` 截图/坐标操作、电脑接管与逐操作审批、任务事件/unknown 恢复、共享文件和 Bot 私有记忆。现有真实模型及 K3D 证据分散记在 [`docs/pi-runtime.md`](pi-runtime.md)；记忆候选还以合成身份完成过公网 API 保存、跨运行召回和第二 Bot 隔离。但这些历史验证不能代替当前运行状态，也不能证明本产品已经具有官方完整的示范教学、Skill/Routine 生命周期、多屏并发、独立第二账号、全部权限边界或最终 Google 登录 UI 验收。
 
-本阶段不是全产品完成：完整视频逐帧覆盖仍待推进；多屏并发、PVC 重启保留、第二账号隔离、DSH 公网 E2E、Auto Review 等价及其他官方工作流尚未证明。Pi/DSH 能力受当前显式工具 allowlist 和逐操作审批约束；不得将单屏 K3D 容器边界描述成官方多屏能力或硬件级隔离。每次只推进一条功能分支，且需要用户认可后才为大功能建立注释 checkpoint tag 与可验证发布目录。
+2026-11-01 本轮主机复核：Docker Unix API `_ping` 返回 `Docker Desktop is unable to start`；K3D API `59958`、本项目入口 `18080` 和本机 MySQL `3306` 均无监听；公网 readiness 先前复核为 502。Docker VM 的 `Docker.raw` 文件仍存在，当前 `lsof` 未见该文件打开句柄，数据盘空余约 3.9 GiB。前次只读虚拟机日志曾报告 ext4 `failed to convert unwritten extents to written extents -- potential data loss`，Time Machine 未配置备份目的地。没有运行 Clean/Purge、Reset、fsck、prune 或删除 PVC/数据库；当前不能验证或重启 K3D 与 MySQL。需先恢复可安全备份/修复 Docker 数据盘的条件，再启动原有集群并逐项复核 PVC、MySQL 和公网隧道，不得把重置数据盘当作常规恢复步骤。
+
+下次继续顺序：先在本分支完成 Bot Memory 的已授权端到端验收并合并 main；然后再逐项开唯一功能分支实现官方示范教学和 Skill 草稿/测试/复用、Routine 调度、用户共享电脑的多屏并行，以及各账号隔离。每项要分别证明前端交互、真实 Agent/电脑效果、MySQL 持久化与恢复，再按用户验收建立 checkpoint 发布包。
 
 ## 11. 2026-11-01 Files & Results 候选
 
@@ -218,4 +220,19 @@ releases/<checkpoint>/
 
 当前唯一分支 `codex/grok-bot-bot-memory` 实现每个 Bot 独立的 MySQL `bot_memories`、最多 200 条记录、重复内容合并、纠正和删除。每个 Pi/DSH 任务读取该 Bot 最新 24 条记忆并作为不可信参考上下文；模型可以在直接用户消息包含持久偏好、职责、事实、规则或有用工作摘要时自主写入，也可以用 `bot_memory` 工具回答查看、更正和忘记请求。工具通过现有内网 TLS Model Gateway 和 14 分钟短时 capability 工作；服务端同时核对 owner、Bot ID、run ID、lease ID 与有效运行状态，不接入公网路由。记忆不得当作指令、授权或审批；从文件/网页/工具输出中不能独立学习并写入，明显凭据、联系方式和支付卡信息会被拒绝。
 
-本阶段只实现 Bot 私有记忆，没有实现官方少量用户级共享事实（例如用户姓名/时区）的共享存储，也没有独立记忆管理页；现行官方页面说明个人 Bot 通过聊天管理记忆，故 UI 入口使用自然语言聊天。实际 K3D E2E 首次发现 Agent runtime 漏传 memory capability 模式，已修复；两个 runtime 分别写入的记忆可由后续 Pi 任务读取，第二个 Bot 无法继承，电脑操作、精确审批和用户接管回归也通过。当前公网 Agent 确切镜像的隔离 memory-only E2E 另以 8 次模型调用通过，细节见 [`docs/pi-runtime.md`](pi-runtime.md)。两次公网合成身份的真实模型任务完成，却没有持久化明确的记忆请求，暴露出不能依赖模型每次都主动调用 memory 工具；分支 `52cbc9f` 新增 executor 侧的显式长期记忆保存兜底，并以同租户/Bot/运行租约校验和敏感信息拒绝约束。本机 K3D Auth 镜像 `sha-52cbc9f` 已部署；公网合成 API E2E 完成显式保存、跨运行召回与第二 Bot 隔离，三项任务完成并清理合成数据。CUA 本地浏览器控制仍被 Work 设置门禁关闭，未完成 Google 登录 UI 验收。详细当前候选与限制见 [`docs/pi-runtime.md`](pi-runtime.md)。这些证据仍不是完整产品或 Browser User/Computer User 官方等价验收。
+本阶段只实现 Bot 私有记忆，没有实现官方少量用户级共享事实（例如用户姓名/时区）的共享存储，也没有独立记忆管理页；现行官方页面说明个人 Bot 通过聊天管理记忆，故 UI 入口使用自然语言聊天。实际 K3D E2E 首次发现 Agent runtime 漏传 memory capability 模式，已修复；两个 runtime 分别写入的记忆可由后续 Pi 任务读取，第二个 Bot 无法继承，电脑操作、精确审批和用户接管回归也通过。当前公网 Agent 确切镜像的隔离 memory-only E2E 另以 8 次模型调用通过，细节见 [`docs/pi-runtime.md`](pi-runtime.md)。两次公网合成身份的真实模型任务完成，却没有持久化明确的记忆请求，暴露出不能依赖模型每次都主动调用 memory 工具；分支 `52cbc9f` 新增 executor 侧的显式长期记忆保存兜底，并以同租户/Bot/运行租约校验和敏感信息拒绝约束。本机 K3D Auth 镜像 `sha-52cbc9f` 已部署；公网合成 API E2E 完成显式保存、跨运行召回与第二 Bot 隔离，三项任务完成并清理合成数据。该候选尚无已登录 Google UI 验收；截至本次复核，Docker/K3D/本地 MySQL 未监听且公网入口为 502，因此端到端 UI 当前不可复验。详细候选与限制见 [`docs/pi-runtime.md`](pi-runtime.md)。这些证据仍不是完整产品或 Browser User/Computer User 官方等价验收。
+
+## 13. 官方示范教学、Skill 与 Routine 的逻辑基准
+
+当前 [官方电脑文档](https://docs.x.ai/grok-bot/computer-and-apps) 说明电脑属于用户账号：同一用户的 Bot 共用持久文件、浏览器 Cookie、登录会话和命令行凭据；每个 Bot 有自己的屏幕，每个屏幕同一时间最多执行一个 computer-use 任务。官方文档还描述用户之间硬件隔离。当前实现的 `computer_browser` 是同一台持久 Chromium 上的 DOM 检查/操作接口，`computer_desktop` 是同一台桌面的截图与坐标操作接口；两者不是两台隔离电脑。本地候选目前按每用户单个显示会话串行排队，具备租户/用户授权与操作审批，不具备官方的每 Bot 独立屏幕并行，也不等价于硬件隔离。
+
+当前 [官方 Skill/Routine 文档](https://docs.x.ai/grok-bot/skills-routines-and-automations) 规定的示范路径为：在一对一 Bot 对话打开电脑、选择 Teach a task、描述目标、执行一次流程、停止录制并检查新建 Skill，再在安全样例上测试。示范录制的是可见电脑交互，最多 10 分钟，不录制麦克风；新学到的 Skill 是草稿，必须补充示例不明显的决策规则、失败处理和审批边界。官方文档同时允许直接用文字描述建立 Skill。**29:43–29:53 视频证据**只看到 `Learn from demonstration`、`Drafting the file`、`Running commands`、`Reading file`，末帧仍无 Skill 完成态；当前代码里有真实电脑工具，但尚未找到已实现的教学录制会话、可审阅 Skill 草稿、测试与正式复用完整闭环。因此不能把 Bot 回复“turn it into a reusable skill”当成技能已保存。
+
+下一阶段实现拆为独立、可验收的状态机，而不是一条聊天提示：
+
+1. 创建绑定租户、用户、Bot、电脑屏幕和当前运行租约的 teaching session；只有用户明确开始后捕获电脑事件，计时不超过 10 分钟；停止、取消、超时、接管、刷新和进程重启都需有明确终态。录屏/动作日志不得保存登录秘密、密码字段、支付卡、OTP 或不相关屏幕数据。
+2. 将批准后的浏览器/桌面交互整理成受限私有草稿，包含用途、输入、步骤、决策点、失败/重试策略、预期结果和审批边界；源网页内容按不可信输入处理。草稿创建和解析失败都要落库并显示明确状态，不能无限停在 “Reading file”。
+3. 用户能查看、编辑、丢弃和测试草稿；通过安全夹具复放或等价的无副作用检查后，才能将草稿保存为可调用 Skill。Skill 的可见范围、Bot 启用关系与用户共享库依官方文档建模；每次执行仍走真实 Pi/DSH harness、电脑工具授权、逐操作审批和持久事件记录。
+4. Routine 单独保存时区、时间或事件触发、输入、输出、当前状态、下次运行及历史；包括 Test、Pause/Resume、Edit、Delete。调度需去重、租约、可恢复、幂等重试和失败上报。官方说明 Routine 在云端持续运行；本项目的 Mac/K3D 部署只在主机与集群运行时工作，不能承诺关机/休眠时仍运行。
+
+验收须有可回放录制、Skill 草稿审阅/修改/测试/执行、Routine 手动 Test 与定时或事件触发、刷新和重启恢复、用户/Bot/租户授权隔离、电脑接管打断及审批拒绝测试。所有关键环节需同时查看 UI 状态、MySQL 状态、Agent 工具事件和真实电脑效果；模拟响应、静态预览或 model 口头确认不算通过。当前活动 feature 分支未完成且 Docker/K3D 不可用，故本节只是经过官方资料核对的实现与验收基准，尚未实现。
