@@ -226,3 +226,11 @@ Google 登录的公网 Bot 1030 上，一条仅要求保存合成测试偏好的
 通过公网域名的应用 API 使用一次性合成会话，创建合成 Bot 并完成三条真实 DeepSeek Pi 任务：显式长期偏好已写入 MySQL；独立后续运行成功召回精确 marker；第二 Bot 运行没有读到该 marker。三个运行均 completed 且没有诊断码。只写入本次合成用户的数据和个人 K3D namespace，任务终止后按外键顺序删除；复核为 0 个合成账号、0 个对应记忆，临时 namespace 不存在，现存 3 completed / 3 unknown 总状态与测试前相同。未触碰旧真实用户 unknown 队列。
 
 这证明显式 Bot Memory 在公网 API / Auth / MySQL / K3D Agent 这条合成身份链路工作，不等于 Google 登录态浏览器 UI 验收。CUA 仍由 Work 设置禁用本地浏览器控制，因此尚未验证真实 Chrome 的记忆交互与 UI；Bot Memory 分支尚未由用户最终验收，也没有新的 checkpoint tag 或发布目录。
+
+### 2026-11-01 本机复验：浏览器开关与离线候选检查
+
+当前 worktree 的候选源码在隔离环境通过 `npm run test:runtime`（58）、`npm run test:ui`、`npm test`（1）、`npm run build` 和 `npm run build:deployment`。`test:ui` 启动短期 Vite 与无头 Chrome，覆盖本地预览、Bot 创建/重命名、聊天/刷新、参考图、静态官网演示和电脑面板的模拟状态；它没有 Google OAuth 会话、真实 API/模型、MySQL 或 K3D 电脑，不能替代登录态公网验收。`npm run test:auth` 由于缺少 `COKE_GROK_TEST_MYSQL_PORT` 在用例加载阶段退出；没有访问用户数据库或修改任何数据。
+
+只读 HTTP 复核发现 `http://127.0.0.1:3001/` 提供 Vite HTML；同一服务上的 `/api/auth/ready` 返回 `200 text/html`，是客户端路由 fallback，并非 Auth readiness。公网 `/grok-bot/api/auth/ready` 返回 `502 text/html`。Docker socket `/_ping` 返回 `503 text/plain`，K3D API 59958、入口 18080 与 MySQL 3306 均无监听。故当前没有可运行 K3D/MySQL 服务；部署构建成功不代表服务已部署或就绪。
+
+本次 CUA `getState` 仍返回 `Local browser use is disabled in Work settings`，浏览器 provider 列表为空；尝试使用 CUA 打开桌面应用设置时，控制层明确拒绝了对 `com.openai.codex` 的访问。没有从文件、CLI 或别的自动化路径更改/绕过此桌面安全设置。需在官方 Computer Use 流程启用 Computer Use server 与 skill，并确认 `Settings > Computer Use` 中 Chrome 扩展显示 `Manage` 后，再用签名态 Chrome 完成 Google 登录 E2E。当前公开页与本地 Vite 测试证据不证明 Bot Memory、Pi/DSH 或 Computer User 在现网闭环通过。

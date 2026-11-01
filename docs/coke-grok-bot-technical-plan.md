@@ -192,11 +192,15 @@ releases/<checkpoint>/
 
 ## 10. 2026-11-01 实现状态更新
 
-较早的实现状态段落记录的是实验过程。当前唯一活动分支为 `codex/grok-bot-bot-memory`，本次复核 HEAD 是 `44a5858109dd0d5b02eca5d894c028f9208ab650`，远端 `main` 仍为 `78575b8bef8f64b39ff8c67b3c7782f04aa6c6e8`。已接受的主页 UI 检查点 `checkpoint/grok-bot-website-demo-ui-2026-11-01` 和独立发布目录继续作为 UI 回退点；它不覆盖 Agent、电脑或记忆候选。Bot Memory 分支尚未完成用户验收和合并，因此不得先开下一条功能分支、创建运行时 checkpoint tag 或把候选发布目录当作已验收版本。
+较早的实现状态段落记录的是实验过程。当前唯一活动分支为 `codex/grok-bot-bot-memory`；本轮从已推送的 `2f62c059b0a36c0875bf2b379555c1dc91f904c1` 继续，远端 `main` 仍为 `78575b8bef8f64b39ff8c67b3c7782f04aa6c6e8`。已接受的主页 UI 检查点 `checkpoint/grok-bot-website-demo-ui-2026-11-01` 和独立发布目录继续作为 UI 回退点；它不覆盖 Agent、电脑或记忆候选。Bot Memory 分支尚未完成用户验收和合并，因此不得先开下一条功能分支、创建运行时 checkpoint tag 或把候选发布目录当作已验收版本。
 
 代码与较早验证记录已覆盖 Pi/DeepSeek Harness、每用户 K3D 电脑供给、Chromium、`computer_browser` DOM 读取/操作、`computer_desktop` 截图/坐标操作、电脑接管与逐操作审批、任务事件/unknown 恢复、共享文件和 Bot 私有记忆。现有真实模型及 K3D 证据分散记在 [`docs/pi-runtime.md`](pi-runtime.md)；记忆候选还以合成身份完成过公网 API 保存、跨运行召回和第二 Bot 隔离。但这些历史验证不能代替当前运行状态，也不能证明本产品已经具有官方完整的示范教学、Skill/Routine 生命周期、多屏并发、独立第二账号、全部权限边界或最终 Google 登录 UI 验收。
 
-2026-11-01 本轮主机复核：Docker Unix API `_ping` 返回 `Docker Desktop is unable to start`；K3D API `59958`、本项目入口 `18080` 和本机 MySQL `3306` 均无监听；公网 readiness 先前复核为 502。Docker VM 的 `Docker.raw` 文件仍存在，当前 `lsof` 未见该文件打开句柄，数据盘空余约 3.9 GiB。前次只读虚拟机日志曾报告 ext4 `failed to convert unwritten extents to written extents -- potential data loss`，Time Machine 未配置备份目的地。没有运行 Clean/Purge、Reset、fsck、prune 或删除 PVC/数据库；当前不能验证或重启 K3D 与 MySQL。需先恢复可安全备份/修复 Docker 数据盘的条件，再启动原有集群并逐项复核 PVC、MySQL 和公网隧道，不得把重置数据盘当作常规恢复步骤。
+2026-11-01 新一轮主机复核：Docker Unix API `_ping` 返回 HTTP 503；K3D API `59958`、项目入口 `18080` 和本机 MySQL `3306` 均无监听；公网 readiness 返回 `502 text/html`。本地 `127.0.0.1:3001` 的 `/` 返回 Vite 页面；其 `/api/auth/ready` 也返回 `200 text/html`，是 SPA fallback，不能算 Auth API readiness。Docker VM 的 `Docker.raw` 文件仍存在，最近检查约有 3.9 GiB 可用；先前只读虚拟机日志曾报告 ext4 `failed to convert unwritten extents to written extents -- potential data loss`。未运行 Clean/Purge、Reset、fsck、prune 或删除 PVC/数据库；不在缺少安全备份时修复数据盘。
+
+本轮 `npm run test:runtime` 58 项通过，`npm run test:ui` 的隔离 headless Chrome 流程通过，`npm test` 1 项通过，`npm run build` 与 `npm run build:deployment` 通过。UI 测试覆盖模拟/本地 UI 状态，部署构建只证明编译产物可生成；这些均不证明真实 Google 登录、MySQL、Pi/DSH 对话或 K3D 电脑当前可运行。`npm run test:auth` 在测试启动时因未设置 `COKE_GROK_TEST_MYSQL_PORT` 而停止；当前没有可用的 disposable MySQL，故本轮没有执行 MySQL 集成测试。
+
+CUA 最新 `getState` 仍报告 `Local browser use is disabled in Work settings`，浏览器列表为空；尝试通过 CUA 查看 ChatGPT/Codex 设置时，桌面控制层拒绝访问 `com.openai.codex`。因此没有使用已登录 Chrome 完成真实页面验收，也没有用其他自动化路径绕过该设置。官方操作路径记录为桌面应用的 `Plugins > Computer Use` 安装并启用 server/skill，再到 `Settings > Computer Use` 检查 Chrome 管理状态；macOS 还需允许 Screen Recording 和 Accessibility。该设置仍需在安全支持的控制路径中启用后重新验证。没有操作 Docker、K3D、MySQL 或 PVC 数据。
 
 下次继续顺序：先在本分支完成 Bot Memory 的已授权端到端验收并合并 main；然后再逐项开唯一功能分支实现官方示范教学和 Skill 草稿/测试/复用、Routine 调度、用户共享电脑的多屏并行，以及各账号隔离。每项要分别证明前端交互、真实 Agent/电脑效果、MySQL 持久化与恢复，再按用户验收建立 checkpoint 发布包。
 
