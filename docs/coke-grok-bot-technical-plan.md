@@ -2,7 +2,7 @@
 
 日期：2026-10-28
 
-状态：调研与方案；尚未实现、发布或完成逐帧验收。
+状态：分阶段实施中；已有 UI 检查点与真实 Agent/云电脑候选实现，尚未完成全产品复刻及完整逐帧验收。
 
 ## 1. 目标与边界
 
@@ -192,8 +192,8 @@ releases/<checkpoint>/
 
 ## 10. 2026-11-01 实现状态更新
 
-此前“尚未集成生产服务”的记录为历史状态。当前唯一功能分支 `codex/grok-bot-real-agent-computer-flow` 已把 Pi 与 DeepSeek Harness 接入本机 K3D 的隔离 Agent/desktop Pods、MySQL 持久运行队列、用户电脑 provisioner、Computer/Browser 工具和逐操作审批。签入的 UI 检查点仍保留在 `checkpoint/grok-bot-website-demo-ui-2026-11-01`；真实运行时功能尚需依照分支规则测试、提交并合并，未获最终用户认可前不为它新增 checkpoint tag。
+此前实现状态段落为阶段性历史记录。最新唯一功能分支 `codex/grok-bot-shared-computer-tools` 在前序 Pi/DeepSeek Harness 与隔离电脑能力之上加入共享用户工作区的只读文件工具、逐操作审批的显式终端工具、终端取消，以及未知运行的 owner-confirmed 恢复。UI 检查点 `checkpoint/grok-bot-website-demo-ui-2026-11-01` 仍位于 `ea13873`；运行时功能尚未获得用户最终验收，不为它新增 checkpoint tag 或发布目录。
 
-当前证据和剩余边界见 [`docs/pi-runtime.md`](pi-runtime.md) 的 2026-11-01 更新。简述：固定镜像的真实 K3D Pi/DSH 测试、35 项运行时测试、12 项 MySQL 测试、UI E2E、部署 bundle、K3D server-side manifest dry-run 和已登录公网 Chrome 的真实 Pi 浏览器任务均已通过。公网页面请求完成了用户电脑首次创建、真实模型调用、导航审批和实际浏览器读取。运行 UI 当前清楚标明同一台单屏电脑的任务会排队。
+截至 2026-11-01，本分支 `8903cd3` 的运行时测试（45）、MySQL 测试（12）、浏览器 E2E、UI 测试、引用帧提取测试、部署构建均通过；前序固定镜像的真实 K3D Pi/DSH 电脑交互测试通过。恢复功能候选 `coke-grok-auth:sha-3d9f130` 已在本机 K3D Ready，公网登录态 Chrome 的 owner-confirmed 恢复流程已完成，公网 readiness 为 204。详细命令、版本、截图与流程证据见 [`docs/pi-runtime.md`](pi-runtime.md)。同一用户的 Bot 共享一台电脑；当前只能单屏，运行 UI 明确提示排队。
 
-本阶段不是全产品完成：Pi Bash 与 DSH shell/filesystem/web/subagent 工具继续关闭；尚无经过审批和验证的 shell 执行路径；没有证明已存在的 PVC 在 Pod 重启后保留、第二账号隔离、DSH 公网 E2E、Auto Review 等价、多屏并发或逐帧完整视频覆盖。当前 Chromium 镜像使用容器 `--no-sandbox`，不得将 K3D 容器边界描述为硬件级隔离。后续仍按表格阶段顺序一次只处理一个 feature 分支，避免把本地 K3D 或公开任务成功扩大描述成完整官方等价。
+本阶段不是全产品完成：完整视频逐帧覆盖仍待推进；多屏并发、PVC 重启保留、第二账号隔离、DSH 公网 E2E、Auto Review 等价及其他官方工作流尚未证明。Pi/DSH 能力受当前显式工具 allowlist 和逐操作审批约束；不得将单屏 K3D 容器边界描述成官方多屏能力或硬件级隔离。每次只推进一条功能分支，且需要用户认可后才为大功能建立注释 checkpoint tag 与可验证发布目录。
