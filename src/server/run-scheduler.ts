@@ -1,4 +1,5 @@
 import type { AgentRun, RunOwner } from './run-store.ts';
+import { safeRunDiagnosticCode, type RunDiagnosticCode } from './run-diagnostics.ts';
 
 export interface SchedulerStore {
   markExpiredUnknown(): Promise<number>;
@@ -6,7 +7,7 @@ export interface SchedulerStore {
   claimNext(owner: RunOwner, leaseSeconds: number): Promise<{run:AgentRun;leaseId:string}|null>;
   renew(runId:string, leaseId:string, leaseSeconds:number): Promise<boolean>;
   finish(runId:string, leaseId:string, status:'completed'|'failed', result:string, artifacts?:unknown): Promise<boolean>;
-  markUnknown(runId:string, leaseId:string): Promise<boolean>;
+  markUnknown(runId:string, leaseId:string, diagnosticCode?:RunDiagnosticCode): Promise<boolean>;
 }
 export type ExecutionResult = {status:'completed'|'failed';result:string;artifacts?:unknown};
 export interface RunExecutor { execute(owner:RunOwner,run:AgentRun,signal:AbortSignal,leaseId:string):Promise<ExecutionResult> }
@@ -57,13 +58,13 @@ export class RunScheduler {
     timer.unref();
     try {
       const outcome = await this.executor.execute(owner,claim.run,abort.signal,claim.leaseId);
-      if (leaseLost || abort.signal.aborted) { await this.store.markUnknown(claim.run.id,claim.leaseId); return; }
+      if (leaseLost || abort.signal.aborted) { await this.store.markUnknown(claim.run.id,claim.leaseId,leaseLost?'lease_lost':'execution_aborted'); return; }
       if (!outcome || !['completed','failed'].includes(outcome.status) || typeof outcome.result !== 'string' || !outcome.result.trim() || outcome.result.length > 20000) throw new Error('Invalid executor result');
       const saved = await this.store.finish(claim.run.id,claim.leaseId,outcome.status,outcome.result,outcome.artifacts);
-      if (!saved) await this.store.markUnknown(claim.run.id,claim.leaseId);
-    } catch {
+      if (!saved) await this.store.markUnknown(claim.run.id,claim.leaseId,'result_persist_failed');
+    } catch (error) {
       // The executor might already have performed an external side effect. Do not repeat it.
-      await this.store.markUnknown(claim.run.id,claim.leaseId).catch(() => undefined);
+      await this.store.markUnknown(claim.run.id,claim.leaseId,safeRunDiagnosticCode(error)).catch(() => undefined);
     } finally { clearInterval(timer); }
   }
   async stop():Promise<void> {

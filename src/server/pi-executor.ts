@@ -4,6 +4,7 @@ import type { ModelGateway } from './model-gateway.ts';
 import type { BotMemoryStore } from './bot-memory-store.ts';
 import type { BotMemoryRunScope } from './bot-memory-bridge.ts';
 import { createHash } from 'node:crypto';
+import { agentHttpDiagnostic, RunDiagnosticError } from './run-diagnostics.ts';
 
 export interface DesktopConnection { agentUrl: URL; agentToken: string }
 export interface DesktopConnections { connect(owner:RunOwner, signal:AbortSignal):Promise<DesktopConnection> }
@@ -15,30 +16,43 @@ export class DesktopAgentExecutor implements RunExecutor {
     if(endpoint.protocol!=='https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || endpoint.pathname!=='/v1' || !model || !['pi','dsh'].includes(engine)) throw new Error('Invalid Agent gateway');
   }
   async execute(owner:RunOwner,run:AgentRun,signal:AbortSignal,leaseId:string):Promise<ExecutionResult> {
-    if(signal.aborted) throw new Error('Run stopped');
-    const desktop=await this.desktops.connect(owner,signal);
+    if(signal.aborted) throw new RunDiagnosticError('execution_aborted');
+    let desktop:DesktopConnection;
+    try { desktop=await this.desktops.connect(owner,signal); }
+    catch { throw new RunDiagnosticError(signal.aborted?'execution_aborted':'desktop_connect_failed'); }
     const endpoint=new URL(desktop.agentUrl);
     const ownerHash=createHash('sha256').update(`${owner.tenantId.toLowerCase()}:${owner.userId.toLowerCase()}`).digest('hex').slice(0,32);
     if(endpoint.protocol!=='http:' || ![`desktop.grok-user-${ownerHash}.svc.cluster.local`,`agent.grok-user-${ownerHash}.svc.cluster.local`].includes(endpoint.hostname) || endpoint.port!=='8083' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || endpoint.pathname!=='/' || !/^[A-Za-z0-9_-]{43}$/.test(desktop.agentToken)) throw new Error('Invalid desktop endpoint');
     const memoryScope:BotMemoryRunScope={runId:run.id,leaseId,botId:run.botId,owner};
-    const storedMemories=this.memories?await this.memories.list(memoryScope):[];
-    if(this.memories&&!storedMemories)throw new Error('Bot memory could not be read for the active run');
-    const capability=this.gateway.issue({ttlMs:14*60_000,calls:100,scope:{...memoryScope}});
+    let storedMemories:Awaited<ReturnType<BotMemoryStore['list']>>=[];
+    if(this.memories) {
+      try { storedMemories=await this.memories.list(memoryScope); }
+      catch { throw new RunDiagnosticError('bot_memory_preload_failed'); }
+      if(!storedMemories)throw new RunDiagnosticError('bot_memory_scope_invalid');
+    }
+    let capability:string;
+    try { capability=this.gateway.issue({ttlMs:14*60_000,calls:100,scope:{...memoryScope}}); }
+    catch { throw new RunDiagnosticError('capability_issue_failed'); }
     try {
       const memoryContext=this.memories?formatBotMemory(storedMemories||[]):'';
       const prompt=`${memoryContext}${run.prompt}\n\nWhen your work finishes, return a JSON object with exactly these fields: {"status":"done" or "failed","message":"<the user-facing result>"}. Use done only if the requested work succeeded; use failed if it could not be completed, and explain what happened. Report actual outcomes only.`;
       const attachments=run.files.filter(file=>file.kind==='input').map(file=>({id:file.id,name:file.name,mimeType:file.mimeType,size:file.size,sha256:file.sha256,storageKey:file.storageKey}));
-      const response=await this.request(new URL('/v1/tasks/run',endpoint),{
-        method:'POST',redirect:'error',headers:{authorization:`Bearer ${desktop.agentToken}`,'content-type':'application/json'},
-        body:JSON.stringify({engine:this.engine,taskId:run.id,cwd:`tasks/${run.id}`,prompt,attachments,memory:this.memories?{mode:'mediated'}:undefined,modelConfig:{apiKey:capability,baseUrl:this.gatewayUrl,model:this.model}}),
-        signal:AbortSignal.any([signal,AbortSignal.timeout(14*60_000)]),
-      });
-      if (!response.ok) throw new Error('Desktop execution outcome could not be confirmed');
-      const value:unknown=await response.json();
-      if (!value || typeof value!=='object' || Array.isArray(value)) throw new Error('Invalid desktop result');
+      let response:Response;
+      try {
+        response=await this.request(new URL('/v1/tasks/run',endpoint),{
+          method:'POST',redirect:'error',headers:{authorization:`Bearer ${desktop.agentToken}`,'content-type':'application/json'},
+          body:JSON.stringify({engine:this.engine,taskId:run.id,cwd:`tasks/${run.id}`,prompt,attachments,memory:this.memories?{mode:'mediated'}:undefined,modelConfig:{apiKey:capability,baseUrl:this.gatewayUrl,model:this.model}}),
+          signal:AbortSignal.any([signal,AbortSignal.timeout(14*60_000)]),
+        });
+      } catch { throw new RunDiagnosticError(signal.aborted?'execution_aborted':'agent_transport_failed'); }
+      if (!response.ok) throw new RunDiagnosticError(agentHttpDiagnostic(response.status));
+      let value:unknown;
+      try { value=await response.json(); }
+      catch { throw new RunDiagnosticError('agent_response_invalid'); }
+      if (!value || typeof value!=='object' || Array.isArray(value)) throw new RunDiagnosticError('agent_response_invalid');
       const result=value as {status?:unknown;message?:unknown;pausedForControl?:unknown;files?:unknown};
       // A pause may have interrupted an operation after a side effect. Reconciliation is required.
-      if (!['done','failed'].includes(String(result.status)) || result.pausedForControl===true || typeof result.message!=='string' || !result.message.trim()) throw new Error('Desktop outcome requires reconciliation');
+      if (!['done','failed'].includes(String(result.status)) || result.pausedForControl===true || typeof result.message!=='string' || !result.message.trim()) throw new RunDiagnosticError('agent_result_unconfirmed');
       const safe=result.message.split(capability).join('[redacted]').split(desktop.agentToken).join('[redacted]').slice(0,20000);
       return {status:result.status==='done'?'completed':'failed',result:safe,...(result.status==='done'&&Array.isArray(result.files)?{artifacts:result.files}:{})};
     } finally { this.gateway.revoke(capability); }

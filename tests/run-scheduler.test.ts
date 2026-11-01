@@ -6,6 +6,7 @@ import { TenantStore, type Session } from '../src/server/tenant-store.ts';
 import { BotStore } from '../src/server/bot-store.ts';
 import { RunStore } from '../src/server/run-store.ts';
 import { RunScheduler } from '../src/server/run-scheduler.ts';
+import { RunDiagnosticError } from '../src/server/run-diagnostics.ts';
 const port=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);
 if(!port) throw new Error('Disposable MySQL port required');
 const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -21,7 +22,7 @@ test('scheduler isolates computers, serializes each owner and preserves uncertai
   const a1=await bots.create(a,{name:'A1',shape:'hex',color:'#aabbcc'}),a2=await bots.create(a,{name:'A2',shape:'hex',color:'#aabbcc'}),b1=await bots.create(b,{name:'B',shape:'hex',color:'#aabbcc'});
   const first=await runs.create(a,a1.id,randomUUID(),'first'); const second=await runs.create(a,a2.id,randomUUID(),'second'); const other=await runs.create(b,b1.id,randomUUID(),'other'); assert.ok(first&&second&&other);
   let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);const calls:string[]=[];
-  scheduler=new RunScheduler(runs,{execute:async (_owner,run)=>{calls.push(run.prompt);if(run.prompt==='first')await gate;if(run.prompt==='other')throw new Error('transport outcome unknown');return {status:'completed',result:'done'}}},{concurrency:2,leaseSeconds:6});
+  scheduler=new RunScheduler(runs,{execute:async (_owner,run)=>{calls.push(run.prompt);if(run.prompt==='first')await gate;if(run.prompt==='other')throw new RunDiagnosticError('agent_http_401');return {status:'completed',result:'done'}}},{concurrency:2,leaseSeconds:6});
   await Promise.all([scheduler.tick(),scheduler.tick()]);
   await until(async()=>calls.length===2);assert.deepEqual(new Set(calls),new Set(['first','other']));
   await until(async()=>(await runs.list(b,b1.id))?.[0].status==='unknown');
@@ -31,7 +32,7 @@ test('scheduler isolates computers, serializes each owner and preserves uncertai
   await scheduler.stop();scheduler=undefined;
   const restartCalls:string[]=[];scheduler=new RunScheduler(runs,{execute:async (_owner,run)=>{restartCalls.push(run.prompt);return {status:'completed',result:'done'}}},{concurrency:2,leaseSeconds:6});
   await scheduler.tick();await pause(50);assert.deepEqual(restartCalls,[]);
-  assert.deepEqual((await runs.events(b,other.id))?.map(e=>e.status),['queued','running','unknown']);
+  const otherEvents=await runs.events(b,other.id);assert.deepEqual(otherEvents?.map(e=>e.status),['queued','running','unknown']);assert.equal(otherEvents?.at(-1)?.detail,'diagnostic:agent_http_401');
  }finally{await scheduler?.stop();await pool.end();await admin.query(`DROP DATABASE \`${db}\``);await admin.end()}
 });
 
@@ -45,7 +46,7 @@ test('stopping a worker aborts a running task and records unknown',async()=>{
   let started=false;scheduler=new RunScheduler(runs,{execute:async (_owner,_run,signal)=>{started=true;await new Promise<void>(resolve=>signal.addEventListener('abort',()=>resolve(),{once:true}));return {status:'completed',result:'late'}}},{concurrency:1,leaseSeconds:6});
   await scheduler.tick();await until(async()=>started);await scheduler.stop();scheduler=undefined;
   assert.equal((await runs.list(s,bot.id))?.[0].status,'unknown');
-  assert.deepEqual((await runs.events(s,run.id))?.map(e=>e.status),['queued','running','unknown']);
+  const events=await runs.events(s,run.id);assert.deepEqual(events?.map(e=>e.status),['queued','running','unknown']);assert.equal(events?.at(-1)?.detail,'diagnostic:execution_aborted');
  }finally{await scheduler?.stop();await pool.end();await admin.query(`DROP DATABASE \`${db}\``);await admin.end()}
 });
 

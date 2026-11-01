@@ -3,6 +3,7 @@ import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type { ResultSetHeader } from 'mysql2';
 import type { Session } from './tenant-store.ts';
 import { WorkspaceFileStore, type RunFile } from './file-store.ts';
+import { isRunDiagnosticCode, type RunDiagnosticCode } from './run-diagnostics.ts';
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'unknown';
 export type RecoveryState = 'none' | 'pending' | 'retried' | 'acknowledged';
@@ -137,12 +138,12 @@ export class RunStore {
     const [rows]=await this.pool.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND r.lease_id=? AND r.status='running' AND r.lease_until>UTC_TIMESTAMP(3) AND b.tenant_id=? AND b.owner_id=?`,[runId,leaseId,owner.tenantId,owner.userId]);
     return rows.length===1;
   }
-  async markUnknown(runId: string, leaseId: string): Promise<boolean> {
-    if (!uuid.test(runId) || !uuid.test(leaseId)) throw new Error('Invalid lease');
+  async markUnknown(runId: string, leaseId: string, diagnosticCode: RunDiagnosticCode = 'executor_error'): Promise<boolean> {
+    if (!uuid.test(runId) || !uuid.test(leaseId) || !isRunDiagnosticCode(diagnosticCode)) throw new Error('Invalid lease');
     return this.transaction(async connection => {
       const [updated] = await connection.execute<ResultSetHeader>(`UPDATE agent_runs SET status='unknown',recovery_state='pending',replacement_run_id=NULL,lease_id=NULL,lease_until=NULL WHERE id=? AND lease_id=? AND status='running'`,[runId,leaseId]);
       if (!updated.affectedRows) return false;
-      await connection.execute(`INSERT INTO agent_run_events (run_id,status) VALUES (?,'unknown')`,[runId]);
+      await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown',?)`,[runId,`diagnostic:${diagnosticCode}`]);
       return true;
     });
   }
@@ -151,7 +152,7 @@ export class RunStore {
       const [rows] = await connection.execute<RowDataPacket[]>(`SELECT id FROM agent_runs WHERE status='running' AND lease_until<=UTC_TIMESTAMP(3) ORDER BY lease_until LIMIT 100 FOR UPDATE`);
       for (const row of rows) {
         await connection.execute(`UPDATE agent_runs SET status='unknown',recovery_state='pending',replacement_run_id=NULL,lease_id=NULL,lease_until=NULL WHERE id=?`,[row.id]);
-        await connection.execute(`INSERT INTO agent_run_events (run_id,status) VALUES (?,'unknown')`,[row.id]);
+        await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','diagnostic:lease_expired')`,[row.id]);
       }
       return rows.length;
     });

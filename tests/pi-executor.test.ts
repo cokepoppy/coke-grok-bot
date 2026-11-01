@@ -4,6 +4,7 @@ import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { ModelGateway } from '../src/server/model-gateway.ts';
 import { PiExecutor } from '../src/server/pi-executor.ts';
+import { RunDiagnosticError } from '../src/server/run-diagnostics.ts';
 import type { AgentRun, RunOwner } from '../src/server/run-store.ts';
 const owner:RunOwner={tenantId:randomUUID(),userId:randomUUID()};
 const hash=createHash('sha256').update(`${owner.tenantId}:${owner.userId}`).digest('hex').slice(0,32);
@@ -37,9 +38,11 @@ test('Pi dispatch fails closed for wrong owner, transport error or interrupted d
  await assert.rejects(wrong.execute(owner,run,new AbortController().signal,randomUUID()));
  let calls=0;
  const interrupted=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>{calls++;return Response.json({status:'waiting',pausedForControl:true,message:'paused'})});
- await assert.rejects(interrupted.execute(owner,run,new AbortController().signal,randomUUID()));assert.equal(calls,1);
+ await assert.rejects(interrupted.execute(owner,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='agent_result_unconfirmed');assert.equal(calls,1);
  const transport=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>{calls++;throw new Error('unconfirmed')});
- await assert.rejects(transport.execute(owner,run,new AbortController().signal,randomUUID()));assert.equal(calls,2);gateway.close();
+ await assert.rejects(transport.execute(owner,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='agent_transport_failed');assert.equal(calls,2);
+ const unauthorized=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>new Response('{"error":"credential value must not be persisted"}',{status:401}));
+ await assert.rejects(unauthorized.execute(owner,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='agent_http_401'&&!error.message.includes('credential'));gateway.close();
 });
 
 test('Pi reports a confirmed failure as failed rather than completed',async()=>{

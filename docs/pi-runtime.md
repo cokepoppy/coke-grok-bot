@@ -204,3 +204,7 @@ Google 登录的公网 Bot 1030 上，一条仅要求保存合成测试偏好的
 为排除用户 Agent 镜像本身的问题，新增 `npm run test:bot-memory-k3d` 专项入口，复用同一真实 K3D Harness，但跳过电脑终端长流程。以公网当前运行的 Agent 镜像 `coke-grok-desktop:sha-8fccb502ae2205e1279a8d99b55b5212bc8f28d9`、临时 MySQL、独立 namespace 与真实 DeepSeek 为条件，Pi 和 DSH 写入记忆、后续 Pi 跨运行取回、第二 Bot 无继承均通过（10 次模型调用）。它证明该 Agent 镜像在隔离设置下支持记忆路径，但不能替代公网 Auth/数据库/租约链路验收。
 
 同镜像的全量 `test:mediated-agent-k3d` 在本轮于 DSH 终端动作断言提前失败，未运行后续记忆断言；实际 failure 是模型提出了不符合该测试期望的终端动作，不代表记忆测试失败。该全量测试的 DSH 终端输出稳定性仍待单独处理。两次测试创建的临时 namespace/PVC 和临时 MySQL schema 均已确认清理；用户 namespace、MySQL 和原有 Desktop/PVC 未受影响。
+
+### 2026-11-01 未知运行的安全诊断码
+
+为定位公网 `unknown` 而不保存模型错误正文、任务提示词或密钥，调度器现在把 Agent 连接、记忆预加载、Agent HTTP 状态、响应校验、租约丢失、用户中断和结果写回等失败映射到固定枚举码，并写入 `agent_run_events.detail`。普通未分类异常只记录为 `executor_error`；Agent 4xx 只保存状态类别。`npm run test:runtime`（53）、`COKE_GROK_TEST_MYSQL_PORT=50762 npm run test:runtime-mysql`（14）和 `npx tsc --noEmit` 通过。此诊断改动尚未滚动到公网 Auth；它不能追溯解释已有的两个 unknown，需在部署后有一条新的已授权任务才能读取具体失败阶段。
