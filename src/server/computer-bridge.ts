@@ -1,5 +1,6 @@
 import type { ApprovalStore } from './approval-store.ts';
 import { ComputerBroker,type GuardedComputerWorker } from './computer-broker.ts';
+import { canonicalComputerAction } from './computer-action.ts';
 import type { RunOwner,RunStore } from './run-store.ts';
 
 export interface RunScope {owner:RunOwner;runId:string;leaseId:string}
@@ -21,6 +22,15 @@ export class ComputerBridge {
   await this.authorize(scope,signal);return this.approvals.status(scope.runId,scope.leaseId,id);
  }
  async execute(scope:RunScope,id:string,input:unknown,signal:AbortSignal):Promise<unknown>{
-  const worker=await this.authorize(scope,signal);return new ComputerBroker(this.approvals,worker).execute(scope.runId,scope.leaseId,id,input,signal);
+  const worker=await this.authorize(scope,signal);
+  if(input&&typeof input==='object'&&!Array.isArray(input)&&(input as {kind?:unknown}).kind==='terminal'){
+   if(signal.aborted)throw new Error('Task stopped');
+   const state=await worker.snapshot(signal);if(state.owner!=='agent')throw new Error('User controls the computer');
+   const action=canonicalComputerAction(input,state);
+   if(!await this.approvals.consume(scope.runId,scope.leaseId,id,action))throw new Error('Terminal approval is missing, expired or does not match the current action and screen');
+   if(signal.aborted)throw new Error('Task stopped after approval');
+   return {approved:true};
+  }
+  return new ComputerBroker(this.approvals,worker).execute(scope.runId,scope.leaseId,id,input,signal);
  }
 }

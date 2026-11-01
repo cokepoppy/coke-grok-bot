@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { apply } from '../deploy/desktop/dsh-computer-plugin.mjs';
 
 const bridgeToken = randomBytes(32).toString('base64url');
@@ -131,5 +134,59 @@ test('DSH computer plugin does not request the same action again after the owner
     globalThis.fetch = oldFetch;
     if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
     if (oldToken === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN; else process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = oldToken;
+  }
+});
+
+test('DSH exposes only the persistent shared folder to file reads', async () => {
+  const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL, oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
+  const oldWorkspace = process.env.COKE_GROK_WORKSPACE_ROOT, oldFetch = globalThis.fetch;
+  const root = await mkdtemp(join(tmpdir(), 'dsh-shared-files-'));
+  process.env.COKE_GROK_COMPUTER_BRIDGE_URL = 'https://gateway.example.test/v1'; process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = bridgeToken;
+  process.env.COKE_GROK_WORKSPACE_ROOT = root;
+  await mkdir(join(root, 'shared')); await writeFile(join(root, 'shared', 'brief.md'), 'DSH shared brief');
+  globalThis.fetch = async () => Response.json({ owner: 'agent' });
+  try {
+    const files = mount().tools.get('computer_files'); assert.ok(files);
+    const listed = await files.execute({ action: 'list' }, { signal: new AbortController().signal });
+    assert.match(listed.text, /brief.md/);
+    const read = await files.execute({ action: 'read', path: 'brief.md' }, { signal: new AbortController().signal });
+    assert.equal(read.text, 'DSH shared brief');
+    await assert.rejects(files.execute({ action: 'read', path: '../brief.md' }, { signal: new AbortController().signal }), /invalid/);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
+    if (oldToken === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN; else process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = oldToken;
+    if (oldWorkspace === undefined) delete process.env.COKE_GROK_WORKSPACE_ROOT; else process.env.COKE_GROK_WORKSPACE_ROOT = oldWorkspace;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('DSH terminal runs the exact owner-approved command once in the shared folder', async () => {
+  const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL, oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
+  const oldWorkspace = process.env.COKE_GROK_WORKSPACE_ROOT, oldFetch = globalThis.fetch;
+  const root = await mkdtemp(join(tmpdir(), 'dsh-terminal-'));
+  process.env.COKE_GROK_COMPUTER_BRIDGE_URL = 'https://gateway.example.test/v1'; process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = bridgeToken;
+  process.env.COKE_GROK_WORKSPACE_ROOT = root;
+  const approvalId = randomUUID(), calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const path = new URL(String(url)).pathname; calls.push({ path, method: init.method || 'GET', body: init.body ? JSON.parse(init.body) : undefined });
+    if (path.endsWith('/computer/actions')) return Response.json({ id: approvalId });
+    if (path.endsWith(`/computer/actions/${approvalId}`)) return Response.json({ status: 'approved' });
+    if (path.endsWith(`/computer/actions/${approvalId}/execute`)) return Response.json({ approved: true });
+    throw new Error('Unexpected computer route');
+  };
+  try {
+    const terminal = mount().tools.get('computer_terminal'); assert.ok(terminal);
+    const result = await terminal.execute({ command: 'printf DSH_TERMINAL_OK > result.txt', directory: 'shared' }, { signal: new AbortController().signal });
+    assert.match(result.text, /"exitCode":0/);
+    assert.equal(await readFile(join(root, 'shared', 'result.txt'), 'utf8'), 'DSH_TERMINAL_OK');
+    assert.deepEqual(calls.filter(call => call.path.endsWith('/computer/actions'))[0].body, { action: { kind: 'terminal', action: 'run', command: 'printf DSH_TERMINAL_OK > result.txt', directory: 'shared' } });
+    assert.equal(calls.filter(call => call.path.endsWith(`/computer/actions/${approvalId}/execute`)).length, 1);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
+    if (oldToken === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN; else process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = oldToken;
+    if (oldWorkspace === undefined) delete process.env.COKE_GROK_WORKSPACE_ROOT; else process.env.COKE_GROK_WORKSPACE_ROOT = oldWorkspace;
+    await rm(root, { recursive: true, force: true });
   }
 });

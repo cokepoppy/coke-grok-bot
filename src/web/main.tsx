@@ -102,7 +102,7 @@ function ApprovalCard({approval, disabled, decide}: {approval:Approval; disabled
   let detail: {kind?:string;action?:string;arguments?:Record<string,unknown>;page?:string}|null=null;
   try { const value=JSON.parse(approval.action); if(value && typeof value==='object' && typeof value.action==='string') detail=value; } catch { /* Legacy textual approvals. */ }
   return <div className="approval-card"><strong>Approval requested</strong>
-    {detail ? <><p>{detail.kind === 'desktop' ? 'Desktop' : 'Browser'}: {detail.action}</p>{detail.page && <p>Page: {detail.page}</p>}{detail.arguments && <pre>{JSON.stringify(detail.arguments,null,2)}</pre>}</> : <p>{approval.action}</p>}
+    {detail ? <><p>{detail.kind === 'desktop' ? 'Desktop' : detail.kind === 'terminal' ? 'Computer terminal' : 'Browser'}: {detail.action}</p>{detail.page && <p>Page: {detail.page}</p>}{detail.arguments && <pre>{detail.kind === 'terminal' ? `${String(detail.arguments.directory || 'task')} directory\n${String(detail.arguments.command || '')}` : JSON.stringify(detail.arguments,null,2)}</pre>}</> : <p>{approval.action}</p>}
     {approval.hasScreenshot && <img src={`${import.meta.env.BASE_URL}api/approvals/${approval.id}/screenshot`} alt="Computer screen when this action was requested" onLoad={()=>setImageLoaded(true)} onError={()=>setImageLoaded(false)} />}
     <div><button type="button" disabled={disabled} onClick={()=>decide('denied')}>Deny</button><button type="button" disabled={disabled || Boolean(approval.hasScreenshot && !imageLoaded)} onClick={()=>decide('approved')}>Approve</button></div>
   </div>;

@@ -21,3 +21,14 @@ test('computer actions reject unexpected fields, unsafe paths and invalid contro
  assert.throws(()=>canonicalComputerAction({kind:'desktop',action:'click',x:1,y:2},{...snapshot,screenshotSha256:'bad'}));
  const valid=JSON.parse(canonicalComputerAction({kind:'desktop',action:'click',x:12,y:34},snapshot));assert.deepEqual(valid.arguments,{x:12,y:34});
 });
+test('terminal approvals bind the exact command and selected computer directory',()=>{
+ const action={kind:'terminal',action:'run',command:'printf "done" > result.txt',directory:'shared'};
+ const first=canonicalComputerAction(action,snapshot),decoded=JSON.parse(first);
+ assert.equal(decoded.kind,'terminal');assert.deepEqual(decoded.arguments,{command:action.command,directory:'shared'});
+ assert.notEqual(first,canonicalComputerAction({...action,command:'rm result.txt'},snapshot));
+ assert.notEqual(first,canonicalComputerAction({...action,directory:'task'},snapshot));
+ for(const invalid of [
+  {...action,directory:'root'}, {...action,command:' '}, {...action,command:'echo x\u0000'}, {...action,unexpected:true},
+  {...action,command:'x'.repeat(2401)},
+ ]) assert.throws(()=>canonicalComputerAction(invalid,snapshot));
+});
