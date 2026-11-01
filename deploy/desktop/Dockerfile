@@ -16,6 +16,7 @@ RUN npm ci --prefix /opt/coke-grok/dsh-runtime --omit=dev --no-audit --no-fund \
     && rm -rf /opt/coke-dots/node_modules/@deepseek-ai/dsh-sdk-client \
     && ln -s /opt/coke-grok/dsh-runtime/node_modules/@deepseek-ai/dsh-sdk-client /opt/coke-dots/node_modules/@deepseek-ai/dsh-sdk-client \
     && cd /opt/coke-grok/dsh-runtime && node --input-type=module -e 'console.log(import.meta.resolve("@deepseek-ai/dsh-sdk-client"))'
+COPY --chmod=0755 deploy/desktop/clear-stale-x11.sh /usr/local/bin/clear-stale-grok-x11
 ENV DOTS_DSH_BIN=/opt/coke-grok/dsh-runtime/node_modules/.bin/dsh
 USER 1000:1000
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/start-grok-desktop"]
