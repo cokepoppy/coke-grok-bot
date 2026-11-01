@@ -1,7 +1,7 @@
 /** Real Pi, isolated desktop, test-user approval and model. Never logs credentials. */
 import {spawn} from 'node:child_process';
 import {randomBytes,randomUUID,createHash} from 'node:crypto';
-import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {once} from 'node:events';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -13,7 +13,7 @@ import {BotStore} from '../src/server/bot-store.ts';
 import {RunStore} from '../src/server/run-store.ts';
 import {ApprovalStore} from '../src/server/approval-store.ts';
 import {RunScheduler} from '../src/server/run-scheduler.ts';
-import {PiExecutor} from '../src/server/pi-executor.ts';
+import {DshExecutor,PiExecutor} from '../src/server/pi-executor.ts';
 import {ModelGateway} from '../src/server/model-gateway.ts';
 import {ComputerBridge} from '../src/server/computer-bridge.ts';
 import {HttpGuardedComputerWorker} from '../src/server/guarded-worker.ts';
@@ -26,6 +26,7 @@ if(!mysqlPort||!keyFile||!image)throw new Error('Disposable MySQL, private model
 const dir=await mkdtemp(join(tmpdir(),'grok-mediated-pi-')),db=`grok_mediated_${randomUUID().replaceAll('-','')}`;
 let namespace='',namespaceCreated=false,dbCreated=false,admin:mysql.Connection|undefined,pool:mysql.Pool|undefined,server:import('node:http').Server|undefined,gatewayServer:import('node:http').Server|undefined,gateway:ModelGateway|undefined,scheduler:RunScheduler|undefined;
 const forwards:import('node:child_process').ChildProcess[]=[];let modelCalls=0;
+let dshComputerScreenshots=0,dshComputerInspections=0;
 async function exec(command:string,args:string[],input?:string,timeout=120_000){const child=spawn(command,args,{stdio:['pipe','pipe','pipe']});let out='';child.stdout.setEncoding('utf8');child.stdout.on('data',c=>{out=(out+c).slice(-100000)});child.stderr.resume();child.stdin.end(input);const timer=setTimeout(()=>child.kill('SIGKILL'),timeout);try{const [code]=await once(child,'close') as [number|null];return {code:code??1,out}}finally{clearTimeout(timer)}}
 async function run(command:string,args:string[],input?:string,timeout?:number){const result=await exec(command,args,input,timeout);if(result.code!==0)throw new Error(`${command} test operation failed`);return result.out}
 async function portForward(service:string,target:number){const child=spawn('kubectl',['-n',namespace,'port-forward',`service/${service}`,`:${target}`],{stdio:['ignore','pipe','pipe']});forwards.push(child);child.stderr!.resume();return new Promise<number>((resolve,reject)=>{let out='';child.stdout!.on('data',c=>{out+=String(c);const m=out.match(new RegExp(`127\\.0\\.0\\.1:(\\d+) -> ${target}`));if(m)resolve(Number(m[1]))});child.once('exit',()=>reject(new Error('Port-forward exited')));setTimeout(()=>reject(new Error('Port-forward timeout')),15000).unref()})}
@@ -40,6 +41,9 @@ try{
  const cert=join(dir,'cert.pem'),key=join(dir,'key.pem');await run('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',key,'-out',cert,'-days','1','-subj','/CN=host.k3d.internal','-addext','subjectAltName=DNS:host.k3d.internal']);
  let workerPort=0;const workerTransport:typeof fetch=async(url,init)=>fetch(`http://127.0.0.1:${workerPort}${new URL(String(url)).pathname}`,init);
  const bridge=new ComputerBridge(runs,approvals,scope=>new HttpGuardedComputerWorker(scope.owner,new URL(`http://desktop.${namespace}.svc.cluster.local:8082/`),identity.controlToken,scope.runId,workerTransport));
+ const captureScreenshot=bridge.screenshot.bind(bridge),inspectComputer=bridge.inspect.bind(bridge);
+ bridge.screenshot=async(...args:Parameters<typeof bridge.screenshot>)=>{dshComputerScreenshots++;return captureScreenshot(...args)};
+ bridge.inspect=async(...args:Parameters<typeof bridge.inspect>)=>{dshComputerInspections++;return inspectComputer(...args)};
  gateway=new ModelGateway((await readFile(keyFile,'utf8')).trim(),'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1','deepseek-v4.1-flash',async(url,init)=>{modelCalls++;return fetch(url,init)},approvals,bridge);
  gatewayServer=gateway.createServer({key:await readFile(key),cert:await readFile(cert)});gatewayServer.listen(0,'0.0.0.0');await once(gatewayServer,'listening');const gatewayAddr=gatewayServer.address();if(!gatewayAddr||typeof gatewayAddr==='string')throw new Error('No gateway port');
  const resources=splitDesktopResources(identity,{image,controlNamespace:'coke-grok-bot',gatewayCA:await readFile(cert,'utf8')});
@@ -72,6 +76,32 @@ try{
  if(status!=='completed')throw new Error(`Mediated Pi task did not complete: ${status}; approved ${approved}; model calls ${modelCalls}`);
  assert.equal(approved,1);const final=await workerRequest('/v1/guarded/inspect'),view=await final.json() as {text?:string};assert.ok(view.text?.includes('MEDIATED_CLICK_OK'));
  const eventResponse=await fetch(`${base}/api/runs/${task.id}/events`,{headers:{cookie:apiCookie}}),events=await eventResponse.json() as {events:{status:string}[]};assert.deepEqual(events.events.map(x=>x.status),['queued','running','completed']);
+ await scheduler.stop();
+ const dshRequest:typeof fetch=async(url,init)=>fetch(`http://127.0.0.1:${agentPort}${new URL(String(url)).pathname}`,init);
+ const dshExecutor=new DshExecutor({connect:async()=>({agentUrl:new URL(`http://agent.${namespace}.svc.cluster.local:8083/`),agentToken:identity.agentToken})},gateway,`https://host.k3d.internal:${gatewayAddr.port}/v1`,'deepseek-v4.1-flash',dshRequest);
+ scheduler=new RunScheduler(runs,dshExecutor,{concurrency:1,leaseSeconds:30});
+ const dshSubmit=await fetch(path,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({requestId:randomUUID(),prompt:'Use computer_desktop screenshot to view the actual browser page and find the large green button. Click that button using computer_desktop coordinates derived from the screenshot, not computer_browser click. Wait for owner approval. Then use computer_browser inspect to confirm the page displays DSH_MEDIATED_CLICK_OK. Return success only after verifying it.'})});assert.equal(dshSubmit.status,200);const {run:dshTask}=await dshSubmit.json() as {run:{id:string}};
+ const dshFixture=`<!doctype html><title>DSH mediated computer</title><style>html,body{width:100%;height:100%;margin:0;background:#eef3f4;font:32px sans-serif}body{display:grid;place-items:center}button{width:620px;height:240px;border:0;border-radius:32px;background:#188b62;color:white;font-size:48px;font-weight:700}#result{position:fixed;top:40px;left:40px;font-weight:700}</style><p id="result">WAITING_FOR_DSH</p><button onclick="document.getElementById('result').textContent='DSH_MEDIATED_CLICK_OK'">Run DSH computer task</button>`;
+ await run('kubectl',['-n',namespace,'exec',pod,'-c','agent','--','node','-e',`const f=require('fs'),p='/workspace/tasks/${dshTask.id}';f.mkdirSync(p,{recursive:true,mode:0o770});f.writeFileSync(p+'/dsh-computer.html',${JSON.stringify(dshFixture)},{mode:0o664})`]);
+ const beforeDsh=await workerRequest('/v1/guarded/snapshot');assert.equal(beforeDsh.status,200);const openedDsh=await workerRequest('/v1/guarded/execute',{expected:await beforeDsh.json(),action:{kind:'browser',action:'open_artifact',taskId:dshTask.id,path:'dsh-computer.html'}});assert.equal(openedDsh.status,200);await sleep(1500);
+ await scheduler.tick();let dshStatus='',dshApprovals=0;const dshActionEvidence:{kind:string;action:string;arguments:Record<string,unknown>;visibleResult:boolean}[]=[];
+ for(let i=0;i<240;i++){
+  const list=await fetch(`${base}/api/runs/${dshTask.id}/approvals`,{headers:{cookie:apiCookie}}),items=(await list.json() as {approvals:{id:string;status:string;action:string;hasScreenshot:boolean}[]}).approvals;
+  for(const item of items.filter(value=>value.status==='pending')){
+   const description=JSON.parse(item.action) as {kind:string;action:string;arguments:{x?:number;y?:number};screenshotSha256:string};assert.equal(description.kind,'desktop');assert.equal(description.action,'click');assert.ok(Number.isInteger(description.arguments.x)&&Number.isInteger(description.arguments.y));assert.equal(item.hasScreenshot,true);
+   const screenshot=await fetch(`${base}/api/approvals/${item.id}/screenshot`,{headers:{cookie:apiCookie}});assert.equal(screenshot.status,200);assert.equal(screenshot.headers.get('content-type'),'image/png');const screenshotBytes=Buffer.from(await screenshot.arrayBuffer());assert.equal(createHash('sha256').update(screenshotBytes).digest('hex'),description.screenshotSha256);await writeFile(`/tmp/coke-grok-dsh-computer-approval-${dshApprovals+1}.png`,screenshotBytes);
+   const computerState=await workerRequest('/v1/guarded/inspect'),computerView=await computerState.json() as {text?:string};dshActionEvidence.push({kind:description.kind,action:description.action,arguments:description.arguments,visibleResult:Boolean(computerView.text?.includes('DSH_MEDIATED_CLICK_OK'))});
+   if(dshApprovals>0){await fetch(`${base}/api/approvals/${item.id}`,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({decision:'denied'})});throw new Error(`DSH requested a second computer mutation; actions ${JSON.stringify(dshActionEvidence)}`)}
+   const decision=await fetch(`${base}/api/approvals/${item.id}`,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({decision:'approved'})});assert.equal(decision.status,200);dshApprovals++;
+  }
+  const result=await fetch(path,{headers:{cookie:apiCookie}}),rows=(await result.json() as {runs:{id:string;status:string}[]}).runs;dshStatus=rows.find(value=>value.id===dshTask.id)?.status||'';if(['completed','failed','unknown'].includes(dshStatus))break;await sleep(1000);
+ }
+ if(dshStatus!=='completed')throw new Error(`Mediated DSH task did not complete: ${dshStatus}; approved ${dshApprovals}; model calls ${modelCalls}`);
+ assert.equal(dshApprovals,1);assert.ok(dshComputerScreenshots>0,'DSH must send a real cloud-computer screenshot to the model');assert.ok(dshComputerInspections>0,'DSH must inspect the actual Chromium page');const dshFinal=await workerRequest('/v1/guarded/inspect'),dshView=await dshFinal.json() as {text?:string};assert.ok(dshView.text?.includes('DSH_MEDIATED_CLICK_OK'));
+ await scheduler.stop();scheduler=new RunScheduler(runs,executor,{concurrency:1,leaseSeconds:30});
+ const takeoverFixture=`<!doctype html><title>Mediated takeover test</title><button onclick="document.getElementById('result').textContent='MEDIATED_CLICK_OK '+(++window.clickCount)">Submit test</button><p id="result">MEDIATED_CLICK_OK 1</p><script>window.clickCount=1</script>`;
+ await run('kubectl',['-n',namespace,'exec',pod,'-c','agent','--','node','-e',`const f=require('fs'),p='/workspace/tasks/${task.id}';f.writeFileSync(p+'/takeover.html',${JSON.stringify(takeoverFixture)},{mode:0o664})`]);
+ const beforeTakeoverPage=await workerRequest('/v1/guarded/snapshot');assert.equal(beforeTakeoverPage.status,200);const openedTakeoverPage=await workerRequest('/v1/guarded/execute',{expected:await beforeTakeoverPage.json(),action:{kind:'browser',action:'open_artifact',taskId:task.id,path:'takeover.html'}});assert.equal(openedTakeoverPage.status,200);await sleep(1500);
  const next=await fetch(path,{method:'POST',headers:{cookie:apiCookie,origin,'content-type':'application/json'},body:JSON.stringify({requestId:randomUUID(),prompt:'Use computer_browser to inspect the current page and click the button named Submit test once. Return a short result.'})});assert.equal(next.status,200);const second=(await next.json() as {run:{id:string}}).run;
  let pending=false;
  for(let i=0;i<120;i++){
@@ -89,5 +119,5 @@ try{
  assert.equal((await userPost('control',{owner:'agent'})).status,200);
  const afterTakeover=await workerRequest('/v1/guarded/inspect'),afterView=await afterTakeover.json() as {text?:string};assert.ok(afterView.text?.includes('MEDIATED_CLICK_OK 1'));assert.equal(afterView.text?.includes('MEDIATED_CLICK_OK 2'),false);
  await scheduler.tick();await sleep(1000);const confirmed=await fetch(path,{headers:{cookie:apiCookie}}),confirmedRows=(await confirmed.json() as {runs:{id:string;status:string}[]}).runs;assert.equal(confirmedRows.find(x=>x.id===second.id)?.status,'unknown');
- console.log(`Mediated Pi test passed: separate K3D Pods, approved real browser click, authenticated desktop viewing and keyboard action, and takeover without a second click; model calls ${modelCalls}.`);
+ console.log(`Mediated Pi and DSH K3D tests passed: separate Pods, real DeepSeek computer and browser actions, owner approval with captured screenshots, authenticated viewing and takeover; model calls ${modelCalls}.`);
 }finally{await scheduler?.stop();if(server)await new Promise<void>(resolve=>server!.close(()=>resolve()));for(const p of forwards)p.kill('SIGTERM');gateway?.close();if(gatewayServer)await new Promise<void>(resolve=>gatewayServer!.close(()=>resolve()));if(namespaceCreated)await exec('kubectl',['delete','namespace',namespace,'--wait=false'],undefined,20_000);await pool?.end();if(dbCreated)await admin?.query(`DROP DATABASE \`${db}\``);await admin?.end();await rm(dir,{recursive:true,force:true})}

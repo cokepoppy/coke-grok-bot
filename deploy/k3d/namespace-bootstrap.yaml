@@ -1,0 +1,146 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grok-namespace-bootstrap
+automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coke-grok-namespace-bootstrap
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: coke-grok-namespace-bootstrap
+  template:
+    metadata:
+      labels:
+        app: coke-grok-namespace-bootstrap
+    spec:
+      serviceAccountName: grok-namespace-bootstrap
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: private-secrets
+          image: coke-grok-namespace-bootstrap:sha-aaa2f7aa84d5a38f7c72b21fa81c511dfbc01b62
+          imagePullPolicy: Never
+          command: ["/bin/sh", "-ec", "umask 077; cp /source/cert.pem /private/cert.pem; cp /source/key.pem /private/key.pem; cp /source/token /private/token; chmod 600 /private/cert.pem /private/key.pem /private/token; chown 1000:1000 /private/cert.pem /private/key.pem /private/token"]
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN]
+          volumeMounts:
+            - name: source-secrets
+              mountPath: /source
+              readOnly: true
+            - name: private-secrets
+              mountPath: /private
+      containers:
+        - name: bootstrap
+          image: coke-grok-namespace-bootstrap:sha-aaa2f7aa84d5a38f7c72b21fa81c511dfbc01b62
+          imagePullPolicy: Never
+          ports:
+            - name: https
+              containerPort: 3004
+          envFrom:
+            - configMapRef:
+                name: auth-runtime-config
+          env:
+            - name: COKE_GROK_BOOTSTRAP_TLS_CERT_FILE
+              value: /run/bootstrap/cert.pem
+            - name: COKE_GROK_BOOTSTRAP_TLS_KEY_FILE
+              value: /run/bootstrap/key.pem
+            - name: COKE_GROK_BOOTSTRAP_TOKEN_FILE
+              value: /run/bootstrap/token
+            - name: COKE_GROK_KUBE_URL
+              value: https://kubernetes.default.svc.cluster.local:443
+            - name: COKE_GROK_KUBE_CA_FILE
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            - name: COKE_GROK_KUBE_TOKEN_FILE
+              value: /var/run/secrets/kubernetes.io/serviceaccount/token
+            - name: COKE_GROK_BOOTSTRAP_SERVICE_ACCOUNT
+              value: grok-namespace-bootstrap
+            - name: COKE_GROK_BROKER_SERVICE_ACCOUNT
+              value: grok-desktop-broker
+            - name: COKE_GROK_BOOTSTRAP_ROLE
+              value: coke-grok-namespace-bootstrap
+            - name: COKE_GROK_BROKER_ROLE
+              value: coke-grok-desktop-broker
+            - name: COKE_GROK_BOOTSTRAP_POLICY_PREFIX
+              value: coke-grok-bot
+          readinessProbe:
+            tcpSocket:
+              port: https
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: private-secrets
+              mountPath: /run/bootstrap
+              readOnly: true
+      volumes:
+        - name: source-secrets
+          secret:
+            secretName: namespace-bootstrap-secrets
+            defaultMode: 256
+        - name: private-secrets
+          emptyDir:
+            medium: Memory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coke-grok-namespace-bootstrap
+spec:
+  type: ClusterIP
+  selector:
+    app: coke-grok-namespace-bootstrap
+  ports:
+    - name: https
+      port: 3004
+      targetPort: https
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: coke-grok-namespace-bootstrap-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: coke-grok-namespace-bootstrap
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: coke-grok-desktop-broker
+      ports:
+        - protocol: TCP
+          port: 3004

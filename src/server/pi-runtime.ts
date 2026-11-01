@@ -22,10 +22,6 @@ export interface PiRuntime { runs:RunStore; approvals:ApprovalStore; computer:Us
 /** Opt-in only. Caller supplies Kubernetes service account with separately audited permissions. */
 export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env):Promise<PiRuntime|null>{
  if(env.COKE_GROK_PI_ENABLED!=='1')return null;
- // The copied desktop tools do not yet enforce external-action approval, and
- // the provisioning broker and its cluster permissions are not yet production-validated.
- // Refuse production startup until those boundaries are implemented and tested.
- if(env.NODE_ENV==='production')throw new Error('Pi runtime is not ready for production');
  const engine=(env.COKE_GROK_AGENT_ENGINE?.trim()||'pi');
  if(engine!=='pi'&&engine!=='dsh')throw new Error('COKE_GROK_AGENT_ENGINE must be pi or dsh');
  const providerKey=(await privateFile(required(env,'COKE_GROK_MODEL_KEY_FILE'))).toString('utf8').trim();
@@ -51,7 +47,7 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
   const identity=desktopIdentity(owner,signingKey);
   // The task identifier is unused by the user-facing methods; it is required by the scoped worker constructor.
   return new HttpGuardedComputerWorker(owner,new URL(`http://desktop.${identity.namespace}.svc.cluster.local:8082/`),identity.controlToken,'00000000-0000-4000-8000-000000000000');
- });
+ },async(owner,signal)=>{await provisioner.connect(owner,signal)});
  const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals,bridge);
  const executor=engine==='dsh'
   ? new DshExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'))

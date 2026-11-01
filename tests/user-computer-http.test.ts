@@ -38,3 +38,22 @@ test('computer API selects the authenticated user and protects actions with orig
   assert.equal((await post('/action','a',{action:'press',key:'Enter'})).status,503);
  }finally{await new Promise<void>(resolve=>server.close(()=>resolve()))}
 });
+
+test('user computer provisions once per authenticated owner before serving control or screenshots',async()=>{
+ const owner:Session={tenantId:randomUUID(),userId:randomUUID(),email:'owner@example.test',name:'owner',role:'owner'};
+ let release!:()=>void,provisionCalls=0,workerCalls=0;
+ const provisioning=new Promise<void>(resolve=>{release=resolve});
+ const computer=new UserComputer(()=>({
+  async control(){workerCalls++;return {owner:'agent'}},
+  async userScreenshot(){workerCalls++;return Buffer.from('ready')},
+  async setControl(value){workerCalls++;return {owner:value}},
+  async userAction(){workerCalls++},
+ }),async()=>{provisionCalls++;await provisioning});
+ const signal=AbortSignal.timeout(5000);
+ const control=computer.control(owner,signal),screenshot=computer.screenshot(owner,signal);
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(provisionCalls,1);assert.equal(workerCalls,0);
+ release();
+ assert.deepEqual(await control,{owner:'agent'});assert.equal((await screenshot).toString(),'ready');
+ assert.equal(workerCalls,2);
+});

@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Type } from 'typebox';
 
 const decisionStatuses = new Set(['done', 'failed', 'waiting', 'scheduled', 'delegating']);
-const piTools = ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls'];
-const secretEnvironmentName = /(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)/i;
+// Shell execution stays disabled until individual commands have an owner approval gate.
+const piTools = ['read', 'edit', 'write', 'grep', 'find', 'ls'];
 
 export async function runCloudKernel(input, dependencies = {}) {
   const engine = String(input?.engine || '');
@@ -60,7 +60,6 @@ async function runPi(input, cwd, config, injectedSdk) {
     : sdk.SessionManager.create(cwd, sessionDirectory);
   const incidentGitSocket = process.env.DOTS_INCIDENT_GITHUB_CREDENTIAL_SOCKET;
   const incidentGitEnabled = isIncidentGitSocket(incidentGitSocket);
-  const bashTool = await createPiBashTool(sdk, cwd, incidentGitEnabled);
   const computerTool = computerBrowserTool(input.computer, input.taskId);
   const desktopTool = computerDesktopTool(input.computer);
   const browserTool = publicPageTool(input.computer);
@@ -69,7 +68,7 @@ async function runPi(input, cwd, config, injectedSdk) {
   const dingtalkCalendarToolsList = dingtalkCalendarTools(input.dingtalkCalendarBridge);
   const dingtalkMinutesToolsList = dingtalkMinutesTools(input.dingtalkMinutesBridge);
   const dingtalkSecretaryToolsList = dingtalkSecretaryTools(input.dingtalkSecretaryBridge);
-  const customTools = [bashTool, computerTool, desktopTool, browserTool, incidentPullRequest, ...dingtalkTools, ...dingtalkCalendarToolsList, ...dingtalkMinutesToolsList, ...dingtalkSecretaryToolsList].filter(Boolean);
+  const customTools = [computerTool, desktopTool, browserTool, incidentPullRequest, ...dingtalkTools, ...dingtalkCalendarToolsList, ...dingtalkMinutesToolsList, ...dingtalkSecretaryToolsList].filter(Boolean);
   const dingtalkToolNames = customTools
     .map(tool => tool?.name)
     .filter(name => typeof name === 'string' && /^(?:search_dingtalk_documents|fetch_dingtalk_document|create_dingtalk_document|list_dingtalk_calendar_events|create_dingtalk_calendar_event|search_dingtalk_minutes|read_dingtalk_minutes_summary|list_dingtalk_personal_todos|create_dingtalk_personal_todo|send_cokeclaw_group_report)$/.test(name));
@@ -181,19 +180,6 @@ function requestIncidentBroker(socketPath, payload, signal) {
       request.once('close', () => signal.removeEventListener('abort', abort));
     }
     request.end(body);
-  });
-}
-
-async function createPiBashTool(sdk, cwd, incidentGitEnabled = false) {
-  const createBashTool = sdk.createBashTool || (await import('@mariozechner/pi-coding-agent')).createBashTool;
-  if (typeof createBashTool !== 'function') throw new Error('Pi bash tool is unavailable in this Agent image');
-  return createBashTool(cwd, {
-    spawnHook: context => ({
-      ...context,
-      env: Object.fromEntries(Object.entries(context.env || {}).filter(([name]) =>
-        !secretEnvironmentName.test(name)
-        || (incidentGitEnabled && name === 'DOTS_INCIDENT_GITHUB_CREDENTIAL_SOCKET' && isIncidentGitSocket(context.env[name])))),
-    }),
   });
 }
 
@@ -337,6 +323,7 @@ async function runDsh(input, cwd, config, injectedSdk) {
   const sdk = injectedSdk || await import('@deepseek-ai/dsh-sdk-client');
   const home = await createPrivateDirectory(cwd, '.coke-dots-agent-runtime/dsh-home');
   const browserBridge = input.computer?.openPublicPageUrl && input.computer?.openPublicPageToken ? input.computer : null;
+  const computerBridge = validatedDshComputerBridge(input.computer);
   const dingtalkBridge = validatedDingTalkBridge(input.dingtalkDocumentsBridge);
   const dingtalkCalendar = validatedDingTalkCalendarBridge(input.dingtalkCalendarBridge);
   const dingtalkMinutes = validatedDingTalkMinutesBridge(input.dingtalkMinutesBridge);
@@ -345,6 +332,7 @@ async function runDsh(input, cwd, config, injectedSdk) {
   const patchFile = path.join(home, `coke-dots-${suffix}.cordis.yml`);
   const pluginFiles = [];
   if (browserBridge) pluginFiles.push({ id: `coke-dots-public-page-${suffix}`, file: `coke-dots-${suffix}-public-page.mjs`, source: dshPublicPagePlugin });
+  if (computerBridge) pluginFiles.push({ id: `coke-grok-computer-${suffix}`, file: `coke-grok-computer-${suffix}.mjs`, source: await readFile(new URL('./dsh-computer-plugin.mjs', import.meta.url), 'utf8') });
   if (dingtalkBridge) pluginFiles.push({ id: `coke-dots-dingtalk-documents-${suffix}`, file: `coke-dots-${suffix}-dingtalk-documents.mjs`, source: createDshDingTalkDocumentsPlugin(dingtalkBridge) });
   if (dingtalkCalendar) pluginFiles.push({ id: `coke-dots-dingtalk-calendar-${suffix}`, file: `coke-dots-${suffix}-dingtalk-calendar.mjs`, source: createDshDingTalkCalendarPlugin(dingtalkCalendar) });
   if (dingtalkMinutes) pluginFiles.push({ id: `coke-dots-dingtalk-minutes-${suffix}`, file: `coke-dots-${suffix}-dingtalk-minutes.mjs`, source: createDshDingTalkMinutesPlugin(dingtalkMinutes) });
@@ -352,7 +340,7 @@ async function runDsh(input, cwd, config, injectedSdk) {
   await writeDshSafetyPatch(patchFile, pluginFiles, config);
   for (const plugin of pluginFiles) await writeFile(path.join(home, plugin.file), plugin.source, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
 
-  const launchEnvironment = createDshEnvironment(home, config, browserBridge);
+  const launchEnvironment = createDshEnvironment(home, config, browserBridge, computerBridge);
   const harness = new sdk.DeepSeekHarness({
     dshBin: process.env.DOTS_DSH_BIN || undefined,
     profile: process.env.DOTS_DSH_PROFILE || 'sdk',
@@ -392,7 +380,7 @@ async function runDsh(input, cwd, config, injectedSdk) {
   }
 }
 
-function createDshEnvironment(home, config, bridge) {
+function createDshEnvironment(home, config, bridge, computer) {
   const env = {};
   for (const key of ['PATH', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TERM', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS']) {
     if (process.env[key]) env[key] = process.env[key];
@@ -412,7 +400,19 @@ function createDshEnvironment(home, config, bridge) {
     env.COKE_DOTS_PUBLIC_PAGE_BRIDGE_URL = bridge.openPublicPageUrl;
     env.COKE_DOTS_PUBLIC_PAGE_BRIDGE_TOKEN = bridge.openPublicPageToken;
   }
+  if (computer) {
+    env.COKE_GROK_COMPUTER_BRIDGE_URL = computer.url;
+    env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = computer.token;
+  }
   return env;
+}
+
+function validatedDshComputerBridge(computer) {
+  if (!computer || computer.mode !== 'mediated' || typeof computer.gatewayUrl !== 'string' || typeof computer.gatewayToken !== 'string') return null;
+  let url;
+  try { url = new URL(computer.gatewayUrl); } catch { return null; }
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/v1' || !/^[A-Za-z0-9_-]{43}$/.test(computer.gatewayToken)) return null;
+  return { url: url.href.replace(/\/$/, ''), token: computer.gatewayToken };
 }
 
 async function writeDshSafetyPatch(patchFile, pluginFiles, config) {

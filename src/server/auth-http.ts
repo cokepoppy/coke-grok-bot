@@ -33,7 +33,8 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
       if(computer && [computerPath,`${computerPath}/screenshot`,`${computerPath}/control`,`${computerPath}/action`].includes(url.pathname)) {
         const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value))};
         const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated'});
-        const signal=AbortSignal.timeout(20_000);
+        // First access may create the user's persistent K3D desktop and PVC.
+        const signal=AbortSignal.timeout(240_000);
         if(req.method==='GET' && url.pathname===computerPath)return reply(200,await computer.control(session,signal));
         if(req.method==='GET' && url.pathname===`${computerPath}/screenshot`){
           const image=await computer.screenshot(session,signal);res.writeHead(200,{'Content-Type':'image/png','Content-Length':image.length,'Cache-Control':'no-store'});return res.end(image);

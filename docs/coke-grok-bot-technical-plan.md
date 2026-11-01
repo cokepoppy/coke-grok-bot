@@ -189,3 +189,11 @@ releases/<checkpoint>/
 3. 打通新项目的 TypeScript 前后端、独立 MySQL、真实 Google 登录，以及两个用户的隔离。
 4. 在同一分支中完成对应功能测试、视觉对图和真实登录路径；合并到 `main` 后再开始下一分支。
 5. 每个里程碑保留验证记录；待用户认可较大功能后创建 tag、发布包与记忆检查点。
+
+## 10. 2026-11-01 实现状态更新
+
+此前“尚未集成生产服务”的记录为历史状态。当前唯一功能分支 `codex/grok-bot-real-agent-computer-flow` 已把 Pi 与 DeepSeek Harness 接入本机 K3D 的隔离 Agent/desktop Pods、MySQL 持久运行队列、用户电脑 provisioner、Computer/Browser 工具和逐操作审批。签入的 UI 检查点仍保留在 `checkpoint/grok-bot-website-demo-ui-2026-11-01`；真实运行时功能尚需依照分支规则测试、提交并合并，未获最终用户认可前不为它新增 checkpoint tag。
+
+当前证据和剩余边界见 [`docs/pi-runtime.md`](pi-runtime.md) 的 2026-11-01 更新。简述：固定镜像的真实 K3D Pi/DSH 测试、35 项运行时测试、12 项 MySQL 测试、UI E2E、部署 bundle、K3D server-side manifest dry-run 和已登录公网 Chrome 的真实 Pi 浏览器任务均已通过。公网页面请求完成了用户电脑首次创建、真实模型调用、导航审批和实际浏览器读取。运行 UI 当前清楚标明同一台单屏电脑的任务会排队。
+
+本阶段不是全产品完成：Pi Bash 与 DSH shell/filesystem/web/subagent 工具继续关闭；尚无经过审批和验证的 shell 执行路径；没有证明已存在的 PVC 在 Pod 重启后保留、第二账号隔离、DSH 公网 E2E、Auto Review 等价、多屏并发或逐帧完整视频覆盖。当前 Chromium 镜像使用容器 `--no-sandbox`，不得将 K3D 容器边界描述为硬件级隔离。后续仍按表格阶段顺序一次只处理一个 feature 分支，避免把本地 K3D 或公开任务成功扩大描述成完整官方等价。

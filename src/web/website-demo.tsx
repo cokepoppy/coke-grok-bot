@@ -83,6 +83,10 @@ function formatClock(date: Date) {
   return new Intl.DateTimeFormat('en-GB', { hour: 'numeric', minute: '2-digit', hour12: false }).format(date);
 }
 
+function formatCreatedAgentClock(date: Date) {
+  return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(date);
+}
+
 function ComputerScreen({ large = false, showCrm = true, showDraftsQueue = true, showPointer = false, showSalesforceLogin = false, showHumanPointer = false }: { large?: boolean; showCrm?: boolean; showDraftsQueue?: boolean; showPointer?: boolean; showSalesforceLogin?: boolean; showHumanPointer?: boolean }) {
   return <div className={`site-demo-desktop ${large ? 'large' : ''}`} aria-label="Example computer screen">
     <div className="site-demo-mountain" />
@@ -194,7 +198,7 @@ export function WebsiteDemoApp() {
   function createAgent() {
     pauseDemo();
     setNewAgentCreated(true);
-    setNewAgentCreatedTime(formatClock(new Date()));
+    setNewAgentCreatedTime(formatCreatedAgentClock(new Date()));
     setActive('new-agent');
     setComputerOpen(false);
     setSettingsOpen(false);

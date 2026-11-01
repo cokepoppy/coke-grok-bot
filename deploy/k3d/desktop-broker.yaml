@@ -1,0 +1,148 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grok-desktop-broker
+automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coke-grok-desktop-broker
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: coke-grok-desktop-broker
+  template:
+    metadata:
+      labels:
+        app: coke-grok-desktop-broker
+    spec:
+      serviceAccountName: grok-desktop-broker
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: private-secrets
+          image: coke-grok-desktop-broker:sha-ba9b386732a8b060f3d7a20b3b4fb4e86db7db75
+          imagePullPolicy: Never
+          command: ["/bin/sh", "-ec", "umask 077; for name in cert.pem key.pem token desktop-signing-key gateway-cert.pem bootstrap-cert.pem bootstrap-token; do cp /source/$name /private/$name; done; chmod 600 /private/*; chown 1000:1000 /private/*"]
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN]
+          volumeMounts:
+            - name: source-secrets
+              mountPath: /source
+              readOnly: true
+            - name: private-secrets
+              mountPath: /private
+      containers:
+        - name: broker
+          image: coke-grok-desktop-broker:sha-ba9b386732a8b060f3d7a20b3b4fb4e86db7db75
+          imagePullPolicy: Never
+          ports:
+            - name: https
+              containerPort: 3003
+          envFrom:
+            - configMapRef:
+                name: auth-runtime-config
+          env:
+            - name: COKE_GROK_BROKER_TLS_CERT_FILE
+              value: /run/broker/cert.pem
+            - name: COKE_GROK_BROKER_TLS_KEY_FILE
+              value: /run/broker/key.pem
+            - name: COKE_GROK_BROKER_TOKEN_FILE
+              value: /run/broker/token
+            - name: COKE_GROK_DESKTOP_SIGNING_KEY_FILE
+              value: /run/broker/desktop-signing-key
+            - name: COKE_GROK_GATEWAY_TLS_CERT_FILE
+              value: /run/broker/gateway-cert.pem
+            - name: COKE_GROK_BOOTSTRAP_CA_FILE
+              value: /run/broker/bootstrap-cert.pem
+            - name: COKE_GROK_BOOTSTRAP_TOKEN_FILE
+              value: /run/broker/bootstrap-token
+            - name: COKE_GROK_KUBE_URL
+              value: https://kubernetes.default.svc.cluster.local:443
+            - name: COKE_GROK_KUBE_CA_FILE
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            - name: COKE_GROK_KUBE_TOKEN_FILE
+              value: /var/run/secrets/kubernetes.io/serviceaccount/token
+            - name: COKE_GROK_BROKER_URL
+              value: https://coke-grok-desktop-broker.coke-grok-bot.svc.cluster.local:3003/
+            - name: COKE_GROK_BOOTSTRAP_URL
+              value: https://coke-grok-namespace-bootstrap.coke-grok-bot.svc.cluster.local:3004/
+          readinessProbe:
+            tcpSocket:
+              port: https
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 40m
+              memory: 96Mi
+            limits:
+              cpu: 750m
+              memory: 384Mi
+          volumeMounts:
+            - name: private-secrets
+              mountPath: /run/broker
+              readOnly: true
+      volumes:
+        - name: source-secrets
+          secret:
+            secretName: desktop-broker-secrets
+            defaultMode: 256
+        - name: private-secrets
+          emptyDir:
+            medium: Memory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coke-grok-desktop-broker
+spec:
+  type: ClusterIP
+  selector:
+    app: coke-grok-desktop-broker
+  ports:
+    - name: https
+      port: 3003
+      targetPort: https
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: coke-grok-desktop-broker-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: coke-grok-desktop-broker
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: coke-grok-auth
+      ports:
+        - protocol: TCP
+          port: 3003

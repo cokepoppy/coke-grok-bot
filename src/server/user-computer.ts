@@ -10,11 +10,28 @@ export interface UserComputerWorker {
 
 /** Select a desktop only from the authenticated session, never from user input. */
 export class UserComputer {
- constructor(private readonly worker:(owner:Pick<Session,'tenantId'|'userId'>)=>UserComputerWorker){}
- control(owner:Session,signal:AbortSignal){return this.worker(owner).control(signal)}
- screenshot(owner:Session,signal:AbortSignal){return this.worker(owner).userScreenshot(signal)}
- setControl(owner:Session,value:'agent'|'user',signal:AbortSignal){return this.worker(owner).setControl(value,signal)}
- action(owner:Session,input:unknown,signal:AbortSignal){return this.worker(owner).userAction(parseUserAction(input),signal)}
+ private readonly preparing=new Map<string,Promise<void>>();
+ constructor(
+  private readonly worker:(owner:Pick<Session,'tenantId'|'userId'>)=>UserComputerWorker,
+  private readonly ensure?: (owner:Pick<Session,'tenantId'|'userId'>,signal:AbortSignal)=>Promise<void>,
+ ){}
+ private async getWorker(owner:Session,signal:AbortSignal):Promise<UserComputerWorker>{
+  if(this.ensure){
+   const key=`${owner.tenantId.toLowerCase()}:${owner.userId.toLowerCase()}`;
+   let pending=this.preparing.get(key);
+   if(!pending){
+    pending=this.ensure(owner,signal).finally(()=>{if(this.preparing.get(key)===pending)this.preparing.delete(key)});
+    this.preparing.set(key,pending);
+   }
+   await pending;
+   if(signal.aborted)throw new Error('Computer request was cancelled');
+  }
+  return this.worker(owner);
+ }
+ async control(owner:Session,signal:AbortSignal){return (await this.getWorker(owner,signal)).control(signal)}
+ async screenshot(owner:Session,signal:AbortSignal){return (await this.getWorker(owner,signal)).userScreenshot(signal)}
+ async setControl(owner:Session,value:'agent'|'user',signal:AbortSignal){return (await this.getWorker(owner,signal)).setControl(value,signal)}
+ async action(owner:Session,input:unknown,signal:AbortSignal){return (await this.getWorker(owner,signal)).userAction(parseUserAction(input),signal)}
 }
 
 export function parseUserAction(value:unknown):UserComputerAction {

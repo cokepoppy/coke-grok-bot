@@ -3,10 +3,13 @@ kind: Kustomization
 namespace: coke-grok-bot
 resources:
   - auth.yaml
+  - auth-runtime-config.yaml
+  - namespace-bootstrap.yaml
+  - desktop-broker.yaml
   - auth-ingress.yaml
   - model-gateway-service.yaml
   - auth-network-policy.yaml
 images:
   - name: coke-grok-auth
     newName: coke-grok-auth
-    newTag: sha-5b66393
+    newTag: sha-3c266e53c7a9b3826438c54d40e589034ad1cd5b

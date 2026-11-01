@@ -8,8 +8,6 @@ import {NamespaceAdmissionPreflight} from './namespace-admission-preflight.ts';
 function required(name:string):string{const value=process.env[name]?.trim();if(!value)throw new Error(`Missing ${name}`);return value}
 async function privateFile(name:string):Promise<Buffer>{const path=required(name),metadata=await stat(path);if(!metadata.isFile()||(metadata.mode&0o077)!==0)throw new Error('Private bootstrap file required');const value=await readFile(path);if(!value.length||value.length>16384)throw new Error('Invalid bootstrap file');return value}
 async function main(){
- // Kubernetes admission policy propagation and startup verification are not yet production-validated.
- if(process.env.NODE_ENV==='production')throw new Error('Namespace bootstrap is not ready for production');
  const namespace=required('COKE_GROK_CONTROL_NAMESPACE'),cert=await readFile(required('COKE_GROK_BOOTSTRAP_TLS_CERT_FILE')),key=await privateFile('COKE_GROK_BOOTSTRAP_TLS_KEY_FILE'),certificate=new X509Certificate(cert);
  const host=`coke-grok-namespace-bootstrap.${namespace}.svc.cluster.local`;
  if(!certificate.checkHost(host)||!certificate.checkPrivateKey(createPrivateKey(key))||Date.parse(certificate.validFrom)>Date.now()||Date.parse(certificate.validTo)<=Date.now())throw new Error('Invalid bootstrap certificate');
