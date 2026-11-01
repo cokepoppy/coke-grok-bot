@@ -4,6 +4,8 @@ import { mkdir } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { chromium } from 'playwright-core';
 
+const progress = message => { if (process.env.E2E_PROGRESS === '1') console.log(`[ui-e2e] ${message}`); };
+
 const server = createServer();
 await new Promise((resolve, reject) => server.listen(0, '127.0.0.1', resolve).once('error', reject));
 const port = server.address().port;
@@ -25,6 +27,7 @@ try {
   const context = await browser.newContext({ viewport: { width: 1584, height: 994 }, deviceScaleFactor: 1 });
   const page = await context.newPage();
   const errors = [];
+  progress('browser started');
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(base, { waitUntil: 'networkidle' });
   await page.getByText('本地界面预览', { exact: false }).waitFor();
@@ -174,22 +177,61 @@ try {
   await recipient.press('Escape');
 
   const websiteDemoContext = await browser.newContext({ viewport: { width: 1470, height: 864 }, deviceScaleFactor: 2, reducedMotion: 'reduce' });
+  progress('static website demo');
   const websiteDemo = await websiteDemoContext.newPage();
   websiteDemo.on('pageerror', error => errors.push(error.message));
   await websiteDemo.goto(`${base}/?reference=website-demo`, { waitUntil: 'networkidle' });
   const demoWindow = websiteDemo.locator('.grok-demo-window');
-  await websiteDemo.locator('.site-demo-user-message').waitFor();
-  assert.match(await websiteDemo.locator('.site-demo-user-message').innerText(), /Overnight pipeline generation and outbound\./);
+  await websiteDemo.locator('.site-demo-user-message').first().waitFor();
+  assert.match(await websiteDemo.locator('.site-demo-user-message').first().innerText(), /Overnight pipeline generation and outbound\./);
+  const demoConversation = websiteDemo.locator('.site-demo-message-scroll');
+  const conversationBounds = await demoConversation.boundingBox();
+  const taskBounds = await websiteDemo.locator('.site-demo-user-message').first().boundingBox();
+  assert.ok(conversationBounds && taskBounds && Math.abs(taskBounds.y - conversationBounds.y - 14) <= 2, 'the initial chat viewport should begin at the task message');
   assert.equal(await websiteDemo.getByRole('button', { name: /Sales Outbound, Done\./ }).count(), 1);
   assert.equal(await websiteDemo.locator('.site-demo-agent-row').count(), 7);
+  assert.equal(await websiteDemo.locator('.site-demo-chat-name .site-demo-title-mark').count(), 1);
+  assert.equal(await websiteDemo.locator('.site-demo-chat-name .site-demo-avatar').count(), 0);
+  assert.equal(await websiteDemo.locator('.site-demo-agent-row').nth(0).getAttribute('aria-label'), 'Chief, booked the venue and sent the confirmation around.');
+  assert.equal(await websiteDemo.locator('.site-demo-agent-row').nth(2).getAttribute('aria-label'), 'Inbox Manager, sent. inbox at zero, 5 drafts parked for tomorrow.');
+  const clockOffsets = await websiteDemo.locator('.site-demo-agent-row time').evaluateAll(rows => {
+    const minutes = rows.map(row => { const [hour, minute] = (row.textContent || '').split(':').map(Number); return hour * 60 + minute; });
+    return [2, 3, 4, 5, 6].map(index => (minutes[1] - minutes[index] + 1440) % 1440);
+  });
+  assert.deepEqual(clockOffsets, [181, 301, 481, 241, 361]);
+  assert.deepEqual(await websiteDemo.locator('.site-demo-agent-row time').allTextContents(), ['Yesterday', '16:35', '13:34', '11:34', '8:34', '12:34', '10:34']);
   await mkdir('artifacts/ui', { recursive: true });
   await demoWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-window.png', scale: 'device' });
+  assert.equal(await websiteDemo.locator('.site-demo-waveform').count(), 0, 'the official completed conversation has no floating waveform control');
+  assert.equal(await websiteDemo.getByRole('button', { name: 'Voice message' }).count(), 1, 'the composer should use the single official voice-message button');
+  assert.equal(await websiteDemo.getByRole('button', { name: 'Start voice chat' }).count(), 0);
 
   await websiteDemo.getByRole('button', { name: "Open Sales Outbound's computer" }).click();
   await websiteDemo.waitForTimeout(320);
   assert.equal(await websiteDemo.getByRole('complementary', { name: 'Computer and routines' }).count(), 1);
   assert.equal(await websiteDemo.locator('.site-demo-sidebar').evaluate(element => element.classList.contains('collapsed')), true);
-  await websiteDemo.locator('.site-demo-layout').screenshot({ path: 'artifacts/ui/grok-bot-website-demo-computer.png', scale: 'device' });
+  assert.equal(await websiteDemo.getByRole('img', { name: 'Armand Segall' }).count(), 1);
+  assert.equal(await websiteDemo.getByText('Sundays at 11:00 PM', { exact: true }).count(), 1);
+  await websiteDemo.getByRole('button', { name: 'Agent settings' }).click();
+  const settingsPanel = websiteDemo.locator('.site-demo-computer-panel');
+  await settingsPanel.getByRole('heading', { name: 'Settings' }).waitFor();
+  assert.equal(await settingsPanel.getByRole('textbox', { name: 'Name' }).inputValue(), 'Sales Outbound');
+  assert.equal(await settingsPanel.getByRole('textbox', { name: 'Title (optional)' }).inputValue(), 'Sales');
+  assert.equal(await settingsPanel.getByRole('switch', { name: 'Notifications' }).getAttribute('aria-checked'), 'true');
+  assert.equal(await settingsPanel.locator('.site-demo-profile-avatar .site-demo-avatar > g').getAttribute('transform'), null, 'the settings avatar eyes should stay upright');
+  await settingsPanel.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-settings.png', scale: 'device' });
+  await settingsPanel.getByRole('textbox', { name: 'Name' }).fill('Outbound Research');
+  await settingsPanel.getByRole('textbox', { name: 'Title (optional)' }).fill('Growth');
+  await settingsPanel.getByRole('textbox', { name: 'Description' }).fill('Research accounts and prepare drafts.');
+  await settingsPanel.getByRole('switch', { name: 'Notifications' }).click();
+  assert.equal(await settingsPanel.getByRole('switch', { name: 'Notifications' }).getAttribute('aria-checked'), 'false');
+  await settingsPanel.getByRole('textbox', { name: 'Name' }).fill('Sales Outbound');
+  await settingsPanel.getByRole('textbox', { name: 'Title (optional)' }).fill('Sales');
+  await settingsPanel.getByRole('textbox', { name: 'Description' }).fill('Works the pipeline overnight: researches the prospects worth a look, pulls their context together, and leaves sequences drafted for the morning.');
+  await settingsPanel.getByRole('switch', { name: 'Notifications' }).click();
+  await settingsPanel.getByRole('button', { name: 'Back to computer' }).click();
+  assert.equal(await websiteDemo.getByText('Sales Outbound’s screen', { exact: true }).count(), 1);
+  await demoWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-computer.png', scale: 'device' });
   await websiteDemo.getByRole('button', { name: 'Open screen' }).first().click();
   const screenDialog = websiteDemo.getByRole('dialog', { name: 'Sales Outbound computer screen' });
   await screenDialog.waitFor();
@@ -205,30 +247,153 @@ try {
   assert.equal(await screenDialog.locator('.site-demo-window-front').count(), 1);
   assert.equal(await screenDialog.getByText('36 drafts queued', { exact: true }).count(), 1);
   await websiteDemo.getByRole('button', { name: 'Close screen' }).click();
+  await demoConversation.evaluate(element => { element.scrollTop = element.scrollHeight; });
   await websiteDemo.getByLabel('Task results').getByText('52 accounts', { exact: false }).waitFor();
+  await websiteDemo.getByText(/Messages from/).waitFor();
+  await websiteDemo.getByText(/The 36 drafts are sitting in the LinkedIn queue/).waitFor();
+  await websiteDemo.getByText('The top 10 look good. Send it. Run this every week.', { exact: true }).waitFor();
+  assert.equal(await websiteDemo.getByRole('button', { name: 'Thumbs up reaction' }).count(), 1);
+  await websiteDemo.getByText(/Created routine/).waitFor();
+  assert.equal(await websiteDemo.getByText('Done.', { exact: true }).count(), 1);
+  await demoConversation.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-later-conversation.png', scale: 'device' });
 
   await websiteDemo.getByRole('button', { name: 'Hide computer' }).click();
   await websiteDemo.waitForTimeout(320);
   await websiteDemo.getByRole('button', { name: 'New agent', exact: true }).click();
-  await websiteDemo.getByRole('dialog', { name: 'Search or create agents' }).getByRole('button', { name: 'Create new agent' }).click();
-  await websiteDemo.getByText('Message New agent', { exact: true }).waitFor();
+  const agentPicker = websiteDemo.getByRole('dialog', { name: 'Search or create agents' });
+  await agentPicker.waitFor();
+  assert.equal(await websiteDemo.getByRole('textbox', { name: 'Search or create agents' }).getAttribute('placeholder'), 'Search or create agents');
+  assert.equal(await websiteDemo.getByRole('textbox', { name: 'Message agent' }).getAttribute('placeholder'), 'Message agent');
+  assert.equal(await websiteDemo.getByText(/Overnight pipeline generation and outbound\./).count(), 0, 'opening the agent picker should show a blank draft conversation');
+  assert.equal(await websiteDemo.locator('.site-demo-waveform').count(), 0, 'the voice waveform should be absent while choosing an agent');
+  const pickerBounds = await agentPicker.boundingBox();
+  const demoBounds = await demoWindow.boundingBox();
+  assert.ok(pickerBounds && demoBounds && pickerBounds.width > demoBounds.width * .65, 'the agent chooser should span most of the conversation pane');
+  await demoWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-agent-picker.png', scale: 'device' });
+  await agentPicker.getByRole('button', { name: 'Create new agent' }).click();
+  await websiteDemo.getByRole('textbox', { name: 'Message New agent' }).waitFor();
+  assert.equal(await websiteDemo.locator('.site-demo-empty-chat').count(), 0, 'a created Bot opens a blank conversation without an invented empty-state message');
+  assert.equal(await websiteDemo.locator('.site-demo-chat-name .site-demo-avatar circle').getAttribute('fill'), '#111110');
+  assert.equal(await websiteDemo.locator('.site-demo-agent-row').first().getAttribute('aria-label'), 'New agent', 'a newly created agent should be inserted at the top of the list');
+  assert.match(await websiteDemo.locator('.site-demo-agent-row').first().locator('time').innerText(), /^\d{2}:\d{2}$/);
   await websiteDemo.locator('.grok-demo-window').screenshot({ path: 'artifacts/ui/grok-bot-website-demo-new-agent.png', scale: 'device' });
   await websiteDemo.getByRole('button', { name: /Sales Outbound, Done\./ }).click();
   assert.equal(await websiteDemo.locator('.site-demo-agent-row[aria-label="New agent"]').count(), 1);
   await websiteDemo.locator('.site-demo-agent-row[aria-label="New agent"]').click();
-  await websiteDemo.getByText('Message New agent', { exact: true }).waitFor();
+  await websiteDemo.getByRole('textbox', { name: 'Message New agent' }).waitFor();
   await websiteDemo.locator('.site-demo-new-agent').click();
   await websiteDemo.getByRole('textbox', { name: 'Search or create agents' }).fill('Chief');
   await websiteDemo.getByRole('button', { name: 'Chief', exact: true }).click();
   assert.equal(await websiteDemo.getByRole('button', { name: 'Open Chief\'s computer' }).count(), 1);
+  assert.equal(await websiteDemo.getByText(/Morning briefing/).count(), 1);
+  assert.equal(await websiteDemo.locator('.site-demo-chief-briefing').count(), 1);
+  assert.equal(await websiteDemo.getByText("take the venue, i'll do the deck", { exact: true }).count(), 1);
+  assert.equal(await websiteDemo.getByText('booked the venue and sent the confirmation around. you\'re clear until the 2pm deck review.', { exact: true }).count(), 1);
+  const chiefShortMessage = await websiteDemo.locator('.site-demo-chief-user-message').boundingBox();
+  const chiefApprovalMessage = await websiteDemo.locator('.site-demo-chief-approval-wrap .site-demo-approval-message').boundingBox();
+  assert.ok(chiefShortMessage && chiefShortMessage.width < 300, 'short Chief replies should size to their text instead of stretching to the task-message width');
+  assert.ok(chiefApprovalMessage && chiefApprovalMessage.width < 150, 'the short book-it approval should remain a compact user bubble');
+  await demoWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-chief-conversation.png', scale: 'device' });
   await websiteDemo.locator('.site-demo-agent-row[aria-label="New agent"]').click();
   await websiteDemo.getByRole('button', { name: "Open New agent's computer" }).click();
   assert.equal(await websiteDemo.getByRole('complementary', { name: 'Computer and routines' }).count(), 1);
   await websiteDemoContext.close();
+  progress('manual website demo passed');
+
+  const animatedDemoContext = await browser.newContext({ viewport: { width: 1470, height: 864 }, deviceScaleFactor: 1, reducedMotion: 'no-preference' });
+  progress('autoplay website demo opened');
+  const animatedDemo = await animatedDemoContext.newPage();
+  animatedDemo.on('pageerror', error => errors.push(error.message));
+  await animatedDemo.goto(`${base}/?reference=website-demo`, { waitUntil: 'networkidle' });
+  const animatedWindow = animatedDemo.locator('.grok-demo-window');
+  const animatedConversation = animatedDemo.locator('.site-demo-message-scroll');
+  assert.equal(await animatedWindow.getAttribute('data-demo-phase'), 'intro');
+  assert.equal(await animatedDemo.getByRole('status').innerText(), 'Thinking');
+  assert.equal(await animatedDemo.locator('.site-demo-computer-card').count(), 0);
+  for (const phase of ['connections', 'action-needed', 'takeover', 'computer-working', 'computer', 'results', 'collaboration', 'approval', 'complete']) {
+    await animatedWindow.waitFor({ state: 'visible' });
+    await animatedDemo.waitForFunction(expected => document.querySelector('.grok-demo-window')?.getAttribute('data-demo-phase') === expected, phase, { timeout: 4_000 });
+    progress(`autoplay phase: ${phase}`);
+    if (phase === 'computer-working') {
+      await animatedDemo.waitForTimeout(280);
+      assert.equal(await animatedDemo.locator('.site-demo-status').innerText(), 'Working');
+      assert.equal(await animatedDemo.locator('.site-demo-computer-card .site-demo-open-screen').count(), 1);
+      assert.equal(await animatedDemo.locator('.site-demo-computer-card .site-demo-agent-pointer').count(), 1);
+      assert.equal(await animatedDemo.locator('.site-demo-title-mark circle').getAttribute('fill'), '#895af2');
+      await animatedWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-autoplay-working.png' });
+    }
+    if (phase === 'action-needed') {
+      assert.equal(await animatedDemo.locator('.site-demo-status').innerText(), 'Action needed');
+      assert.equal(await animatedDemo.locator('.site-demo-salesforce-login').count(), 1);
+      assert.equal(await animatedDemo.getByRole('button', { name: 'Take over' }).count(), 1);
+      assert.equal(await animatedDemo.getByRole('button', { name: 'I’m done' }).count(), 1);
+      await animatedWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-autoplay-action-needed.png' });
+    }
+    if (phase === 'takeover') {
+      const takeoverDialog = animatedDemo.getByRole('dialog', { name: 'Salesforce computer takeover' });
+      await takeoverDialog.waitFor({ state: 'visible' });
+      assert.equal(await animatedDemo.locator('.site-demo-status').innerText(), "You're in control");
+      assert.equal(await takeoverDialog.getByRole('button', { name: 'I’m done, continue' }).count(), 1);
+      assert.equal(await takeoverDialog.getByRole('toolbar', { name: 'Applications' }).getByRole('button', { name: 'Safari' }).count(), 1);
+      assert.equal(await takeoverDialog.locator('.site-demo-human-pointer').count(), 1);
+      await animatedWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-autoplay-takeover.png' });
+    }
+    if (phase === 'computer') {
+      assert.equal(await animatedDemo.locator('.site-demo-status').innerText(), 'Done');
+      assert.equal(await animatedDemo.locator('.site-demo-computer-card .site-demo-agent-pointer').count(), 0);
+      assert.equal(await animatedDemo.locator('.site-demo-title-mark circle').getAttribute('fill'), '#f19d39');
+      await animatedWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-autoplay-computer.png' });
+    }
+    if (phase === 'results') {
+      await animatedDemo.waitForTimeout(280);
+      assert.equal(await animatedDemo.getByLabel('Task results').getByText('52 accounts', { exact: false }).count(), 1);
+      assert.equal(await animatedDemo.getByLabel('Task results').getByText('3 lookalike segments pulled', { exact: false }).count(), 1);
+      assert.equal(await animatedDemo.getByLabel('Task results').getByText('4 profiles skipped · recently contacted', { exact: false }).count(), 1);
+      await animatedWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-autoplay-results.png' });
+    }
+    if (phase === 'collaboration') {
+      assert.equal(await animatedDemo.getByText(/Messages from/).count(), 1);
+      assert.equal(await animatedDemo.getByText(/The 36 drafts are sitting in the LinkedIn queue/).count(), 1);
+    }
+    if (phase === 'approval') assert.equal(await animatedDemo.getByRole('button', { name: 'Thumbs up reaction' }).count(), 1);
+    if (['results', 'collaboration', 'approval', 'complete'].includes(phase)) {
+      const scrollState = await animatedConversation.evaluate(element => ({ scrollTop: element.scrollTop, clientHeight: element.clientHeight, scrollHeight: element.scrollHeight }));
+      assert.ok(scrollState.scrollHeight - (scrollState.scrollTop + scrollState.clientHeight) <= 2, `autoplay should keep the latest message visible during ${phase}`);
+    }
+  }
+  const finalMessage = animatedDemo.locator('.site-demo-done-message');
+  assert.equal(await finalMessage.getByText('Done.', { exact: true }).count(), 1);
+  const finalMessageBounds = await finalMessage.boundingBox();
+  const composerBounds = await animatedDemo.locator('.site-demo-composer').boundingBox();
+  assert.ok(finalMessageBounds && composerBounds && finalMessageBounds.y + finalMessageBounds.height <= composerBounds.y, 'the final Done reply should remain reachable below the conversation history');
+  assert.equal(await animatedDemo.locator('.site-demo-waveform').count(), 0, 'the completed conversation should not show a floating waveform');
+  const voiceButtonBounds = await animatedDemo.getByRole('button', { name: 'Voice message' }).boundingBox();
+  assert.ok(voiceButtonBounds && composerBounds && voiceButtonBounds.x >= composerBounds.x && voiceButtonBounds.x + voiceButtonBounds.width <= composerBounds.x + composerBounds.width, 'the microphone control should remain inside the composer');
+  await animatedDemo.waitForTimeout(300);
+  await mkdir('artifacts/ui', { recursive: true });
+  await animatedWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-autoplay-done.png' });
+  await animatedDemoContext.close();
+
+  progress('autoplay website demo passed');
+
+  const takeoverContext = await browser.newContext({ viewport: { width: 1470, height: 864 }, deviceScaleFactor: 1, reducedMotion: 'no-preference' });
+  const takeoverPage = await takeoverContext.newPage();
+  takeoverPage.on('pageerror', error => errors.push(error.message));
+  await takeoverPage.goto(`${base}/?reference=website-demo`, { waitUntil: 'networkidle' });
+  const takeoverWindow = takeoverPage.locator('.grok-demo-window');
+  await takeoverPage.waitForFunction(() => document.querySelector('.grok-demo-window')?.getAttribute('data-demo-phase') === 'action-needed', undefined, { timeout: 4_000 });
+  await takeoverPage.getByRole('button', { name: 'Take over' }).click();
+  await takeoverPage.waitForFunction(() => document.querySelector('.grok-demo-window')?.getAttribute('data-demo-phase') === 'takeover');
+  const manualTakeoverDialog = takeoverPage.getByRole('dialog', { name: 'Salesforce computer takeover' });
+  await manualTakeoverDialog.getByRole('button', { name: 'I’m done, continue' }).click();
+  await takeoverPage.waitForFunction(() => document.querySelector('.grok-demo-window')?.getAttribute('data-demo-phase') === 'computer-working');
+  assert.equal(await takeoverPage.getByRole('dialog', { name: 'Salesforce computer takeover' }).count(), 0);
+  await takeoverContext.close();
+  progress('manual computer takeover passed');
 
   assert.deepEqual(errors, []);
   await context.close();
-  console.log('UI E2E passed: local preview labeling, create/rename, messages, reload, switching, browser-profile isolation, narrow-layout sanity, 101 reference screenshot, Grok Bot website-demo initial/computer/screen/results/New agent states, no page errors.');
+  console.log('UI E2E passed: local preview labeling, create/rename, messages, reload, switching, browser-profile isolation, narrow-layout sanity, 101 reference screenshot, Grok Bot website-demo static/manual states, homepage animation including takeover through Done, automatic latest-message scrolling, no page errors.');
 } finally {
   if (browser) await browser.close();
   child.kill('SIGTERM');
