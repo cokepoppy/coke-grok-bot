@@ -250,3 +250,12 @@ Docker 与 K3D 恢复后，首先用本地 ARM64 电脑镜像 `coke-grok-desktop
 之后通过该 Bot 的真实公网聊天新建了独立只读任务，要求 Pi 仅用 Browser User inspect 当前页面、禁止导航/点击/输入/滚动和 shell。公网 UI 显示任务 `Done`，回复为 `Document title: Example Domain. No visible h1 text was found.`；同一时期 Mac-local K3D Auth 安全诊断汇总记录 DeepSeek 上游 HTTP 200。云电脑预览仍展示已打开页面。这验证了签名态公网 Chat -> Pi -> DeepSeek -> Browser User inspect -> K3D 个人电脑的可观察链路；不代表前一条 Outcome unknown 的任务已完成，也不代表六 Bot 群聊、真实 Bot 间交接、多用户隔离或官方全部功能。
 
 本轮源码修复包含：Desktop 不再对 Agent 所有的共享工作目录执行 chmod；computer broker/provisioner 与任务网关错误只暴露固定诊断码；合法的 `about:blank` 只作为当前页位置接受，目标 URL 仍限于无凭据的 HTTP/HTTPS。验证 `npm run test:runtime` 81/81、共享目录测试 3/3、`git diff --check` 和 `VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build:deployment` 均通过。官方六 Bot 加群组的持久化协作与真实公网 E2E 仍未完成，将在当前分支合并后从最新 `main` 单独开一个 feature 分支实现。
+
+
+### 2026-11-02 signed-in public six-Bot group E2E through the VPS domain
+
+At about 20:17–20:20 China Standard Time, the signed-in Chrome session opened https://codex.cokeagent.com/grok-bot/ and used visible in-product clicks to run a fresh task in the existing Offsite crew group: Chief, Sales Outbound, Inbox Manager, Account Manager, Talent Scout, and Expense Manager. For each Bot, the user-visible approval card for navigating to https://example.com/ was reviewed and approved. All six latest Bot result cards reached Done, reported title Example Domain and no visible H1, and returned a Computer activity screenshot. This is the public VPS hostname and signed-in page flow; it is not localhost or the synthetic Playwright browser suite.
+
+Corroboration from the same execution window: the live Mac-local K3D Auth deployment was configured for Pi with deepseek-v4.1-flash; its safe runtime log emitted MODEL_UPSTREAM_OK with HTTP 200 during the group run. The Agent and Desktop workloads ran in K3D. Each Bot result was shown in the real public group UI and paired with its Computer screenshot. No credential value was read or printed.
+
+Scope: this proves six real Bot task submissions/fan-out, model-backed execution, UI approval, Browser User navigation, Computer screenshot return, and completed public result cards. All six ran through the currently available shared serialized physical screen slot; it does not prove concurrent independent screens. It also does not prove Bot-to-Bot delegation, cross-user isolation in this public run, pixel-level equivalence, or the remaining official Skill/Routine/Teach/Vault flows. The source branch remains awaiting the user's final acceptance; no merge or checkpoint tag was made.
