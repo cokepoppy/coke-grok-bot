@@ -338,3 +338,5 @@ Browser User 的 DOM/可访问名称操作仍是独立工具通道；Computer Us
 公网上的真实验收路径必须从已登录 Chrome 访问 https://codex.cokeagent.com/grok-bot/ 并实际点击页面。本轮 20:17–20:20 CST 通过 Offsite crew 对六个成员逐一运行只读网页任务，实际批准页面内的 https://example.com/ 导航；六张最新 Bot 结果卡全部为 Done，显示 Example Domain、无可见 H1，并返回云电脑截图。Pi/DeepSeek/K3D 服务侧证据及限制详见 docs/pi-runtime.md 与 release 候选记录。
 
 该结果覆盖“官网示例六 Bot 群组 + 真实任务链路”当前候选，不代表当前状态下的多屏并发、Bot 间异步交接、租户隔离公网实测或完整像素级通过。此前计划中“群聊尚待实现”的第 14 节及随后分支描述是本次实现前快照；以当前段落及运行记录为准。当前分支仍未获用户最终验收，保持不合并、不打 checkpoint tag、不建立下一功能分支。
+
+2026-11-02 后续候选修正：提交 `3e06801a7329fba9d390165d352b4e730a7df76b` 修复已复核/重试的群聊未知结果卡片。新 ARM64 Auth 候选镜像 `coke-grok-auth:group-recovery-ui-20261102-r1` 已部署至本机 K3D，发布包为 [`releases/candidate-grok-bot-group-recovery-ui-2026-11-02/`](../releases/candidate-grok-bot-group-recovery-ui-2026-11-02/)。已登录 Chrome 刷新公网 VPS 域名后，原确认卡显示 `Reviewed · outcome unknown`，说明队列已恢复且未把未知结果误报为成功。随后通过同一公网页面真实点击运行一条新六 Bot 任务，六个结果全部 Done；刷新后六条结果保持，Chief 电脑面板显示真实 Chromium 的 Example Domain 截图。该次真实任务带来一条群聊任务及六个 Bot 结果写入现有 MySQL 历史，未删除。Auth 日志同时间窗有 27 条模型上游 HTTP 200 事件作为聚合佐证，不能等同于一 Bot 一调用映射。仍有单屏串行限制；这不是多屏并发、Bot 间交接或像素级通过。当前唯一功能分支仍待用户最终验收；不合并、不打 checkpoint tag、不新开分支。

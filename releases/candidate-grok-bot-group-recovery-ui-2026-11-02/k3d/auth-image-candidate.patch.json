@@ -1,0 +1,20 @@
+{
+  "spec": {
+    "template": {
+      "spec": {
+        "containers": [
+          {
+            "name": "auth",
+            "image": "coke-grok-auth:group-recovery-ui-20261102-r1"
+          }
+        ],
+        "initContainers": [
+          {
+            "name": "private-secrets",
+            "image": "coke-grok-auth:group-recovery-ui-20261102-r1"
+          }
+        ]
+      }
+    }
+  }
+}

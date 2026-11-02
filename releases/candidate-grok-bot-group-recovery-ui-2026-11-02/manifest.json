@@ -1,0 +1,78 @@
+{
+  "name": "candidate-grok-bot-group-recovery-ui-2026-11-02",
+  "status": "candidate-public-preview-awaiting-user-acceptance",
+  "publicUrl": "https://codex.cokeagent.com/grok-bot/",
+  "source": {
+    "branch": "codex/grok-bot-persistent-group-chat",
+    "commit": "3e06801a7329fba9d390165d352b4e730a7df76b",
+    "remoteBranchVerified": true,
+    "archive": "source/source-3e06801.tar.gz",
+    "archiveSha256": "68812a66fa4acb437ca9446b239f3ef05ac3dc218bb26342bf97742778d79ebe"
+  },
+  "build": {
+    "command": "VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build:deployment",
+    "result": "passed",
+    "uiTests": "npm run test:ui passed",
+    "browserSuite": "COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:run-browser passed with synthetic identity/executor fixtures; supporting regression evidence only",
+    "deploymentBuildArchive": "artifacts/dist-build.tar.gz",
+    "deploymentBuildSha256": "d140c411be30db0c63584130e6395bee372f901cc707d212d10cc1c984827c39",
+    "assets": {
+      "javascript": {
+        "path": "/grok-bot/assets/index-_lrWdiXl.js",
+        "bytes": 307035,
+        "sha256": "9280d2218b4ab4fdfab837bd2f75f8e39dc0b2170fda528bc227c3667dd4afab"
+      },
+      "stylesheet": {
+        "path": "/grok-bot/assets/index-DJVZ3wCp.css",
+        "bytes": 63927,
+        "sha256": "94f2ca516b52cb4b324fa701ae5228b2fb1152536bf012c9ba0e5debccbe05c5"
+      }
+    }
+  },
+  "images": {
+    "archive": "images/auth-candidate-and-rollback-linux-arm64.tar",
+    "archiveSha256": "29b3511e49afd6cc4cd7d8354338c19e5a7f337a1e748daaeffd58555a9c20ac",
+    "candidate": {
+      "tag": "coke-grok-auth:group-recovery-ui-20261102-r1",
+      "imageId": "sha256:5f64dd3d0c793fcdb0b55b391e0d1e17f1abba3b3d413c50ec0ddc5403f38695",
+      "platform": "linux/arm64",
+      "sizeBytes": 81633920
+    },
+    "rollback": {
+      "tag": "coke-grok-auth:group-approval-e2e-20261102-r1",
+      "imageId": "sha256:69dc86d0049bc169c03e35a73733f3935476de89d319492225ff1502bc1242fa",
+      "platform": "linux/arm64",
+      "sizeBytes": 81633403
+    }
+  },
+  "deployment": {
+    "clusterContext": "k3d-tp1121-sandbox-dev",
+    "clusterName": "tp1121-sandbox-dev",
+    "namespace": "coke-grok-bot",
+    "deployment": "coke-grok-auth",
+    "containers": [
+      "auth",
+      "private-secrets"
+    ],
+    "scope": "Auth Deployment image only; no MySQL, PVC, tenant data, other workloads, or VPS tunnel changes",
+    "mysqlMigration": "none",
+    "rollout": "passed: coke-grok-auth 1/1 Ready with candidate auth and private-secrets init image"
+  },
+  "validation": {
+    "build": "passed",
+    "publicReadinessBeforeRollout": "HTTP 204",
+    "publicSignedInChrome": "passed via visible Chrome at the VPS URL; clicked Offsite crew, submitted a new safe six-Bot task, approved only example.com navigation, all six results reached Done, and refresh preserved the results",
+    "liveModelAndCloudComputer": "passed through the public task flow; real Browser User, Computer screenshot cards, and K3D model-provider traffic. Existing group task history retains one new task plus six Bot runs.",
+    "rollbackTarget": "exact currently deployed Auth image; data and PVCs preserved",
+    "publicReadiness": "passed: HTTP 204",
+    "anonymousGroupApi": "passed: HTTP 401",
+    "publicAssets": "passed: live JS/CSS SHA-256 match packaged candidate",
+    "publicComputerScreenshot": "passed: opened Chief computer panel in Chrome and visually checked Chromium on Example Domain with Bot in control",
+    "modelUpstreamEvidence": "K3D Auth emitted 27 MODEL_UPSTREAM_OK responses from 12:48 to 12:50 UTC; aggregate window evidence, not mapped one-to-one to Bot runs",
+    "initialSmoke": "first smoke attempt timed out during immediate post-rollout route recovery; subsequent release smoke passed",
+    "publicRefreshPersistence": "passed: after a visible Chrome refresh the six Done results and reviewed recovery cards were restored",
+    "rollbackDryRun": "passed; no rollback applied"
+  },
+  "secretsIncluded": false,
+  "userDataIncluded": false
+}
