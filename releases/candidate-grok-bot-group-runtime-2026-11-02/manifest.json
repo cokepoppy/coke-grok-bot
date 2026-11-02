@@ -1,0 +1,70 @@
+{
+  "name": "candidate-grok-bot-group-runtime-2026-11-02",
+  "status": "candidate-public-preview-awaiting-user-acceptance",
+  "publicUrl": "https://codex.cokeagent.com/grok-bot/",
+  "source": {
+    "branch": "codex/grok-bot-persistent-group-chat",
+    "commit": "b1dacf2c6a2e2a9fa510e4134e71406beaa1ff41",
+    "remoteBranchVerified": true,
+    "archive": "source/source-b1dacf2.tar.gz",
+    "archiveSha256": "bb854d0c2519b62893066bc5929b35888c49af03152fa2ecf2459401ab0b041d"
+  },
+  "build": {
+    "command": "VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build:deployment",
+    "result": "passed",
+    "uiTests": "npm run test:ui passed",
+    "mysqlIntegration": "COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:runtime-mysql passed 16/16 against isolated test MySQL; temporary test container stopped afterwards",
+    "browserSuite": "npm run test:run-browser passed with synthetic browser/runtime fixtures; not counted as live acceptance",
+    "deploymentBuildArchive": "artifacts/dist-build.tar.gz",
+    "deploymentBuildSha256": "237867a8e095b980ef243c16852d84ea5b6f736bf54f33ebe02c2eef499d53c0",
+    "assets": {
+      "javascript": {
+        "path": "/grok-bot/assets/index-COVI5LAt.js",
+        "bytes": 306464,
+        "sha256": "d3b962e1d00c27dc3733e2aedde6e2cdd89a9aa536ffcb540d12582001b2c58d"
+      },
+      "stylesheet": {
+        "path": "/grok-bot/assets/index-DJVZ3wCp.css",
+        "bytes": 63927,
+        "sha256": "94f2ca516b52cb4b324fa701ae5228b2fb1152536bf012c9ba0e5debccbe05c5"
+      }
+    }
+  },
+  "images": {
+    "archive": "images/auth-candidate-and-rollback-linux-arm64.tar",
+    "archiveSha256": "fa185274e96f40bef62225a3c6521c938f742c01bdc13d48eb414c4e658254a0",
+    "candidate": {
+      "tag": "coke-grok-auth:group-approval-e2e-20261102-r1",
+      "imageId": "sha256:69dc86d0049bc169c03e35a73733f3935476de89d319492225ff1502bc1242fa",
+      "platform": "linux/arm64",
+      "sizeBytes": 81633403
+    },
+    "rollback": {
+      "tag": "coke-grok-auth:group-68454dd39bc3",
+      "imageId": "sha256:235093860976ca99f29cf160b79ad789e6d37e0ce251dcabe7c1233ec57bfc89",
+      "platform": "linux/arm64",
+      "sizeBytes": 81633338
+    }
+  },
+  "deployment": {
+    "clusterContext": "k3d-tp1121-sandbox-dev",
+    "clusterName": "tp1121-sandbox-dev",
+    "namespace": "coke-grok-bot",
+    "deployment": "coke-grok-auth",
+    "containers": ["auth", "private-secrets"],
+    "scope": "Auth Deployment image only; no MySQL, PVC, tenant data, other workloads, or VPS changes",
+    "mysqlMigration": "additive group-chat persistence schema; no destructive migration"
+  },
+  "validation": {
+    "publicReadiness": "passed: GET /api/auth/ready returned 204",
+    "anonymousGroupApi": "passed: GET /api/groups returned 401 without a signed-in session",
+    "publicAssets": "passed: live public JS and CSS SHA-256 match the packaged build",
+    "signedInPublicChrome": "passed by real UI interaction at the public URL",
+    "liveModelAndCloudComputer": "passed: six independent Bot tasks completed using the configured DeepSeek model service and real per-Bot K3D cloud-computer Browser User; each reported Example Domain title, no visible H1, and returned a computer screenshot",
+    "approvalHandling": "each navigation to https://example.com/ was reviewed and approved in the product UI; optional unrelated keyboard actions were denied",
+    "group": "Offsite crew with Chief, Sales Outbound, Inbox Manager, Account Manager, Talent Scout, and Expense Manager; all six latest run cards showed Done",
+    "rollbackDryRun": "passed; no rollback applied"
+  },
+  "secretsIncluded": false,
+  "userDataIncluded": false
+}

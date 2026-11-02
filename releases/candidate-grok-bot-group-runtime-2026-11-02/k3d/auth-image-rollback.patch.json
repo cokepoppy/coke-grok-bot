@@ -1,0 +1,14 @@
+{
+  "spec": {
+    "template": {
+      "spec": {
+        "containers": [
+          { "name": "auth", "image": "coke-grok-auth:group-68454dd39bc3" }
+        ],
+        "initContainers": [
+          { "name": "private-secrets", "image": "coke-grok-auth:group-68454dd39bc3" }
+        ]
+      }
+    }
+  }
+}

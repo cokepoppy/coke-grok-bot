@@ -1,0 +1,13 @@
+5d7a1b5354f0a51f24756c00ac03228ab40479cd967b59f3c3d990f134c2c171  ./README.md
+237867a8e095b980ef243c16852d84ea5b6f736bf54f33ebe02c2eef499d53c0  ./artifacts/dist-build.tar.gz
+ee8e676245e6a4077f6cd939624f00a55387729c4a391e05571bf043c6727b3b  ./deploy/Dockerfile.auth
+2a48bcb9729dbafc2ed71f5b8c081618c6759ad054315cbe5beb8c901cc36957  ./docs/operations.md
+fa185274e96f40bef62225a3c6521c938f742c01bdc13d48eb414c4e658254a0  ./images/auth-candidate-and-rollback-linux-arm64.tar
+1a33a8e92bd2c7c230e3b4c8e899c77423845a031e2ccc570358c6d8fffb0bd9  ./k3d/auth-image-candidate.patch.json
+330fe6ee17ed8238756ef1095b13e273f126c6fd143056bed75688a611664c41  ./k3d/auth-image-rollback.patch.json
+b34c16103c6d5bd07435f08fcb52c6cf336c75a040fb22b8926b69c4b5c15d8d  ./manifest.json
+1611f7f8b5ca3d9dca5fa4a103e310ea141a0a46784f98919bb1e5a37741bd08  ./scripts/rollback.sh
+0af90dab07ff395463b6f85a8d0af9e6e382357e7c64500e6d8c2aedc4e31c90  ./scripts/smoke.sh
+5da7994650d617976ffa712c0c2aadd8394c80826305f1b16ba64bd0d7e25bd9  ./scripts/upgrade.sh
+729520b7697156dfca30aa26122a4acfc2fea5a83eb3b0b3c1850a3a018088f2  ./scripts/verify.sh
+bb854d0c2519b62893066bc5929b35888c49af03152fa2ecf2459401ab0b041d  ./source/source-b1dacf2.tar.gz
