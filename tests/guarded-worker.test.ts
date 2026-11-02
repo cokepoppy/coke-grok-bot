@@ -10,3 +10,11 @@ test('guarded worker scopes endpoint and task identity to the owner',async()=>{
  assert.throws(()=>new HttpGuardedComputerWorker(owner,screenId,new URL('http://other.svc:8082/'),token,taskId));
  assert.throws(()=>new HttpGuardedComputerWorker(owner,'not-a-bot',url,token,taskId));
 });
+test('guarded computer control records only safe auth and status failure codes',async()=>{
+ for(const [status,code] of [[401,'COMPUTER_WORKER_AUTH_REJECTED'],[403,'COMPUTER_WORKER_FORBIDDEN'],[503,'COMPUTER_WORKER_HTTP_ERROR']] as const){
+  const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>new Response('private upstream detail',{status}));
+  await assert.rejects(worker.control(signal),error=>error instanceof Error&&error.message===code&&(error as Error&{status?:number}).status===status);
+ }
+ const offline=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>{throw new Error('private URL and token must not be logged')});
+ await assert.rejects(offline.control(signal),error=>error instanceof Error&&error.message==='COMPUTER_WORKER_TRANSPORT_FAILED');
+});

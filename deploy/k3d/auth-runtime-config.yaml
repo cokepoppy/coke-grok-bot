@@ -6,7 +6,7 @@ data:
   COKE_GROK_PI_ENABLED: "1"
   COKE_GROK_AGENT_ENGINE: pi
   COKE_GROK_CONTROL_NAMESPACE: coke-grok-bot
-  COKE_GROK_DESKTOP_IMAGE: coke-grok-desktop:sha-889648b1dfa6049eee2eb989700325e8097252dc
-  COKE_GROK_AGENT_IMAGE: coke-grok-desktop:sha-8fccb502ae2205e1279a8d99b55b5212bc8f28d9
+  COKE_GROK_DESKTOP_IMAGE: coke-grok-desktop:sha-057a5e58bd856da7a6df2b4a08b6f5c39cbd3bec
+  COKE_GROK_AGENT_IMAGE: coke-grok-desktop:sha-deb9bd8c94b6e3165728adf465f0703d73dc8423
   COKE_GROK_MODEL_BASE_URL: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
   COKE_GROK_MODEL_ID: deepseek-v4.1-flash

@@ -7,6 +7,7 @@ import type { ApprovalStore } from './approval-store.ts';
 import type { ComputerBridge,RunScope } from './computer-bridge.ts';
 import type { RunOwner } from './run-store.ts';
 import type { BotMemoryBridge, BotMemoryRunScope } from './bot-memory-bridge.ts';
+import { safeDiagnosticMetadata } from './safe-diagnostics.ts';
 
 /**
  * A run receives a short-lived capability; the upstream credential stays in
@@ -85,7 +86,7 @@ export class ModelGateway {
       }
       if (computerRoute) {
         const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
-        if(!this.computer||!grant.scope?.owner||!grant.scope.botId)return fail(404);
+        if(!this.computer||!grant.scope?.owner||!grant.scope.botId){console.error('Model gateway computer request failed',{code:'COMPUTER_GATEWAY_SCOPE_UNAVAILABLE',status:404});return fail(404)}
         const scope:RunScope={...grant.scope,owner:grant.scope.owner,botId:grant.scope.botId};
         const disconnected=new AbortController();res.once('close',()=>disconnected.abort());
         const signal=AbortSignal.any([grant.abort.signal,disconnected.signal,AbortSignal.timeout(30_000)]);
@@ -105,7 +106,7 @@ export class ModelGateway {
           if(!token||this.grants.get(token)!==grant||grant.expires<=Date.now())return fail(401);
           if(!computerMatch){if(grant.approvalsRemaining<=0)return fail(429);grant.approvalsRemaining--;return reply(201,await this.computer.propose(scope,action,signal))}
           return reply(200,await this.computer.execute(scope,computerMatch[1],action,signal));
-        } catch { return fail(409); }
+        } catch (error) { console.error('Model gateway computer request failed',safeDiagnosticMetadata(error)); return fail(409); }
       }
       if (approvalRoute) {
         const reply = (status:number,value:unknown) => {res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
@@ -152,6 +153,7 @@ export class ModelGateway {
           method: 'POST', redirect: 'error', headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json' },
           body: JSON.stringify(payload), signal: AbortSignal.any([grant.abort.signal, disconnected.signal, AbortSignal.timeout(120_000)]),
         });
+        console.info('Model provider response',{code:upstream.ok&&upstream.body?'MODEL_UPSTREAM_OK':'MODEL_UPSTREAM_REJECTED',status:upstream.status});
         if (!upstream.ok || !upstream.body) return fail(502);
         res.writeHead(200, { 'Content-Type': payload.stream === true ? 'text/event-stream; charset=utf-8' : 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
         const redactor = new SecretRedactor(Buffer.from(this.apiKey));

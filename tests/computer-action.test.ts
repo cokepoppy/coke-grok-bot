@@ -9,6 +9,7 @@ test('trusted server binds an approval to action, location and screenshot in a s
  assert.notEqual(first,canonicalComputerAction({kind:'browser',action:'click',by:'role',role:'button',target:'Delete'},snapshot));
  assert.notEqual(first,canonicalComputerAction({kind:'browser',action:'click',by:'role',role:'button',target:'Submit'},{...snapshot,url:'https://example.test/path?session=other'}));
  assert.notEqual(first,canonicalComputerAction({kind:'browser',action:'click',by:'role',role:'button',target:'Submit'},{...snapshot,screenshotSha256:'b'.repeat(64)}));
+ const blank=JSON.parse(canonicalComputerAction({kind:'browser',action:'navigate',url:'https://example.test/'},{url:'about:blank',screenshotSha256:'a'.repeat(64)}));assert.equal(blank.page,'about:blank');assert.equal(blank.arguments.url,'https://example.test/');
 });
 test('computer actions reject unexpected fields, unsafe paths and invalid controls',()=>{
  const invalid:unknown[]=[

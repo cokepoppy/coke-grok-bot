@@ -2,13 +2,14 @@ import {desktopOwnerHash} from './desktop-resources.ts';
 import {personalDesktopBinding} from './namespace-bootstrap-resources.ts';
 import {matchesExpectedResource,type DesktopKubernetes,type KubernetesObject} from './desktop-provisioner.ts';
 import type {RunOwner} from './run-store.ts';
+import {SafeDiagnosticError} from './safe-diagnostics.ts';
 
 /** Create or verify only deterministic owner resources, without replacing existing objects. */
 export class NamespaceBootstrap {
  constructor(private readonly kube:Pick<DesktopKubernetes,'get'|'create'>,private readonly options:{controlNamespace:string;brokerServiceAccount:string;brokerRole:string;verifyAdmission?:(signal:AbortSignal)=>Promise<void>}){}
  async ensure(owner:RunOwner,signal:AbortSignal):Promise<string>{
   const ownerHash=desktopOwnerHash(owner),namespace=`grok-user-${ownerHash}`;
-  if(this.options.verifyAdmission)await this.options.verifyAdmission(signal);
+  if(this.options.verifyAdmission)try{await this.options.verifyAdmission(signal)}catch{throw new SafeDiagnosticError('BOOTSTRAP_ADMISSION_FAILED')}
   const expectedNamespace:KubernetesObject={apiVersion:'v1',kind:'Namespace',metadata:{name:namespace,labels:{'app.kubernetes.io/managed-by':'coke-grok-bot','coke-grok-bot.io/owner-hash':ownerHash}}};
   await this.ensureObject(expectedNamespace,null,signal);
   const {controlNamespace,brokerServiceAccount,brokerRole}=this.options;
@@ -18,9 +19,11 @@ export class NamespaceBootstrap {
  private async ensureObject(expected:KubernetesObject,namespace:string|null,signal:AbortSignal):Promise<void>{
   if(signal.aborted)throw new Error('Namespace bootstrap cancelled');
   const kind=String(expected.kind),name=String((expected.metadata as {name:string}).name);
-  let actual=await this.kube.get(kind,namespace,name,signal);
-  if(!actual){await this.kube.create(expected,signal);actual=await this.kube.get(kind,namespace,name,signal)}
-  if(!actual||!matchesExpectedResource(expected,actual)||!safeMetadata(kind,actual))throw new Error('Personal computer bootstrap resource does not match expected configuration');
+  let actual:KubernetesObject|null;
+  try{actual=await this.kube.get(kind,namespace,name,signal)}catch{throw new SafeDiagnosticError('KUBERNETES_READ_FAILED')}
+  if(!actual){try{await this.kube.create(expected,signal)}catch{throw new SafeDiagnosticError('KUBERNETES_CREATE_FAILED')}try{actual=await this.kube.get(kind,namespace,name,signal)}catch{throw new SafeDiagnosticError('KUBERNETES_READ_FAILED')}}
+  if(!actual)throw new SafeDiagnosticError('RESOURCE_MISSING');
+  if(!matchesExpectedResource(expected,actual)||!safeMetadata(kind,actual))throw new SafeDiagnosticError('RESOURCE_MISMATCH');
  }
 }
 

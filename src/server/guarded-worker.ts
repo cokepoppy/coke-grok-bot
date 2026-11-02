@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { ComputerState,GuardedComputerWorker } from './computer-broker.ts';
 import type { RunOwner } from './run-store.ts';
+import {SafeDiagnosticError} from './safe-diagnostics.ts';
 
 /** Private worker connection; callers must authenticate the run before constructing it. */
 export class HttpGuardedComputerWorker implements GuardedComputerWorker {
@@ -35,9 +36,12 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   return {state:{owner:item.owner,url:item.url,screenshotSha256:item.screenshotSha256},image};
  }
  async control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>{
-  const response=await this.request(new URL('/v1/guarded/control',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
-  if(!response.ok)throw new Error('Computer control unavailable');
-  const value:unknown=await response.json();if(!value||typeof value!=='object'||Array.isArray(value)||!['agent','user'].includes(String((value as {owner?:unknown}).owner)))throw new Error('Invalid computer control');
+  let response:Response;try{response=await this.request(new URL('/v1/guarded/control',this.endpoint),{headers:this.headers(),signal,redirect:'error'})}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED')}
+  if(response.status===401)throw new SafeDiagnosticError('COMPUTER_WORKER_AUTH_REJECTED',response.status);
+  if(response.status===403)throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN',response.status);
+  if(!response.ok)throw new SafeDiagnosticError('COMPUTER_WORKER_HTTP_ERROR',response.status);
+  let value:unknown;try{value=await response.json()}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE')}
+  if(!value||typeof value!=='object'||Array.isArray(value)||!['agent','user'].includes(String((value as {owner?:unknown}).owner)))throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE');
   return {owner:(value as {owner:'agent'|'user'}).owner};
  }
  async inspect(signal:AbortSignal):Promise<unknown>{

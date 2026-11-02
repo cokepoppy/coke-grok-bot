@@ -1,7 +1,8 @@
 import type { ApprovalStore } from './approval-store.ts';
-import { ComputerBroker,type GuardedComputerWorker } from './computer-broker.ts';
+import { ComputerBroker,type ComputerState,type GuardedComputerWorker } from './computer-broker.ts';
 import { canonicalComputerAction } from './computer-action.ts';
 import type { RunOwner,RunStore } from './run-store.ts';
+import { SafeDiagnosticError } from './safe-diagnostics.ts';
 
 export interface RunScope {owner:RunOwner;runId:string;leaseId:string;botId:string}
 export interface ComputerReadWorker extends GuardedComputerWorker { control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>; inspect(signal:AbortSignal):Promise<unknown>; screenshot(signal:AbortSignal):Promise<Buffer> }
@@ -9,7 +10,9 @@ export interface ComputerReadWorker extends GuardedComputerWorker { control(sign
 export class ComputerBridge {
  constructor(private readonly runs:Pick<RunStore,'hasLiveLease'|'markComputerUsed'>,private readonly approvals:Pick<ApprovalStore,'propose'|'consume'|'status'>,private readonly worker:(scope:RunScope)=>ComputerReadWorker){}
  private async authorize(scope:RunScope,signal:AbortSignal):Promise<ComputerReadWorker>{
-  if(signal.aborted || !await this.runs.hasLiveLease(scope.owner,scope.runId,scope.leaseId,scope.botId))throw new Error('Run lease unavailable');
+  if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
+  let live:boolean;try{live=await this.runs.hasLiveLease(scope.owner,scope.runId,scope.leaseId,scope.botId)}catch{throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_CHECK_FAILED')}
+  if(!live)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
   return this.worker(scope);
  }
  private async markUsed(scope:RunScope):Promise<void>{await this.runs.markComputerUsed(scope.owner,scope.runId,scope.leaseId,scope.botId).catch(()=>false)}
@@ -17,7 +20,19 @@ export class ComputerBridge {
  async control(scope:RunScope,signal:AbortSignal):Promise<{owner:'agent'|'user'}>{return (await this.authorize(scope,signal)).control(signal)}
  async screenshot(scope:RunScope,signal:AbortSignal):Promise<Buffer>{const image=await (await this.authorize(scope,signal)).screenshot(signal);await this.markUsed(scope);return image}
  async propose(scope:RunScope,input:unknown,signal:AbortSignal):Promise<{id:string}>{
-  const worker=await this.authorize(scope,signal),approval=await new ComputerBroker(this.approvals,worker).propose(scope.runId,scope.leaseId,input,signal);return {id:approval.id};
+  const worker=await this.authorize(scope,signal);
+  let captured:Awaited<ReturnType<NonNullable<ComputerReadWorker['snapshotWithImage']>>>|null=null;
+  let state:ComputerState;
+  try{captured=worker.snapshotWithImage?await worker.snapshotWithImage(signal):null;state=captured?.state??await worker.snapshot(signal)}catch(error){
+   if(error instanceof SafeDiagnosticError)throw error;
+   throw new SafeDiagnosticError('COMPUTER_SNAPSHOT_FAILED');
+  }
+  if(state.owner!=='agent')throw new SafeDiagnosticError('COMPUTER_OWNER_USER');
+  let action:string;try{action=canonicalComputerAction(input,state)}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
+  let approval:Awaited<ReturnType<ApprovalStore['propose']>>;
+  try{approval=await this.approvals.propose(scope.runId,scope.leaseId,action,300,captured?.image)}catch{throw new SafeDiagnosticError('COMPUTER_APPROVAL_STORE_FAILED')}
+  if(!approval)throw new SafeDiagnosticError('COMPUTER_APPROVAL_RUN_UNAVAILABLE');
+  return {id:approval.id};
  }
  async status(scope:RunScope,id:string,signal:AbortSignal):Promise<string|null>{
   await this.authorize(scope,signal);return this.approvals.status(scope.runId,scope.leaseId,id);

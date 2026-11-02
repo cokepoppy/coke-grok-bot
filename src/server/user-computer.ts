@@ -1,5 +1,6 @@
 import type { Session } from './tenant-store.ts';
 import type { UserComputerAction } from './guarded-worker.ts';
+import {SafeDiagnosticError} from './safe-diagnostics.ts';
 
 export interface UserComputerWorker {
  control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>;
@@ -24,15 +25,17 @@ export class UserComputer {
     pending=this.ensure(owner,signal).finally(()=>{if(this.preparing.get(key)===pending)this.preparing.delete(key)});
     this.preparing.set(key,pending);
    }
-   await pending;
+   try { await pending; }
+   catch(error) { if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_PROVISIONING_FAILED'); }
    if(signal.aborted)throw new Error('Computer request was cancelled');
   }
   return this.worker(owner,botId);
  }
- async control(owner:Session,botId:string,signal:AbortSignal){return (await this.getWorker(owner,botId,signal)).control(signal)}
- async screenshot(owner:Session,botId:string,signal:AbortSignal){return (await this.getWorker(owner,botId,signal)).userScreenshot(signal)}
- async setControl(owner:Session,botId:string,value:'agent'|'user',signal:AbortSignal){return (await this.getWorker(owner,botId,signal)).setControl(value,signal)}
- async action(owner:Session,botId:string,input:unknown,signal:AbortSignal){return (await this.getWorker(owner,botId,signal)).userAction(parseUserAction(input),signal)}
+ async control(owner:Session,botId:string,signal:AbortSignal){try{return await (await this.getWorker(owner,botId,signal)).control(signal)}catch(error){throw this.workerError(error)}}
+ async screenshot(owner:Session,botId:string,signal:AbortSignal){try{return await (await this.getWorker(owner,botId,signal)).userScreenshot(signal)}catch(error){throw this.workerError(error)}}
+ async setControl(owner:Session,botId:string,value:'agent'|'user',signal:AbortSignal){try{return await (await this.getWorker(owner,botId,signal)).setControl(value,signal)}catch(error){throw this.workerError(error)}}
+ async action(owner:Session,botId:string,input:unknown,signal:AbortSignal){try{return await (await this.getWorker(owner,botId,signal)).userAction(parseUserAction(input),signal)}catch(error){throw this.workerError(error)}}
+ private workerError(error:unknown):SafeDiagnosticError{return error instanceof SafeDiagnosticError?error:new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
 }
 
 export function parseUserAction(value:unknown):UserComputerAction {

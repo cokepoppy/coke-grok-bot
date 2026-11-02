@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {ComputerBridge,type RunScope} from '../src/server/computer-bridge.ts';
+import {SafeDiagnosticError} from '../src/server/safe-diagnostics.ts';
 const scope:RunScope={owner:{tenantId:randomUUID(),userId:randomUUID()},botId:randomUUID(),runId:randomUUID(),leaseId:randomUUID()};
 test('bridge refuses expired or mismatched run scopes before reading a desktop',async()=>{
  let calls=0,marked=0,live=false;const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>{calls++;return {owner:'agent' as const,url:'https://example.test/',screenshotSha256:'a'.repeat(64)}},inspect:async()=>{calls++;return {ready:true}},screenshot:async()=>{calls++;return Buffer.from('png')},performIfUnchanged:async()=>{calls++;return {ready:true}}};
@@ -12,6 +13,14 @@ test('bridge refuses expired or mismatched run scopes before reading a desktop',
  await assert.rejects(bridge.inspect({...scope,owner:{...scope.owner,userId:randomUUID()}},signal));
  await assert.rejects(bridge.propose({...scope,leaseId:randomUUID()},{kind:'desktop',action:'click',x:1,y:1},signal));assert.equal(calls,1);
  const abort=new AbortController();abort.abort();await assert.rejects(bridge.screenshot(scope,abort.signal));assert.equal(calls,1);
+});
+test('computer action proposal failures expose only fixed diagnostic codes',async()=>{
+ const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'about:blank',screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async()=>({ready:true})};
+ const makeBridge=(live:boolean,propose:()=>Promise<unknown>)=>new ComputerBridge({hasLiveLease:async()=>live,markComputerUsed:async()=>true},{propose,consume:async()=>false,status:async()=>null} as any,()=>worker);
+ const signal=new AbortController().signal,input={kind:'browser',action:'navigate',url:'https://example.com/'};
+ for(const [bridge,code] of [[makeBridge(false,async()=>null),'COMPUTER_RUN_LEASE_UNAVAILABLE'],[makeBridge(true,async()=>null),'COMPUTER_APPROVAL_RUN_UNAVAILABLE'],[makeBridge(true,async()=>{throw new Error('private database detail')}),'COMPUTER_APPROVAL_STORE_FAILED']] as const){
+  await assert.rejects(bridge.propose(scope,input,signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode===code);
+ }
 });
 test('terminal approval is exact, lease-bound, screenshot-bound, and consumed before local execution',async()=>{
  let actionText='',consumed=0,workerActions=0,owner:'agent'|'user'='agent',screenshot='a'.repeat(64);
@@ -31,5 +40,5 @@ test('terminal approval is exact, lease-bound, screenshot-bound, and consumed be
  assert.deepEqual(await bridge.execute(scope,approval.id,input,signal),{approved:true});assert.equal(consumed,1);assert.equal(workerActions,0);
  const changed=await bridge.propose(scope,input,signal);screenshot='b'.repeat(64);
  await assert.rejects(bridge.execute(scope,changed.id,input,signal),/missing, expired or does not match/);assert.equal(consumed,1);
- owner='user';await assert.rejects(bridge.propose(scope,input,signal),/User controls the computer/);assert.equal(consumed,1);
+ owner='user';await assert.rejects(bridge.propose(scope,input,signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_OWNER_USER');assert.equal(consumed,1);
 });

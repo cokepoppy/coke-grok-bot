@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { DesktopProvisioner, type DesktopKubernetes, type KubernetesObject } from '../src/server/desktop-provisioner.ts';
-import { desktopIdentity } from '../src/server/desktop-resources.ts';
+import { DesktopProvisioner, matchesExpectedResource, type DesktopKubernetes, type KubernetesObject } from '../src/server/desktop-provisioner.ts';
+import { desktopIdentity, desktopResources } from '../src/server/desktop-resources.ts';
 const options={image:`coke-grok-desktop:sha-${'a'.repeat(40)}`,controlNamespace:'coke-grok-bot',gatewayCA:'-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----'};
 class FakeKube implements DesktopKubernetes {
  objects=new Map<string,KubernetesObject>(); creates=0;ready=0;
@@ -46,5 +46,14 @@ test('provisioner delegates namespace creation and rejects a different owner',as
  const bootstrap={ensure:async(selected:typeof owner)=>{called++;assert.deepEqual(selected,owner);return identity.namespace}};
  const provisioner=new DesktopProvisioner(kube,key,{...options,split:true,bootstrap});await provisioner.connect(owner,signal);
  assert.equal(called,1);assert.equal(kube.objects.has(kube.key('Namespace',null,identity.namespace)),false);assert.equal(kube.creates,9);
- const wrong=new DesktopProvisioner(new FakeKube(),key,{...options,split:true,bootstrap:{ensure:async()=>`grok-user-${'a'.repeat(32)}`}});await assert.rejects(wrong.connect(owner,signal),/wrong owner/);
+ const wrong=new DesktopProvisioner(new FakeKube(),key,{...options,split:true,bootstrap:{ensure:async()=>`grok-user-${'a'.repeat(32)}`}});await assert.rejects(wrong.connect(owner,signal),error=>error instanceof Error&&error.message==='OWNER_BINDING_MISMATCH');
+});
+test('desktop provisioning accepts the legacy omitted eight-screen default without accepting other drift',()=>{
+ const owner={tenantId:randomUUID(),userId:randomUUID()},key=randomBytes(32),identity=desktopIdentity(owner,key);
+ const expected=desktopResources(identity,options).find(item=>item.kind==='Deployment'&&(item.metadata as {name:string}).name==='desktop') as KubernetesObject;
+ const legacy=structuredClone(expected),legacySpec=legacy.spec as any;
+ legacySpec.template.spec.containers[0].env=legacySpec.template.spec.containers[0].env.filter((item:any)=>item.name!=='COKE_DESKTOP_SCREEN_SLOTS');
+ assert.equal(matchesExpectedResource(expected,legacy),true);
+ legacySpec.template.spec.containers[0].env.find((item:any)=>item.name==='COKE_DESKTOP_RESOLUTION').value='1280x800';
+ assert.equal(matchesExpectedResource(expected,legacy),false);
 });

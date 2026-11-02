@@ -16,7 +16,7 @@ spec:
       automountServiceAccountToken: false
       initContainers:
         - name: private-secrets
-          image: coke-grok-auth:local-test
+          image: coke-grok-auth:diag-20261102-04
           imagePullPolicy: Never
           command: ["/bin/sh", "-ec", "umask 077; cp /source/mysql-password /private/mysql-password; cp /source/google-secret /private/google-secret; cp /runtime/model-key /private/model-key; cp /runtime/desktop-signing-key /private/desktop-signing-key; cp /runtime/gateway-cert.pem /private/gateway-cert.pem; cp /runtime/gateway-key.pem /private/gateway-key.pem; cp /runtime/broker-cert.pem /private/broker-cert.pem; cp /runtime/broker-token /private/broker-token; chmod 600 /private/mysql-password /private/google-secret /private/model-key /private/desktop-signing-key /private/gateway-cert.pem /private/gateway-key.pem /private/broker-cert.pem /private/broker-token; chown 1000:1000 /private/mysql-password /private/google-secret /private/model-key /private/desktop-signing-key /private/gateway-cert.pem /private/gateway-key.pem /private/broker-cert.pem /private/broker-token"]
           securityContext:
@@ -31,7 +31,7 @@ spec:
             - { name: private-secrets, mountPath: /private }
       containers:
         - name: auth
-          image: coke-grok-auth:local-test
+          image: coke-grok-auth:diag-20261102-04
           imagePullPolicy: Never
           ports:
             - { name: http, containerPort: 3001 }

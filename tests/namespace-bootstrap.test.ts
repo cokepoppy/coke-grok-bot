@@ -14,10 +14,10 @@ test('personal namespace bootstrap creates only owner resources and refuses chan
  const namespace=await bootstrap.ensure(owner,signal);assert.match(namespace,/^grok-user-[a-f0-9]{32}$/);assert.equal(created.length,2);
  assert.equal(await bootstrap.ensure(owner,signal),namespace);assert.equal(created.length,2);
  const binding=objects.get(key('RoleBinding',namespace,'desktop-provisioner'))!;binding.roleRef={apiGroup:'rbac.authorization.k8s.io',kind:'ClusterRole',name:'cluster-admin'};
- await assert.rejects(bootstrap.ensure(owner,signal),/does not match/);assert.equal(created.length,2);
+ await assert.rejects(bootstrap.ensure(owner,signal),error=>error instanceof Error&&error.message==='RESOURCE_MISMATCH');assert.equal(created.length,2);
  binding.roleRef={apiGroup:'rbac.authorization.k8s.io',kind:'ClusterRole',name:'desktop-role'};
  const namespaceObject=objects.get(key('Namespace',null,namespace))!,metadata=namespaceObject.metadata as {annotations?:Record<string,string>};metadata.annotations={'unexpected':'value'};
- await assert.rejects(bootstrap.ensure(owner,signal),/does not match/);delete metadata.annotations;
+ await assert.rejects(bootstrap.ensure(owner,signal),error=>error instanceof Error&&error.message==='RESOURCE_MISMATCH');delete metadata.annotations;
  const abort=new AbortController();abort.abort();await assert.rejects(bootstrap.ensure(owner,abort.signal),/cancelled/);
  assert.throws(()=>namespaceBootstrapResources({controlNamespace:'bad"principal',bootstrapServiceAccount:'bootstrap',brokerServiceAccount:'broker',bootstrapRole:'bootstrap-role',brokerRole:'desktop-role',policyPrefix:'policy'}));
  assert.throws(()=>namespaceBootstrapResources({controlNamespace:'control',bootstrapServiceAccount:'same',brokerServiceAccount:'same',bootstrapRole:'bootstrap-role',brokerRole:'desktop-role',policyPrefix:'policy'}));
@@ -29,8 +29,8 @@ test('bootstrap checks both admission policies before creating any resources',as
  const preflight=new NamespaceAdmissionPreflight({get:async(kind,_namespace,name)=>resources.find(item=>item.kind===kind&&(item.metadata as {name:string}).name===name)||null,admissionDenies:async(_object,policy,binding)=>{assert.equal(policy,binding);probes.push(policy);return policy.endsWith('-namespace')?namespaceAllowed:bindingAllowed}},options);
  const kube={get:async()=>null,create:async()=>{creates++;return true}},owner={tenantId:randomUUID(),userId:randomUUID()};
  const bootstrap=new NamespaceBootstrap(kube,{controlNamespace:'control',brokerServiceAccount:'broker',brokerRole:'desktop-role',verifyAdmission:signal=>preflight.verify(signal)}),signal=new AbortController().signal;
- await assert.rejects(bootstrap.ensure(owner,signal),/Namespace admission/);assert.equal(creates,0);
- namespaceAllowed=true;await assert.rejects(bootstrap.ensure(owner,signal),/Role binding admission/);assert.equal(creates,0);
+ await assert.rejects(bootstrap.ensure(owner,signal),error=>error instanceof Error&&error.message==='BOOTSTRAP_ADMISSION_FAILED');assert.equal(creates,0);
+ namespaceAllowed=true;await assert.rejects(bootstrap.ensure(owner,signal),error=>error instanceof Error&&error.message==='BOOTSTRAP_ADMISSION_FAILED');assert.equal(creates,0);
  bindingAllowed=true;await preflight.verify(signal);assert.deepEqual(probes.slice(-2),['policy-namespace','policy-binding']);
 });
 

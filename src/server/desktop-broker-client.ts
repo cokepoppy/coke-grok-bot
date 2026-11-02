@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {request as httpsRequest} from 'node:https';
 import type {DesktopConnection,DesktopConnections} from './pi-executor.ts';
 import type {RunOwner} from './run-store.ts';
+import {SafeDiagnosticError} from './safe-diagnostics.ts';
 
 /** The application holds a broker capability, not a Kubernetes API credential. */
 export class DesktopBrokerClient implements DesktopConnections {
@@ -12,12 +13,13 @@ export class DesktopBrokerClient implements DesktopConnections {
  }
  async connect(owner:RunOwner,signal:AbortSignal):Promise<DesktopConnection>{
   const body=Buffer.from(JSON.stringify({tenantId:owner.tenantId,userId:owner.userId}));
-  const result=await new Promise<{status:number;data:Buffer}>((resolve,reject)=>{
+  let result:{status:number;data:Buffer};
+  try { result=await new Promise<{status:number;data:Buffer}>((resolve,reject)=>{
    const req=httpsRequest(new URL('/v1/personal-computer',this.endpoint),{method:'POST',ca:this.ca,headers:{authorization:`Bearer ${this.token}`,'content-type':'application/json','content-length':body.length},signal,timeout:215_000},res=>{
     let size=0;const chunks:Buffer[]=[];res.on('data',(chunk:Buffer)=>{size+=chunk.length;if(size>4096){res.destroy();reject(new Error('Desktop broker response too large'));return}chunks.push(chunk)});res.on('end',()=>resolve({status:res.statusCode||0,data:Buffer.concat(chunks)}));res.on('error',reject);
    });req.on('timeout',()=>req.destroy(new Error('Desktop broker timed out')));req.on('error',reject);req.end(body);
-  });
-  if(result.status!==200)throw new Error('Desktop broker unavailable');
+  }); } catch { throw new SafeDiagnosticError('BROKER_TRANSPORT_FAILED'); }
+  if(result.status!==200)throw new SafeDiagnosticError('BROKER_REJECTED');
   let value:unknown;try{value=JSON.parse(result.data.toString('utf8'))}catch{throw new Error('Invalid desktop broker response')}
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='agentToken,agentUrl')throw new Error('Invalid desktop broker response');
   const {agentUrl,agentToken}=value as {agentUrl?:unknown;agentToken?:unknown};

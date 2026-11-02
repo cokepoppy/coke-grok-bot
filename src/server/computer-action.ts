@@ -12,7 +12,7 @@ const keys=new Set(['Enter','Tab','Escape','Backspace','Delete','ArrowUp','Arrow
 const locators=new Set(['role','text','label','placeholder','css']);
 function text(value:unknown,max:number):string { if(typeof value!=='string'||!value||value.length>max||/[\u0000-\u001f\u007f]/.test(value))throw new Error('Invalid computer action');return value; }
 function location(raw:string):{page:string;stateSha256:string} {
- const url=new URL(raw);if(!['http:','https:','file:'].includes(url.protocol)||url.username||url.password||raw.length>4096)throw new Error('Invalid page location');
+ const url=new URL(raw);if((url.href!=='about:blank'&&!['http:','https:','file:'].includes(url.protocol))||url.username||url.password||raw.length>4096)throw new Error('Invalid page location');
  const stateSha256=createHash('sha256').update(url.href).digest('hex');url.search='';url.hash='';
  return {page:url.href,stateSha256};
 }

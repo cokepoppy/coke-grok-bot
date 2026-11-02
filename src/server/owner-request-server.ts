@@ -1,6 +1,7 @@
 import {createServer,type ServerOptions} from 'node:https';
 import {timingSafeEqual} from 'node:crypto';
 import type {RunOwner} from './run-store.ts';
+import {safeDiagnosticMetadata} from './safe-diagnostics.ts';
 
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 /** Internal endpoints accept a fixed operation and owner identity, never arbitrary resources. */
@@ -20,7 +21,9 @@ export function createOwnerRequestServer(tls:ServerOptions,token:string,path:str
    const {tenantId,userId}=body as {tenantId?:unknown;userId?:unknown};
    if(typeof tenantId!=='string'||!uuid.test(tenantId)||typeof userId!=='string'||!uuid.test(userId)){res.writeHead(400);return res.end()}
    if(active>=4){res.writeHead(503);return res.end()}active++;
-   try{const result=await handle({tenantId,userId},AbortSignal.timeout(210_000));res.writeHead(200,{'Content-Type':'application/json; charset=utf-8'});return res.end(JSON.stringify(result))}finally{active--}
+   try{const result=await handle({tenantId,userId},AbortSignal.timeout(210_000));res.writeHead(200,{'Content-Type':'application/json; charset=utf-8'});return res.end(JSON.stringify(result))}
+   catch(error){console.error('Owner-scoped internal service failed',{path,...safeDiagnosticMetadata(error)});if(!res.headersSent)res.writeHead(503);return res.end()}
+   finally{active--}
   }catch{if(!res.headersSent)res.writeHead(503);return res.end()}
  });
  server.headersTimeout=10_000;server.requestTimeout=15_000;return server;

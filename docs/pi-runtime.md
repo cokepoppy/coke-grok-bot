@@ -242,3 +242,11 @@ Docker 与 K3D 恢复后，首先用本地 ARM64 电脑镜像 `coke-grok-desktop
 随后以同一固定电脑镜像、本地专用临时 MySQL 容器和合成用户运行 `npm run test:mediated-agent-k3d`。真实 DeepSeek 共处理 23 次请求。Pi 与 DSH 分别在独立 Agent Pod 运行并访问独立电脑 Pod；Browser User、Computer User、受审批终端、共享文件、用户接管与恢复、Pi/DSH 跨运行记忆以及 Bot 间记忆隔离均通过。测试使用的 `grok_mediated_%` schema 查询为 0；临时 namespace/PVC 和无卷、tmpfs 的临时 MySQL 容器都已清除。已有身份 MySQL、用户 Agent/Desktop、workspace PVC、Broker 和 namespace bootstrap UID 前后不变。K3D 节点保持 Ready，内存约 2442 MiB / 30%。这两项是隔离 K3D 与真实模型工具副作用证据，不等于公网 Google 登录浏览器验收或完整官方产品覆盖。
 
 同一工作树的 `npm run test:runtime` 当前通过 77 项，`npm run test:ui` 和 `npm run build:deployment` 通过。UI 的 Playwright E2E 使用合成 API 身份，不能证明签名态 Chrome 画面。
+
+### 2026-11-02 已登录公网电脑与 Browser User 复验
+
+按用户要求复用已完成的官网双栏 UI 与当前每 Bot 电脑分支，本轮没有重新打开 x.ai 官网。先在已登录 Chrome 中从公网产品创建测试 Bot，并发起真实 Pi/DeepSeek/K3D 电脑任务。Chromium 从 `about:blank` 导航到 `https://example.com/` 的精确操作在产品中显示审批并经页面点击批准，云电脑截图随后显示 Example Domain。该次 run 接着提出了额外 Desktop 点击，产品转为 `Outcome unknown`；我在 Chrome 中复查了电脑仍停留在 Example Domain 后将它标为 reviewed，没有重放这条运行。
+
+之后通过该 Bot 的真实公网聊天新建了独立只读任务，要求 Pi 仅用 Browser User inspect 当前页面、禁止导航/点击/输入/滚动和 shell。公网 UI 显示任务 `Done`，回复为 `Document title: Example Domain. No visible h1 text was found.`；同一时期 Mac-local K3D Auth 安全诊断汇总记录 DeepSeek 上游 HTTP 200。云电脑预览仍展示已打开页面。这验证了签名态公网 Chat -> Pi -> DeepSeek -> Browser User inspect -> K3D 个人电脑的可观察链路；不代表前一条 Outcome unknown 的任务已完成，也不代表六 Bot 群聊、真实 Bot 间交接、多用户隔离或官方全部功能。
+
+本轮源码修复包含：Desktop 不再对 Agent 所有的共享工作目录执行 chmod；computer broker/provisioner 与任务网关错误只暴露固定诊断码；合法的 `about:blank` 只作为当前页位置接受，目标 URL 仍限于无凭据的 HTTP/HTTPS。验证 `npm run test:runtime` 81/81、共享目录测试 3/3、`git diff --check` 和 `VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build:deployment` 均通过。官方六 Bot 加群组的持久化协作与真实公网 E2E 仍未完成，将在当前分支合并后从最新 `main` 单独开一个 feature 分支实现。

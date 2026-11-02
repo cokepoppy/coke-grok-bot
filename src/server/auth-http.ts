@@ -9,6 +9,7 @@ import {parseUserAction,type UserComputer} from './user-computer.ts';
 import { parsePublicUrl } from './public-url.ts';
 import { cleanUploadName, uploadExtension, WorkspaceFileStore, validateUploadSize } from './file-store.ts';
 import { WorkspaceFileTransportError, type WorkspaceFileTransport } from './workspace-file-client.ts';
+import {safeDiagnosticMetadata} from './safe-diagnostics.ts';
 
 // Mount only behind a trusted proxy that preserves the configured Host.
 export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi', files?:WorkspaceFileStore, workspaceFiles?:WorkspaceFileTransport) {
@@ -39,9 +40,9 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         if(!runs||!await runs.ownsBot(session,botId))return reply(404,{error:'Not found'});
         // First access may create the user's persistent K3D desktop and PVC.
         const signal=AbortSignal.timeout(240_000);
-        if(req.method==='GET' && !actionPath)return reply(200,await computer.control(session,botId,signal));
+        if(req.method==='GET' && !actionPath){try{return reply(200,await computer.control(session,botId,signal))}catch(error){console.error('Computer request failed',{operation:'control',...safeDiagnosticMetadata(error)});return reply(503,{error:'Service unavailable'})}}
         if(req.method==='GET' && actionPath==='screenshot'){
-          const image=await computer.screenshot(session,botId,signal);res.writeHead(200,{'Content-Type':'image/png','Content-Length':image.length,'Cache-Control':'no-store'});return res.end(image);
+          try{const image=await computer.screenshot(session,botId,signal);res.writeHead(200,{'Content-Type':'image/png','Content-Length':image.length,'Cache-Control':'no-store'});return res.end(image)}catch(error){console.error('Computer request failed',{operation:'screenshot',...safeDiagnosticMetadata(error)});return reply(503,{error:'Service unavailable'})}
         }
         if(req.method!=='POST'||!['control','action'].includes(actionPath))return reply(405,{error:'Method not allowed'});
         if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
@@ -50,10 +51,10 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return reply(400,{error:'Invalid JSON'})}
         if(actionPath==='control'){
           if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||((body as {owner?:unknown}).owner!=='agent'&&(body as {owner?:unknown}).owner!=='user'))return reply(400,{error:'Invalid control'});
-          return reply(200,await computer.setControl(session,botId,(body as {owner:'agent'|'user'}).owner,signal));
+          try{return reply(200,await computer.setControl(session,botId,(body as {owner:'agent'|'user'}).owner,signal))}catch(error){console.error('Computer request failed',{operation:'set-control',...safeDiagnosticMetadata(error)});return reply(503,{error:'Service unavailable'})}
         }
         let action;try{action=parseUserAction(body)}catch{return reply(400,{error:'Invalid computer action'})}
-        await computer.action(session,botId,action,signal);return reply(200,{ok:true});
+        try{await computer.action(session,botId,action,signal);return reply(200,{ok:true})}catch(error){console.error('Computer request failed',{operation:'action',...safeDiagnosticMetadata(error)});return reply(503,{error:'Service unavailable'})}
       }
       const botPath = `${origin.prefix}/api/bots`;
       const botMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})$`));
