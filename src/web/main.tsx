@@ -9,6 +9,10 @@ type Bot = { id: string; name: string; label: string; color: string; shape: Shap
 type Message = { id: string; role: 'user' | 'bot'; text: string };
 type RunFile = { id: string; name: string; mimeType: string; size: number; sha256: string; kind: 'input' | 'output' };
 type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; updatedAt?: string | null };
+type GroupMember = Pick<Bot,'id'|'name'|'label'|'color'|'shape'> & { position: number };
+type GroupChat = { id: string; name: string; members: GroupMember[]; preview: string; lastActivityAt: string | null };
+type GroupMessage = { id: string; turnId: string; role: 'user' | 'bot'; botId: string | null; botName: string | null; text: string | null; runId: string | null; status: AgentRun['status'] | null; recoveryState: AgentRun['recoveryState'] | null; replacementRunId: string | null; computerUsed: boolean; updatedAt: string | null; approvals?: Approval[] };
+type GroupChatView = { group: GroupChat; messages: GroupMessage[] };
 type Approval = { id: string; action: string; status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired'; hasScreenshot?: boolean };
 type PreviewState = { bots: Bot[]; activeId: string; messages: Record<string, Message[]>; showOnboarding: Record<string, boolean> };
 type IconName = 'search' | 'plus' | 'mic' | 'sound' | 'close' | 'panel' | 'share' | 'screen' | 'arrow' | 'smile' | 'reply' | 'more';
@@ -85,6 +89,11 @@ function Avatar({ bot, size = 44 }: { bot: Pick<Bot, 'color' | 'shape'>; size?: 
       ? <g fill="#fff"><rect x="20" y="30" width="5" height="10" rx="2.5" /><rect x="32" y="30" width="5" height="10" rx="2.5" /></g>
       : <g fill="#fff" transform="rotate(-24 33 21)"><rect x="25" y="16" width="4" height="10" rx="2" /><rect x="37" y="16" width="4" height="10" rx="2" /></g>}
   </svg>;
+}
+
+function GroupAvatar({members,size=44}:{members:Pick<Bot,'id'|'color'|'shape'>[];size?:number}){
+  const shown=members.slice(0,3),small=size*.59,offset=size*.29;
+  return <span className="group-avatar" aria-hidden="true" style={{width:size,height:size}}>{shown.map((bot,index)=><span key={bot.id} style={{left:index===0?0:index===1?offset:offset/2,top:index===0?0:index===1?offset:offset/2,zIndex:index+1}}><Avatar bot={bot} size={small}/></span>)}</span>;
 }
 
 function formatBotTime(value?: string | null): string {
@@ -203,6 +212,17 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [savingBot, setSavingBot] = useState(false);
   const savingBotRef=useRef(false);
   const [createUncertain,setCreateUncertain]=useState(false);
+  const [groupCreateDialog,setGroupCreateDialog]=useState<{name:string;botIds:string[];requestId:string}|null>(null);
+  const [groupSaving,setGroupSaving]=useState(false);
+  const [groupError,setGroupError]=useState('');
+  const [groups,setGroups]=useState<GroupChat[]>([]);
+  const [groupsStatus,setGroupsStatus]=useState<'loading'|'ready'|'error'>(remote?'loading':'ready');
+  const [selectedGroupId,setSelectedGroupId]=useState('');
+  const [groupChat,setGroupChat]=useState<{id:string;status:'loading'|'ready'|'error';view:GroupChatView|null}>({id:'',status:'loading',view:null});
+  const [groupSending,setGroupSending]=useState(false);
+  const [groupRefresh,setGroupRefresh]=useState(0);
+  const [groupComputerBotId,setGroupComputerBotId]=useState('');
+  const groupSendingRef=useRef(false);
   const [createDialog,setCreateDialog]=useState<{name:string;shape:Shape;color:string}|null>(null);
   const createName=useRef<HTMLInputElement>(null);
   const createDialogOpenRef=useRef(false);
@@ -257,11 +277,13 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const savedLabels = useRef<Record<string, string>>({});
   const labelQueue = useRef<Record<string, Promise<void>>>({});
   const active = state.bots.find(bot => bot.id === state.activeId) || state.bots[0];
+  const activeGroup=groups.find(group=>group.id===selectedGroupId);
   const activeIdRef = useRef(active?.id); activeIdRef.current = active?.id;
   const messages = active ? state.messages[active.id] || [] : [];
   const filtered = state.bots.filter(bot => !(reference && newChat && bot.id === 'new') && `${bot.name} ${bot.label}`.toLowerCase().includes(query.toLowerCase()));
   const visibleBots = filtered.filter(bot=>!bot.hidden).sort((a,b)=>Number(Boolean(b.pinned))-Number(Boolean(a.pinned)));
   const hiddenBots = filtered.filter(bot=>bot.hidden);
+  const filteredGroups=groups.filter(group=>`${group.name} ${group.members.map(member=>member.name).join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()));
   const menuBot = sidebarMenu ? state.bots.find(bot=>bot.id===sidebarMenu.id) : undefined;
 
   useEffect(() => {
@@ -283,6 +305,47 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       }).catch(error => { if (error.name !== 'AbortError') setBotStatus('error'); });
     return () => controller.abort();
   }, [remote]);
+  useEffect(()=>{
+    if(!remote||agentFeature!=='enabled'||botStatus!=='ready')return;
+    const controller=new AbortController();
+    fetch(`${import.meta.env.BASE_URL}api/groups`,{credentials:'same-origin',cache:'no-store',signal:controller.signal})
+      .then(async response=>{if(!response.ok)throw new Error('groups unavailable');return response.json() as Promise<{groups:GroupChat[]}>})
+      .then(value=>{
+        if(!Array.isArray(value.groups))throw new Error('invalid groups');
+        setGroups(value.groups);setGroupsStatus('ready');
+        try{const saved=localStorage.getItem(`${storageKey}:selected-group`);if(saved&&value.groups.some(group=>group.id===saved))setSelectedGroupId(saved)}catch{/* Selection persistence is optional. */}
+      }).catch(error=>{if(error.name!=='AbortError')setGroupsStatus('error')});
+    return()=>controller.abort();
+  },[remote,agentFeature,botStatus,storageKey]);
+  useEffect(()=>{
+    if(!remote||agentFeature!=='enabled'||groupsStatus!=='ready'||!selectedGroupId)return;
+    const id=selectedGroupId,controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
+    setGroupChat({id,status:'loading',view:null});
+    const load=async()=>{
+      try{
+        const response=await fetch(`${import.meta.env.BASE_URL}api/groups/${encodeURIComponent(id)}`,{credentials:'same-origin',cache:'no-store',signal:controller.signal});
+        if(!response.ok)throw new Error('group unavailable');
+        const view=await response.json() as GroupChatView;
+        if(!view.group||!Array.isArray(view.messages))throw new Error('invalid group response');
+        const actionable=view.messages.filter(message=>message.runId&&(message.status==='running'||(message.status==='unknown'&&message.recoveryState==='pending')));
+        const approvals=await Promise.all(actionable.map(async message=>{
+          try{
+            const approvalResponse=await fetch(`${import.meta.env.BASE_URL}api/runs/${message.runId}/approvals`,{credentials:'same-origin',cache:'no-store',signal:controller.signal});
+            if(!approvalResponse.ok)return[message.runId!,[] as Approval[]] as const;
+            const data=await approvalResponse.json() as {approvals:Approval[]};
+            return[message.runId!,Array.isArray(data.approvals)?data.approvals:[]] as const;
+          }catch(error){if(controller.signal.aborted)throw error;return[message.runId!,[] as Approval[]] as const}
+        }));
+        const approvalsByRun=new Map(approvals);
+        view.messages=view.messages.map(message=>({...message,approvals:message.runId?approvalsByRun.get(message.runId)||[]:[]}));
+        if(controller.signal.aborted)return;
+        setGroupChat({id,status:'ready',view});
+        setGroups(current=>current.map(group=>group.id===id?{...group,...view.group}:group));
+        timer=setTimeout(()=>void load(),2000);
+      }catch(error){if(!controller.signal.aborted)setGroupChat(current=>({id,status:'error',view:current.id===id?current.view:null}))}
+    };
+    void load();return()=>{controller.abort();if(timer)clearTimeout(timer)};
+  },[remote,agentFeature,groupsStatus,selectedGroupId,groupRefresh]);
   useEffect(() => {
     if (!remote) return;
     const controller = new AbortController();
@@ -297,7 +360,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     return () => controller.abort();
   }, [remote]);
   useEffect(() => {
-    if (!remote || agentFeature !== 'enabled' || botStatus !== 'ready' || !active?.id) return;
+    if (!remote || agentFeature !== 'enabled' || botStatus !== 'ready' || !active?.id || activeGroup) return;
     const id = active.id, controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     setRunHistory({ id, status: 'loading', runs: [] });
@@ -327,9 +390,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     };
     void load();
     return () => { controller.abort(); if (timer) clearTimeout(timer); };
-  }, [remote, agentFeature, botStatus, active?.id, runRefresh]);
+  }, [remote, agentFeature, botStatus, active?.id, activeGroup?.id, runRefresh]);
   useEffect(() => {
-    if (!remote || !active?.id) return;
+    if (!remote || !active?.id || activeGroup) return;
     const id = active.id, controller = new AbortController();
     setHistory({ id, status: 'loading' });
     fetch(`${import.meta.env.BASE_URL}api/bots/${id}/messages`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
@@ -340,8 +403,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         setHistory({ id, status: 'ready' });
       }).catch(error => { if (error.name !== 'AbortError') setHistory({ id, status: 'error' }); });
     return () => controller.abort();
-  }, [remote, active?.id]);
-  useEffect(() => { setDraft(''); setCustomAnswer(''); setNotice(false); }, [state.activeId]);
+  }, [remote, active?.id, activeGroup?.id]);
+  useEffect(() => { setDraft(''); setCustomAnswer(''); setNotice(false);setGroupError(''); }, [state.activeId,selectedGroupId]);
   useEffect(() => { avatarEditorRef.current=null; setAvatarEditor(null); }, [state.activeId]);
   useEffect(() => { if (avatarEditor) avatarDialog.current?.focus(); }, [avatarEditor?.id]);
   useEffect(() => { if(newChat) recipientInput.current?.focus(); }, [newChat]);
@@ -360,19 +423,43 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   useEffect(() => {
     const onKeyDown = (event:KeyboardEvent) => {
       if((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase()==='n' && !sendingRef.current && !createDialogOpenRef.current) {
-        event.preventDefault();if(reference){setRecipientQuery('');setNewChat(true);setPanel(false)}else beginCreate();
+        event.preventDefault();if(reference||remote&&agentFeature==='enabled'){setRecipientQuery('');setNewChat(true);setPanel(false)}else beginCreate();
       }
     };
     window.addEventListener('keydown',onKeyDown);return ()=>window.removeEventListener('keydown',onKeyDown);
-  },[]);
+  },[reference,remote,agentFeature]);
   useEffect(() => { if (messages.length > 1) messagesEnd.current?.scrollIntoView({ block: 'nearest' }); }, [messages.length]);
 
   function selectBot(id: string) {
     if (sendingRef.current) return;
+    setSelectedGroupId('');
+    try{localStorage.removeItem(`${storageKey}:selected-group`)}catch{/* Selection persistence is optional. */}
     setState(current => ({ ...current, activeId: id }));
     setNewChat(false);
     setRecipientQuery('');
     setPanel(false);
+  }
+  function selectGroup(id:string){
+    if(sendingRef.current||groupSendingRef.current)return;
+    setSelectedGroupId(id);setNewChat(false);setRecipientQuery('');setPanel(false);setGroupComputerBotId('');
+    try{localStorage.setItem(`${storageKey}:selected-group`,id)}catch{/* Selection persistence is optional. */}
+  }
+  function beginGroupCreate(){
+    if(!remote||agentFeature!=='enabled'||state.bots.length<2||sendingRef.current||groupSendingRef.current)return;
+    setNewChat(false);setRecipientQuery('');setGroupError('');setGroupCreateDialog({name:'',botIds:[],requestId:crypto.randomUUID()});
+  }
+  async function createGroup(){
+    if(!groupCreateDialog||groupSaving||groupCreateDialog.botIds.length<2||groupCreateDialog.botIds.length>6)return;
+    const name=groupCreateDialog.name.trim();if(!name||name.length>60)return;
+    setGroupSaving(true);setGroupError('');
+    try{
+      const response=await fetch(`${import.meta.env.BASE_URL}api/groups`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:groupCreateDialog.requestId,name,botIds:groupCreateDialog.botIds})});
+      if(!response.ok)throw new Error('group creation failed');
+      const value=await response.json() as {group:GroupChat};
+      if(!value.group||typeof value.group.id!=='string'||!Array.isArray(value.group.members))throw new Error('invalid group response');
+      setGroups(current=>[value.group,...current.filter(group=>group.id!==value.group.id)]);setGroupsStatus('ready');setGroupCreateDialog(null);selectGroup(value.group.id);
+    }catch{setGroupError('Could not confirm the group was created. Retry uses the same request, or refresh to check the sidebar.');}
+    finally{setGroupSaving(false)}
   }
   function beginCreate() {
     if(sendingRef.current||savingBotRef.current)return;
@@ -402,6 +489,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         savedNames.current[bot.id] = bot.name;
         savedLabels.current[bot.id] = bot.label;
         setState(current => ({ ...current, bots: [{ ...bot, preview: 'Start a conversation' }, ...current.bots], activeId: bot.id }));
+        setSelectedGroupId('');try{localStorage.removeItem(`${storageKey}:selected-group`)}catch{/* Selection persistence is optional. */}
         setCreateDialog(null);setNewChat(false);setPanel(false);
       } catch { setCreateUncertain(true);setBotError('Could not confirm the Bot was created. Refresh and check the sidebar before trying again.'); }
       finally { savingBotRef.current=false;setSavingBot(false); }
@@ -413,6 +501,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       const welcome: Message = { id: 'welcome', role: 'bot', text: 'Hello — what would you like help with?' };
       setState(current => ({ ...current, bots: [bot, ...current.bots], activeId: id, messages: { ...current.messages, [id]: [welcome] }, showOnboarding: { ...current.showOnboarding, [id]: true } }));
     }else setState(current => ({ ...current, bots: [bot, ...current.bots], activeId: id }));
+    setSelectedGroupId('');
+    try{localStorage.removeItem(`${storageKey}:selected-group`)}catch{/* Selection persistence is optional. */}
     setCreateDialog(null);setNewChat(false);setPanel(false);
   }
   async function decideApproval(id: string, decision: 'approved' | 'denied') {
@@ -427,6 +517,32 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       setBotError('Approval could not be confirmed. Refresh and check its status before trying again.');
       setRunHistory(current => ({ ...current, status: 'error' }));
     } finally { decidingRef.current = false; setDecidingApproval(null); }
+  }
+  async function decideGroupApproval(id:string,decision:'approved'|'denied'){
+    if(uncertainMutation.current||decidingRef.current||!selectedGroupId||groupChat.id!==selectedGroupId||groupChat.status!=='ready')return;
+    decidingRef.current=true;setDecidingApproval(id);setGroupError('');
+    try{
+      const response=await fetch(`${import.meta.env.BASE_URL}api/approvals/${id}`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision})});
+      if(!response.ok)throw new Error('decision could not be confirmed');
+      setGroupRefresh(value=>value+1);
+    }catch{
+      uncertainMutation.current=true;setGroupError('Approval could not be confirmed. Refresh and check its status before trying again.');
+      setGroupChat(current=>({...current,status:'error'}));
+    }finally{decidingRef.current=false;setDecidingApproval(null)}
+  }
+  async function recoverGroupRun(message:GroupMessage,decision:'retry'|'acknowledge'){
+    if(uncertainMutation.current||decidingRef.current||!selectedGroupId||groupChat.id!==selectedGroupId||groupChat.status!=='ready'||!message.runId||message.status!=='unknown'||message.recoveryState!=='pending'||(message.approvals||[]).some(approval=>approval.status==='pending'))return;
+    decidingRef.current=true;setResolvingRun(message.runId);setGroupError('');
+    try{
+      const response=await fetch(`${import.meta.env.BASE_URL}api/runs/${message.runId}/recovery`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision})});
+      if(!response.ok)throw new Error('recovery could not be confirmed');
+      const result=await response.json() as {decision:'retry'|'acknowledge';run:AgentRun|null};
+      if(result.decision!==decision||(decision==='retry'&&(!result.run||result.run.status!=='queued'))||(decision==='acknowledge'&&result.run!==null))throw new Error('invalid recovery response');
+      setGroupRefresh(value=>value+1);
+    }catch{
+      uncertainMutation.current=true;setGroupError('Recovery could not be confirmed. Refresh and check the group history before making another decision.');
+      setGroupChat(current=>({...current,status:'error'}));
+    }finally{decidingRef.current=false;setResolvingRun(null)}
   }
   async function recoverRun(run: AgentRun, decision: 'retry' | 'acknowledge') {
     if (uncertainMutation.current || decidingRef.current || !active || run.status !== 'unknown' || run.recoveryState !== 'pending' || runHistory.id !== active.id || runHistory.status !== 'ready') return;
@@ -449,6 +565,26 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     } finally { decidingRef.current = false; setResolvingRun(null); }
   }
   async function addMessage(text: string) {
+    if(remote&&selectedGroupId){
+      const clean=text.trim();
+      if(!clean||uncertainMutation.current||groupSendingRef.current||groupChat.id!==selectedGroupId||groupChat.status!=='ready')return;
+      if(clean.length>8000){setGroupError('Message is too long.');return}
+      groupSendingRef.current=true;setGroupSending(true);setGroupError('');
+      try{
+        const response=await fetch(`${import.meta.env.BASE_URL}api/groups/${encodeURIComponent(selectedGroupId)}/messages`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),text:clean})});
+        if(!response.ok)throw new Error('group message submission failed');
+        const view=await response.json() as GroupChatView;
+        if(!view.group||!Array.isArray(view.messages)||view.group.id!==selectedGroupId)throw new Error('invalid group response');
+        setGroupChat({id:selectedGroupId,status:'ready',view});
+        setGroups(current=>[view.group,...current.filter(group=>group.id!==view.group.id)]);
+        setState(current=>({...current,bots:current.bots.map(bot=>view.group.members.some(member=>member.id===bot.id)?{...bot,preview:clean,lastActivityAt:new Date().toISOString()}:bot)}));
+        if(selectedGroupId)setDraft('');
+      }catch{
+        uncertainMutation.current=true;setGroupChat(current=>({...current,status:'error'}));
+        setGroupError('Group message could not be confirmed. Refresh and check the chat before sending again.');
+      }finally{groupSendingRef.current=false;setGroupSending(false)}
+      return;
+    }
     if (!active || uncertainMutation.current) return;
     const clean = text.trim();
     const selectedFiles = pendingFiles[active.id] || [];
@@ -626,18 +762,20 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     avatarQueue.current[selected.id] = next;
     void next.finally(() => { if (avatarQueue.current[selected.id] === next) delete avatarQueue.current[selected.id]; });
   }
-  const renderBotRow=(bot:Bot)=><div className="bot-row-wrap" key={bot.id}><button ref={element=>{sidebarRows.current[bot.id]=element}} type="button" className={`bot-row ${!newChat && bot.id === active?.id ? 'selected' : ''}`} aria-haspopup="menu" onClick={() => selectBot(bot.id)} onContextMenu={event=>{event.preventDefault();setSidebarMenu({id:bot.id,x:Math.max(0,Math.min(event.clientX,window.innerWidth-200)),y:Math.max(0,Math.min(event.clientY,window.innerHeight-265))})}}>
+  const renderBotRow=(bot:Bot)=><div className="bot-row-wrap" key={bot.id}><button ref={element=>{sidebarRows.current[bot.id]=element}} type="button" className={`bot-row ${!newChat && !activeGroup && bot.id === active?.id ? 'selected' : ''}`} aria-haspopup="menu" onClick={() => selectBot(bot.id)} onContextMenu={event=>{event.preventDefault();setSidebarMenu({id:bot.id,x:Math.max(0,Math.min(event.clientX,window.innerWidth-200)),y:Math.max(0,Math.min(event.clientY,window.innerHeight-265))})}}>
           <Avatar bot={bot} size={46} /><span className="bot-row-content"><span className="bot-row-title"><span onDoubleClick={event=>{event.stopPropagation();beginSidebarRename(bot.id)}}>{bot.name}</span>{bot.label && <small>{bot.label}</small>}<time dateTime={bot.lastActivityAt||undefined}>{formatBotTime(bot.lastActivityAt)}</time></span><span className="bot-preview">{bot.preview}</span></span>
         </button>{sidebarRename?.id===bot.id && <input ref={sidebarInput} className="sidebar-rename" aria-label="Rename Bot" maxLength={60} value={sidebarRename.value} onChange={event=>{const edit={id:bot.id,value:event.target.value};sidebarRenameRef.current=edit;setSidebarRename(edit)}} onBlur={event=>finishSidebarRename(bot.id,event.currentTarget.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur()}else if(event.key==='Escape'){event.preventDefault();sidebarRenameRef.current=null;setSidebarRename(null);sidebarRows.current[bot.id]?.focus()}}} />}</div>;
   const unresolvedOutcome = agentFeature === 'enabled' && runHistory.id === active?.id && runHistory.runs.some(run => run.status === 'unknown' && run.recoveryState === 'pending');
   const latestComputerRunId=runHistory.runs.filter(run=>run.computerUsed).at(-1)?.id;
-  const composerDisabled = remote && (sending || history.id !== active?.id || history.status !== 'ready' || agentFeature === 'loading' || agentFeature === 'error' || (agentFeature === 'enabled' && (runHistory.id !== active?.id || runHistory.status !== 'ready' || unresolvedOutcome)));
+  const groupNeedsReview=Boolean(groupChat.id===selectedGroupId&&groupChat.view?.messages.some(message=>message.role==='bot'&&message.status==='unknown'&&message.recoveryState==='pending'));
+  const groupComposerDisabled=remote&&(groupSending||groupNeedsReview||groupChat.id!==selectedGroupId||groupChat.status!=='ready'||agentFeature!=='enabled'||uncertainMutation.current);
+  const composerDisabled = activeGroup ? groupComposerDisabled : remote && (sending || history.id !== active?.id || history.status !== 'ready' || agentFeature === 'loading' || agentFeature === 'error' || (agentFeature === 'enabled' && (runHistory.id !== active?.id || runHistory.status !== 'ready' || unresolvedOutcome)));
   if (botStatus === 'loading') return <main className="auth-page"><div className="auth-card">Loading your Bots…</div></main>;
   if (botStatus === 'error') return <main className="auth-page"><div className="auth-card"><p role="alert">Could not load your Bots.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></div></main>;
 
   return <div className={`app ${reference ? 'reference-mode' : 'preview-mode'} ${account ? 'product-shell' : ''}`}>
     <aside className="sidebar" aria-label="Bots">
-      <div className="sidebar-top">{!account && <IconButton name="search" label="Search bots" onClick={() => { setSearching(value => !value); setQuery(''); }} />}<IconButton buttonRef={createTrigger} name="plus" label="New chat" onClick={() => { if(reference){setRecipientQuery('');setNewChat(true);setPanel(false)}else beginCreate(); }} /></div>
+      <div className="sidebar-top">{!account && <IconButton name="search" label="Search bots" onClick={() => { setSearching(value => !value); setQuery(''); }} />}<IconButton buttonRef={createTrigger} name="plus" label="New chat" onClick={() => { if(reference||remote&&agentFeature==='enabled'){setRecipientQuery('');setNewChat(true);setPanel(false)}else beginCreate(); }} /></div>
       {account && <label className="product-search"><Icon name="search" /><input aria-label="Search bots" placeholder="Search" value={query} onChange={event => setQuery(event.target.value)} /></label>}
       {searching && <input className="search-input" aria-label="Search bots" value={query} placeholder="Search bots" onChange={event => setQuery(event.target.value)} />}
       <button className="primary-bot" type="button" onClick={() => setNotice(true)} aria-label="Primary bot preview"><Avatar bot={primary} size={80} /><span>{primary.name}</span><small>{primary.label}</small></button>
@@ -646,7 +784,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         <div className="section-line unassigned"><span>Unassigned</span></div>
         {visibleBots.map(renderBotRow)}
         {hiddenBots.length>0 && <><button type="button" className="hidden-section" aria-expanded={hiddenOpen} onClick={()=>setHiddenOpen(value=>!value)}><span>{hiddenOpen?'⌄':'›'}&nbsp; Hidden Bots</span><span>{hiddenBots.length}</span></button>{hiddenOpen && hiddenBots.map(renderBotRow)}</>}
-        {filtered.length === 0 && <p className="empty-list">No matching bots</p>}
+        {filteredGroups.length>0&&<><div className="section-line group-section-heading"><span>Groups</span></div>{filteredGroups.map(group=><button key={group.id} type="button" className={`bot-row group-row ${selectedGroupId===group.id&&!newChat?'selected':''}`} onClick={()=>selectGroup(group.id)} aria-label={`Open group ${group.name}`}><GroupAvatar members={group.members} size={38}/><span className="bot-row-content"><span className="bot-row-title"><span>{group.name}</span><time dateTime={group.lastActivityAt||undefined}>{formatBotTime(group.lastActivityAt)}</time></span><span className="bot-preview">{group.preview}</span></span></button>)}</>}
+        {filtered.length === 0&&filteredGroups.length===0 && <p className="empty-list">No matching bots</p>}
       </div>
       {reference && <button type="button" className="more-unreads">↓&nbsp; More unreads</button>}
       <div className="sidebar-footer">{account ? <>
@@ -672,14 +811,24 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       {botError && !createDialog && <div role="alert">{botError}</div>}
       {newChat || !active ? <div className="new-chat-view" onKeyDown={event=>{if(event.key==='Escape'&&active){setNewChat(false);setRecipientQuery('')}}}>
         <div className="new-chat-head"><label>To: <input ref={recipientInput} aria-label="Start a chat with" placeholder="Start a chat with..." value={recipientQuery} onChange={event=>setRecipientQuery(event.target.value)} /></label><IconButton name="close" label="Close new chat" onClick={() => {setNewChat(false);setRecipientQuery('')}} /></div>
-        <div className="new-chat-menu" aria-label="Chat recipients"><button type="button" className="menu-option menu-primary" onClick={()=>reference?void createBot():beginCreate()}><Icon name="plus" />Create new Bot</button><button type="button" className="menu-option" onClick={() => setNotice(true)}><span className="menu-symbol">♧</span>Create group chat</button>{[primary, ...state.bots.filter(bot=>!reference || bot.id!=='new')].filter(bot=>`${bot.name} ${bot.label}`.toLowerCase().includes(recipientQuery.trim().toLowerCase())).map(bot => <button key={bot.id} type="button" className="menu-option" onClick={() => bot.id === primary.id ? setNotice(true) : selectBot(bot.id)}><Avatar bot={bot} size={27} />{bot.name}</button>)}<button type="button" className="menu-option team-option" onClick={() => setNotice(true)}><span>🟣</span>Team Bots <span className="menu-arrow">›</span></button></div>
+        <div className="new-chat-menu" aria-label="Chat recipients"><button type="button" className="menu-option menu-primary" onClick={()=>reference?void createBot():beginCreate()}><Icon name="plus" />Create new Bot</button><button type="button" className="menu-option" disabled={remote&&agentFeature==='enabled'&&state.bots.length<2} onClick={() => remote&&agentFeature==='enabled'?beginGroupCreate():setNotice(true)}><span className="menu-symbol">♧</span>Create group chat</button>{[primary, ...state.bots.filter(bot=>!reference || bot.id!=='new')].filter(bot=>`${bot.name} ${bot.label}`.toLowerCase().includes(recipientQuery.trim().toLowerCase())).map(bot => <button key={bot.id} type="button" className="menu-option" onClick={() => bot.id === primary.id ? setNotice(true) : selectBot(bot.id)}><Avatar bot={bot} size={27} />{bot.name}</button>)}<button type="button" className="menu-option team-option" onClick={() => setNotice(true)}><span>🟣</span>Team Bots <span className="menu-arrow">›</span></button></div>
         <div className="composer new-chat-composer"><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label="Message Bot" placeholder="Message Bot" disabled rows={1} /><IconButton name="mic" label="Voice input" className="voice-button" onClick={() => setNotice(true)} /></div>
       </div> : <>
-        <div className={`chat-header ${panel ? 'panel-open' : ''}`}><button type="button" className="chat-title" onClick={() => setPanel(value => !value)}><Avatar bot={active} size={30} /><span>{active.name}</span></button></div>
-        <div className="header-actions"><IconButton name="share" label="Share bot" onClick={() => setNotice(true)} /><IconButton name={account && !panel ? 'screen' : 'panel'} label={panel ? account ? 'Hide computer' : 'Hide bot details' : account ? `Open ${active.name}'s computer` : 'Show bot details'} onClick={() => { if (account) setTab('Computer'); setPanel(value => !value); }} /></div>
+        <div className={`chat-header ${panel ? 'panel-open' : ''}`}><button type="button" className="chat-title" onClick={() => {if(activeGroup)setTab('Details');setPanel(value => !value)}}>{activeGroup?<GroupAvatar members={activeGroup.members} size={30}/>:<Avatar bot={active} size={30}/>}<span>{activeGroup?.name||active.name}</span></button></div>
+        <div className="header-actions"><IconButton name="share" label={activeGroup?'Share group':'Share bot'} onClick={() => setNotice(true)} /><IconButton name={account && !panel ? 'screen' : 'panel'} label={panel ? account ? 'Hide computer' : 'Hide bot details' : account ? `Open ${activeGroup?.name||active.name}'s computer` : 'Show bot details'} onClick={() => { if (account) setTab(activeGroup?'Details':'Computer'); setPanel(value => !value); }} /></div>
         <div className={`workspace ${panel ? 'with-panel' : ''}`}>
-          <section className="conversation" aria-label={`Chat with ${active.name}`} onDragOver={event=>{if(remote&&agentFeature==='enabled'&&Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault()}} onDrop={event=>{if(!remote||agentFeature!=='enabled'||!event.dataTransfer.files.length)return;event.preventDefault();event.stopPropagation();stageFiles(Array.from(event.dataTransfer.files))}}>
+          <section className="conversation" aria-label={activeGroup?`Group chat ${activeGroup.name}`:`Chat with ${active.name}`} onDragOver={event=>{if(remote&&agentFeature==='enabled'&&!activeGroup&&Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault()}} onDrop={event=>{if(!remote||agentFeature!=='enabled'||activeGroup||!event.dataTransfer.files.length)return;event.preventDefault();event.stopPropagation();stageFiles(Array.from(event.dataTransfer.files))}}>
             <div className="message-scroll">
+              {activeGroup ? <>
+                {groupChat.id===activeGroup.id&&groupChat.status==='loading'&&<div role="status">Loading group chat…</div>}
+                {groupChat.id===activeGroup.id&&groupChat.status==='error'&&<div role="alert">Could not confirm this group chat. Refresh to check its messages before sending again.</div>}
+                {(groupChat.view?.messages.length||0)>0&&<div className="date-line">{formatBotTime(activeGroup.lastActivityAt)||'Today'}</div>}
+                {groupChat.id===activeGroup.id&&groupChat.view?.messages.map(message=>message.role==='user'
+                  ? <div key={message.id} className="message-line user group-user-message"><div className="message-bubble">{message.text}</div></div>
+                  : <div key={message.id} className="message-line bot group-bot-message"><Avatar bot={activeGroup.members.find(member=>member.id===message.botId)||activeGroup.members[0]} size={27}/><div className="message-bubble"><header className="group-message-heading"><strong>{message.botName||'Bot'}</strong><span className={`group-run-status ${message.status||'queued'}`}>{message.status==='completed'?'Done':message.status==='running'?'Working':message.status==='failed'?'Failed':message.status==='unknown'?'Outcome unknown':'Queued'}</span></header><p>{message.text||(message.status==='queued'?'Waiting for this Bot’s computer…':message.status==='running'?'Working on this Bot’s computer…':message.status==='unknown'?'Outcome unknown · review the computer before continuing.':'This Bot did not return a response.')}</p>{message.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.runId||message.id,prompt:'',status:message.status||'queued',result:message.text,recoveryState:message.recoveryState||'none',replacementRunId:message.replacementRunId,files:[],computerUsed:true}} botId={message.botId} showScreen={message.status==='running'||message.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);setTab('Computer');setPanel(true)}} />}{(message.approvals||[]).filter(approval=>approval.status==='pending').map(approval=><ApprovalCard key={approval.id} approval={approval} disabled={Boolean(decidingApproval)||groupChat.status!=='ready'} decide={decision=>void decideGroupApproval(approval.id,decision)}/>)}{message.status==='unknown'&&message.recoveryState==='pending'&&!(message.approvals||[]).some(approval=>approval.status==='pending')&&<section className="run-recovery" aria-label={`Review uncertain task outcome for ${message.botName||'Bot'}`}><p>The previous task may have run even though its result was not saved. Review this Bot’s computer before deciding.</p><div><button type="button" disabled={Boolean(resolvingRun)||groupChat.status!=='ready'} onClick={()=>void recoverGroupRun(message,'acknowledge')}>{resolvingRun===message.runId?'Saving…':'I checked · continue'}</button><button type="button" disabled={Boolean(resolvingRun)||groupChat.status!=='ready'} onClick={()=>void recoverGroupRun(message,'retry')}>{resolvingRun===message.runId?'Saving…':'Retry as a new task'}</button></div></section>}{message.status==='unknown'&&message.recoveryState==='retried'&&message.replacementRunId&&<p className="run-recovery-note">A separate queued task was created; the original outcome remains in history.</p>}</div></div>)}
+                {groupChat.id===activeGroup.id&&groupChat.view?.messages.length===0&&<div className="empty-chat group-empty"><GroupAvatar members={activeGroup.members} size={56}/><p>Start a conversation with {activeGroup.name}.</p><small>{activeGroup.members.length} Bots are ready to work on their own computers.</small></div>}
+                {groupError&&<div className="local-feedback" role="status">{groupError}</div>}
+              </> : <>
               {remote && history.id === active.id && history.status === 'loading' && <div role="status">Loading messages…</div>}
               {remote && history.id === active.id && history.status === 'error' && <div role="alert">Could not confirm message history. Refresh to check it.</div>}
               {messages.length > 0 && <div className="date-line">{reference ? 'Today 1:26 PM' : account ? formatBotTime(active?.lastActivityAt) || 'Today' : 'Today'}</div>}
@@ -695,14 +844,22 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
               {!reference && !messages.length && !(agentFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.length) && <div className="empty-chat"><Avatar bot={active} size={52} /><p>Start a conversation with {active.name}.</p>{agentFeature !== 'enabled' && <small>This local preview does not connect to a model.</small>}</div>}
               {notice && <div className="local-feedback" role="status">{remote ? 'No message was sent to an Agent.' : 'This is a local preview. No message was sent to an Agent or external service.'}</div>}
               <div ref={messagesEnd} />
+              </>}
             </div>
             {remote && agentFeature === 'enabled' && <input ref={filePicker} className="file-picker" type="file" multiple aria-label="Choose files to attach" onChange={event=>{stageFiles(Array.from(event.currentTarget.files||[]));event.currentTarget.value=''}}/>}
             {remote && agentFeature === 'enabled' && ((pendingFiles[active.id]||[]).length+(pendingRunFiles[active.id]||[]).length)>0 && <div className="pending-files" aria-label="Files to attach">{(pendingRunFiles[active.id]||[]).map((file,index)=><span className="pending-file" key={`run:${file.id}`}><span>{file.name}</span><button type="button" aria-label={`Remove reused ${file.name}`} onClick={()=>setPendingRunFiles(current=>({...current,[active.id]:(current[active.id]||[]).filter((_,itemIndex)=>itemIndex!==index)}))}>×</button></span>)}{(pendingFiles[active.id]||[]).map((file,index)=><span className="pending-file" key={`local:${file.name}:${file.lastModified}:${index}`}><span>{file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={()=>setPendingFiles(current=>({...current,[active.id]:(current[active.id]||[]).filter((_,itemIndex)=>itemIndex!==index)}))}>×</button></span>)}</div>}
-            <form className="composer" onSubmit={event => { event.preventDefault(); void addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => remote && agentFeature === 'enabled' ? filePicker.current?.click() : setNotice(true)} /><textarea aria-label={`Message ${active.name}`} placeholder={`Message ${active.name}`} value={draft} rows={1} disabled={composerDisabled} onChange={event => setDraft(event.target.value)} onPaste={event=>{if(!remote||agentFeature!=='enabled')return;const pasted=Array.from(event.clipboardData.files||[]);if(!pasted.length)return;event.preventDefault();stageFiles(pasted)}} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() || (pendingFiles[active.id]||[]).length || (pendingRunFiles[active.id]||[]).length ? <button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote ? (agentFeature === 'enabled' ? 'Send task' : 'Save message') : 'Save local message'}><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
+            <form className="composer" onSubmit={event => { event.preventDefault(); void addMessage(draft); }}><IconButton name="plus" label="Add attachment" onClick={() => activeGroup?setGroupError('File attachments are not available in group chats yet.'):remote&&agentFeature==='enabled'?filePicker.current?.click():setNotice(true)} /><textarea aria-label={`Message ${activeGroup?.name||active.name}`} placeholder={`Message ${activeGroup?.name||active.name}`} value={draft} rows={1} disabled={composerDisabled} onChange={event => setDraft(event.target.value)} onPaste={event=>{if(!remote||agentFeature!=='enabled'||activeGroup)return;const pasted=Array.from(event.clipboardData.files||[]);if(!pasted.length)return;event.preventDefault();stageFiles(pasted)}} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void addMessage(draft); } }} /><IconButton name="mic" label="Voice input" onClick={() => setNotice(true)} />{draft.trim() || (!activeGroup&&((pendingFiles[active.id]||[]).length || (pendingRunFiles[active.id]||[]).length)) ? <button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote ? 'Send task' : 'Save local message'}><Icon name="arrow" /></button> : <IconButton name="sound" label="Start voice chat" className="voice-button" onClick={() => setNotice(true)} />}</form>
           </section>
-          {panel && <aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" ref={avatarButton} aria-label="Change Bot picture" onClick={openAvatar}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => saveBotName(active.id,active.name)} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && agentFeature === 'enabled' ? <ComputerPanel name={active.name} botId={active.id} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>}
+          {panel && (activeGroup?<aside className="details-panel group-details-panel" aria-label="Group details"><GroupAvatar members={activeGroup.members} size={80}/><div className="group-panel-name">{activeGroup.name}</div><div className="group-panel-count">{activeGroup.members.length} Bots</div><div className="tabs"><button type="button" className={tab==='Details'?'active':''} onClick={()=>setTab('Details')}>Details</button><button type="button" className={tab==='Computer'?'active':''} onClick={()=>setTab('Computer')}>Computer</button></div>{tab==='Computer'?remote&&agentFeature==='enabled'?<ComputerPanel name={activeGroup.members.find(member=>member.id===groupComputerBotId)?.name||activeGroup.members[0].name} botId={groupComputerBotId||activeGroup.members[0].id}/>:<div className="computer-preview"><Icon name="screen"/><span>Computer not connected</span></div>:<div className="group-member-list" aria-label="Group members">{activeGroup.members.map(member=><div className="group-member" key={member.id}><Avatar bot={member} size={30}/><span><strong>{member.name}</strong>{member.label&&<small>{member.label}</small>}</span><button type="button" onClick={()=>{setGroupComputerBotId(member.id);setTab('Computer')}}>Computer</button></div>)}</div>}</aside>:<aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" ref={avatarButton} aria-label="Change Bot picture" onClick={openAvatar}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => saveBotName(active.id,active.name)} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && agentFeature === 'enabled' ? <ComputerPanel name={active.name} botId={active.id} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>)}
         </div>
       </>}
+      {groupCreateDialog&&<div className="create-overlay" onMouseDown={event=>{if(event.target===event.currentTarget&&!groupSaving)setGroupCreateDialog(null)}}><form className="group-create-dialog" role="dialog" aria-modal="true" aria-labelledby="group-create-title" onSubmit={event=>{event.preventDefault();void createGroup()}} onKeyDown={event=>{if(event.key==='Escape'&&!groupSaving){event.preventDefault();setGroupCreateDialog(null)}else if(event.key==='Tab'){const choices=Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled)'));const first=choices[0],last=choices.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}}}}>
+        <header><div><strong id="group-create-title">Create group chat</strong><span>Select 2 to 6 of your Bots</span></div><IconButton name="close" label="Close group chat" onClick={()=>{if(!groupSaving)setGroupCreateDialog(null)}} /></header>
+        <label className="group-name-field">Group name<input autoFocus maxLength={60} placeholder="Name this group" value={groupCreateDialog.name} disabled={groupSaving} onChange={event=>setGroupCreateDialog(current=>current?{...current,name:event.target.value,requestId:crypto.randomUUID()}:null)} /></label>
+        <div className="group-bot-options" aria-label="Choose group Bots">{state.bots.map(bot=>{const selected=groupCreateDialog.botIds.includes(bot.id),limitReached=groupCreateDialog.botIds.length>=6&&!selected;return <label key={bot.id} className={`group-bot-option ${selected?'selected':''}`}><input type="checkbox" checked={selected} disabled={groupSaving||limitReached} onChange={()=>setGroupCreateDialog(current=>{if(!current)return null;const botIds=current.botIds.includes(bot.id)?current.botIds.filter(id=>id!==bot.id):current.botIds.length<6?[...current.botIds,bot.id]:current.botIds;return{...current,botIds,requestId:crypto.randomUUID()}})} /><Avatar bot={bot} size={32}/><span><strong>{bot.name}</strong>{bot.label&&<small>{bot.label}</small>}</span></label>})}</div>
+        {groupError&&<p className="group-create-error" role="alert">{groupError}</p>}
+        <footer><span>{groupCreateDialog.botIds.length} / 6 selected</span><button type="button" disabled={groupSaving} onClick={()=>setGroupCreateDialog(null)}>Cancel</button><button type="submit" disabled={groupSaving||groupCreateDialog.botIds.length<2||!groupCreateDialog.name.trim()}>{groupSaving?'Creating…':'Create group'}</button></footer>
+      </form></div>}
       {createDialog && <div className="create-overlay" onMouseDown={event=>{if(event.target===event.currentTarget&&!savingBot)setCreateDialog(null)}}><form className="create-dialog" role="dialog" aria-modal="true" aria-labelledby="create-title" onSubmit={event=>{event.preventDefault();void createBot(createDialog)}} onKeyDown={handleCreateDialogKey}>
         <header><strong id="create-title">Create New Bot</strong><IconButton name="close" label="Close create Bot" onClick={()=>{if(!savingBot)setCreateDialog(null)}} /></header>
         <div className="create-preview"><Avatar bot={createDialog} size={112}/></div>

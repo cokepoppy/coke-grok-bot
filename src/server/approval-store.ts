@@ -3,6 +3,21 @@ import type { Pool,PoolConnection,RowDataPacket } from 'mysql2/promise';
 import type { ResultSetHeader } from 'mysql2';
 import type { Session } from './tenant-store.ts';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function approvalActionHash(action:string):string{
+ let canonical=action;
+ try{
+  const value=JSON.parse(action) as {kind?:unknown;action?:unknown;screenshotSha256?:unknown};
+  // A focused Chromium address bar can blink while an owner reviews a Navigate
+  // request. The approved source and destination URLs remain bound by page and
+  // stateSha256; the screenshot is retained for the approval card, but its
+  // volatile pixels do not invalidate this URL-level operation.
+  if(value&&value.kind==='browser'&&value.action==='navigate'&&typeof value.screenshotSha256==='string'){
+   delete (value as {screenshotSha256?:unknown}).screenshotSha256;
+   canonical=JSON.stringify(value);
+  }
+ }catch{/* Non-JSON legacy approvals stay byte-for-byte bound. */}
+ return createHash('sha256').update(canonical).digest('hex');
+}
 export interface Approval { id:string;runId:string;action:string;status:'pending'|'approved'|'denied'|'consumed'|'expired';expiresAt:Date;hasScreenshot?:boolean }
 /**
  * A decision authorizes one exact server-normalized action once. The caller
@@ -37,7 +52,7 @@ export class ApprovalStore {
    await c.execute(`DELETE s FROM approval_screenshots s JOIN run_approvals a ON a.id=s.approval_id WHERE a.expires_at<=UTC_TIMESTAMP(3)`);
    const [runs]=await c.execute<RowDataPacket[]>(`SELECT id FROM agent_runs WHERE id=? AND lease_id=? AND status='running' AND lease_until>UTC_TIMESTAMP(3) FOR UPDATE`,[runId,leaseId]);
    if(!runs.length)return null;
-   const id=randomUUID(),hash=createHash('sha256').update(clean).digest('hex');
+   const id=randomUUID(),hash=approvalActionHash(clean);
    await c.execute(`INSERT INTO run_approvals (id,run_id,action_text,action_hash,status,expires_at) VALUES (?,?,?,?,'pending',DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? SECOND))`,[id,runId,clean,hash,ttlSeconds]);
    if(image)await c.execute('INSERT INTO approval_screenshots (approval_id,image) VALUES (?,?)',[id,image]);
    const [rows]=await c.execute<RowDataPacket[]>('SELECT expires_at AS expiresAt FROM run_approvals WHERE id=?',[id]);
@@ -68,7 +83,7 @@ export class ApprovalStore {
  }
  async consume(runId:string,leaseId:string,id:string,action:string):Promise<boolean>{
   const clean=action.trim();if(!uuid.test(runId)||!uuid.test(leaseId)||!uuid.test(id)||!clean||clean.length>4000)throw new Error('Invalid approval consumption');
-  const hash=createHash('sha256').update(clean).digest('hex');
+  const hash=approvalActionHash(clean);
   const [result]=await this.pool.execute<ResultSetHeader>(`UPDATE run_approvals a JOIN agent_runs r ON r.id=a.run_id SET a.status='consumed',a.consumed_at=UTC_TIMESTAMP(3) WHERE a.id=? AND a.run_id=? AND a.action_hash=? AND a.status='approved' AND a.expires_at>UTC_TIMESTAMP(3) AND r.status='running' AND r.lease_id=? AND r.lease_until>UTC_TIMESTAMP(3)`,[id,runId,hash,leaseId]);
   return result.affectedRows===1;
  }

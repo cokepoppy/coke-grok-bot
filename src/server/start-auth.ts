@@ -6,6 +6,7 @@ import { GoogleAuthService, GoogleIdentityProvider } from './google-auth.ts';
 import { createAuthServer } from './auth-http.ts';
 import { parsePublicUrl } from './public-url.ts';
 import { BotStore } from './bot-store.ts';
+import { GroupChatStore } from './group-chat-store.ts';
 import { startPiRuntime } from './pi-runtime.ts';
 
 function required(key: string): string {
@@ -37,13 +38,18 @@ async function main() {
   const pool = mysql.createPool({ host: required('COKE_GROK_MYSQL_HOST'), port: mysqlPort, user: required('COKE_GROK_MYSQL_USER'), database: required('COKE_GROK_MYSQL_DATABASE'), password, timezone: 'Z', connectionLimit: 10 });
   const store = new TenantStore(pool);
   const bots = new BotStore(pool);
+  const groupChats = new GroupChatStore(pool);
   try { await store.migrate(); await bots.migrate(); await store.pruneExpiredAuth(); }
   catch (error) { await pool.end(); throw error; }
   let pi: Awaited<ReturnType<typeof startPiRuntime>>;
   try { pi = await startPiRuntime(pool); } catch (error) { await pool.end(); throw error; }
+  if (pi) {
+    try { await groupChats.migrate(); }
+    catch (error) { await pi.close(); await pool.end(); throw error; }
+  }
   const cleanup = setInterval(() => { void store.pruneExpiredAuth().catch(() => console.error('Expired auth cleanup failed.')); }, 60 * 60 * 1000);
   cleanup.unref();
-  const server = createAuthServer(new GoogleAuthService(store, provider, origin), origin, staticDirectory, bots, pi?.runs, pi?.approvals, pi?.computer, pi?.engine || 'pi', pi?.files, pi?.workspaceFiles);
+  const server = createAuthServer(new GoogleAuthService(store, provider, origin), origin, staticDirectory, bots, pi?.runs, pi?.approvals, pi?.computer, pi?.engine || 'pi', pi?.files, pi?.workspaceFiles, pi ? groupChats : undefined);
   server.listen(port, process.env.COKE_GROK_AUTH_HOST || '127.0.0.1', () => console.log(`Auth service listening on port ${port}`));
   for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => { clearInterval(cleanup); server.close(() => { void (async () => { await pi?.close(); await pool.end(); })(); }); });
 }

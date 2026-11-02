@@ -10,9 +10,10 @@ import { parsePublicUrl } from './public-url.ts';
 import { cleanUploadName, uploadExtension, WorkspaceFileStore, validateUploadSize } from './file-store.ts';
 import { WorkspaceFileTransportError, type WorkspaceFileTransport } from './workspace-file-client.ts';
 import {safeDiagnosticMetadata} from './safe-diagnostics.ts';
+import {GroupRequestConflict,type GroupChatStore} from './group-chat-store.ts';
 
 // Mount only behind a trusted proxy that preserves the configured Host.
-export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi', files?:WorkspaceFileStore, workspaceFiles?:WorkspaceFileTransport) {
+export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi', files?:WorkspaceFileStore, workspaceFiles?:WorkspaceFileTransport, groupChats?:GroupChatStore) {
   const origin = parsePublicUrl(publicOrigin);
   return createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -57,6 +58,9 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         try{await computer.action(session,botId,action,signal);return reply(200,{ok:true})}catch(error){console.error('Computer request failed',{operation:'action',...safeDiagnosticMetadata(error)});return reply(503,{error:'Service unavailable'})}
       }
       const botPath = `${origin.prefix}/api/bots`;
+      const groupPath = `${origin.prefix}/api/groups`;
+      const groupMatch = url.pathname.match(new RegExp(`^${groupPath}/([0-9a-f-]{36})$`,'i'));
+      const groupMessagesMatch = url.pathname.match(new RegExp(`^${groupPath}/([0-9a-f-]{36})/messages$`,'i'));
       const botMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})$`));
       const botFilesMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/files$`));
       const fileDownloadMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/files/([0-9a-f-]{36})$`));
@@ -67,6 +71,34 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
       const approvalListMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/runs/([0-9a-f-]{36})/approvals$`));
       const approvalMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/approvals/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`, 'i'));
       const approvalScreenshotMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/approvals/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})/screenshot$`, 'i'));
+      if(groupChats&&(url.pathname===groupPath||groupMatch||groupMessagesMatch)){
+        const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value))};
+        const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated'});
+        if(req.method==='GET'&&url.pathname===groupPath)return reply(200,{groups:await groupChats.list(session)});
+        if(req.method==='GET'&&groupMatch){const chat=await groupChats.get(session,groupMatch[1]);return chat?reply(200,chat):reply(404,{error:'Not found'})}
+        if(req.method!=='POST'||(url.pathname!==groupPath&&!groupMessagesMatch))return reply(405,{error:'Method not allowed'});
+        if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
+        if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return reply(415,{error:'Expected JSON'});
+        let size=0;const chunks:Buffer[]=[];for await(const chunk of req){size+=chunk.length;if(size>12000)return reply(413,{error:'Request too large'});chunks.push(chunk)}
+        let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return reply(400,{error:'Invalid JSON'})}
+        if(!body||typeof body!=='object'||Array.isArray(body))return reply(400,{error:'Invalid request'});
+        try{
+          if(url.pathname===groupPath){
+            const value=body as {requestId?:unknown;name?:unknown;botIds?:unknown};
+            if(typeof value.requestId!=='string'||typeof value.name!=='string')return reply(400,{error:'Invalid group'});
+            const group=await groupChats.create(session,{requestId:value.requestId,name:value.name,botIds:value.botIds});
+            return group?reply(201,{group}):reply(404,{error:'Not found'});
+          }
+          const value=body as {requestId?:unknown;text?:unknown};
+          if(typeof value.requestId!=='string'||typeof value.text!=='string')return reply(400,{error:'Invalid group message'});
+          const chat=await groupChats.sendMessage(session,groupMessagesMatch![1],value.requestId,value.text);
+          return chat?reply(202,chat):reply(404,{error:'Not found'});
+        }catch(error){
+          if(error instanceof GroupRequestConflict)return reply(409,{error:'Request ID already used'});
+          if(error instanceof Error&&/^Invalid group(?: message)?$/.test(error.message))return reply(400,{error:'Invalid request'});
+          throw error;
+        }
+      }
       if (files && workspaceFiles && (botFilesMatch || fileDownloadMatch)) {
         const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value))};
         const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated'});
