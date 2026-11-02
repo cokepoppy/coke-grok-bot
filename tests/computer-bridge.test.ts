@@ -4,11 +4,11 @@ import {randomUUID} from 'node:crypto';
 import {ComputerBridge,type RunScope} from '../src/server/computer-bridge.ts';
 const scope:RunScope={owner:{tenantId:randomUUID(),userId:randomUUID()},botId:randomUUID(),runId:randomUUID(),leaseId:randomUUID()};
 test('bridge refuses expired or mismatched run scopes before reading a desktop',async()=>{
- let calls=0,live=false;const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>{calls++;return {owner:'agent' as const,url:'https://example.test/',screenshotSha256:'a'.repeat(64)}},inspect:async()=>{calls++;return {ready:true}},screenshot:async()=>{calls++;return Buffer.from('png')},performIfUnchanged:async()=>{calls++;return {ready:true}}};
+ let calls=0,marked=0,live=false;const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>{calls++;return {owner:'agent' as const,url:'https://example.test/',screenshotSha256:'a'.repeat(64)}},inspect:async()=>{calls++;return {ready:true}},screenshot:async()=>{calls++;return Buffer.from('png')},performIfUnchanged:async()=>{calls++;return {ready:true}}};
  const approvals={propose:async()=>null,consume:async()=>false,status:async()=>null};
- const bridge=new ComputerBridge({hasLiveLease:async(owner,runId,leaseId,botId)=>live&&owner.userId===scope.owner.userId&&runId===scope.runId&&leaseId===scope.leaseId&&botId===scope.botId},approvals,()=>worker),signal=new AbortController().signal;
+ const bridge=new ComputerBridge({hasLiveLease:async(owner,runId,leaseId,botId)=>live&&owner.userId===scope.owner.userId&&runId===scope.runId&&leaseId===scope.leaseId&&botId===scope.botId,markComputerUsed:async()=>{marked++;return true}},approvals,()=>worker),signal=new AbortController().signal;
  await assert.rejects(bridge.inspect(scope,signal));await assert.rejects(bridge.screenshot(scope,signal));assert.equal(calls,0);
- live=true;assert.deepEqual(await bridge.inspect(scope,signal),{ready:true});
+ live=true;assert.deepEqual(await bridge.inspect(scope,signal),{ready:true});assert.equal(marked,1);
  await assert.rejects(bridge.inspect({...scope,owner:{...scope.owner,userId:randomUUID()}},signal));
  await assert.rejects(bridge.propose({...scope,leaseId:randomUUID()},{kind:'desktop',action:'click',x:1,y:1},signal));assert.equal(calls,1);
  const abort=new AbortController();abort.abort();await assert.rejects(bridge.screenshot(scope,abort.signal));assert.equal(calls,1);
@@ -25,7 +25,7 @@ test('terminal approval is exact, lease-bound, screenshot-bound, and consumed be
   snapshotWithImage:async()=>({state:{owner,url:'https://example.test/',screenshotSha256:screenshot},image:Buffer.from('screenshot')}),
   inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async()=>{workerActions++;return {ready:true}},
  };
- const bridge=new ComputerBridge({hasLiveLease:async()=>true},approvals,()=>worker),signal=new AbortController().signal;
+ const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>true},approvals,()=>worker),signal=new AbortController().signal;
  const input={kind:'terminal',action:'run',command:'printf approved',directory:'task'};
  const approval=await bridge.propose(scope,input,signal);assert.ok(approval.id);assert.match(actionText,/printf approved/);
  assert.deepEqual(await bridge.execute(scope,approval.id,input,signal),{approved:true});assert.equal(consumed,1);assert.equal(workerActions,0);

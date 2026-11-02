@@ -39,11 +39,13 @@ test('DSH computer screenshot becomes a durable model image attachment', async (
     const { tools, saved, reference } = mount();
     const desktop = tools.get('computer_desktop');
     assert.ok(desktop);
+    assert.match(desktop.description, /full 1440 x 900 screenshot/);
     const value = await desktop.execute({ action: 'screenshot' }, { signal: new AbortController().signal });
     assert.equal(saved.length, 1);
     assert.equal(saved[0].mediaType, 'image/png');
     assert.deepEqual([...saved[0].data], [137,80,78,71]);
     assert.equal(value.screenshot, reference);
+    assert.match(value.text, /origin \(0, 0\) at top-left/);
     assert.deepEqual(desktop.output.render({}, value), [
       { type: 'text', text: value.text },
       { type: 'image', attachment: reference },

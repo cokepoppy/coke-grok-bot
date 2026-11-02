@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { chromium } from 'playwright-core';
+import { PNG } from 'pngjs';
 
 const progress = message => { if (process.env.E2E_PROGRESS === '1') console.log(`[ui-e2e] ${message}`); };
 
@@ -16,6 +17,7 @@ child.stdout.on('data', chunk => { serverLog += chunk; });
 child.stderr.on('data', chunk => { serverLog += chunk; });
 const base = `http://127.0.0.1:${port}`;
 let browser;
+let authChild;
 try {
   for (let attempt = 0; attempt < 80; attempt++) {
     if (child.exitCode !== null) throw new Error(`Vite exited early: ${serverLog}`);
@@ -30,7 +32,7 @@ try {
   progress('browser started');
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(base, { waitUntil: 'networkidle' });
-  await page.getByText('本地界面预览', { exact: false }).waitFor();
+  await page.getByText('Local UI preview: data is stored only in this browser.', { exact: false }).waitFor();
   assert.equal(await page.locator('.bot-row').count(), 1);
   await page.keyboard.press('Control+N');
   assert.equal(await page.getByRole('dialog', { name: 'Create New Bot' }).isVisible(), true);
@@ -142,6 +144,122 @@ try {
   assert.ok(noticeBox.y >= titleBox.y + titleBox.height, 'Preview notice overlaps the chat title');
   assert.ok(composerBox.x >= 0 && composerBox.x + composerBox.width <= 390 && composerBox.y + composerBox.height <= 844, 'Composer is outside the viewport');
   await narrow.close();
+  const authPortServer = createServer();
+  await new Promise((resolve, reject) => authPortServer.listen(0, '127.0.0.1', resolve).once('error', reject));
+  const authPort = authPortServer.address().port;
+  await new Promise(resolve => authPortServer.close(resolve));
+  authChild = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(authPort), '--strictPort'], {
+    env: { ...process.env, VITE_REQUIRE_AUTH: 'true' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let authServerLog = '';
+  authChild.stdout.on('data', chunk => { authServerLog += chunk; });
+  authChild.stderr.on('data', chunk => { authServerLog += chunk; });
+  const authBase = `http://127.0.0.1:${authPort}`;
+  for (let attempt = 0; attempt < 80; attempt++) {
+    if (authChild.exitCode !== null) throw new Error(`Authenticated Vite exited early: ${authServerLog}`);
+    try { const response = await fetch(authBase); if (response.ok) break; } catch { /* Wait for local server. */ }
+    if (attempt === 79) throw new Error(`Authenticated Vite did not start: ${authServerLog}`);
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  const productShellContext = await browser.newContext({ viewport: { width: 995, height: 675 }, deviceScaleFactor: 2 });
+  const productShellPage = await productShellContext.newPage();
+  productShellPage.on('pageerror', error => errors.push(error.message));
+  const demoAccount = { userId: 'visual-user', tenantId: 'visual-tenant', email: 'visual@example.test', name: 'Armand Segall', role: 'owner' };
+  const referenceActivity = new Date();
+  referenceActivity.setHours(15, 33, 0, 0);
+  const yesterdayActivity = new Date(referenceActivity.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  const demoBot = { id: 'sales-outbound', name: 'Sales Outbound', label: 'Sales', color: '#f19d39', shape: 'drop', group: 'Unassigned', pinned: false, hidden: false, preview: 'Done.', lastActivityAt: referenceActivity.toISOString() };
+  const demoBots = [
+    { id: 'chief', name: 'Chief', label: '', color: '#50b8a6', shape: 'round', group: 'Unassigned', pinned: true, hidden: false, preview: 'booked the venue and sent the c…', lastActivityAt: yesterdayActivity },
+    demoBot,
+    { id: 'inbox-manager', name: 'Inbox Manager', label: '', color: '#6259e7', shape: 'hex', group: 'Unassigned', pinned: false, hidden: false, preview: 'sent. inbox at zero, 5 drafts park…', lastActivityAt: new Date(referenceActivity.getFullYear(), referenceActivity.getMonth(), referenceActivity.getDate(), 12, 33).toISOString() },
+    { id: 'account-manager', name: 'Account Manager', label: '', color: '#8a55f0', shape: 'round', group: 'Unassigned', pinned: false, hidden: false, preview: "invite's out to vicky. globex note …", lastActivityAt: new Date(referenceActivity.getFullYear(), referenceActivity.getMonth(), referenceActivity.getDate(), 10, 33).toISOString() },
+    { id: 'talent-scout', name: 'Talent Scout', label: '', color: '#3e83f5', shape: 'round', group: 'Unassigned', pinned: false, hidden: false, preview: '3 intros drafted in your voice, hel…', lastActivityAt: new Date(referenceActivity.getFullYear(), referenceActivity.getMonth(), referenceActivity.getDate(), 7, 33).toISOString() },
+    { id: 'expense-manager', name: 'Expense Manager', label: '', color: '#ef6e2d', shape: 'round', group: 'Unassigned', pinned: false, hidden: false, preview: 'report filed. 9 receipts, nothing o…', lastActivityAt: new Date(referenceActivity.getFullYear(), referenceActivity.getMonth(), referenceActivity.getDate(), 11, 33).toISOString() },
+    { id: 'offsite-crew', name: 'Offsite crew', label: '', color: '#48b9a7', shape: 'round', group: 'Unassigned', pinned: false, hidden: false, preview: "that leaves the pipeline. i'd spin …", lastActivityAt: new Date(referenceActivity.getFullYear(), referenceActivity.getMonth(), referenceActivity.getDate(), 9, 33).toISOString() },
+  ];
+  const demoMessages = [
+    { id: 'welcome-message', role: 'bot', text: 'Hey Armand, good to meet you. What do you want me around for? Anything concrete, or more of a general sidekick?' },
+  ];
+  const demoRuns = [
+    { id: 'outbound-run', prompt: 'Overnight pipeline generation and outbound.\n\nPick eligible prospects from this Google Sheet, research them on the web, grab context on contacts and accounts from Hex, Sumble, and Salesforce. Draft email and LinkedIn sequences in my voice.', status: 'completed', result: "Checking what's connected. Hex, Gmail, and LinkedIn are already signed in. Salesforce isn't.", recoveryState: 'none', replacementRunId: null, computerUsed: false, updatedAt: referenceActivity.toISOString(), files: [] },
+    { id: 'live-computer-run', prompt: 'Sign in to Salesforce so I can see the accounts you own.', status: 'completed', result: 'Done.', recoveryState: 'none', replacementRunId: null, computerUsed: true, updatedAt: referenceActivity.toISOString(), files: [] },
+  ];
+  const demoScreen = new PNG({ width: 32, height: 20 });
+  for (let y = 0; y < demoScreen.height; y++) for (let x = 0; x < demoScreen.width; x++) {
+    const offset = (demoScreen.width * y + x) << 2;
+    demoScreen.data[offset] = 60 + x * 3;
+    demoScreen.data[offset + 1] = 115 + y * 4;
+    demoScreen.data[offset + 2] = 160;
+    demoScreen.data[offset + 3] = 255;
+  }
+  const demoScreenBytes = PNG.sync.write(demoScreen);
+  await productShellPage.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/api/bots/sales-outbound/computer/screenshot')) return route.fulfill({ status: 200, contentType: 'image/png', body: demoScreenBytes });
+    const data = path.endsWith('/api/auth/me') ? demoAccount
+      : path.endsWith('/api/auth/features') ? { agent: true, engine: 'dsh' }
+        : path.endsWith('/api/bots') ? { bots: demoBots }
+          : path.endsWith('/api/bots/sales-outbound/messages') ? { messages: demoMessages }
+            : path.endsWith('/api/bots/sales-outbound/runs') ? { runs: demoRuns }
+              : path.includes('/approvals') ? { approvals: [] }
+                : {};
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
+  });
+  await productShellPage.addInitScript(({ storageKey, state }) => localStorage.setItem(storageKey, JSON.stringify(state)), {
+    storageKey: 'coke-grok-bot:desktop-preview:v1:visual-tenant:visual-user:server-chat-v1',
+    state: { bots: [demoBot], activeId: demoBot.id, messages: {}, showOnboarding: {} },
+  });
+  await productShellPage.goto(authBase, { waitUntil: 'networkidle' });
+  await productShellPage.getByText('Hey Armand, good to meet you.', { exact: false }).waitFor();
+  await productShellPage.getByText('Overnight pipeline generation and outbound.', { exact: false }).waitFor();
+  const appBox = await productShellPage.locator('.app.product-shell').boundingBox();
+  const sidebarBox = await productShellPage.locator('.sidebar').boundingBox();
+  const productComposerBox = await productShellPage.locator('.composer').boundingBox();
+  assert.deepEqual(appBox && { x: appBox.x, y: appBox.y, width: appBox.width, height: appBox.height }, { x: 6, y: 6, width: 983, height: 663 }, 'Authenticated product window should match the supplied 1990×1350 screenshot at 2× scale');
+  assert.ok(sidebarBox && Math.abs(sidebarBox.x - 6) <= 1 && Math.abs(sidebarBox.y - 50) <= 1 && Math.abs(sidebarBox.width - 280) <= 1, 'Product sidebar should align to the window header and match the reference width');
+  assert.ok(productComposerBox && productComposerBox.x >= sidebarBox.x + sidebarBox.width && productComposerBox.x + productComposerBox.width <= 989 && productComposerBox.y + productComposerBox.height <= 674, 'Product composer should stay inside the two-column chat area');
+  assert.equal(await productShellPage.getByLabel('Search bots').isVisible(), true);
+  assert.equal(await productShellPage.locator('.bot-row').count(), 7, 'The official reference state shows the full Bot list');
+  assert.equal(await productShellPage.locator('.bot-row.selected time').innerText(), '15:33');
+  assert.equal(await productShellPage.locator('.date-line').innerText(), '15:33', 'The chat timestamp should reflect the latest activity');
+  const completedActivityCard=productShellPage.getByRole('region',{name:'Computer activity · Done'});
+  await completedActivityCard.waitFor();
+  await completedActivityCard.getByRole('img',{name:'Current cloud computer screen'}).waitFor();
+  assert.equal(await productShellPage.locator('.run-status').filter({ hasText: 'Completed' }).count(), 0, 'Completed agent responses should read as ordinary chat; the Computer card carries its own Done state');
+  await productShellPage.waitForFunction(()=>{const image=document.querySelector('.computer-activity-screen img');return Boolean(image&&image.complete&&image.naturalWidth===32)});
+  assert.equal(await productShellPage.getByRole('button', { name: 'New chat' }).isVisible(), true, 'the top-left create control should not be clipped by the sidebar');
+  const computerPanelToggle = productShellPage.getByRole('button', { name: "Open Sales Outbound's computer" });
+  assert.equal(await computerPanelToggle.count(), 1, 'The default workspace should show the monitor control');
+  const computerPanel = productShellPage.locator('.details-panel');
+  assert.equal(await computerPanel.count(), 0, 'The default workspace should keep the Computer panel closed');
+  assert.ok(await productShellPage.locator('.account-name').textContent().then(value => value?.includes('Armand Segall')), 'The account identity should appear in the sidebar footer');
+  const defaultConversationBox = await productShellPage.locator('.conversation').boundingBox();
+  const mainBox = await productShellPage.locator('.main-shell').boundingBox();
+  assert.ok(mainBox && defaultConversationBox && defaultConversationBox.width >= mainBox.width * 0.94, 'The default two-column layout should give nearly all main-column width to chat');
+  assert.ok(await productShellPage.evaluate(() => document.documentElement.scrollWidth === window.innerWidth), 'Product shell should not create horizontal page whitespace');
+  await mkdir('artifacts/ui', { recursive: true });
+  await productShellPage.screenshot({ path: 'artifacts/ui/authenticated-product-window-reference-size-20261102.png' });
+  demoRuns[1].status = 'running';
+  demoRuns[1].result = 'Salesforce needs your attention before I can continue.';
+  await productShellPage.reload({ waitUntil: 'networkidle' });
+  const runningActivityCard=productShellPage.getByRole('region',{name:'Computer activity · Working'});
+  await runningActivityCard.waitFor();
+  await runningActivityCard.getByRole('img',{name:'Current cloud computer screen'}).waitFor();
+  await productShellPage.waitForFunction(()=>{const image=document.querySelector('.computer-activity-screen img');return Boolean(image&&image.complete&&image.naturalWidth===32)});
+  await computerPanelToggle.click();
+  await computerPanel.waitFor({ state: 'visible' });
+  const computerPanelBox = await computerPanel.boundingBox();
+  const conversationBox = await productShellPage.locator('.conversation').boundingBox();
+  assert.ok(computerPanelBox && computerPanelBox.x + computerPanelBox.width <= 989 && computerPanelBox.width >= 320, 'Expanded Computer panel should fit inside the rounded workspace window');
+  assert.ok(conversationBox && conversationBox.width >= 320, 'Opening the Computer panel should preserve useful chat width');
+  await productShellPage.screenshot({ path: 'artifacts/ui/authenticated-product-computer-panel-20261102.png' });
+  await productShellPage.getByRole('button', { name: 'Hide computer' }).click();
+  await computerPanel.waitFor({ state: 'hidden' });
+  await productShellContext.close();
+  authChild.kill('SIGTERM');
+  authChild = undefined;
   const reference = await context.newPage();
   reference.on('pageerror', error => errors.push(error.message));
   await reference.goto(`${base}/?reference=101-new-bot`, { waitUntil: 'networkidle' });
@@ -393,8 +511,9 @@ try {
 
   assert.deepEqual(errors, []);
   await context.close();
-  console.log('UI E2E passed: local preview labeling, create/rename, messages, reload, switching, browser-profile isolation, narrow-layout sanity, 101 reference screenshot, Grok Bot website-demo static/manual states, homepage animation including takeover through Done, automatic latest-message scrolling, no page errors.');
+  console.log('UI E2E passed: local preview, authenticated two-column workspace, live computer activity card and screenshot, activity time, on-demand Computer panel, create/rename, messages, reload, switching, browser-profile isolation, narrow-layout sanity, 101 reference screenshot, Grok Bot website-demo static/manual states, homepage animation including takeover through Done, automatic latest-message scrolling, no page errors.');
 } finally {
   if (browser) await browser.close();
+  if (authChild) authChild.kill('SIGTERM');
   child.kill('SIGTERM');
 }

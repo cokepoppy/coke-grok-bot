@@ -5,10 +5,10 @@ import { WebsiteDemoApp } from './website-demo';
 import './shell.css';
 
 type Shape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle' | 'oval' | 'square' | 'pill' | 'spark' | 'heart' | 'flower' | 'pentagon' | 'star';
-type Bot = { id: string; name: string; label: string; color: string; shape: Shape; group: string; preview: string; pinned?: boolean; hidden?: boolean };
+type Bot = { id: string; name: string; label: string; color: string; shape: Shape; group: string; preview: string; lastActivityAt?: string | null; pinned?: boolean; hidden?: boolean };
 type Message = { id: string; role: 'user' | 'bot'; text: string };
 type RunFile = { id: string; name: string; mimeType: string; size: number; sha256: string; kind: 'input' | 'output' };
-type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged'; replacementRunId: string | null; files: RunFile[] };
+type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; updatedAt?: string | null };
 type Approval = { id: string; action: string; status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired'; hasScreenshot?: boolean };
 type PreviewState = { bots: Bot[]; activeId: string; messages: Record<string, Message[]>; showOnboarding: Record<string, boolean> };
 type IconName = 'search' | 'plus' | 'mic' | 'sound' | 'close' | 'panel' | 'share' | 'screen' | 'arrow' | 'smile' | 'reply' | 'more';
@@ -87,6 +87,26 @@ function Avatar({ bot, size = 44 }: { bot: Pick<Bot, 'color' | 'shape'>; size?: 
   </svg>;
 }
 
+function formatBotTime(value?: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const today = new Date();
+  if (date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate()) {
+    return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' }).format(date);
+  }
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  if (date.getFullYear() === yesterday.getFullYear() && date.getMonth() === yesterday.getMonth() && date.getDate() === yesterday.getDate()) return 'Yesterday';
+  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(date);
+}
+
+function runPreview(run: AgentRun): string {
+  if (run.status === 'running') return 'Working…';
+  if (run.status === 'queued') return 'Queued';
+  if (run.status === 'unknown') return 'Outcome unknown';
+  return (run.result || (run.status === 'completed' ? 'Done.' : 'Failed')).replace(/\s+/g, ' ').trim().slice(0, 180);
+}
+
 function IconButton({ name, label, onClick, className = '', buttonRef }: { name: IconName; label: string; onClick?: () => void; className?: string; buttonRef?: React.Ref<HTMLButtonElement> }) {
   return <button ref={buttonRef} type="button" className={`icon-button ${className}`} aria-label={label} title={label} onClick={onClick}><Icon name={name} /></button>;
 }
@@ -146,6 +166,33 @@ function ComputerPanel({name,botId}:{name:string;botId:string}) {
   </>;
 }
 
+function ComputerActivityCard({run,botId,showScreen,onOpenComputer}:{run:AgentRun;botId:string;showScreen:boolean;onOpenComputer:()=>void}) {
+  const [image,setImage]=useState('');
+  const [unavailable,setUnavailable]=useState(false);
+  const imageUrl=useRef('');
+  const status=run.status==='running'?'Working':run.status==='queued'?'Queued':run.status==='completed'?'Done':run.status==='failed'?'Failed':'Review';
+  useEffect(()=>{
+    if(!showScreen||run.status==='queued')return;
+    let stopped=false,timer:ReturnType<typeof setTimeout>|undefined;
+    const controller=new AbortController();
+    const refresh=async()=>{
+      try{
+        const response=await fetch(`${import.meta.env.BASE_URL}api/bots/${encodeURIComponent(botId)}/computer/screenshot`,{credentials:'same-origin',cache:'no-store',signal:controller.signal});
+        if(!response.ok||response.headers.get('content-type')?.split(';')[0]!=='image/png')throw new Error();
+        const next=URL.createObjectURL(await response.blob());if(stopped){URL.revokeObjectURL(next);return}
+        const previous=imageUrl.current;imageUrl.current=next;setImage(next);setUnavailable(false);if(previous)URL.revokeObjectURL(previous);
+      }catch(error){if(!stopped&&error instanceof Error&&error.name!=='AbortError'){setImage('');setUnavailable(true)}}
+      finally{if(!stopped&&run.status==='running')timer=setTimeout(refresh,2000)}
+    };
+    void refresh();
+    return()=>{stopped=true;controller.abort();if(timer)clearTimeout(timer);if(imageUrl.current)URL.revokeObjectURL(imageUrl.current);imageUrl.current=''};
+  },[botId,run.id,run.status,showScreen]);
+  return <section className="computer-activity-card" aria-label={`Computer activity · ${status}`}>
+    <header><strong>Computer</strong><span className={`computer-activity-status ${run.status}`}><i />{status}</span></header>
+    {showScreen&&image?<button type="button" className="computer-activity-screen" onClick={onOpenComputer} aria-label="Open this Bot's computer"><img src={image} alt="Current cloud computer screen" /></button>:<button type="button" className="computer-activity-open" onClick={onOpenComputer}>{unavailable?'Open computer to inspect the screen':'View computer screen'}</button>}
+  </section>;
+}
+
 function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () => void }) {
   const reference = new URLSearchParams(window.location.search).get('reference') === '101-new-bot';
   const remote = Boolean(account) && !reference;
@@ -167,6 +214,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
   const [panel, setPanel] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [hiddenOpen,setHiddenOpen]=useState(false);
   const sidebarQueue=useRef<Record<string,Promise<void>>>({});
   const sidebarSequence=useRef<Record<string,number>>({});
@@ -224,10 +272,10 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     if (!remote) return;
     const controller = new AbortController();
     fetch(`${import.meta.env.BASE_URL}api/bots`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
-      .then(async response => { if (!response.ok) throw new Error('bots unavailable'); return response.json() as Promise<{ bots: Omit<Bot, 'preview'>[] }>; })
+      .then(async response => { if (!response.ok) throw new Error('bots unavailable'); return response.json() as Promise<{ bots: Bot[] }>; })
       .then(({ bots }) => {
         if (!Array.isArray(bots)) throw new Error('invalid bots');
-        const mapped = bots.map(bot => ({ ...bot, preview: 'Start a conversation' }));
+        const mapped = bots.map(bot => ({ ...bot, preview: bot.preview || 'Start a conversation' }));
         savedNames.current = Object.fromEntries(mapped.map(bot => [bot.id, bot.name]));
         savedLabels.current = Object.fromEntries(mapped.map(bot => [bot.id, bot.label]));
         setState(current => ({ ...current, bots: mapped, activeId: mapped.some(bot => bot.id === current.activeId) ? current.activeId : mapped[0]?.id || '' }));
@@ -270,6 +318,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         if (controller.signal.aborted || uncertainMutation.current) return;
         setRunApprovals(Object.fromEntries(pending));
         setRunHistory({ id, status: 'ready', runs: value.runs });
+        const latest=value.runs.at(-1);
+        if(latest)setState(current=>({...current,bots:current.bots.map(bot=>bot.id===id?{...bot,preview:runPreview(latest),lastActivityAt:latest.updatedAt||bot.lastActivityAt}:bot)}));
         timer = setTimeout(() => void load(), 2000);
       } catch (error) {
         if (!controller.signal.aborted) setRunHistory(current => ({ id, status: 'error', runs: current.id === id ? current.runs : [] }));
@@ -427,7 +477,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
           const { run } = await response.json() as { run: AgentRun };
           if (!run || typeof run.id !== 'string' || typeof run.prompt !== 'string') throw new Error('invalid run response');
           setRunHistory(current => ({ id, status: 'ready', runs: [...current.runs.filter(item => item.id !== run.id), run] }));
-          setState(current => ({ ...current, bots: current.bots.map(bot => bot.id === id ? { ...bot, preview: clean } : bot) }));
+          setState(current => ({ ...current, bots: current.bots.map(bot => bot.id === id ? { ...bot, preview: clean || 'Attached files', lastActivityAt:new Date().toISOString() } : bot) }));
           setPendingFiles(current => ({...current,[id]:[]}));
           setPendingRunFiles(current => ({...current,[id]:[]}));
           if (activeIdRef.current === id) { setDraft(''); setCustomAnswer(''); }
@@ -437,7 +487,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${id}/messages`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: clean }) });
         if (!response.ok) throw new Error('save failed');
         const { message } = await response.json() as { message: Message };
-        setState(current => ({ ...current, messages: { ...current.messages, [id]: [...(current.messages[id] || []), message] }, bots: current.bots.map(bot => bot.id === id ? { ...bot, preview: clean } : bot) }));
+        setState(current => ({ ...current, messages: { ...current.messages, [id]: [...(current.messages[id] || []), message] }, bots: current.bots.map(bot => bot.id === id ? { ...bot, preview: clean, lastActivityAt:new Date().toISOString() } : bot) }));
         if (activeIdRef.current === id) { setDraft(''); setCustomAnswer(''); setNotice(true); }
       } catch {
         uncertainMutation.current = true;
@@ -447,7 +497,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       } finally { sendingRef.current = false; setSending(false); }
       return;
     }
-    setState(current => ({ ...current, messages: { ...current.messages, [active.id]: [...(current.messages[active.id] || []), { id: crypto.randomUUID(), role: 'user', text: clean }] }, bots: current.bots.map(bot => bot.id === active.id ? { ...bot, preview: clean } : bot), showOnboarding: { ...current.showOnboarding, [active.id]: false } }));
+    setState(current => ({ ...current, messages: { ...current.messages, [active.id]: [...(current.messages[active.id] || []), { id: crypto.randomUUID(), role: 'user', text: clean }] }, bots: current.bots.map(bot => bot.id === active.id ? { ...bot, preview: clean,lastActivityAt:new Date().toISOString() } : bot), showOnboarding: { ...current.showOnboarding, [active.id]: false } }));
     setDraft(''); setCustomAnswer(''); setNotice(true);
   }
   function stageFiles(files: File[]) {
@@ -577,16 +627,18 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     void next.finally(() => { if (avatarQueue.current[selected.id] === next) delete avatarQueue.current[selected.id]; });
   }
   const renderBotRow=(bot:Bot)=><div className="bot-row-wrap" key={bot.id}><button ref={element=>{sidebarRows.current[bot.id]=element}} type="button" className={`bot-row ${!newChat && bot.id === active?.id ? 'selected' : ''}`} aria-haspopup="menu" onClick={() => selectBot(bot.id)} onContextMenu={event=>{event.preventDefault();setSidebarMenu({id:bot.id,x:Math.max(0,Math.min(event.clientX,window.innerWidth-200)),y:Math.max(0,Math.min(event.clientY,window.innerHeight-265))})}}>
-          <Avatar bot={bot} size={46} /><span className="bot-row-content"><span className="bot-row-title"><span onDoubleClick={event=>{event.stopPropagation();beginSidebarRename(bot.id)}}>{bot.name}</span>{bot.label && <small>{bot.label}</small>}</span><span className="bot-preview">{bot.preview}</span></span>
+          <Avatar bot={bot} size={46} /><span className="bot-row-content"><span className="bot-row-title"><span onDoubleClick={event=>{event.stopPropagation();beginSidebarRename(bot.id)}}>{bot.name}</span>{bot.label && <small>{bot.label}</small>}<time dateTime={bot.lastActivityAt||undefined}>{formatBotTime(bot.lastActivityAt)}</time></span><span className="bot-preview">{bot.preview}</span></span>
         </button>{sidebarRename?.id===bot.id && <input ref={sidebarInput} className="sidebar-rename" aria-label="Rename Bot" maxLength={60} value={sidebarRename.value} onChange={event=>{const edit={id:bot.id,value:event.target.value};sidebarRenameRef.current=edit;setSidebarRename(edit)}} onBlur={event=>finishSidebarRename(bot.id,event.currentTarget.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur()}else if(event.key==='Escape'){event.preventDefault();sidebarRenameRef.current=null;setSidebarRename(null);sidebarRows.current[bot.id]?.focus()}}} />}</div>;
   const unresolvedOutcome = agentFeature === 'enabled' && runHistory.id === active?.id && runHistory.runs.some(run => run.status === 'unknown' && run.recoveryState === 'pending');
+  const latestComputerRunId=runHistory.runs.filter(run=>run.computerUsed).at(-1)?.id;
   const composerDisabled = remote && (sending || history.id !== active?.id || history.status !== 'ready' || agentFeature === 'loading' || agentFeature === 'error' || (agentFeature === 'enabled' && (runHistory.id !== active?.id || runHistory.status !== 'ready' || unresolvedOutcome)));
   if (botStatus === 'loading') return <main className="auth-page"><div className="auth-card">Loading your Bots…</div></main>;
   if (botStatus === 'error') return <main className="auth-page"><div className="auth-card"><p role="alert">Could not load your Bots.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></div></main>;
 
-  return <div className={`app ${reference ? 'reference-mode' : 'preview-mode'}`}>
+  return <div className={`app ${reference ? 'reference-mode' : 'preview-mode'} ${account ? 'product-shell' : ''}`}>
     <aside className="sidebar" aria-label="Bots">
-      <div className="sidebar-top"><IconButton name="search" label="Search bots" onClick={() => { setSearching(value => !value); setQuery(''); }} /><IconButton buttonRef={createTrigger} name="plus" label="New chat" onClick={() => { if(reference){setRecipientQuery('');setNewChat(true);setPanel(false)}else beginCreate(); }} /></div>
+      <div className="sidebar-top">{!account && <IconButton name="search" label="Search bots" onClick={() => { setSearching(value => !value); setQuery(''); }} />}<IconButton buttonRef={createTrigger} name="plus" label="New chat" onClick={() => { if(reference){setRecipientQuery('');setNewChat(true);setPanel(false)}else beginCreate(); }} /></div>
+      {account && <label className="product-search"><Icon name="search" /><input aria-label="Search bots" placeholder="Search" value={query} onChange={event => setQuery(event.target.value)} /></label>}
       {searching && <input className="search-input" aria-label="Search bots" value={query} placeholder="Search bots" onChange={event => setQuery(event.target.value)} />}
       <button className="primary-bot" type="button" onClick={() => setNotice(true)} aria-label="Primary bot preview"><Avatar bot={primary} size={80} /><span>{primary.name}</span><small>{primary.label}</small></button>
       <div className="sidebar-scroll">
@@ -597,7 +649,10 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         {filtered.length === 0 && <p className="empty-list">No matching bots</p>}
       </div>
       {reference && <button type="button" className="more-unreads">↓&nbsp; More unreads</button>}
-      <div className="sidebar-footer"><div className="account-dot">{account ? account.name.slice(0, 1).toUpperCase() : "M"}</div>{account && <button type="button" className="logout-button" onClick={onLogout}>Sign out</button>}<button type="button" className="connect-button" onClick={() => setNotice(true)}>Connect apps <span aria-hidden="true">◈◉▣</span></button></div>
+      <div className="sidebar-footer">{account ? <>
+        <button type="button" className="account-control" aria-label="Account menu" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen(value => !value)}><span className="account-dot">{account.name.slice(0, 1).toUpperCase()}</span><span className="account-name">{account.name}</span></button>
+        {accountMenuOpen && <div className="account-menu" role="menu" aria-label="Account"><button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); setNotice(true); }}>Connect apps</button><button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); onLogout?.(); }}>Sign out</button></div>}
+      </> : <><div className="account-dot">M</div><button type="button" className="connect-button" onClick={() => setNotice(true)}>Connect apps <span aria-hidden="true">◈◉▣</span></button></>}</div>
     </aside>
     {sidebarMenu && <div ref={sidebarMenuElement} role="menu" aria-label="Bot actions" className="sidebar-context-menu" style={{left:sidebarMenu.x,top:sidebarMenu.y}} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();const id=sidebarMenu.id;setSidebarMenu(null);sidebarRows.current[id]?.focus()}}}>
       <button type="button" role="menuitem" onClick={()=>menuBot&&changeSidebarState(menuBot.id,'pinned',!menuBot.pinned)}><BotMenuIcon name="pin" />{menuBot?.pinned?'Unpin':'Pin'}</button>
@@ -612,7 +667,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       <button type="button" role="menuitem" disabled title="Not available yet" className="danger"><BotMenuIcon name="delete" />Delete</button>
     </div>}
     <main className="main-shell">
-      {!reference && <div className="preview-notice" role="status">{remote ? (agentFeature === 'enabled' ? `${agentEngine === 'dsh' ? 'DeepSeek Harness' : 'Pi'} 任务在你的云电脑执行；同一台电脑的任务会排队。` : 'Bot 和消息保存在服务器；尚未连接云电脑或 Agent。原预览数据仍在本地，不会自动导入。') : '本地界面预览：数据仅保存在当前浏览器，尚未连接云电脑或 Agent。'}</div>}
+      {!reference && <div className="preview-notice" role="status">{remote ? (agentFeature === 'enabled' ? `${agentEngine === 'dsh' ? 'DeepSeek Harness' : 'Pi'} runs tasks on your persistent user computer. Bots share files and sign-ins; each Bot has its own screen, and tasks queue per screen.` : 'Bots and messages are stored on the server; the cloud computer and Agent are not connected. Local preview data is not imported.') : 'Local UI preview: data is stored only in this browser. No cloud computer or Agent is connected.'}</div>}
       {remote && agentFeature === 'error' && <div role="alert">Could not check Agent availability. Refresh to try again.</div>}
       {botError && !createDialog && <div role="alert">{botError}</div>}
       {newChat || !active ? <div className="new-chat-view" onKeyDown={event=>{if(event.key==='Escape'&&active){setNewChat(false);setRecipientQuery('')}}}>
@@ -621,15 +676,15 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         <div className="composer new-chat-composer"><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label="Message Bot" placeholder="Message Bot" disabled rows={1} /><IconButton name="mic" label="Voice input" className="voice-button" onClick={() => setNotice(true)} /></div>
       </div> : <>
         <div className={`chat-header ${panel ? 'panel-open' : ''}`}><button type="button" className="chat-title" onClick={() => setPanel(value => !value)}><Avatar bot={active} size={30} /><span>{active.name}</span></button></div>
-        <div className="header-actions"><IconButton name="share" label="Share bot" onClick={() => setNotice(true)} /><IconButton name="panel" label={panel ? 'Hide bot details' : 'Show bot details'} onClick={() => setPanel(value => !value)} /></div>
+        <div className="header-actions"><IconButton name="share" label="Share bot" onClick={() => setNotice(true)} /><IconButton name={account && !panel ? 'screen' : 'panel'} label={panel ? account ? 'Hide computer' : 'Hide bot details' : account ? `Open ${active.name}'s computer` : 'Show bot details'} onClick={() => { if (account) setTab('Computer'); setPanel(value => !value); }} /></div>
         <div className={`workspace ${panel ? 'with-panel' : ''}`}>
           <section className="conversation" aria-label={`Chat with ${active.name}`} onDragOver={event=>{if(remote&&agentFeature==='enabled'&&Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault()}} onDrop={event=>{if(!remote||agentFeature!=='enabled'||!event.dataTransfer.files.length)return;event.preventDefault();event.stopPropagation();stageFiles(Array.from(event.dataTransfer.files))}}>
             <div className="message-scroll">
               {remote && history.id === active.id && history.status === 'loading' && <div role="status">Loading messages…</div>}
               {remote && history.id === active.id && history.status === 'error' && <div role="alert">Could not confirm message history. Refresh to check it.</div>}
-              {messages.length > 0 && <div className="date-line">{reference ? 'Today 1:26 PM' : 'Today'}</div>}
+              {messages.length > 0 && <div className="date-line">{reference ? 'Today 1:26 PM' : account ? formatBotTime(active?.lastActivityAt) || 'Today' : 'Today'}</div>}
               {messages.map(message => <div key={message.id} className={`message-line ${message.role}`}><div className="message-bubble">{message.text}</div>{message.role === 'bot' && <div className="message-actions"><Icon name="smile" /><Icon name="reply" /><Icon name="more" /></div>}</div>)}
-              {remote && agentFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.map(run => <React.Fragment key={run.id}><div className="message-line user"><div className="message-bubble">{run.prompt}<RunFileCards files={(run.files||[]).filter(file=>file.kind==='input')} onPreview={setPreviewFile}/></div></div><div className="message-line bot"><div className="message-bubble"><span className="run-status">{run.status === 'unknown' && run.recoveryState === 'acknowledged' ? 'Outcome unknown · reviewed; queue resumed' : run.status === 'unknown' && run.recoveryState === 'retried' ? 'Outcome unknown · explicit retry recorded' : ({ queued: 'Queued · waiting for your computer', running: 'Working on your computer', completed: 'Completed', failed: 'Failed', unknown: 'Outcome unknown · check before retrying' } as const)[run.status]}</span>{run.result && <p>{run.result}</p>}<RunFileCards files={(run.files||[]).filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseRunFile}/>{run.status === 'unknown' && run.recoveryState === 'pending' && <section className="run-recovery" aria-label="Review uncertain task outcome"><p>The previous task may have run even though its result was not saved. Review the computer before deciding.</p><div><button type="button" disabled={Boolean(resolvingRun) || runHistory.status !== 'ready'} onClick={() => void recoverRun(run, 'acknowledge')}>{resolvingRun === run.id ? 'Saving…' : 'I checked · continue'}</button><button type="button" disabled={Boolean(resolvingRun) || runHistory.status !== 'ready'} onClick={() => void recoverRun(run, 'retry')}>{resolvingRun === run.id ? 'Saving…' : 'Retry as a new task'}</button></div></section>}{run.status === 'unknown' && run.recoveryState === 'retried' && run.replacementRunId && <p className="run-recovery-note">A separate queued task was created; the original outcome remains in history.</p>}{(runApprovals[run.id] || []).filter(approval => approval.status === 'pending').map(approval => <ApprovalCard key={approval.id} approval={approval} disabled={Boolean(decidingApproval) || runHistory.status !== 'ready'} decide={decision => void decideApproval(approval.id, decision)} />)}</div></div></React.Fragment>)}
+              {remote && agentFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.map(run => <React.Fragment key={run.id}><div className="message-line user"><div className="message-bubble">{run.prompt}<RunFileCards files={(run.files||[]).filter(file=>file.kind==='input')} onPreview={setPreviewFile}/></div></div><div className="message-line bot"><div className="message-bubble">{run.status !== 'completed' && <span className="run-status">{run.status === 'unknown' && run.recoveryState === 'acknowledged' ? 'Outcome unknown · reviewed; queue resumed' : run.status === 'unknown' && run.recoveryState === 'retried' ? 'Outcome unknown · explicit retry recorded' : ({ queued: 'Queued · waiting for your computer', running: 'Working on your computer', failed: 'Failed', unknown: 'Outcome unknown · check before retrying' } as const)[run.status]}</span>}{run.result && <p>{run.result}</p>}{run.computerUsed && <ComputerActivityCard run={run} botId={active.id} showScreen={run.id===latestComputerRunId} onOpenComputer={()=>{setTab('Computer');setPanel(true)}} />}<RunFileCards files={(run.files||[]).filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseRunFile}/>{run.status === 'unknown' && run.recoveryState === 'pending' && <section className="run-recovery" aria-label="Review uncertain task outcome"><p>The previous task may have run even though its result was not saved. Review the computer before deciding.</p><div><button type="button" disabled={Boolean(resolvingRun) || runHistory.status !== 'ready'} onClick={() => void recoverRun(run, 'acknowledge')}>{resolvingRun === run.id ? 'Saving…' : 'I checked · continue'}</button><button type="button" disabled={Boolean(resolvingRun) || runHistory.status !== 'ready'} onClick={() => void recoverRun(run, 'retry')}>{resolvingRun === run.id ? 'Saving…' : 'Retry as a new task'}</button></div></section>}{run.status === 'unknown' && run.recoveryState === 'retried' && run.replacementRunId && <p className="run-recovery-note">A separate queued task was created; the original outcome remains in history.</p>}{(runApprovals[run.id] || []).filter(approval => approval.status === 'pending').map(approval => <ApprovalCard key={approval.id} approval={approval} disabled={Boolean(decidingApproval) || runHistory.status !== 'ready'} decide={decision => void decideApproval(approval.id, decision)} />)}</div></div></React.Fragment>)}
               {remote && agentFeature === 'enabled' && runHistory.id === active.id && runHistory.status === 'error' && <div role="alert">Could not confirm task history. Refresh to check it before submitting again.</div>}
               {state.showOnboarding[active.id] && <div className="onboarding-card">
                 <div className="onboarding-title">What do you want me helping with most right now?<IconButton name="close" label="Dismiss suggestions" onClick={() => setState(current => ({ ...current, showOnboarding: { ...current.showOnboarding, [active.id]: false } }))} /></div>

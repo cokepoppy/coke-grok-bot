@@ -193,7 +193,7 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         const reply = (status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
         const session = await auth.session(req);
         if (!session) return reply(401, { error: 'Unauthenticated' });
-        if (req.method === 'GET' && !botMatch) return reply(200, { bots: await bots.list(session) });
+        if (req.method === 'GET' && !botMatch) return reply(200, { bots: await bots.list(session, Boolean(runs)) });
         if ((req.method === 'POST' && !botMatch) || (req.method === 'PATCH' && botMatch)) {
           if (req.headers.origin !== origin.origin) return reply(403, { error: 'Invalid origin' });
           if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) return reply(415, { error: 'Expected JSON' });

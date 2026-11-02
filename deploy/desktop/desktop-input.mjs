@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const maxScreenshotBytes = 32 * 1024 * 1024;
 const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -10,9 +13,16 @@ const desktopKeys = new Map([
 
 export async function captureDesktopScreen(run, bounds) {
   const rectangle = `${bounds.left},${bounds.top},${bounds.width},${bounds.height}`;
-  const result = await run('scrot', ['-a', rectangle, '-'], { encoding: 'buffer', maxBuffer: maxScreenshotBytes, timeout: 5_000 });
-  if (!Buffer.isBuffer(result.stdout) || result.stdout.length < pngSignature.length || result.stdout.length > maxScreenshotBytes || !result.stdout.subarray(0, pngSignature.length).equals(pngSignature)) throw new Error('Desktop screenshot is unavailable');
-  return result.stdout;
+  const directory = await mkdtemp(join(tmpdir(), 'coke-grok-screenshot-'));
+  const file = join(directory, 'capture.png');
+  try {
+    await run('scrot', ['-a', rectangle, file], { timeout: 5_000 });
+    const image = await readFile(file);
+    if (image.length < pngSignature.length || image.length > maxScreenshotBytes || !image.subarray(0, pngSignature.length).equals(pngSignature)) throw new Error('Desktop screenshot is unavailable');
+    return image;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 export function createDesktopActionGate() {

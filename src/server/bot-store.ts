@@ -3,7 +3,7 @@ import type { Pool, RowDataPacket } from 'mysql2/promise';
 import type { Session } from './tenant-store.ts';
 
 export type BotShape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle' | 'oval' | 'square' | 'pill' | 'spark' | 'heart' | 'flower' | 'pentagon' | 'star';
-export interface StoredBot { id: string; name: string; label: string; color: string; shape: BotShape; group: string; pinned: boolean; hidden: boolean }
+export interface StoredBot { id: string; name: string; label: string; color: string; shape: BotShape; group: string; pinned: boolean; hidden: boolean; preview: string; lastActivityAt: string | null }
 export interface StoredMessage { id: string; role: 'user'; text: string }
 const shapes = new Set<BotShape>(['cloud', 'drop', 'hex', 'round', 'triangle', 'oval', 'square', 'pill', 'spark', 'heart', 'flower', 'pentagon', 'star']);
 
@@ -50,16 +50,33 @@ export class BotStore {
       [message.id, clean, botId, session.tenantId, session.userId]);
     return result.affectedRows ? message : null;
   }
-  async list(session: Session): Promise<StoredBot[]> {
+  async list(session: Session, includeRuns = false): Promise<StoredBot[]> {
+    const summaries = includeRuns
+      ? `LEFT JOIN (SELECT m.bot_id,m.message_text,m.created_at FROM bot_messages m JOIN (SELECT bot_id,MAX(sequence) AS sequence FROM bot_messages GROUP BY bot_id) latest_message ON latest_message.bot_id=m.bot_id AND latest_message.sequence=m.sequence) m ON m.bot_id=b.id
+         LEFT JOIN (SELECT r.bot_id,r.prompt,r.result,r.status,r.updated_at FROM agent_runs r JOIN (SELECT bot_id,MAX(sequence) AS sequence FROM agent_runs GROUP BY bot_id) latest_run ON latest_run.bot_id=r.bot_id AND latest_run.sequence=r.sequence) r ON r.bot_id=b.id`
+      : `LEFT JOIN (SELECT m.bot_id,m.message_text,m.created_at FROM bot_messages m JOIN (SELECT bot_id,MAX(sequence) AS sequence FROM bot_messages GROUP BY bot_id) latest_message ON latest_message.bot_id=m.bot_id AND latest_message.sequence=m.sequence) m ON m.bot_id=b.id`;
+    const preview = includeRuns
+      ? `CASE WHEN r.updated_at IS NOT NULL AND (m.created_at IS NULL OR r.updated_at>=m.created_at) THEN
+           CASE WHEN r.status='completed' THEN COALESCE(NULLIF(LEFT(TRIM(r.result),180),''),'Done.')
+                WHEN r.status='running' THEN 'Working…' WHEN r.status='queued' THEN 'Queued'
+                WHEN r.status='unknown' THEN 'Outcome unknown' ELSE COALESCE(NULLIF(LEFT(TRIM(r.result),180),''),'Failed') END
+         ELSE COALESCE(NULLIF(LEFT(TRIM(m.message_text),180),''),'Start a conversation') END`
+      : `COALESCE(NULLIF(LEFT(TRIM(m.message_text),180),''),'Start a conversation')`;
+    const lastActivity = includeRuns
+      ? `CASE WHEN r.updated_at IS NOT NULL AND (m.created_at IS NULL OR r.updated_at>=m.created_at) THEN r.updated_at ELSE COALESCE(m.created_at,b.created_at) END`
+      : `COALESCE(m.created_at,b.created_at)`;
     const [rows] = await this.pool.execute<RowDataPacket[]>(
-      'SELECT b.id, b.name, b.label, b.color, b.shape, b.bot_group AS `group`, COALESCE(s.pinned, 0) AS pinned, COALESCE(s.hidden, 0) AS hidden FROM bots b LEFT JOIN bot_sidebar_state s ON s.bot_id=b.id WHERE b.tenant_id=? AND b.owner_id=? ORDER BY b.created_at DESC, b.id DESC',
+      `SELECT b.id,b.name,b.label,b.color,b.shape,b.bot_group AS \`group\`,COALESCE(s.pinned,0) AS pinned,COALESCE(s.hidden,0) AS hidden,
+        ${preview} AS preview,DATE_FORMAT(${lastActivity},'%Y-%m-%dT%H:%i:%s.%fZ') AS lastActivityAt
+       FROM bots b LEFT JOIN bot_sidebar_state s ON s.bot_id=b.id ${summaries}
+       WHERE b.tenant_id=? AND b.owner_id=? ORDER BY ${lastActivity} DESC,b.created_at DESC,b.id DESC`,
       [session.tenantId, session.userId]);
-    return rows.map(row => ({ ...row, pinned: Boolean(row.pinned), hidden: Boolean(row.hidden) })) as StoredBot[];
+    return rows.map(row => ({ ...row, pinned: Boolean(row.pinned), hidden: Boolean(row.hidden), preview:String(row.preview||'Start a conversation'), lastActivityAt:row.lastActivityAt==null?null:String(row.lastActivityAt) })) as StoredBot[];
   }
   async create(session: Session, input: { name: string; color: string; shape: BotShape }): Promise<StoredBot> {
     const name = input.name.trim();
     if (!name || name.length > 60 || !/^#[0-9a-fA-F]{6}$/.test(input.color) || !shapes.has(input.shape)) throw new Error('Invalid bot');
-    const bot: StoredBot = { id: randomUUID(), name, label: '', color: input.color.toLowerCase(), shape: input.shape, group: 'Unassigned', pinned: false, hidden: false };
+    const bot: StoredBot = { id: randomUUID(), name, label: '', color: input.color.toLowerCase(), shape: input.shape, group: 'Unassigned', pinned: false, hidden: false, preview:'Start a conversation', lastActivityAt:null };
     await this.pool.execute('INSERT INTO bots (id, tenant_id, owner_id, name, color, shape) VALUES (?, ?, ?, ?, ?, ?)', [bot.id, session.tenantId, session.userId, bot.name, bot.color, bot.shape]);
     return bot;
   }

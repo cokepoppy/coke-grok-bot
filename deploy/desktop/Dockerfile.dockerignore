@@ -10,6 +10,7 @@
 !deploy/desktop/bot-screen-pages.mjs
 !deploy/desktop/desktop-screen-layout.mjs
 !deploy/desktop/desktop-input.mjs
+!deploy/desktop/shared-computer-root.mjs
 !deploy/desktop/guarded-computer.mjs
 !deploy/desktop/dsh-runtime/
 !deploy/desktop/dsh-runtime/package.json

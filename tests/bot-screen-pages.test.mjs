@@ -42,6 +42,27 @@ test('Bot screen IDs bind to distinct pages in one persistent browser context an
   assert.equal(await a.evaluate(()=>window.name),`coke-grok-screen:${botA}:0`);
 });
 
+test('a navigated Bot page cannot be reassigned while its window.name marker is temporarily cleared', async () => {
+  const pages = [new FakePage()];
+  const context = { pages: () => [...pages], async newPage() { const page = new FakePage(); pages.push(page); return page; } };
+  const manager = new BotScreenPages(async () => context, {
+    layout: { width: 1440, height: 900, slots: 2, stride: 1472 },
+    async createWindow(_context, _bounds) { return context.newPage(); },
+  });
+  const botA = randomUUID(), botB = randomUUID();
+  const pageA = await manager.get(botA);
+
+  // Chromium can clear window.name during a cross-origin top-level navigation
+  // before the asynchronous framenavigated callback restores the marker.
+  pageA.name = '';
+  const pageB = await manager.get(botB);
+
+  assert.notEqual(pageA, pageB, 'a page already mapped to Bot A must never be reused for Bot B');
+  assert.equal(pages.length, 2);
+  assert.equal(await pageA.evaluate(() => window.name), `coke-grok-screen:${botA}:0`);
+  assert.equal(await pageB.evaluate(() => window.name), `coke-grok-screen:${botB}:1`);
+});
+
 test('Bot screens fail closed when all configured desktop windows are occupied', async () => {
   const pages = [new FakePage()];
   const context = { pages: () => [...pages], async newPage() { const page = new FakePage(); pages.push(page); return page; } };

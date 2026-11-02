@@ -7,7 +7,7 @@ import { isRunDiagnosticCode, type RunDiagnosticCode } from './run-diagnostics.t
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'unknown';
 export type RecoveryState = 'none' | 'pending' | 'retried' | 'acknowledged';
-export interface AgentRun { id: string; botId: string; prompt: string; status: RunStatus; result: string | null; recoveryState: RecoveryState; replacementRunId: string | null; files: RunFile[] }
+export interface AgentRun { id: string; botId: string; prompt: string; status: RunStatus; result: string | null; recoveryState: RecoveryState; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; updatedAt?: string | null }
 export interface RunRecoveryResult { decision: 'retry' | 'acknowledge'; run: AgentRun | null }
 export type RunOwner = Pick<Session, 'tenantId' | 'userId'>;
 export interface RunScreenScope extends RunOwner { botId: string }
@@ -30,6 +30,7 @@ export class RunStore {
       recovery_state ENUM('none','pending','retried','acknowledged') NOT NULL DEFAULT 'none',
       replacement_run_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
       attachment_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '',
+      computer_used BOOLEAN NOT NULL DEFAULT FALSE,
       lease_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
       lease_until DATETIME(3) NULL,
       created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -44,6 +45,7 @@ export class RunStore {
     if (!names.has('recovery_state')) await this.pool.execute(`ALTER TABLE agent_runs ADD COLUMN recovery_state ENUM('none','pending','retried','acknowledged') NOT NULL DEFAULT 'none' AFTER result`);
     if (!names.has('replacement_run_id')) await this.pool.execute('ALTER TABLE agent_runs ADD COLUMN replacement_run_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER recovery_state');
     if (!names.has('attachment_hash')) await this.pool.execute("ALTER TABLE agent_runs ADD COLUMN attachment_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' AFTER replacement_run_id");
+    if (!names.has('computer_used')) await this.pool.execute('ALTER TABLE agent_runs ADD COLUMN computer_used BOOLEAN NOT NULL DEFAULT FALSE AFTER attachment_hash');
     await this.pool.execute(`UPDATE agent_runs SET recovery_state='pending' WHERE status='unknown' AND recovery_state='none'`);
     await this.pool.execute(`CREATE TABLE IF NOT EXISTS agent_run_events (
       sequence BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -65,13 +67,13 @@ export class RunStore {
       const [owned] = await connection.execute<RowDataPacket[]>('SELECT id FROM bots WHERE id=? AND tenant_id=? AND owner_id=? FOR UPDATE', [botId,session.tenantId,session.userId]);
       if (!owned.length) return null;
       const inputs = await this.inputFiles(connection,session,botId,fileIds);
-      const [existing] = await connection.execute<RowDataPacket[]>('SELECT id, bot_id AS botId, prompt, status, result, recovery_state AS recoveryState, replacement_run_id AS replacementRunId, attachment_hash AS attachmentHash FROM agent_runs WHERE bot_id=? AND request_id=?', [botId,requestId]);
+      const [existing] = await connection.execute<RowDataPacket[]>('SELECT id, bot_id AS botId, prompt, status, result, recovery_state AS recoveryState, replacement_run_id AS replacementRunId, attachment_hash AS attachmentHash, computer_used AS computerUsed FROM agent_runs WHERE bot_id=? AND request_id=?', [botId,requestId]);
       if (existing.length) {
         const storedHash=String(existing[0].attachmentHash||'');
         if (existing[0].prompt !== clean || (storedHash ? storedHash !== attachmentHash : fileIds.length > 0)) throw new RunRequestConflict('Request ID already used with different content');
         return { ...existing[0], files:await this.filesForRun(connection,String(existing[0].id)) } as AgentRun;
       }
-      const run: AgentRun = { id:randomUUID(), botId, prompt:clean, status:'queued', result:null, recoveryState:'none', replacementRunId:null, files:inputs };
+      const run: AgentRun = { id:randomUUID(), botId, prompt:clean, status:'queued', result:null, recoveryState:'none', replacementRunId:null, files:inputs, computerUsed:false };
       await connection.execute('INSERT INTO agent_runs (id,bot_id,request_id,prompt,status,recovery_state,attachment_hash) VALUES (?,?,?,?,?,?,?)',[run.id,botId,requestId,clean,run.status,run.recoveryState,attachmentHash]);
       for (const fileId of fileIds) await connection.execute("INSERT INTO agent_run_files (run_id,file_id,kind) VALUES (?,?,'input')",[run.id,fileId]);
       await connection.execute('INSERT INTO agent_run_events (run_id,status) VALUES (?,?)',[run.id,run.status]);
@@ -81,10 +83,11 @@ export class RunStore {
   async list(session: Session, botId: string): Promise<AgentRun[] | null> {
     const [owned] = await this.pool.execute<RowDataPacket[]>('SELECT id FROM bots WHERE id=? AND tenant_id=? AND owner_id=?',[botId,session.tenantId,session.userId]);
     if (!owned.length) return null;
-    const [rows] = await this.pool.execute<RowDataPacket[]>('SELECT id,bot_id AS botId,prompt,status,result,recovery_state AS recoveryState,replacement_run_id AS replacementRunId FROM agent_runs WHERE bot_id=? ORDER BY sequence',[botId]);
+    const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT id,bot_id AS botId,prompt,status,result,recovery_state AS recoveryState,replacement_run_id AS replacementRunId,
+      computer_used AS computerUsed,DATE_FORMAT(updated_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS updatedAt FROM agent_runs WHERE bot_id=? ORDER BY sequence`,[botId]);
     if (!rows.length) return [];
     const files = await this.filesForRuns(this.pool,rows.map(row=>String(row.id)));
-    return rows.map(row=>({...row,files:files.get(String(row.id))||[]})) as AgentRun[];
+    return rows.map(row=>({...row,computerUsed:Boolean(row.computerUsed),files:files.get(String(row.id))||[]})) as AgentRun[];
   }
   async ownsBot(session:Pick<Session,'tenantId'|'userId'>,botId:string):Promise<boolean>{
     if(!uuid.test(session.tenantId)||!uuid.test(session.userId)||!uuid.test(botId))return false;
@@ -163,6 +166,18 @@ export class RunStore {
     if(!uuid.test(owner.tenantId)||!uuid.test(owner.userId)||!uuid.test(runId)||!uuid.test(leaseId)||(botId!==undefined&&!uuid.test(botId)))return false;
     const [rows]=await this.pool.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND r.lease_id=? AND r.status='running' AND r.lease_until>UTC_TIMESTAMP(3) AND b.tenant_id=? AND b.owner_id=? AND (? IS NULL OR r.bot_id=?)`,[runId,leaseId,owner.tenantId,owner.userId,botId||null,botId||null]);
     return rows.length===1;
+  }
+  /** Mark only successful real Browser User or Computer User activity for its live Bot run. */
+  async markComputerUsed(owner:RunOwner,runId:string,leaseId:string,botId:string):Promise<boolean>{
+    if(!uuid.test(owner.tenantId)||!uuid.test(owner.userId)||!uuid.test(runId)||!uuid.test(leaseId)||!uuid.test(botId))return false;
+    return this.transaction(async connection=>{
+      const [rows]=await connection.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id
+        WHERE r.id=? AND r.lease_id=? AND r.status='running' AND r.lease_until>UTC_TIMESTAMP(3)
+        AND r.bot_id=? AND b.tenant_id=? AND b.owner_id=? FOR UPDATE`,[runId,leaseId,botId,owner.tenantId,owner.userId]);
+      if(!rows.length)return false;
+      await connection.execute('UPDATE agent_runs SET computer_used=TRUE WHERE id=?',[runId]);
+      return true;
+    });
   }
   async markUnknown(runId: string, leaseId: string, diagnosticCode: RunDiagnosticCode = 'executor_error'): Promise<boolean> {
     if (!uuid.test(runId) || !uuid.test(leaseId) || !isRunDiagnosticCode(diagnosticCode)) throw new Error('Invalid lease');

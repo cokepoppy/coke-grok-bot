@@ -2,15 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
+import { readFile, writeFile } from 'node:fs/promises';
 import { captureDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from '../deploy/desktop/desktop-input.mjs';
 
 test('desktop screenshot captures only the Bot screen rectangle as PNG bytes', async () => {
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  let call;
-  const result = await captureDesktopScreen(async (...args) => { call = args; return { stdout: png }; }, { left: 1472, top: 0, width: 1440, height: 900 });
+  let call, capturePath;
+  const result = await captureDesktopScreen(async (...args) => { call = args; capturePath = args[1][2]; await writeFile(capturePath, png); return { stdout: Buffer.alloc(0) }; }, { left: 1472, top: 0, width: 1440, height: 900 });
   assert.deepEqual(result, png);
-  assert.deepEqual(call.slice(0, 2), ['scrot', ['-a', '1472,0,1440,900', '-']]);
-  assert.equal(call[2].encoding, 'buffer');
+  assert.equal(call[0], 'scrot');
+  assert.deepEqual(call[1].slice(0, 2), ['-a', '1472,0,1440,900']);
+  assert.match(capturePath, /\/coke-grok-screenshot-[^/]+\/capture\.png$/);
+  assert.equal(call[2].timeout, 5_000);
+  await assert.rejects(readFile(capturePath), { code: 'ENOENT' });
 });
 
 test('desktop click routes image coordinates to the Bot X11 region', async () => {

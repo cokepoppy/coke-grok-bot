@@ -12,4 +12,6 @@ test('desktop image copies the Bot screen manager and real desktop I/O modules b
   assert.match(dockerignore, /^!deploy\/desktop\/desktop-screen-layout\.mjs$/m);
   assert.match(dockerfile, /COPY --chmod=0644 deploy\/desktop\/desktop-input\.mjs \/opt\/coke-dots\/desktop-input\.mjs/);
   assert.match(dockerignore, /^!deploy\/desktop\/desktop-input\.mjs$/m);
+  assert.match(dockerfile, /COPY --chmod=0644 deploy\/desktop\/shared-computer-root\.mjs \/opt\/coke-dots\/shared-computer-root\.mjs/);
+  assert.match(dockerignore, /^!deploy\/desktop\/shared-computer-root\.mjs$/m);
 });

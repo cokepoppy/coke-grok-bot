@@ -234,3 +234,11 @@ Google 登录的公网 Bot 1030 上，一条仅要求保存合成测试偏好的
 只读 HTTP 复核发现 `http://127.0.0.1:3001/` 提供 Vite HTML；同一服务上的 `/api/auth/ready` 返回 `200 text/html`，是客户端路由 fallback，并非 Auth readiness。公网 `/grok-bot/api/auth/ready` 返回 `502 text/html`。Docker socket `/_ping` 返回 `503 text/plain`，K3D API 59958、入口 18080 与 MySQL 3306 均无监听。故当前没有可运行 K3D/MySQL 服务；部署构建成功不代表服务已部署或就绪。
 
 本次 CUA `getState` 仍返回 `Local browser use is disabled in Work settings`，浏览器 provider 列表为空；尝试使用 CUA 打开桌面应用设置时，控制层明确拒绝了对 `com.openai.codex` 的访问。没有从文件、CLI 或别的自动化路径更改/绕过此桌面安全设置。需在官方 Computer Use 流程启用 Computer Use server 与 skill，并确认 `Settings > Computer Use` 中 Chrome 扩展显示 `Manage` 后，再用签名态 Chrome 完成 Google 登录 E2E。当前公开页与本地 Vite 测试证据不证明 Bot Memory、Pi/DSH 或 Computer User 在现网闭环通过。
+
+### 2026-11-02 本机真实 Pi/DSH 与双屏运行时 E2E
+
+Docker 与 K3D 恢复后，首先用本地 ARM64 电脑镜像 `coke-grok-desktop:sha-5e8db224c2da99ce7ec489d0a9cb73c6dfff20fa` 跑独立 namespace 的 `npm run test:desktop-k3d`。真实 DeepSeek 共处理 13 次请求。测试通过 Pi 在持久 workspace 创建文件、Browser User 对本地测试页导航和点击、Computer User 获取真实 X11 截图并用坐标点击、两个 Bot 的屏幕/页面关联、Bot A 接管时 Bot B 仍能工作、接管期间 Agent 浏览器动作被拒绝、交还控制，以及重启测试 Deployment 后 PVC 文件仍在。临时测试 namespace 删除完成。
+
+随后以同一固定电脑镜像、本地专用临时 MySQL 容器和合成用户运行 `npm run test:mediated-agent-k3d`。真实 DeepSeek 共处理 23 次请求。Pi 与 DSH 分别在独立 Agent Pod 运行并访问独立电脑 Pod；Browser User、Computer User、受审批终端、共享文件、用户接管与恢复、Pi/DSH 跨运行记忆以及 Bot 间记忆隔离均通过。测试使用的 `grok_mediated_%` schema 查询为 0；临时 namespace/PVC 和无卷、tmpfs 的临时 MySQL 容器都已清除。已有身份 MySQL、用户 Agent/Desktop、workspace PVC、Broker 和 namespace bootstrap UID 前后不变。K3D 节点保持 Ready，内存约 2442 MiB / 30%。这两项是隔离 K3D 与真实模型工具副作用证据，不等于公网 Google 登录浏览器验收或完整官方产品覆盖。
+
+同一工作树的 `npm run test:runtime` 当前通过 77 项，`npm run test:ui` 和 `npm run build:deployment` 通过。UI 的 Playwright E2E 使用合成 API 身份，不能证明签名态 Chrome 画面。

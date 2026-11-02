@@ -12,6 +12,7 @@ COPY --chmod=0644 deploy/desktop/computer-worker.mjs /opt/coke-dots/grok-compute
 COPY --chmod=0644 deploy/desktop/bot-screen-pages.mjs /opt/coke-dots/bot-screen-pages.mjs
 COPY --chmod=0644 deploy/desktop/desktop-screen-layout.mjs /opt/coke-dots/desktop-screen-layout.mjs
 COPY --chmod=0644 deploy/desktop/desktop-input.mjs /opt/coke-dots/desktop-input.mjs
+COPY --chmod=0644 deploy/desktop/shared-computer-root.mjs /opt/coke-dots/shared-computer-root.mjs
 COPY --chmod=0644 deploy/desktop/guarded-computer.mjs /opt/coke-grok/guarded-computer.mjs
 COPY deploy/desktop/dsh-runtime/package.json deploy/desktop/dsh-runtime/package-lock.json /opt/coke-grok/dsh-runtime/
 RUN npm ci --prefix /opt/coke-grok/dsh-runtime --omit=dev --no-audit --no-fund \

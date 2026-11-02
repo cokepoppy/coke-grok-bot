@@ -11,6 +11,7 @@ import { createRendererHealthMonitor, RendererUnresponsiveError } from './render
 import { BotScreenCapacityError, BotScreenPages } from './bot-screen-pages.mjs';
 import { createDesktopScreenLayout, parseDesktopScreenSlots } from './desktop-screen-layout.mjs';
 import { captureDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from './desktop-input.mjs';
+import { ensureSharedComputerRoots } from './shared-computer-root.mjs';
 import { createGuardedComputer } from '/opt/coke-grok/guarded-computer.mjs';
 
 const exec = promisify(execFile);
@@ -212,11 +213,8 @@ async function pageForScreen(screenId) {
 
 async function screenOwner(screenId) {
   if (!screenIdPattern.test(screenId)) throw new Error('Invalid Bot screen id');
+  const root = await ensureSharedComputerRoots(workspace);
   if (screenOwners.has(screenId)) return screenOwners.get(screenId);
-  const root = path.join(workspace, 'shared', 'computer-screens');
-  await fs.mkdir(root, { recursive: true, mode: 0o770 });
-  const realRoot = await fs.realpath(root);
-  if (realRoot !== root || (await fs.lstat(root)).isSymbolicLink()) throw new Error('Computer screen state directory is not available');
   const file = path.join(root, `${screenId}.json`);
   const raw = await fs.readFile(file, 'utf8').catch(error => error?.code === 'ENOENT' ? '' : Promise.reject(error));
   let value = 'agent';
@@ -230,10 +228,7 @@ async function screenOwner(screenId) {
 
 async function setScreenOwner(screenId, value) {
   if (!['agent','user'].includes(value)) throw new Error('Invalid control owner');
-  const root = path.join(workspace, 'shared', 'computer-screens');
-  await fs.mkdir(root, { recursive: true, mode: 0o770 });
-  const realRoot = await fs.realpath(root);
-  if (realRoot !== root || (await fs.lstat(root)).isSymbolicLink()) throw new Error('Computer screen state directory is not available');
+  const root = await ensureSharedComputerRoots(workspace);
   const file = path.join(root, `${screenId}.json`), temporary = `${file}.${crypto.randomUUID()}.tmp`;
   await fs.writeFile(temporary, JSON.stringify({ screenId, owner: value }), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
   await fs.rename(temporary, file);
@@ -525,8 +520,8 @@ http.createServer(async (req, res) => {
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/control') return send(res, 200, {owner:await screenOwner(screenId)});
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/snapshot') return send(res, 200, await guardedComputer.snapshot());
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/snapshot-image') return send(res, 200, await guardedComputer.snapshotWithImage());
-    if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/inspect') return guardedComputer.locked(async () => send(res, 200, await agentBrowserAction({action:'inspect'}, screenId)));
-    if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/screenshot') return guardedComputer.locked(async () => {
+    if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/inspect') return await guardedComputer.locked(async () => send(res, 200, await agentBrowserAction({action:'inspect'}, screenId)));
+    if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/screenshot') return await guardedComputer.locked(async () => {
       if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
       return send(res, 200, await screenshot(screenId), 'image/png');
     });
@@ -553,7 +548,7 @@ http.createServer(async (req, res) => {
     if (req.method === 'POST' && pathname === '/v1/control') {
       const input = await body(req);
       if (input.owner !== 'agent' && input.owner !== 'user') return send(res, 400, { error: 'invalid control owner' });
-      return guardedComputer.locked(async () => {
+      return await guardedComputer.locked(async () => {
         await setScreenOwner(screenId, input.owner);
         if (input.owner === 'user') {
           await fetch(new URL('/v1/tasks/pause',agentEndpoint), {
@@ -574,11 +569,11 @@ http.createServer(async (req, res) => {
     if (req.method === 'POST' && pathname === '/v1/commands') {
       const input=await body(req);
       if (guardedMode && input.actor !== 'user') return send(res, 403, {error:'Guarded actions require approval'});
-      return guardedComputer.locked(async () => send(res, 200, await command(input,screenId)));
+      return await guardedComputer.locked(async () => send(res, 200, await command(input,screenId)));
     }
     if (req.method === 'POST' && pathname === '/v1/browser') {
       if (guardedMode) return send(res, 403, {error:'Guarded actions require approval'});
-      return guardedComputer.locked(async () => send(res, 200, await agentBrowserAction(await body(req),screenId)));
+      return await guardedComputer.locked(async () => send(res, 200, await agentBrowserAction(await body(req),screenId)));
     }
     return send(res, 404, { error: 'not found' });
   } catch (error) {

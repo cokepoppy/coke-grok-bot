@@ -42,7 +42,11 @@ export class BotScreenPages {
   async get(screenId) {
     if (typeof screenId !== 'string' || !uuid.test(screenId)) throw new Error('Invalid Bot screen id');
     const cached = this.pages.get(screenId);
-    if (cached && !cached.isClosed()) return cached;
+    if (cached && !cached.isClosed()) {
+      const slot = this.slots.get(screenId);
+      if (Number.isSafeInteger(slot)) await cached.evaluate(value => { window.name = value; }, `${this.marker}${screenId}:${slot}`).catch(() => {});
+      return cached;
+    }
     if (this.pending.has(screenId)) return this.pending.get(screenId);
     const pending = this.allocate(screenId).finally(() => {
       if (this.pending.get(screenId) === pending) this.pending.delete(screenId);
@@ -66,11 +70,16 @@ export class BotScreenPages {
       const context = await this.contextProvider();
       const pages = context.pages();
       const openPages = new Set(pages.filter(page => !page.isClosed()));
+      const mappedPages = new Set();
       for (const [id, page] of this.pages) {
         if (page.isClosed() || !openPages.has(page)) {
           this.pages.delete(id);
           this.slots.delete(id);
+          continue;
         }
+        mappedPages.add(page);
+        const mappedSlot = this.slots.get(id);
+        if (Number.isSafeInteger(mappedSlot)) await page.evaluate(value => { window.name = value; }, `${this.marker}${id}:${mappedSlot}`).catch(() => {});
       }
       const markerValuePrefix = `${this.marker}${screenId}:`;
       for (const page of pages) {
@@ -107,7 +116,7 @@ export class BotScreenPages {
       const slot = Array.from({ length: this.layout.slots }, (_, index) => index).find(index => !occupied.has(index));
       if (slot === undefined) throw new BotScreenCapacityError();
       let page = null;
-      if (pages.length === 1 && !pages[0].isClosed()) {
+      if (pages.length === 1 && !pages[0].isClosed() && !mappedPages.has(pages[0])) {
         try {
           const name = await pages[0].evaluate(() => window.name);
           if (!name || !String(name).startsWith(this.marker)) page = pages[0];
