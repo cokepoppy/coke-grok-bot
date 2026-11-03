@@ -350,3 +350,13 @@ Browser User 的 DOM/可访问名称操作仍是独立工具通道；Computer Us
 本次对应的真实部署是 Mac 本机 K3D 上的 Auth 与 Agent；VPS 只转发公网 HTTPS 流量，没有在 VPS 部署应用或运行时。K3D Agent 中的 Pi 会话记录确认先有成功的 `bot_handoff` 调用/结果，再由 Sales 私有会话执行电脑浏览任务；本轮修复让“只有成功 handoff、下游仍运行”的合法运行状态作为 `delegating` 持久化，避免模型随后输出普通说明文本时把成功队列误判成 `Outcome unknown`。目标功能对应的运行时测试、MySQL 集成、TypeScript 构建、部署构建已在本机完成并通过；Auth 和 Agent 镜像在 K3D rollout 成功。MySQL 与既有 PVC 保持不变，VPS、其他 Pod 和无关数据没有清理。
 
 边界：公网点击证据证明了这一条 Chief → Sales 异步交接、Pi/DeepSeek 任务、Sales 的真实 Browser User、K3D Computer 画面及刷新后持久化；它不证明六个物理屏幕并发、第二租户隔离、语音、Routine、Vault/Secure Form，也不代表与官方同视口像素差分通过。Chrome 当前可见页面已停在用户可直接体验的公网工作区。分支 `codex/grok-bot-persistent-group-chat` 仍为唯一候选；尚未得到用户最终验收，未提交、未合并 `main`、未打本功能 checkpoint tag，也未开启下一功能分支。
+
+## 2026-11-03 最新公网六 Bot E2E 失败状态与电脑运行时修复候选
+
+用户重申产品验收必须从 VPS 公网域名进入并以已登录浏览器实际点击开始，完整经过 DeepSeek Agent、Mac/K3D 电脑、Browser User 和 Computer User。localhost、直接 API、模型自述、Pod Ready 或 HTTP 200 均不能代替该验收。
+
+更新后的只读 MySQL 聚合核实：最新六 Bot 群聊 turn 创建于 `2026-11-03 01:33:35 UTC`（09:33:35 CST），对应 6 个 Bot run：2 completed、1 failed、3 unknown，0 queued/running；其中 1 个 unknown 已 acknowledged。Auth 日志从 01:33:00 UTC 起有 13 条 `MODEL_UPSTREAM_OK`、0 条 `MODEL_UPSTREAM_REJECTED`，这是 DeepSeek 网关流量的聚合佐证，不能映射为六个 Bot 各自成功。该 turn 是部分失败，不能沿用前面历史 turn 的六个 Done 记录来声称最新 E2E 通过。上次已登录公网页面观察到 Account Manager 的 approved computer action 未确认，另有 Browser 结果报告 `Example Domain`/无 H1，但对应 Computer 截图仍是 `about:blank`；已确认不重试原来的非幂等任务。
+
+当前唯一 feature 分支已包含两项修复：`af0fd66` 让已批准 Browser User `navigate` 在截图像素漂移时继续校验 owner 与源 URL；`6135ffc` 让 Browser User inspect 返回结构化可见 `h1`。点击和 Computer User 操作仍保持截图精确绑定。最新 `npm run test:runtime` 为 89/89；候选镜像的独立 K3D guarded-approval 和 desktop-worker 测试此前通过。ARM64 桌面镜像 `coke-grok-desktop:sha-6135ffcff26409a620bfee2d07a870f885f17701` 已部署到 Mac 本机 K3D 的既有个人 Desktop；Broker 的桌面镜像期望已同步。Agent、Auth、MySQL、VPS 隧道和 PVC 未修改。部署后 Desktop、Agent、Broker 均为 1/1 Ready，workspace PVC 仍 Bound/10 GiB，Chromium Preferences 仍在 `/workspace`，无 queued/running 任务，公网首页 HTTP 200。
+
+这仍不是公网点击验收：2026-11-03 当前 Codex Computer Use 连续返回 `Local browser use is disabled in Work settings`，浏览器列表为空，也不允许控制 Codex 应用；没有用其他控制通道绕过。候选源码、固定镜像、部署/回退脚本、校验和与操作记录保存在 [`releases/candidate-grok-bot-public-group-runtime-2026-11-03/`](../releases/candidate-grok-bot-public-group-runtime-2026-11-03/)。待当前 Work 会话允许控制已登录 Chrome 后，继续从公网域名实际点击复测；在六 Bot 与全链路证据通过且用户最终验收前，保持唯一功能分支，不合并 `main`、不创建 checkpoint tag、不开始下一 feature 分支。
