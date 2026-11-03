@@ -229,6 +229,24 @@ function validateBotMemoryBridge(value) {
   return { mode: 'mediated' };
 }
 
+function validateBotHandoffBridge(value) {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.mode !== 'mediated' || !Array.isArray(value.bots) || value.bots.length > 100) {
+    throw new Error('Bot handoff bridge configuration is invalid');
+  }
+  const ids = new Set();
+  const bots = value.bots.map(bot => {
+    if (!bot || typeof bot !== 'object' || Array.isArray(bot) || !fileIdPattern.test(String(bot.id || ''))
+        || typeof bot.name !== 'string' || !bot.name.trim() || bot.name.length > 120
+        || typeof bot.label !== 'string' || bot.label.length > 120 || ids.has(bot.id)) {
+      throw new Error('Bot handoff target is invalid');
+    }
+    ids.add(bot.id);
+    return { id: bot.id, name: bot.name.trim(), label: bot.label.trim() };
+  });
+  return { mode: 'mediated', bots };
+}
+
 function requireModelConfig(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Shared Model API configuration is required for cloud Agent kernels');
@@ -378,6 +396,7 @@ async function executeKernel(input, requestSignal, slot) {
   if (requestSignal?.aborted) throw new Error('Agent task was cancelled');
   const modelConfig = requireModelConfig(input.modelConfig);
   const memory = validateBotMemoryBridge(input.memory);
+  const handoffs = validateBotHandoffBridge(input.handoffs);
   const dingtalkDocumentsBridge = validateDingTalkDocumentsBridge(input.dingtalkDocumentsBridge);
   const dingtalkCalendarBridge = validateDingTalkCalendarBridge(input.dingtalkCalendarBridge);
   const dingtalkMinutesBridge = validateDingTalkMinutesBridge(input.dingtalkMinutesBridge);
@@ -413,6 +432,7 @@ async function executeKernel(input, requestSignal, slot) {
     sessionId: typeof input.sessionId === 'string' ? input.sessionId : null,
     modelConfig,
     ...(memory ? { memory } : {}),
+    ...(handoffs ? { handoffs } : {}),
     computer: process.env.COKE_GROK_MEDIATED_COMPUTER === '1' ? { mode:'mediated', gatewayUrl:modelConfig.baseUrl, gatewayToken:modelConfig.apiKey, screenId } : {
       baseUrl: `http://127.0.0.1:${workerPort}`,
       workerToken: process.env.LINUX_DESKTOP_WORKER_TOKEN,

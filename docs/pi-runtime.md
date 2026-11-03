@@ -249,7 +249,7 @@ Docker 与 K3D 恢复后，首先用本地 ARM64 电脑镜像 `coke-grok-desktop
 
 之后通过该 Bot 的真实公网聊天新建了独立只读任务，要求 Pi 仅用 Browser User inspect 当前页面、禁止导航/点击/输入/滚动和 shell。公网 UI 显示任务 `Done`，回复为 `Document title: Example Domain. No visible h1 text was found.`；同一时期 Mac-local K3D Auth 安全诊断汇总记录 DeepSeek 上游 HTTP 200。云电脑预览仍展示已打开页面。这验证了签名态公网 Chat -> Pi -> DeepSeek -> Browser User inspect -> K3D 个人电脑的可观察链路；不代表前一条 Outcome unknown 的任务已完成，也不代表六 Bot 群聊、真实 Bot 间交接、多用户隔离或官方全部功能。
 
-本轮源码修复包含：Desktop 不再对 Agent 所有的共享工作目录执行 chmod；computer broker/provisioner 与任务网关错误只暴露固定诊断码；合法的 `about:blank` 只作为当前页位置接受，目标 URL 仍限于无凭据的 HTTP/HTTPS。验证 `npm run test:runtime` 81/81、共享目录测试 3/3、`git diff --check` 和 `VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build:deployment` 均通过。官方六 Bot 加群组的持久化协作与真实公网 E2E 仍未完成，将在当前分支合并后从最新 `main` 单独开一个 feature 分支实现。
+本轮源码修复包含：Desktop 不再对 Agent 所有的共享工作目录执行 chmod；computer broker/provisioner 与任务网关错误只暴露固定诊断码；合法的 `about:blank` 只作为当前页位置接受，目标 URL 仍限于无凭据的 HTTP/HTTPS。验证 `npm run test:runtime` 81/81、共享目录测试 3/3、`git diff --check` 和 `VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build:deployment` 均通过。此段是群聊功能实现前的状态快照；随后同一功能分支已完成六 Bot 公网群聊和 Chief → Sales Outbound 的异步交接，分别见下文记录。
 
 
 ### 2026-11-02 signed-in public six-Bot group E2E through the VPS domain
@@ -269,3 +269,17 @@ The fixed candidate image `coke-grok-auth:group-recovery-ui-20261102-r1` was rol
 At 20:48–20:50 CST, from the already signed-in Chrome at `https://codex.cokeagent.com/grok-bot/`, actual page clicks opened `Offsite crew` and submitted a new safe task to all six members: Expense Manager, Talent Scout, Account Manager, Inbox Manager, Sales Outbound, and Chief. The page presented navigation approvals for `https://example.com/`; these were approved in the product UI. All six latest result cards reached `Done`, each reported title `Example Domain` and no visible H1, and each included a Computer completion card. A visible Chrome refresh preserved all six results. Opening Chief's computer panel showed the current Chromium screenshot of Example Domain and `Bot is in control`. During 12:48–12:50 UTC, K3D Auth emitted 27 `MODEL_UPSTREAM_OK` responses; this aggregate is corroboration for successful provider traffic in the same window, not a one-to-one count mapped to the six runs. No credential values were read or printed.
 
 The public test intentionally added one task and six Bot run/results to the existing user's `Offsite crew` history; it was not deleted. This is a fresh public VPS-domain, visible-click E2E covering group fan-out, model-backed execution, in-product approval, Browser User, K3D Computer screenshot, MySQL-backed result restoration, and the recovery-card rendering after refresh. The six tasks still share the presently available serialized screen capacity. This does not establish concurrent physical screens, Bot-to-Bot handoff, a second user's isolation, pixel-perfect parity, or full official feature coverage. The branch remains `codex/grok-bot-persistent-group-chat`, pushed but awaiting the user's final acceptance; it is not merged or tagged.
+
+### 2026-11-03 公网验收口径与运行记录复核
+
+按用户再次强调的验收口径，产品 E2E 只认已登录 Chrome 从 VPS 公网域名 `https://codex.cokeagent.com/grok-bot/` 打开并实际点击网页；localhost、API 直调和本地 UI 测试只是辅助证据。本轮在该公网页面可见进入 `Offsite crew` 六 Bot 群聊，并打开 Account Manager 的 Computer 面板核对真实 K3D 屏幕；没有重放已有任务。
+
+MySQL 只读核对确认 `Public E2E 2026-11-02` 的六条 Bot 运行全部 `completed`，六条均为 `computer_used=1`。另核对到 Chief → Sales Outbound 的 Bot handoff 为 `returned`，Sales 委派运行与 Chief 收到私有回复后的运行都为 `completed`；公网群聊中可见异步委派、私信回复及 Computer 截图。它们是两条不同的验收链路：六 Bot fan-out 通过；Chief → Sales 私有 handoff 通过。
+
+需保留一条失败记录：独立的 `Public VPS Chrome E2E 2026-11-02 run 2` 有五个 Bot completed、Account Manager 为 `unknown` 且 `recovery_state=acknowledged`。该运行事件仅有固定诊断 `diagnostic:executor_error`；公网群聊回复称 navigate 的批准动作未确认，且未完成截图。虽然之后查看 Computer 面板时能看到 example.com，但这不能证明那个未知 run 自己完成了导航；没有重放它。其余 Bot 的可见 H1 报告也有一处互相矛盾，因此该 run 不计为六 Bot 通过。
+
+当前 Mac 本机 K3D 配置仍为 Agent Engine `pi`、模型 `deepseek-v4.1-flash`，基址为用户配置的兼容接口；`MODEL_UPSTREAM_OK` 只作为 provider 聚合成功证据，未按 Bot/run 一对一映射。该六 Bot run 的历史窗口记录有 26 次上游成功响应，不能据此推断每个 Bot 的调用数。Auth 和 Agent 均在本机 K3D；VPS 仍仅做公网转发。
+
+本轮复核：`npm run test:runtime` 87/87、`npm run test:ui` 通过、`npm run build:deployment` 通过、`git diff --check` 通过。本地 UI 套件只作辅助；公网页面点击和 MySQL 持久化记录才是产品验收证据。`test:runtime-mysql` 未在本轮重跑，因为本机没有现成的临时 root 测试库端口，现有应用 MySQL 拒绝免密 root；没有改动数据库账户或创建不隔离的测试库。真实公网 handoff 的 MySQL 行已只读核实。
+
+唯一功能分支仍为 `codex/grok-bot-persistent-group-chat`；保留六 Bot 6/6 和 Chief → Sales handoff 的通过记录，也保留 run2 的 Account Manager unknown 失败记录。分支尚未获用户最终验收，未合并 main、未打 checkpoint tag，未创建下一 feature 分支。

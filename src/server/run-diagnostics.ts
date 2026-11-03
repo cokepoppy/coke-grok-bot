@@ -3,6 +3,7 @@ const runDiagnosticCodes = [
   'desktop_connect_failed',
   'bot_memory_preload_failed',
   'bot_memory_scope_invalid',
+  'bot_handoff_scope_invalid',
   'capability_issue_failed',
   'agent_transport_failed',
   'agent_http_400',

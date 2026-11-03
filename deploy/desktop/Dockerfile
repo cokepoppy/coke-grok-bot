@@ -8,6 +8,7 @@ COPY --chmod=0644 deploy/desktop/cloud-kernel-adapter.mjs /opt/coke-dots/grok-ke
 COPY --chmod=0644 deploy/desktop/computer-tools.mjs /opt/coke-dots/computer-tools.mjs
 COPY --chmod=0644 deploy/desktop/dsh-computer-plugin.mjs /opt/coke-dots/dsh-computer-plugin.mjs
 COPY --chmod=0644 deploy/desktop/dsh-memory-plugin.mjs /opt/coke-dots/dsh-memory-plugin.mjs
+COPY --chmod=0644 deploy/desktop/dsh-handoff-plugin.mjs /opt/coke-dots/dsh-handoff-plugin.mjs
 COPY --chmod=0644 deploy/desktop/computer-worker.mjs /opt/coke-dots/grok-computer-worker.mjs
 COPY --chmod=0644 deploy/desktop/bot-screen-pages.mjs /opt/coke-dots/bot-screen-pages.mjs
 COPY --chmod=0644 deploy/desktop/desktop-screen-layout.mjs /opt/coke-dots/desktop-screen-layout.mjs

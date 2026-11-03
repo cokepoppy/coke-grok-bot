@@ -456,12 +456,37 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .app.product-shell {
   position: fixed;
   inset: 6px;
-  grid-template-columns: minmax(280px, min(28vw, 560px)) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, minmax(280px, min(28vw, 560px))) minmax(0, 1fr);
   grid-template-rows: 44px minmax(0, 1fr);
   border: 1px solid #e7e7e7;
   border-radius: 24px;
 }
 .app.product-shell::before { border-radius: 23px 23px 0 0; }
+.product-shell .sidebar-resize-handle {
+  z-index: 9;
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: end;
+  align-self: stretch;
+  width: 9px;
+  min-height: 0;
+  margin-right: -4px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+.product-shell .sidebar-resize-handle::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: transparent;
+  content: '';
+}
+.product-shell .sidebar-resize-handle:hover::after,
+.product-shell .sidebar-resize-handle:focus-visible::after { background: #c9c9c9; }
+.product-shell .sidebar-rail-actions { display: none; }
 .product-shell .sidebar-top { top: -44px; height: 44px; padding: 0 12px; }
 .product-shell .sidebar-top::before {
   width: 44px;
@@ -519,8 +544,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .product-shell .account-menu { position: absolute; z-index: 8; bottom: 38px; left: 0; width: min(220px, 90%); padding: 6px; border: 1px solid #e4e4e4; border-radius: 12px; background: #fff; box-shadow: 0 8px 24px #0002; }
 .product-shell .account-menu button { display: block; width: 100%; padding: 9px 10px; border: 0; border-radius: 7px; background: transparent; text-align: left; font-size: 13px; }
 .product-shell .account-menu button:hover { background: #f3f3f3; }
+.product-shell.sidebar-collapsed .sidebar-top { justify-content: center; padding: 0; }
+.product-shell.sidebar-collapsed .sidebar-top::before { margin-right: 0; }
+.product-shell.sidebar-collapsed .sidebar-top .icon-button { display: none; }
+.product-shell.sidebar-collapsed .product-search { display: none; }
+.product-shell.sidebar-collapsed .sidebar-scroll { top: 51px; bottom: 88px; padding: 0 4px; }
+.product-shell.sidebar-collapsed .section-line { display: none; }
+.product-shell.sidebar-collapsed .bot-row-content { display: none; }
+.product-shell.sidebar-collapsed .bot-row { justify-content: center; width: 58px; height: 58px; margin: 0 auto 4px; padding: 4px; border-radius: 10px; }
+.product-shell.sidebar-collapsed .bot-row > .avatar { width: 42px; height: 42px; }
+.product-shell.sidebar-collapsed .sidebar-rail-actions { position: absolute; right: 0; bottom: 51px; left: 0; display: flex; justify-content: center; }
+.product-shell.sidebar-collapsed .sidebar-rail-actions .icon-button { width: 36px; height: 36px; padding: 8px; border: 0; background: transparent; color: #777; }
+.product-shell.sidebar-collapsed .sidebar-rail-actions .icon-button:hover { background: #f0f0f0; }
+.product-shell.sidebar-collapsed .sidebar-footer { right: 0; left: 0; justify-content: center; }
+.product-shell.sidebar-collapsed .account-control { justify-content: center; }
+.product-shell.sidebar-collapsed .account-name { display: none; }
+.product-shell.sidebar-collapsed .account-menu { left: 6px; width: min(220px, calc(100vw - 96px)); }
 @media (max-width: 760px) {
   .app.product-shell { grid-template-columns: 72px minmax(0, 1fr); }
+  .product-shell .sidebar-resize-handle { display: none; }
   .product-shell .product-search { visibility: hidden; }
   .product-shell .sidebar-scroll { padding: 0 5px; }
   .product-shell .account-name { display: none; }

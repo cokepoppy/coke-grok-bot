@@ -22,6 +22,17 @@ const createShapes:Shape[]=['round','oval','square','spark','cloud','heart','flo
 const createColors=['#000000','#a06b39','#fb2b3e','#fd690f','#f59312','#14c16f','#13b7a2','#1e86fc','#8f59f9','#f93498','#959595'];
 
 const STORAGE_KEY = 'coke-grok-bot:desktop-preview:v1';
+const PRODUCT_SIDEBAR_MIN = 84;
+function productSidebarMax(): number { return Math.max(PRODUCT_SIDEBAR_MIN, Math.min(560, Math.floor(window.innerWidth * 0.4))); }
+function clampProductSidebarWidth(width: number): number { return Math.min(productSidebarMax(), Math.max(PRODUCT_SIDEBAR_MIN, Math.round(width))); }
+function initialProductSidebarWidth(preferenceKey: string): number {
+  try {
+    const raw = preferenceKey ? localStorage.getItem(preferenceKey) : null;
+    const stored = raw === null ? NaN : Number(raw);
+    if (Number.isFinite(stored)) return clampProductSidebarWidth(stored);
+  } catch { /* Use the reference width if storage is unavailable. */ }
+  return clampProductSidebarWidth(Math.max(280, Math.round(window.innerWidth * 0.28)));
+}
 const attachmentCountLimit = 20;
 const attachmentImageLimit = 25 * 1024 * 1024;
 const attachmentImagesTotalLimit = 200 * 1024 * 1024;
@@ -226,6 +237,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const reference = new URLSearchParams(window.location.search).get('reference') === '101-new-bot';
   const remote = Boolean(account) && !reference;
   const storageKey = account ? `${STORAGE_KEY}:${account.tenantId}:${account.userId}${remote ? ':server-chat-v1' : ''}` : STORAGE_KEY;
+  const sidebarPreferenceKey = account ? `coke-grok-bot:sidebar-width:v1:${account.tenantId}:${account.userId}` : '';
+  const [sidebarWidth, setSidebarWidth] = useState(() => initialProductSidebarWidth(sidebarPreferenceKey));
+  const sidebarResizeStart = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const [state, setState] = useState<PreviewState>(() => reference ? initialState(true) : safeStoredState(storageKey) || initialState(false));
   const [botStatus, setBotStatus] = useState<'loading' | 'ready' | 'error'>(remote ? 'loading' : 'ready');
   const [botError, setBotError] = useState('');
@@ -310,6 +324,10 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     if (reference) return;
     try { localStorage.setItem(storageKey, JSON.stringify(remote ? { ...state, messages: {}, showOnboarding: {} } : state)); } catch { /* The preview still works in memory. */ }
   }, [state, reference, remote, storageKey]);
+  useEffect(() => {
+    if (!sidebarPreferenceKey) return;
+    try { localStorage.setItem(sidebarPreferenceKey, String(Math.round(sidebarWidth))); } catch { /* Keep the current width for this session. */ }
+  }, [sidebarPreferenceKey, sidebarWidth]);
   useEffect(() => {
     if (!remote) return;
     const controller = new AbortController();
@@ -782,7 +800,33 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     avatarQueue.current[selected.id] = next;
     void next.finally(() => { if (avatarQueue.current[selected.id] === next) delete avatarQueue.current[selected.id]; });
   }
-  const renderBotRow=(bot:Bot)=><div className="bot-row-wrap" key={bot.id}><button ref={element=>{sidebarRows.current[bot.id]=element}} type="button" className={`bot-row ${!newChat && !activeGroup && bot.id === active?.id ? 'selected' : ''}`} aria-haspopup="menu" onClick={() => selectBot(bot.id)} onContextMenu={event=>{event.preventDefault();setSidebarMenu({id:bot.id,x:Math.max(0,Math.min(event.clientX,window.innerWidth-200)),y:Math.max(0,Math.min(event.clientY,window.innerHeight-265))})}}>
+  function startSidebarResize(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    sidebarResizeStart.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: sidebarWidth };
+  }
+  function moveSidebarResize(event: React.PointerEvent<HTMLDivElement>) {
+    const start = sidebarResizeStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    setSidebarWidth(clampProductSidebarWidth(start.startWidth + event.clientX - start.startX));
+  }
+  function finishSidebarResize(event: React.PointerEvent<HTMLDivElement>) {
+    if (sidebarResizeStart.current?.pointerId !== event.pointerId) return;
+    sidebarResizeStart.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+  function adjustSidebarResize(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'ArrowLeft') { event.preventDefault(); setSidebarWidth(width => clampProductSidebarWidth(width - 16)); }
+    else if (event.key === 'ArrowRight') { event.preventDefault(); setSidebarWidth(width => clampProductSidebarWidth(width + 16)); }
+    else if (event.key === 'Home') { event.preventDefault(); setSidebarWidth(PRODUCT_SIDEBAR_MIN); }
+    else if (event.key === 'End') { event.preventDefault(); setSidebarWidth(productSidebarMax()); }
+  }
+  function openNewChat() {
+    if (reference || remote && agentFeature === 'enabled') { setRecipientQuery(''); setNewChat(true); setPanel(false); }
+    else beginCreate();
+  }
+  const renderBotRow=(bot:Bot)=><div className="bot-row-wrap" key={bot.id}><button ref={element=>{sidebarRows.current[bot.id]=element}} type="button" className={`bot-row ${!newChat && !activeGroup && bot.id === active?.id ? 'selected' : ''}`} aria-label={sidebarWidth <= 140 ? `Open ${bot.name}` : undefined} title={sidebarWidth <= 140 ? bot.name : undefined} aria-haspopup="menu" onClick={() => selectBot(bot.id)} onContextMenu={event=>{event.preventDefault();setSidebarMenu({id:bot.id,x:Math.max(0,Math.min(event.clientX,window.innerWidth-200)),y:Math.max(0,Math.min(event.clientY,window.innerHeight-265))})}}>
           <Avatar bot={bot} size={46} /><span className="bot-row-content"><span className="bot-row-title"><span onDoubleClick={event=>{event.stopPropagation();beginSidebarRename(bot.id)}}>{bot.name}</span>{bot.label && <small>{bot.label}</small>}<time dateTime={bot.lastActivityAt||undefined}>{formatBotTime(bot.lastActivityAt)}</time></span><span className="bot-preview">{bot.preview}</span></span>
         </button>{sidebarRename?.id===bot.id && <input ref={sidebarInput} className="sidebar-rename" aria-label="Rename Bot" maxLength={60} value={sidebarRename.value} onChange={event=>{const edit={id:bot.id,value:event.target.value};sidebarRenameRef.current=edit;setSidebarRename(edit)}} onBlur={event=>finishSidebarRename(bot.id,event.currentTarget.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur()}else if(event.key==='Escape'){event.preventDefault();sidebarRenameRef.current=null;setSidebarRename(null);sidebarRows.current[bot.id]?.focus()}}} />}</div>;
   const unresolvedOutcome = agentFeature === 'enabled' && runHistory.id === active?.id && runHistory.runs.some(run => run.status === 'unknown' && run.recoveryState === 'pending');
@@ -793,9 +837,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   if (botStatus === 'loading') return <main className="auth-page"><div className="auth-card">Loading your Bots…</div></main>;
   if (botStatus === 'error') return <main className="auth-page"><div className="auth-card"><p role="alert">Could not load your Bots.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></div></main>;
 
-  return <div className={`app ${reference ? 'reference-mode' : 'preview-mode'} ${account ? 'product-shell' : ''}`}>
+  return <div className={`app ${reference ? 'reference-mode' : 'preview-mode'} ${account ? 'product-shell' : ''} ${account && sidebarWidth <= 140 ? 'sidebar-collapsed' : ''}`} style={{ '--sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}>
     <aside className="sidebar" aria-label="Bots">
-      <div className="sidebar-top">{!account && <IconButton name="search" label="Search bots" onClick={() => { setSearching(value => !value); setQuery(''); }} />}<IconButton buttonRef={createTrigger} name="plus" label="New chat" onClick={() => { if(reference||remote&&agentFeature==='enabled'){setRecipientQuery('');setNewChat(true);setPanel(false)}else beginCreate(); }} /></div>
+      <div className="sidebar-top">{!account && <IconButton name="search" label="Search bots" onClick={() => { setSearching(value => !value); setQuery(''); }} />}<IconButton buttonRef={createTrigger} name="plus" label="New chat" onClick={openNewChat} /></div>
       {account && <label className="product-search"><Icon name="search" /><input aria-label="Search bots" placeholder="Search" value={query} onChange={event => setQuery(event.target.value)} /></label>}
       {searching && <input className="search-input" aria-label="Search bots" value={query} placeholder="Search bots" onChange={event => setQuery(event.target.value)} />}
       <button className="primary-bot" type="button" onClick={() => setNotice(true)} aria-label="Primary bot preview"><Avatar bot={primary} size={80} /><span>{primary.name}</span><small>{primary.label}</small></button>
@@ -804,15 +848,17 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         <div className="section-line unassigned"><span>Unassigned</span></div>
         {visibleBots.map(renderBotRow)}
         {hiddenBots.length>0 && <><button type="button" className="hidden-section" aria-expanded={hiddenOpen} onClick={()=>setHiddenOpen(value=>!value)}><span>{hiddenOpen?'⌄':'›'}&nbsp; Hidden Bots</span><span>{hiddenBots.length}</span></button>{hiddenOpen && hiddenBots.map(renderBotRow)}</>}
-        {filteredGroups.length>0&&<><div className="section-line group-section-heading"><span>Groups</span></div>{filteredGroups.map(group=><button key={group.id} type="button" className={`bot-row group-row ${selectedGroupId===group.id&&!newChat?'selected':''}`} onClick={()=>selectGroup(group.id)} aria-label={`Open group ${group.name}`}><GroupAvatar members={group.members} size={38}/><span className="bot-row-content"><span className="bot-row-title"><span>{group.name}</span><time dateTime={group.lastActivityAt||undefined}>{formatBotTime(group.lastActivityAt)}</time></span><span className="bot-preview">{group.preview}</span></span></button>)}</>}
+        {filteredGroups.length>0&&<><div className="section-line group-section-heading"><span>Groups</span></div>{filteredGroups.map(group=><button key={group.id} type="button" className={`bot-row group-row ${selectedGroupId===group.id&&!newChat?'selected':''}`} onClick={()=>selectGroup(group.id)} aria-label={`Open group ${group.name}`} title={sidebarWidth<=140?group.name:undefined}><GroupAvatar members={group.members} size={38}/><span className="bot-row-content"><span className="bot-row-title"><span>{group.name}</span><time dateTime={group.lastActivityAt||undefined}>{formatBotTime(group.lastActivityAt)}</time></span><span className="bot-preview">{group.preview}</span></span></button>)}</>}
         {filtered.length === 0&&filteredGroups.length===0 && <p className="empty-list">No matching bots</p>}
       </div>
+      {account && <div className="sidebar-rail-actions"><IconButton name="plus" label="New chat" onClick={openNewChat} /></div>}
       {reference && <button type="button" className="more-unreads">↓&nbsp; More unreads</button>}
       <div className="sidebar-footer">{account ? <>
         <button type="button" className="account-control" aria-label="Account menu" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen(value => !value)}><span className="account-dot">{account.name.slice(0, 1).toUpperCase()}</span><span className="account-name">{account.name}</span></button>
         {accountMenuOpen && <div className="account-menu" role="menu" aria-label="Account"><button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); setNotice(true); }}>Connect apps</button><button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); onLogout?.(); }}>Sign out</button></div>}
       </> : <><div className="account-dot">M</div><button type="button" className="connect-button" onClick={() => setNotice(true)}>Connect apps <span aria-hidden="true">◈◉▣</span></button></>}</div>
     </aside>
+    {account && <div className="sidebar-resize-handle" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" aria-valuemin={PRODUCT_SIDEBAR_MIN} aria-valuemax={productSidebarMax()} aria-valuenow={Math.round(sidebarWidth)} tabIndex={0} onPointerDown={startSidebarResize} onPointerMove={moveSidebarResize} onPointerUp={finishSidebarResize} onPointerCancel={finishSidebarResize} onKeyDown={adjustSidebarResize} onDoubleClick={() => setSidebarWidth(clampProductSidebarWidth(Math.max(280, Math.round(window.innerWidth * 0.28))))} />}
     {sidebarMenu && <div ref={sidebarMenuElement} role="menu" aria-label="Bot actions" className="sidebar-context-menu" style={{left:sidebarMenu.x,top:sidebarMenu.y}} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();const id=sidebarMenu.id;setSidebarMenu(null);sidebarRows.current[id]?.focus()}}}>
       <button type="button" role="menuitem" onClick={()=>menuBot&&changeSidebarState(menuBot.id,'pinned',!menuBot.pinned)}><BotMenuIcon name="pin" />{menuBot?.pinned?'Unpin':'Pin'}</button>
       <button type="button" role="menuitem" disabled title="Not available yet"><BotMenuIcon name="folder" />Move to new section</button>

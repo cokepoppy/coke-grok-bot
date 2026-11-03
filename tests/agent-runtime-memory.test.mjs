@@ -13,7 +13,7 @@ async function freePort() {
   const port=server.address().port;await new Promise(resolve=>server.close(resolve));return port;
 }
 
-test('Agent runtime forwards only mediated Bot memory to Pi and DSH adapters',async()=>{
+test('Agent runtime forwards only validated Bot memory and handoff rosters to Pi and DSH adapters',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'grok-agent-runtime-memory-'));
   const workerToken=randomUUID(),runtimeToken=randomUUID(),runtimePort=await freePort(),workerPort=await freePort();
   const worker=createServer((req,res)=>{
@@ -34,18 +34,23 @@ test('Agent runtime forwards only mediated Bot memory to Pi and DSH adapters',as
     }
     assert.equal(ready,true,'Agent runtime must become ready');
     for(const engine of ['pi','dsh']){
-      const taskId=randomUUID(),botId=randomUUID(),extra='memory-extra-field-must-not-reach-adapter';
-      const response=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId,botId,screenId:botId,cwd:`tasks/${taskId}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},memory:{mode:'mediated',token:extra}})});
+      const taskId=randomUUID(),botId=randomUUID(),target={id:randomUUID(),name:'Sales Outbound',label:'Research'},memoryExtra='memory-extra-field-must-not-reach-adapter',handoffExtra='handoff-token-extra-must-not-reach-adapter';
+      const response=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId,botId,screenId:botId,cwd:`tasks/${taskId}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},memory:{mode:'mediated',token:memoryExtra},handoffs:{mode:'mediated',bots:[target],token:handoffExtra}})});
       assert.equal(response.status,200);assert.equal((await response.json()).status,'done');
       const captured=JSON.parse(await readFile(join(dir,`${taskId}.json`),'utf8'));
       assert.deepEqual(captured.memory,{mode:'mediated'},`${engine} must receive only the validated memory mode`);
-      assert.equal(JSON.stringify(captured).includes(extra),false,`${engine} must not receive caller-supplied bridge credentials`);
+      assert.deepEqual(captured.handoffs,{mode:'mediated',bots:[target]},`${engine} must receive the sanitized same-owner Bot roster`);
+      assert.equal(JSON.stringify(captured).includes(memoryExtra),false,`${engine} must not receive caller-supplied memory credentials`);
+      assert.equal(JSON.stringify(captured).includes(handoffExtra),false,`${engine} must not receive caller-supplied handoff credentials`);
       const plainTask=randomUUID(),plainBot=randomUUID();
       const plain=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId:plainTask,botId:plainBot,screenId:plainBot,cwd:`tasks/${plainTask}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'}})});
-      assert.equal(plain.status,200);const plainInput=JSON.parse(await readFile(join(dir,`${plainTask}.json`),'utf8'));assert.equal(Object.hasOwn(plainInput,'memory'),false);
+      assert.equal(plain.status,200);const plainInput=JSON.parse(await readFile(join(dir,`${plainTask}.json`),'utf8'));assert.equal(Object.hasOwn(plainInput,'memory'),false);assert.equal(Object.hasOwn(plainInput,'handoffs'),false);
       const invalidTask=randomUUID(),invalidBot=randomUUID();
-      const invalid=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId:invalidTask,botId:invalidBot,screenId:invalidBot,cwd:`tasks/${invalidTask}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},memory:{mode:'untrusted',token:extra}})});
+      const invalid=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId:invalidTask,botId:invalidBot,screenId:invalidBot,cwd:`tasks/${invalidTask}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},memory:{mode:'untrusted',token:memoryExtra}})});
       assert.equal(invalid.status,400);assert.equal(await access(join(dir,`${invalidTask}.json`)).then(()=>true,()=>false),false,'invalid memory bridge input must fail before starting an adapter');
+      const invalidHandoffTask=randomUUID(),invalidHandoffBot=randomUUID();
+      const invalidHandoff=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId:invalidHandoffTask,botId:invalidHandoffBot,screenId:invalidHandoffBot,cwd:`tasks/${invalidHandoffTask}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},handoffs:{mode:'mediated',bots:[{id:'not-a-bot',name:'Foreign Bot',label:''}]}})});
+      assert.equal(invalidHandoff.status,400);assert.equal(await access(join(dir,`${invalidHandoffTask}.json`)).then(()=>true,()=>false),false,'invalid Bot roster must fail before starting an adapter');
     }
   }finally{
     runtime.kill('SIGTERM');await Promise.race([once(runtime,'exit'),new Promise(resolve=>setTimeout(resolve,2000))]);

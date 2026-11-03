@@ -16,6 +16,7 @@ import { WorkspaceFileStore } from './file-store.ts';
 import { WorkspaceFileTransport } from './workspace-file-client.ts';
 import { BotMemoryStore } from './bot-memory-store.ts';
 import { BotMemoryBridge } from './bot-memory-bridge.ts';
+import { BotHandoffStore } from './bot-handoff-store.ts';
 
 function required(env:NodeJS.ProcessEnv,key:string):string { const value=env[key]?.trim();if(!value)throw new Error(`Missing ${key}`);return value; }
 async function privateFile(path:string):Promise<Buffer>{
@@ -42,6 +43,7 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  const provisioner=new DesktopBrokerClient(required(env,'COKE_GROK_BROKER_URL'),brokerCa,brokerToken);
  const runs=new RunStore(pool);await runs.migrate();
  const memories=new BotMemoryStore(pool);await memories.migrate();
+ const handoffs=new BotHandoffStore(pool);await handoffs.migrate();
  const files=new WorkspaceFileStore(pool),workspaceFiles=new WorkspaceFileTransport(provisioner);
  const approvals=new ApprovalStore(pool);await approvals.migrate();
  await approvals.purgeExpiredScreenshots();
@@ -55,14 +57,14 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
   return new HttpGuardedComputerWorker(owner,botId,new URL(`http://desktop.${identity.namespace}.svc.cluster.local:8082/`),identity.controlToken,'00000000-0000-4000-8000-000000000000');
  },async(owner,signal)=>{await provisioner.connect(owner,signal)});
  const memoryBridge=new BotMemoryBridge(memories);
- const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals,bridge,memoryBridge);
+ const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals,bridge,memoryBridge,handoffs);
  const executor=engine==='dsh'
-  ? new DshExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories)
-  : new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories);
+  ? new DshExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories,handoffs)
+  : new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories,handoffs);
  const scheduler=new RunScheduler(runs,executor,{concurrency:2,leaseSeconds:30});
  const server=gateway.createServer({key:tlsKey,cert});
  try{server.listen(3002,'0.0.0.0');await once(server,'listening')}catch(error){gateway.close();server.close();throw error}
- const timer=setInterval(()=>{void scheduler.tick().catch(()=>console.error('Pi scheduler polling failed.'))},2000);timer.unref();
+ const timer=setInterval(()=>{void scheduler.tick().then(()=>handoffs.deliverReplies()).catch(()=>console.error('Pi scheduler polling failed.'))},2000);timer.unref();
  const screenshotCleanup=setInterval(()=>{void approvals.purgeExpiredScreenshots().catch(()=>console.error('Approval screenshot cleanup failed.'))},60000);screenshotCleanup.unref();
  return {runs,approvals,computer,files,workspaceFiles,engine,async close(){clearInterval(timer);clearInterval(screenshotCleanup);await scheduler.stop();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
 }
