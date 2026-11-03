@@ -7,6 +7,26 @@ test('guarded worker rejects changed screens, locations and ownership',async()=>
  const state=await worker.snapshot();image=Buffer.from('screen-b');await assert.rejects(worker.execute({},state));image=Buffer.from('screen-a');url='https://example.test/changed';await assert.rejects(worker.execute({},state));url=state.url;owner='user';await assert.rejects(worker.execute({},state));assert.equal(effects,0);
  owner='agent';assert.equal(await worker.execute({},state),1);
 });
+test('approved browser navigation tolerates screenshot-only changes but keeps the source URL and owner bound',async()=>{
+ let owner='agent',url='about:blank',image=Buffer.from('address-bar-caret-a'),effects=0;
+ const worker=createGuardedComputer({readOwner:()=>owner,readPageUrl:async()=>url,readScreenshot:async()=>image,perform:async()=>++effects});
+ const state=await worker.snapshot();
+ image=Buffer.from('address-bar-caret-b');
+ assert.equal(await worker.execute({kind:'browser',action:'navigate',url:'https://example.com/'},state),1);
+ assert.equal(effects,1);
+ await assert.rejects(worker.execute({kind:'browser',action:'navigate',url:'https://example.com/'},{...state,url:'https://other.example/'}),/state or ownership changed/);
+ owner='user';
+ await assert.rejects(worker.execute({kind:'browser',action:'navigate',url:'https://example.com/'},state),/state or ownership changed/);
+ assert.equal(effects,1);
+});
+test('approved browser clicks remain bound to the exact screenshot',async()=>{
+ let image=Buffer.from('screen-a'),effects=0;
+ const worker=createGuardedComputer({readOwner:()=> 'agent',readPageUrl:async()=> 'https://example.test/',readScreenshot:async()=>image,perform:async()=>++effects});
+ const state=await worker.snapshot();
+ image=Buffer.from('screen-b');
+ await assert.rejects(worker.execute({kind:'browser',action:'click',by:'role',role:'button',target:'Continue'},state),/state or ownership changed/);
+ assert.equal(effects,0);
+});
 test('ownership changes and guarded actions run serially',async()=>{
  let owner='agent',started=false,release;const gate=new Promise(resolve=>{release=resolve});
  const worker=createGuardedComputer({readOwner:()=>owner,readPageUrl:async()=>'',readScreenshot:async()=>Buffer.from('screen'),perform:async()=>{started=true;await gate;return 'done'}});

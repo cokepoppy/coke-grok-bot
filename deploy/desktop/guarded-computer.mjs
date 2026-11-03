@@ -29,7 +29,8 @@ export function createGuardedComputer({readOwner,readPageUrl,readScreenshot,perf
     execute:(input,expected)=>locked(async()=>{
       if(!expected||typeof expected!=='object'||expected.owner!=='agent'||typeof expected.url!=='string'||!/^[a-f0-9]{64}$/.test(expected.screenshotSha256||''))throw new Error('Invalid expected computer state');
       const current=await capture();
-      if(current.owner!=='agent'||current.url!==expected.url||current.screenshotSha256!==expected.screenshotSha256)throw new Error('Computer state or ownership changed');
+      const approvedNavigation=input?.kind==='browser'&&input.action==='navigate';
+      if(current.owner!=='agent'||current.url!==expected.url||(!approvedNavigation&&current.screenshotSha256!==expected.screenshotSha256))throw new Error('Computer state or ownership changed');
       return perform(input);
     }),
   };
