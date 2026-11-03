@@ -283,3 +283,13 @@ MySQL 只读核对确认 `Public E2E 2026-11-02` 的六条 Bot 运行全部 `com
 本轮复核：`npm run test:runtime` 87/87、`npm run test:ui` 通过、`npm run build:deployment` 通过、`git diff --check` 通过。本地 UI 套件只作辅助；公网页面点击和 MySQL 持久化记录才是产品验收证据。`test:runtime-mysql` 未在本轮重跑，因为本机没有现成的临时 root 测试库端口，现有应用 MySQL 拒绝免密 root；没有改动数据库账户或创建不隔离的测试库。真实公网 handoff 的 MySQL 行已只读核实。
 
 唯一功能分支仍为 `codex/grok-bot-persistent-group-chat`；保留六 Bot 6/6 和 Chief → Sales handoff 的通过记录，也保留 run2 的 Account Manager unknown 失败记录。分支尚未获用户最终验收，未合并 main、未打 checkpoint tag，未创建下一 feature 分支。
+
+### 2026-11-03 公网六 Bot 点击验收复测：未通过
+
+按用户再次明确的口径，本次从已登录 Chrome 的 `https://codex.cokeagent.com/grok-bot/` 实际点击打开 `Offsite crew`，并通过网页 composer 提交了一条只读 Example Domain 任务。没有调用 localhost 或直接请求应用 API 替代页面操作，也没有重发该任务。
+
+结果不通过：Expense Manager 的页面审批卡确实显示了对 `https://example.com/` 的 Browser `navigate` 请求；点击 `Approve` 后，该 Bot 最终仍报告导航被 `Approved computer action was not confirmed` 拒绝，Computer 截图也失败。Talent Scout 报告 Browser User 读到 `document.title = "Example Domain"` 且无可见 H1，但同一 run 的 Computer User 截图及随后在产品 Computer 面板中看到的真实 K3D Chromium 都是 `about:blank`，因此 Browser 结果与电脑截图不一致，不能验收。Chief 的本次 run 保持 `Outcome unknown · check before retrying`，Computer 面板显示 `Computer not connected`；未确认其结果或重试。当前群聊只出现 Expense Manager 和 Talent Scout 两张新结果卡，未证明六 Bot 6/6 完成。
+
+诊断时发现公网入口仍转发到 Mac 本机 K3D，但 `coke-grok-auth` 运行镜像是 `coke-grok-auth:public-sidebar-20261102-r1`。对应候选 manifest 的源码基线是 `fd3b02e6582a4a42f886bca7360371b563afe514`，而唯一功能分支 HEAD 已是 `2b45a9d70f21c2dd7b6eda15344f5d4b84bbeb30`；Auth 与当前源码不一致。Agent 和 Desktop Pod 显示 Running，分别使用 `coke-grok-desktop:sha-e3fd3c9422f4e7bbe4526c8be6f0321182739858` 与 `coke-grok-desktop:sha-057a5e58bd856da7a6df2b4a08b6f5c39cbd3bec`，但 Pod Ready 不代表 Bot 屏幕已连接。Auth 日志在相同时间窗包含 DeepSeek 上游 HTTP 200 及 `INTERNAL_FAILURE` 电脑请求；这只能证明有上游流量，不能证明每个 Bot 的电脑动作完成。
+
+本次没有部署或回滚镜像，没有改动 MySQL、PVC、K3D 工作负载或 VPS 隧道，也没有重试未知任务。先保留这条失败记录；在审批确认与 Bot 屏幕连接问题解决、当前 unknown 运行可安全收尾、候选源码与公网部署版本一致前，不把本次测试计为通过。11 月 2 日已完成的六 Bot 6/6 与本次失败是两次独立运行，应分别保留。
