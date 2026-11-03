@@ -20,7 +20,7 @@ let created = false;
 let forward: ChildProcess | undefined;
 let forwardStderr = '';
 let stage = 'initialize';
-let lastScreenState: { screenId: string; title: string; text: string; url: string } | undefined;
+let lastScreenState: { screenId: string; title: string; text: string; url: string; visibleH1?: string[] } | undefined;
 
 async function exec(command: string, args: string[], input?: string, timeout = 120_000) {
   const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -147,13 +147,15 @@ try {
     stage = 'Browser User inspect';
     const response = await worker('/v1/browser', screenId, { action: 'inspect' });
     await expectStatus(response, 200, 'Browser User inspect');
-    const state = await response.json() as { title: string; text: string; url: string };
+    const state = await response.json() as { title: string; text: string; url: string; visibleH1: string[] };
     lastScreenState = { screenId, ...state };
     return state;
   };
   const [initialA, initialB] = await Promise.all([inspect(screenA), inspect(screenB)]);
   assert.equal(initialA.title, 'BOT_A_SCREEN');
   assert.equal(initialB.title, 'BOT_B_SCREEN');
+  assert.deepEqual(initialA.visibleH1, ['BOT_A_SCREEN']);
+  assert.deepEqual(initialB.visibleH1, ['BOT_B_SCREEN']);
   assert.ok(initialB.text.includes('SHARED_STATE_OK'), 'Bots for one user should share the browser profile');
 
   stage = 'Browser User click';

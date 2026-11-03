@@ -424,13 +424,19 @@ async function agentBrowserAction(input, screenId) {
               disabled: Boolean(element.disabled),
             };
           });
+        const visibleH1 = Array.from(document.querySelectorAll('h1'))
+          .filter(visible)
+          .slice(0, 20)
+          .map(element => String(element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim())
+          .filter(Boolean);
         return {
           title: document.title.slice(0, 300),
           text: (document.body?.innerText || '').slice(0, 12_000),
+          visibleH1,
           controls,
         };
       });
-      return { ready: true, action, url: safePageUrl(browserPage.url()), title: snapshot.title, text: snapshot.text, controls: snapshot.controls };
+      return { ready: true, action, url: safePageUrl(browserPage.url()), title: snapshot.title, text: snapshot.text, visibleH1: snapshot.visibleH1, controls: snapshot.controls };
     }
 
     if (action === 'navigate') {
