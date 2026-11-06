@@ -5,6 +5,11 @@ import type { DesktopConnections } from './pi-executor.ts';
 
 export interface WorkspaceUploadResult { size: number; sha256: string }
 export interface WorkspaceDownload { body: IncomingMessage; size: number }
+export interface WorkspaceFileTransportApi {
+  upload(owner: RunOwner, input: { id: string; extension: string; mimeType: string; size: number; body: IncomingMessage }, signal: AbortSignal): Promise<WorkspaceUploadResult>;
+  download(owner: RunOwner, storageKey: string, signal: AbortSignal): Promise<WorkspaceDownload>;
+  removeUpload(owner: RunOwner, id: string, extension: string, signal: AbortSignal): Promise<void>;
+}
 
 export class WorkspaceFileTransportError extends Error {
   constructor(readonly diagnosticCode: string) {
@@ -19,7 +24,7 @@ function networkDiagnostic(error: unknown): string {
 }
 
 /** Streams file bytes between the authenticated web request and the owner's private K3D Agent Pod. */
-export class WorkspaceFileTransport {
+export class WorkspaceFileTransport implements WorkspaceFileTransportApi {
   constructor(private readonly desktops: DesktopConnections, private readonly request: typeof httpRequest = httpRequest) {}
 
   async upload(owner: RunOwner, input: { id: string; extension: string; mimeType: string; size: number; body: IncomingMessage }, signal: AbortSignal): Promise<WorkspaceUploadResult> {

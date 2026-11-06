@@ -8,20 +8,54 @@ import type { ComputerBridge,RunScope } from './computer-bridge.ts';
 import type { RunOwner } from './run-store.ts';
 import type { BotMemoryBridge, BotMemoryRunScope } from './bot-memory-bridge.ts';
 import type { BotHandoffStore, BotHandoffScope } from './bot-handoff-store.ts';
+import type { BotRoutineBridge, BotRoutineScope } from './bot-routine-bridge.ts';
+import type { RoutineEditInput } from './routine-store.ts';
 import { safeDiagnosticMetadata } from './safe-diagnostics.ts';
 
 /**
  * A run receives a short-lived capability; the upstream credential stays in
  * the control process. Never attach this server to the public ingress.
  */
-type Grant = { expires: number; remaining: number; memoryRemaining:number; handoffRemaining:number; abort: AbortController; timer: NodeJS.Timeout; scope?:{runId:string;leaseId:string;botId?:string;owner?:RunOwner}; approvalsRemaining:number };
+type Grant = { expires: number; remaining: number; memoryRemaining:number; handoffRemaining:number; routineRemaining:number; abort: AbortController; timer: NodeJS.Timeout; scope?:{runId:string;leaseId:string;botId?:string;owner?:RunOwner}; approvalsRemaining:number; modelRateLimit?:{retryAfterSeconds?:number} };
+type UpstreamModelResponse = {response?:Response;retryAfterSeconds?:number};
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function retryAfterSeconds(value:string|null,now=Date.now()):number|undefined {
+  const input=value?.trim();if(!input)return undefined;
+  if(/^\d+$/.test(input)){
+    const seconds=Number(input);return Number.isSafeInteger(seconds)&&seconds<=86400?seconds:undefined;
+  }
+  const date=Date.parse(input);if(!Number.isFinite(date))return undefined;
+  const seconds=Math.max(0,Math.ceil((date-now)/1000));
+  return seconds<=86400?seconds:undefined;
+}
+function replyRateLimited(response:import('node:http').ServerResponse,retryAfter?:number):void {
+  response.writeHead(429,{
+    'Content-Type':'application/json; charset=utf-8',
+    'Cache-Control':'no-store',
+    'X-Content-Type-Options':'nosniff',
+    ...(retryAfter===undefined?{}:{'Retry-After':String(retryAfter)}),
+  });
+  response.end(JSON.stringify({error:{message:'The model provider rate-limited this run.',type:'rate_limit_error',code:'model_upstream_429'}}));
+}
+function validRoutineEditInput(value:unknown):value is RoutineEditInput {
+  if(!value||typeof value!=='object'||Array.isArray(value))return false;
+  const body=value as Record<string,unknown>;
+  if(Object.keys(body).sort().join(',')!=='instruction,name,schedule,timezone'||typeof body.name!=='string'||typeof body.instruction!=='string'||typeof body.timezone!=='string'||!body.schedule||typeof body.schedule!=='object'||Array.isArray(body.schedule))return false;
+  const schedule=body.schedule as Record<string,unknown>;
+  if(schedule.kind==='weekly')return Object.keys(schedule).sort().join(',')==='hour,kind,minute,weekday'&&Number.isInteger(schedule.weekday)&&Number.isInteger(schedule.hour)&&Number.isInteger(schedule.minute);
+  return schedule.kind==='interval'&&Object.keys(schedule).sort().join(',')==='kind,minutes'&&Number.isInteger(schedule.minutes);
+}
 export class ModelGateway {
   private readonly grants = new Map<string, Grant>();
   private readonly upstream: URL;
-  constructor(private readonly apiKey: string, upstream: string, private readonly model: string, private readonly request: typeof fetch = fetch, private readonly approvals?:ApprovalStore, private readonly computer?:ComputerBridge, private readonly memories?:BotMemoryBridge, private readonly handoffs?:BotHandoffStore) {
+  private upstreamRateLimit?:{until:number;retryAfterSeconds:number};
+  private providerAvailable=false;
+  private rateLimitGeneration=0;
+  private upstreamRequestTail:Promise<void>=Promise.resolve();
+  constructor(private readonly apiKey: string, upstream: string, private readonly model: string, private readonly request: typeof fetch = fetch, private readonly approvals?:ApprovalStore, private readonly computer?:ComputerBridge, private readonly memories?:BotMemoryBridge, private readonly handoffs?:BotHandoffStore, private readonly routines?:BotRoutineBridge) {
     this.upstream = new URL(upstream);
-    if (this.upstream.protocol !== 'https:' || this.upstream.username || this.upstream.password || this.upstream.search || this.upstream.hash || !this.upstream.pathname.endsWith('/compatible-mode/v1')) throw new Error('Invalid model endpoint');
+    const deepSeekOfficial=this.upstream.origin==='https://api.deepseek.com'&&this.upstream.pathname==='/';
+    if (this.upstream.protocol !== 'https:' || this.upstream.username || this.upstream.password || this.upstream.search || this.upstream.hash || (!deepSeekOfficial&&!this.upstream.pathname.endsWith('/compatible-mode/v1'))) throw new Error('Invalid model endpoint');
     if (!apiKey || apiKey.length > 4096 || /[\r\n]/.test(apiKey) || !model) throw new Error('Invalid model configuration');
   }
   issue(options: { ttlMs: number; calls: number; scope?:{runId:string;leaseId:string;botId?:string;owner?:RunOwner} }): string {
@@ -30,12 +64,52 @@ export class ModelGateway {
     const token = randomBytes(32).toString('base64url');
     const timer = setTimeout(() => this.revoke(token), options.ttlMs); timer.unref();
     const scope=options.scope ? { ...options.scope, ...(options.scope.owner ? {owner:{...options.scope.owner}} : {}) } : undefined;
-    this.grants.set(token, { expires: Date.now() + options.ttlMs, remaining: options.calls, memoryRemaining:100, handoffRemaining:8, abort: new AbortController(), timer, scope, approvalsRemaining:100 });
+    this.grants.set(token, { expires: Date.now() + options.ttlMs, remaining: options.calls, memoryRemaining:100, handoffRemaining:8, routineRemaining:20, abort: new AbortController(), timer, scope, approvalsRemaining:100 });
     return token;
   }
   revoke(token: string): void {
     const grant = this.grants.get(token);
     if (grant) { clearTimeout(grant.timer); grant.abort.abort(); this.grants.delete(token); }
+  }
+  diagnosticCode(token:string):'model_upstream_429'|null {
+    return this.grants.get(token)?.modelRateLimit?'model_upstream_429':null;
+  }
+  private activeUpstreamCooldown():number|undefined {
+    const active=this.upstreamRateLimit;
+    if(!active)return undefined;
+    if(active.until<=Date.now()){this.upstreamRateLimit=undefined;return undefined;}
+    return Math.max(1,Math.ceil((active.until-Date.now())/1000));
+  }
+  private async performUpstreamModelRequest(input:string,init:RequestInit):Promise<UpstreamModelResponse> {
+    const generation=this.rateLimitGeneration;
+    const response=await this.request(input,init);
+    if(response.status===429){
+      const supplied=retryAfterSeconds(response.headers.get('retry-after'));
+      const cooldown=Math.max(1,supplied??60);
+      const until=Math.max(Date.now()+cooldown*1000,this.upstreamRateLimit?.until??0);
+      const effectiveCooldown=Math.max(cooldown,Math.ceil((until-Date.now())/1000));
+      this.upstreamRateLimit={until,retryAfterSeconds:effectiveCooldown};
+      this.providerAvailable=false;
+      this.rateLimitGeneration++;
+      return{response,retryAfterSeconds:effectiveCooldown};
+    }
+    if(generation===this.rateLimitGeneration&&!this.activeUpstreamCooldown())this.providerAvailable=true;
+    return{response};
+  }
+  private async requestUpstreamModel(input:string,init:RequestInit):Promise<UpstreamModelResponse> {
+    const cooldown=this.activeUpstreamCooldown();
+    if(cooldown!==undefined)return{retryAfterSeconds:cooldown};
+    if(this.providerAvailable)return this.performUpstreamModelRequest(input,init);
+    let release=()=>{};
+    const previous=this.upstreamRequestTail;
+    this.upstreamRequestTail=new Promise<void>(resolve=>{release=resolve});
+    await previous;
+    try {
+      const active=this.activeUpstreamCooldown();
+      if(active!==undefined)return{retryAfterSeconds:active};
+      if(!this.providerAvailable)return await this.performUpstreamModelRequest(input,init);
+    } finally {release()}
+    return this.performUpstreamModelRequest(input,init);
   }
   close(): void { for (const token of this.grants.keys()) this.revoke(token); }
   createServer(tls?: { key: Buffer; cert: Buffer }): Server {
@@ -46,13 +120,44 @@ export class ModelGateway {
       const memoryMatch=req.url?.match(/^\/v1\/bot-memory(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}))?$/i);
       const memoryRoute=Boolean(memoryMatch);
       const handoffRoute=req.url==='/v1/bot-handoffs';
+      const routineMatch=req.url?.match(/^\/v1\/bot-routines(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}))?$/i);
+      const routineRoute=Boolean(routineMatch);
       const computerMatch=req.url?.match(/^\/v1\/computer\/actions\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(\/execute)?$/i);
       const computerRoute=req.url==='/v1/computer/control'||req.url==='/v1/computer/inspect'||req.url==='/v1/computer/screenshot'||req.url==='/v1/computer/actions'||Boolean(computerMatch);
       const modelRoute=req.method === 'POST' && req.url === '/v1/chat/completions';
-      if (!approvalRoute && !computerRoute && !memoryRoute && !handoffRoute && !modelRoute) return fail(404);
+      if (!approvalRoute && !computerRoute && !memoryRoute && !handoffRoute && !routineRoute && !modelRoute) return fail(404);
       const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization || '')?.[1];
       const grant = token && this.grants.get(token);
-      if (!grant || grant.expires <= Date.now() || (modelRoute && grant.remaining <= 0) || (memoryRoute && grant.memoryRemaining <= 0) || (handoffRoute && req.method==='POST' && grant.handoffRemaining <= 0)) { if (token && grant) this.revoke(token); return fail(401); }
+      if (!grant || grant.expires <= Date.now() || (memoryRoute && grant.memoryRemaining <= 0) || (handoffRoute && req.method==='POST' && grant.handoffRemaining <= 0) || (routineRoute && grant.routineRemaining <= 0)) { if (token && grant) this.revoke(token); return fail(401); }
+      if(modelRoute&&grant.modelRateLimit)return replyRateLimited(res,grant.modelRateLimit.retryAfterSeconds);
+      if (routineRoute) {
+        const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
+        if(!this.routines||!grant.scope?.owner||!grant.scope.botId)return fail(404);
+        grant.routineRemaining--;
+        const scope:BotRoutineScope={runId:grant.scope.runId,leaseId:grant.scope.leaseId,botId:grant.scope.botId,owner:grant.scope.owner};
+        const disconnected=new AbortController();res.once('close',()=>disconnected.abort());
+        const signal=AbortSignal.any([grant.abort.signal,disconnected.signal,AbortSignal.timeout(10_000)]);
+        try {
+          if(req.method==='GET'&&!routineMatch?.[1]) {
+            const routines=await this.routines.list(scope,signal);
+            return routines?reply(200,{routines}):fail(409);
+          }
+          if((req.method==='POST'&&!routineMatch?.[1])||(req.method==='PATCH'&&routineMatch?.[1])) {
+            if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return fail(415);
+            const chunks:Buffer[]=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>12000)return fail(413);chunks.push(chunk)}
+            let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return fail(400)}
+            if(!validRoutineEditInput(body))return reply(400,{error:'Invalid routine'});
+            const item=req.method==='POST'
+              ? await this.routines.create(scope,body,signal)
+              : await this.routines.update(scope,routineMatch![1],body,signal);
+            return item?reply(req.method==='POST'?201:200,{routine:item}):fail(409);
+          }
+          return fail(405);
+        } catch(error) {
+          if(error instanceof Error&&/^Invalid routine|^Routine limit reached/.test(error.message))return reply(400,{error:error.message});
+          return fail(409);
+        }
+      }
       if (handoffRoute) {
         const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
         if(!this.handoffs||!grant.scope?.owner||!grant.scope.botId)return fail(404);
@@ -132,7 +237,11 @@ export class ModelGateway {
           if(!token||this.grants.get(token)!==grant||grant.expires<=Date.now())return fail(401);
           if(!computerMatch){if(grant.approvalsRemaining<=0)return fail(429);grant.approvalsRemaining--;return reply(201,await this.computer.propose(scope,action,signal))}
           return reply(200,await this.computer.execute(scope,computerMatch[1],action,signal));
-        } catch (error) { console.error('Model gateway computer request failed',safeDiagnosticMetadata(error)); return fail(409); }
+        } catch (error) {
+          const diagnostic=safeDiagnosticMetadata(error);
+          console.error('Model gateway computer request failed',diagnostic);
+          return reply(409,{error:'computer_request_failed',diagnostic});
+        }
       }
       if (approvalRoute) {
         const reply = (status:number,value:unknown) => {res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
@@ -175,10 +284,18 @@ export class ModelGateway {
         grant.remaining--;
         const disconnected = new AbortController();
         res.once('close', () => disconnected.abort());
-        const upstream = await this.request(`${this.upstream.href}/chat/completions`, {
+        const upstreamBase=this.upstream.href.replace(/\/+$/,'');
+        const result = await this.requestUpstreamModel(`${upstreamBase}/chat/completions`, {
           method: 'POST', redirect: 'error', headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json' },
           body: JSON.stringify(payload), signal: AbortSignal.any([grant.abort.signal, disconnected.signal, AbortSignal.timeout(120_000)]),
         });
+        if(result.retryAfterSeconds!==undefined){
+          grant.modelRateLimit={retryAfterSeconds:result.retryAfterSeconds};
+          console.info('Model provider response',{code:result.response?'MODEL_UPSTREAM_RATE_LIMITED':'MODEL_UPSTREAM_RATE_LIMIT_COOLDOWN',status:429,retryAfterSeconds:result.retryAfterSeconds});
+          await result.response?.body?.cancel().catch(()=>undefined);
+          return replyRateLimited(res,result.retryAfterSeconds);
+        }
+        const upstream=result.response!;
         console.info('Model provider response',{code:upstream.ok&&upstream.body?'MODEL_UPSTREAM_OK':'MODEL_UPSTREAM_REJECTED',status:upstream.status});
         if (!upstream.ok || !upstream.body) return fail(502);
         res.writeHead(200, { 'Content-Type': payload.stream === true ? 'text/event-stream; charset=utf-8' : 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });

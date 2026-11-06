@@ -247,6 +247,37 @@ function validateBotHandoffBridge(value) {
   return { mode: 'mediated', bots };
 }
 
+function validateBotRoutineBridge(value) {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.mode !== 'mediated') {
+    throw new Error('Bot routine bridge configuration is invalid');
+  }
+  // The scoped gateway capability is already carried in modelConfig.apiKey;
+  // never pass through any caller-supplied bridge URL or credential.
+  return { mode: 'mediated' };
+}
+
+function validateGroupRuntimeContext(value) {
+  if (value === undefined) return undefined;
+  const validPerson = person => person && typeof person === 'object' && !Array.isArray(person)
+    && typeof person.name === 'string' && person.name.trim() && person.name.length <= 120
+    && typeof person.label === 'string' && person.label.length <= 120;
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.kind !== 'group-chat'
+      || typeof value.groupName !== 'string' || !value.groupName.trim() || value.groupName.length > 120
+      || !validPerson(value.currentBot) || !Array.isArray(value.members) || value.members.length < 2 || value.members.length > 6
+      || !value.members.every(validPerson) || typeof value.targeted !== 'boolean'
+      || Buffer.byteLength(JSON.stringify(value), 'utf8') > 16_384) {
+    throw new Error('Group task context is invalid');
+  }
+  return {
+    kind: 'group-chat',
+    groupName: value.groupName,
+    currentBot: { name: value.currentBot.name, label: value.currentBot.label },
+    members: value.members.map(person => ({ name: person.name, label: person.label })),
+    targeted: value.targeted,
+  };
+}
+
 function requireModelConfig(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Shared Model API configuration is required for cloud Agent kernels');
@@ -397,6 +428,8 @@ async function executeKernel(input, requestSignal, slot) {
   const modelConfig = requireModelConfig(input.modelConfig);
   const memory = validateBotMemoryBridge(input.memory);
   const handoffs = validateBotHandoffBridge(input.handoffs);
+  const routines = validateBotRoutineBridge(input.routines);
+  const runtimeContext = validateGroupRuntimeContext(input.runtimeContext);
   const dingtalkDocumentsBridge = validateDingTalkDocumentsBridge(input.dingtalkDocumentsBridge);
   const dingtalkCalendarBridge = validateDingTalkCalendarBridge(input.dingtalkCalendarBridge);
   const dingtalkMinutesBridge = validateDingTalkMinutesBridge(input.dingtalkMinutesBridge);
@@ -431,8 +464,10 @@ async function executeKernel(input, requestSignal, slot) {
     engine, prompt: `${prompt}${attachmentPrompt}`, cwd, workspace, taskId, botId, screenId, attachments,
     sessionId: typeof input.sessionId === 'string' ? input.sessionId : null,
     modelConfig,
+    ...(runtimeContext ? { runtimeContext } : {}),
     ...(memory ? { memory } : {}),
     ...(handoffs ? { handoffs } : {}),
+    ...(routines ? { routines } : {}),
     computer: process.env.COKE_GROK_MEDIATED_COMPUTER === '1' ? { mode:'mediated', gatewayUrl:modelConfig.baseUrl, gatewayToken:modelConfig.apiKey, screenId } : {
       baseUrl: `http://127.0.0.1:${workerPort}`,
       workerToken: process.env.LINUX_DESKTOP_WORKER_TOKEN,

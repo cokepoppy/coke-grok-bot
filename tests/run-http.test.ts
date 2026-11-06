@@ -22,7 +22,7 @@ test('run API is authenticated, owner-scoped, origin-protected and idempotent',a
  const server=createAuthServer(new GoogleAuthService(ids,provider,base),base,undefined,bots,runs,undefined,undefined,'dsh',files,transport);server.listen(httpPort,'127.0.0.1');await once(server,'listening');
  const login=async(subject:string)=>{const id=await ids.signInGoogle({subject,email:`${subject}@example.test`,name:subject}),token=randomBytes(32).toString('base64url');await ids.createSession(createHash('sha256').update(token).digest('hex'),id.userId,id.tenantId,new Date(Date.now()+60000));return {id,cookie:`coke_grok_session=${token}`}};
  try{
-  const a=await login('a'),b=await login('b');const bot=await bots.create({...a.id,email:'a@example.test',name:'A',role:'owner'},{name:'A',shape:'round',color:'#abcdef'});
+  const a=await login('a'),b=await login('b'),ownerSession={...a.id,email:'a@example.test',name:'A',role:'owner' as const};const bot=await bots.create(ownerSession,{name:'A',shape:'round',color:'#abcdef'}),targetBot=await bots.create(ownerSession,{name:'A2',shape:'hex',color:'#abcdef'}),foreignBot=await bots.create({...b.id,email:'b@example.test',name:'B',role:'owner'},{name:'Foreign',shape:'round',color:'#abcdef'});assert.equal(await bots.setLabel(ownerSession,targetBot.id,'Research'),true);
   const path=`/api/bots/${bot.id}/runs`,request=(path:string,cookie='',init:RequestInit={})=>fetch(base+path,{...init,headers:{cookie,...init.headers}});
   assert.equal((await request('/api/auth/features')).status,401);
   const features=await request('/api/auth/features',a.cookie);assert.equal(features.status,200);assert.deepEqual(await features.json(),{agent:true,engine:'dsh'});
@@ -43,6 +43,13 @@ test('run API is authenticated, owner-scoped, origin-protected and idempotent',a
   assert.equal((await request(`/api/runs/${firstBody.run.id}/recovery`,a.cookie)).status,405);
   assert.equal((await runs.list({...a.id,email:'a@example.test',name:'A',role:'owner'},bot.id))?.find(run=>run.id===firstBody.run.id)?.recoveryState,'retried');
   const retryClaim=await runs.claimNext(a.id,30);assert.equal(retryClaim?.run.id,retriedBody.run.id);assert.equal(await runs.finish(retryClaim!.run.id,retryClaim!.leaseId,'completed','Explicit retry complete.'),true);
+  const mentionRequestId=randomUUID(),mentionPrompt='Please ask @A2 to investigate.',mentionPost=await request(path,a.cookie,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({requestId:mentionRequestId,prompt:mentionPrompt,files:[],mentionBotIds:[targetBot.id]})});
+  assert.equal(mentionPost.status,200);const mentionRun=(await mentionPost.json() as {run:{id:string;prompt:string;runtimeContext:unknown}}).run;
+  assert.equal(mentionRun.prompt,mentionPrompt);assert.deepEqual(mentionRun.runtimeContext,{kind:'bot-mentions',targets:[{id:targetBot.id,name:'A2',label:'Research'}]});
+  assert.equal((await request(path,a.cookie,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({requestId:mentionRequestId,prompt:mentionPrompt,files:[]})})).status,409);
+  assert.equal((await request(path,a.cookie,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({requestId:randomUUID(),prompt:'@A',mentionBotIds:[bot.id]})})).status,400);
+  assert.equal((await request(path,a.cookie,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({requestId:randomUUID(),prompt:'@Foreign',mentionBotIds:[foreignBot.id]})})).status,400);
+  const mentionClaim=await runs.claimNext(a.id,30);assert.equal(mentionClaim?.run.id,mentionRun.id);assert.deepEqual(mentionClaim?.run.runtimeContext,mentionRun.runtimeContext);assert.equal(await runs.finish(mentionRun.id,mentionClaim!.leaseId,'completed','Delegated task completed.'),true);
   const uploadBytes=Buffer.from('customer notes for the Agent'),uploadPath=`/api/bots/${bot.id}/files`;
   const uploaded=await request(uploadPath,a.cookie,{method:'POST',headers:{origin,'content-type':'text/plain','x-file-name':encodeURIComponent('notes.txt')},body:new Uint8Array(uploadBytes)});
   assert.equal(uploaded.status,201);const uploadedFile=(await uploaded.json() as {file:{id:string;name:string}}).file;assert.equal(uploadedFile.name,'notes.txt');

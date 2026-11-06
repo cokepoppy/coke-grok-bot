@@ -5,7 +5,7 @@ import {once} from 'node:events';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import assert from 'node:assert/strict';
-const testId=randomBytes(6).toString('hex'),namespace=`grok-kube-test-${testId}`,image=`coke-grok-kube-client-test:${testId}`,dir=await mkdtemp(join(tmpdir(),'grok-kube-client-'));let created=false;
+const testId=randomBytes(6).toString('hex'),namespace=`grok-kube-test-${testId}`,image='coke-grok-kube-client-test:current',dir=await mkdtemp(join(tmpdir(),'grok-kube-client-'));let created=false;
 async function exec(command:string,args:string[],input?:string,timeout=120000){const child=spawn(command,args,{stdio:['pipe','pipe','pipe']});let out='';child.stdout.setEncoding('utf8');child.stdout.on('data',chunk=>{out+=chunk});child.stderr.resume();child.stdin.end(input);const timer=setTimeout(()=>child.kill('SIGKILL'),timeout);try{const [code]=await once(child,'close') as [number|null];return {code:code??1,out}}finally{clearTimeout(timer)}}
 async function run(command:string,args:string[],input?:string,timeout?:number){const result=await exec(command,args,input,timeout);if(result.code!==0)throw new Error(`${command} test step failed`);return result.out}
 try{
@@ -26,4 +26,4 @@ try{
  let phase='';for(let i=0;i<120;i++){phase=(await run('kubectl',['-n',namespace,'get','pod','client-test','-o','jsonpath={.status.phase}'])).trim();if(['Succeeded','Failed'].includes(phase))break;await new Promise(resolve=>setTimeout(resolve,1000))}
  if(phase!=='Succeeded')throw new Error(`Scoped Kubernetes test Pod did not succeed (${phase})`);
  const logs=await run('kubectl',['-n',namespace,'logs','client-test']);assert.equal(logs.trim(),'Scoped in-cluster Kubernetes client passed: permitted own ConfigMap, denied Secrets and other namespace.');console.log(logs.trim());
-}finally{if(created)await exec('kubectl',['delete','namespace',namespace,'--wait=false'],undefined,20000);await rm(dir,{recursive:true,force:true})}
+}finally{if(created)await exec('kubectl',['delete','namespace',namespace,'--wait=true','--timeout=90s'],undefined,100000);await rm(dir,{recursive:true,force:true})}

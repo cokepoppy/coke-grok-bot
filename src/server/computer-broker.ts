@@ -1,5 +1,6 @@
 import type { Approval,ApprovalStore } from './approval-store.ts';
 import {canonicalComputerAction,type ComputerSnapshot} from './computer-action.ts';
+import {SafeDiagnosticError} from './safe-diagnostics.ts';
 export interface ComputerState extends ComputerSnapshot { owner:'agent'|'user' }
 /** Worker implementation must check state and ownership atomically with the action. */
 export interface GuardedComputerWorker {
@@ -24,11 +25,11 @@ export class ComputerBroker {
   return approval;
  }
  async execute(runId:string,leaseId:string,approvalId:string,input:unknown,signal:AbortSignal):Promise<unknown>{
-  if(signal.aborted)throw new Error('Task stopped');
-  const state=await this.worker.snapshot(signal);if(state.owner!=='agent')throw new Error('User controls the computer');
-  const action=canonicalComputerAction(input,state);
-  if(!await this.approvals.consume(runId,leaseId,approvalId,action))throw new Error('Approval is missing, expired or does not match the current action and screen');
-  if(signal.aborted)throw new Error('Task stopped after approval');
+  if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
+  const state=await this.worker.snapshot(signal);if(state.owner!=='agent')throw new SafeDiagnosticError('COMPUTER_OWNER_USER');
+  let action:string;try{action=canonicalComputerAction(input,state)}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
+  if(!await this.approvals.consume(runId,leaseId,approvalId,action))throw new SafeDiagnosticError('COMPUTER_APPROVAL_REJECTED');
+  if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
   // A transport error after this point is an unknown outcome; never retry it automatically.
   return this.worker.performIfUnchanged(input,state,signal);
  }

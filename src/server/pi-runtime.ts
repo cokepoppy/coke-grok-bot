@@ -17,13 +17,15 @@ import { WorkspaceFileTransport } from './workspace-file-client.ts';
 import { BotMemoryStore } from './bot-memory-store.ts';
 import { BotMemoryBridge } from './bot-memory-bridge.ts';
 import { BotHandoffStore } from './bot-handoff-store.ts';
+import { BotRoutineBridge } from './bot-routine-bridge.ts';
+import { RoutineStore } from './routine-store.ts';
 
 function required(env:NodeJS.ProcessEnv,key:string):string { const value=env[key]?.trim();if(!value)throw new Error(`Missing ${key}`);return value; }
 async function privateFile(path:string):Promise<Buffer>{
  const metadata=await stat(path);if(!metadata.isFile()||(metadata.mode&0o077)!==0)throw new Error('Runtime secret file permissions are not private');
  const value=await readFile(path);if(!value.length||value.length>16384)throw new Error('Invalid runtime secret file');return value;
 }
-export interface PiRuntime { runs:RunStore; approvals:ApprovalStore; computer:UserComputer; files:WorkspaceFileStore; workspaceFiles:WorkspaceFileTransport; engine:'pi'|'dsh'; close():Promise<void> }
+export interface PiRuntime { runs:RunStore; approvals:ApprovalStore; computer:UserComputer; files:WorkspaceFileStore; workspaceFiles:WorkspaceFileTransport; routines:RoutineStore; engine:'pi'|'dsh'; close():Promise<void> }
 /** Opt-in only. Caller supplies Kubernetes service account with separately audited permissions. */
 export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env):Promise<PiRuntime|null>{
  if(env.COKE_GROK_PI_ENABLED!=='1')return null;
@@ -42,6 +44,7 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  const gatewayUrl=`https://${gatewayHost}:3002/v1`;
  const provisioner=new DesktopBrokerClient(required(env,'COKE_GROK_BROKER_URL'),brokerCa,brokerToken);
  const runs=new RunStore(pool);await runs.migrate();
+ const routines=new RoutineStore(pool);await routines.migrate();
  const memories=new BotMemoryStore(pool);await memories.migrate();
  const handoffs=new BotHandoffStore(pool);await handoffs.migrate();
  const files=new WorkspaceFileStore(pool),workspaceFiles=new WorkspaceFileTransport(provisioner);
@@ -57,14 +60,16 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
   return new HttpGuardedComputerWorker(owner,botId,new URL(`http://desktop.${identity.namespace}.svc.cluster.local:8082/`),identity.controlToken,'00000000-0000-4000-8000-000000000000');
  },async(owner,signal)=>{await provisioner.connect(owner,signal)});
  const memoryBridge=new BotMemoryBridge(memories);
- const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals,bridge,memoryBridge,handoffs);
+ const routineBridge=new BotRoutineBridge(routines);
+ const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals,bridge,memoryBridge,handoffs,routineBridge);
  const executor=engine==='dsh'
-  ? new DshExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories,handoffs)
-  : new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories,handoffs);
+  ? new DshExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories,handoffs,routines)
+  : new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories,handoffs,routines);
  const scheduler=new RunScheduler(runs,executor,{concurrency:2,leaseSeconds:30});
  const server=gateway.createServer({key:tlsKey,cert});
- try{server.listen(3002,'0.0.0.0');await once(server,'listening')}catch(error){gateway.close();server.close();throw error}
- const timer=setInterval(()=>{void scheduler.tick().then(()=>handoffs.deliverReplies()).catch(()=>console.error('Pi scheduler polling failed.'))},2000);timer.unref();
+ try{server.listen(3002,'0.0.0.0');await once(server,'listening')}catch(error){await executor.close();gateway.close();server.close();throw error}
+ let routineTickInFlight=false;
+ const timer=setInterval(()=>{if(routineTickInFlight)return;routineTickInFlight=true;void routines.dispatchDue().then(()=>scheduler.tick()).then(()=>handoffs.deliverReplies()).catch(()=>console.error('Pi scheduler polling failed.')).finally(()=>{routineTickInFlight=false})},2000);timer.unref();
  const screenshotCleanup=setInterval(()=>{void approvals.purgeExpiredScreenshots().catch(()=>console.error('Approval screenshot cleanup failed.'))},60000);screenshotCleanup.unref();
- return {runs,approvals,computer,files,workspaceFiles,engine,async close(){clearInterval(timer);clearInterval(screenshotCleanup);await scheduler.stop();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
+ return {runs,approvals,computer,files,workspaceFiles,routines,engine,async close(){clearInterval(timer);clearInterval(screenshotCleanup);await scheduler.stop();await executor.close();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
 }

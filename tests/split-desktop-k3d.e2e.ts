@@ -29,4 +29,4 @@ try{
  await run(['-n',identity.namespace,'rollout','restart','deployment/agent']);await run(['-n',identity.namespace,'rollout','status','deployment/agent','--timeout=150s'],undefined,160_000);
  const newAgent=await find('grok-agent','metadata.name'),persisted=await run(['-n',identity.namespace,'exec',newAgent,'-c','agent','--','node','-e',"process.stdout.write(require('fs').readFileSync('/workspace/shared-test.txt','utf8'))"]);assert.equal(persisted,'SHARED_OK');
  console.log('Separate-Pod K3D test passed: shared PVC, profile privacy, direct worker and loopback CDP denial, takeover and Agent restart.');
-}finally{forward?.kill('SIGTERM');if(created)await exec(['delete','namespace',identity.namespace,'--wait=false'],undefined,20_000)}
+}finally{forward?.kill('SIGTERM');if(created)await exec(['delete','namespace',identity.namespace,'--wait=true','--timeout=90s'],undefined,100_000)}

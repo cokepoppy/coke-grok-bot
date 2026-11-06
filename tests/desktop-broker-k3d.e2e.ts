@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {desktopIdentity} from '../src/server/desktop-resources.ts';
 
 const image=process.env.COKE_GROK_DESKTOP_TEST_IMAGE;if(!image||!/^coke-grok-desktop:sha-[a-f0-9]{40}$/.test(image))throw new Error('Pinned test desktop image required');
-const id=randomBytes(6).toString('hex'),control=`grok-broker-test-${id}`,role=`grok-broker-test-${id}`,testImage=`grok-broker-integration:${id}`,owner={tenantId:randomUUID(),userId:randomUUID()},signingKey=randomBytes(32),identity=desktopIdentity(owner,signingKey),dir=await mkdtemp(join(tmpdir(),'grok-broker-k3d-'));
+const id=randomBytes(6).toString('hex'),control=`grok-broker-test-${id}`,role=`grok-broker-test-${id}`,testImage='grok-broker-integration:current',owner={tenantId:randomUUID(),userId:randomUUID()},signingKey=randomBytes(32),identity=desktopIdentity(owner,signingKey),dir=await mkdtemp(join(tmpdir(),'grok-broker-k3d-'));
 let controlCreated=false,desktopCreated=false,roleCreated=false,bindingCreated=false;
 async function exec(command:string,args:string[],input?:string,timeout=120_000){const child=spawn(command,args,{stdio:['pipe','pipe','pipe']});let out='';child.stdout.setEncoding('utf8');child.stdout.on('data',c=>{out=(out+c).slice(-100000)});child.stderr.resume();child.stdin.end(input);const timer=setTimeout(()=>child.kill('SIGKILL'),timeout);try{const [code]=await once(child,'close') as [number|null];return {code:code??1,out}}finally{clearTimeout(timer)}}
 async function run(command:string,args:string[],input?:string,timeout?:number){const result=await exec(command,args,input,timeout);if(result.code!==0)throw new Error(`${command} integration test operation failed`);return result.out}
@@ -38,9 +38,9 @@ try{
  if(phase!=='Succeeded'){const log=await exec('kubectl',['-n',control,'logs','broker-test']);throw new Error(`Scoped broker test did not succeed (${phase}): ${log.out.slice(-2000)}`)}
  const log=await run('kubectl',['-n',control,'logs','broker-test']);assert.equal(log.trim(),'Scoped broker K3D test passed: own desktop creation and idempotent access; other namespace reads and writes denied.');console.log(log.trim());
 }finally{
- if(bindingCreated)await exec('kubectl',['delete','clusterrolebinding',role,'--wait=false'],undefined,20_000);
- if(roleCreated)await exec('kubectl',['delete','clusterrole',role,'--wait=false'],undefined,20_000);
- if(desktopCreated)await exec('kubectl',['delete','namespace',identity.namespace,'--wait=false'],undefined,20_000);
- if(controlCreated)await exec('kubectl',['delete','namespace',control,'--wait=false'],undefined,20_000);
+ if(bindingCreated)await exec('kubectl',['delete','clusterrolebinding',role,'--wait=true','--timeout=90s'],undefined,100_000);
+ if(roleCreated)await exec('kubectl',['delete','clusterrole',role,'--wait=true','--timeout=90s'],undefined,100_000);
+ if(desktopCreated)await exec('kubectl',['delete','namespace',identity.namespace,'--wait=true','--timeout=90s'],undefined,100_000);
+ if(controlCreated)await exec('kubectl',['delete','namespace',control,'--wait=true','--timeout=90s'],undefined,100_000);
  await rm(dir,{recursive:true,force:true});
 }

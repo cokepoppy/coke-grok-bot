@@ -21,13 +21,13 @@ try{
  assert.equal((await request('/v1/guarded/snapshot',identity.workerToken)).status,403);
  assert.equal((await request('/v1/browser',identity.workerToken,{action:'inspect'})).status,403);
  assert.equal((await request('/v1/commands',identity.controlToken,{action:'click',actor:'agent',x:1,y:1})).status,403);
- const snap=async()=>{const response=await request('/v1/guarded/snapshot',identity.controlToken);assert.equal(response.status,200);return response.json() as Promise<{owner:string;url:string;screenshotSha256:string}>};
+ const snap=async()=>{const response=await request('/v1/guarded/snapshot',identity.controlToken);assert.equal(response.status,200);return response.json() as Promise<{owner:string;url:string;screenshotSha256:string;guardFingerprint:string}>};
  const before=await snap();assert.equal(before.owner,'agent');
  assert.equal((await request('/v1/control',identity.controlToken,{owner:'user'})).status,200);
  assert.equal((await request('/v1/guarded/execute',identity.controlToken,{expected:before,action:{kind:'desktop',action:'click',x:1,y:1}})).status,400);
  assert.equal((await request('/v1/control',identity.controlToken,{owner:'agent'})).status,200);
  const current=await snap();
- assert.equal((await request('/v1/guarded/execute',identity.controlToken,{expected:{...current,screenshotSha256:'0'.repeat(64)},action:{kind:'desktop',action:'click',x:1,y:1}})).status,400);
+ assert.equal((await request('/v1/guarded/execute',identity.controlToken,{expected:{...current,guardFingerprint:'0'.repeat(64)},action:{kind:'desktop',action:'click',x:1,y:1}})).status,400);
  const open=await request('/v1/guarded/execute',identity.controlToken,{expected:await snap(),action:{kind:'browser',action:'open_artifact',taskId,path:'guard.html'}});assert.equal(open.status,200);
  await new Promise(resolve=>setTimeout(resolve,1500));
  const buttonState=await snap(), verification=await snap();
@@ -38,4 +38,4 @@ try{
  const view=await request('/v1/guarded/inspect',identity.controlToken);const observed=await view.json() as {text?:string};assert.ok(observed.text?.includes('GUARDED_ACTION_OK'));
  const bypass=await run(['-n',identity.namespace,'exec',pod,'-c','agent','--','node','-e',"fetch('http://127.0.0.1:9222/json/version',{signal:AbortSignal.timeout(3000)}).then(r=>process.stdout.write(r.ok?'reachable':'blocked')).catch(()=>process.stdout.write('blocked'))"]);
  console.log(`Guarded worker test passed: separate control token, stale snapshot and takeover denial, real Chromium click. Agent CDP bypass probe: ${bypass.trim()}.`);
-}finally{forward?.kill('SIGTERM');if(created)await exec(['delete','namespace',identity.namespace,'--wait=false'],undefined,20_000)}
+}finally{forward?.kill('SIGTERM');if(created)await exec(['delete','namespace',identity.namespace,'--wait=true','--timeout=90s'],undefined,100_000)}

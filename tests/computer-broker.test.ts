@@ -24,12 +24,17 @@ test('computer broker denies unapproved, changed and repeated operations',async(
   current={...current,owner:'agent'};
   const attempts=await Promise.allSettled([broker.execute(run.id,claim.leaseId,proposal.id,action,signal),broker.execute(run.id,claim.leaseId,proposal.id,action,signal)]);
   assert.equal(attempts.filter(result=>result.status==='fulfilled').length,1);assert.equal(effects,1);
-  const denied=await broker.propose(run.id,claim.leaseId,action,signal);assert.equal(await approvals.decide(session,denied.id,'denied'),'decided');await assert.rejects(broker.execute(run.id,claim.leaseId,denied.id,action,signal));assert.equal(effects,1);
-  current={owner:'agent',url:'about:blank',screenshotSha256:'c'.repeat(64)};
+  current={owner:'agent',url:'https://example.test/path',screenshotSha256:'c'.repeat(64),guardFingerprint:'f'.repeat(64)};
+  const stableApproval=await broker.propose(run.id,claim.leaseId,action,signal);assert.equal(await approvals.decide(session,stableApproval.id,'approved'),'decided');current={...current,screenshotSha256:'d'.repeat(64)};
+  assert.equal(await broker.execute(run.id,claim.leaseId,stableApproval.id,action,signal),'performed');assert.equal(effects,2);
+  const changedSurface=await broker.propose(run.id,claim.leaseId,action,signal);assert.equal(await approvals.decide(session,changedSurface.id,'approved'),'decided');current={...current,guardFingerprint:'e'.repeat(64),screenshotSha256:'e'.repeat(64)};
+  await assert.rejects(broker.execute(run.id,claim.leaseId,changedSurface.id,action,signal));assert.equal(effects,2);
+  const denied=await broker.propose(run.id,claim.leaseId,action,signal);assert.equal(await approvals.decide(session,denied.id,'denied'),'decided');await assert.rejects(broker.execute(run.id,claim.leaseId,denied.id,action,signal));assert.equal(effects,2);
+  current={owner:'agent',url:'about:blank',screenshotSha256:'c'.repeat(64),guardFingerprint:'f'.repeat(64)};
   const navigation={kind:'browser',action:'navigate',url:'https://example.test/'},navigationApproval=await broker.propose(run.id,claim.leaseId,navigation,signal);
-  assert.equal(await approvals.decide(session,navigationApproval.id,'approved'),'decided');current={...current,screenshotSha256:'d'.repeat(64)};
-  assert.equal(await broker.execute(run.id,claim.leaseId,navigationApproval.id,navigation,signal),'performed');assert.equal(effects,2);
+  assert.equal(await approvals.decide(session,navigationApproval.id,'approved'),'decided');current={...current,screenshotSha256:'d'.repeat(64),guardFingerprint:'e'.repeat(64)};
+  assert.equal(await broker.execute(run.id,claim.leaseId,navigationApproval.id,navigation,signal),'performed');assert.equal(effects,3);
   const changedSource=await broker.propose(run.id,claim.leaseId,navigation,signal);assert.equal(await approvals.decide(session,changedSource.id,'approved'),'decided');current={...current,url:'https://different.example/',screenshotSha256:'e'.repeat(64)};
-  await assert.rejects(broker.execute(run.id,claim.leaseId,changedSource.id,navigation,signal));assert.equal(effects,2);
+  await assert.rejects(broker.execute(run.id,claim.leaseId,changedSource.id,navigation,signal));assert.equal(effects,3);
  }finally{await pool.end();await admin.query(`DROP DATABASE \`${db}\``);await admin.end()}
 });

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomBytes,randomUUID,createHash} from 'node:crypto';
 import {HttpGuardedComputerWorker} from '../src/server/guarded-worker.ts';
+import {safeDiagnosticMetadata} from '../src/server/safe-diagnostics.ts';
 const owner={tenantId:randomUUID(),userId:randomUUID()},hash=createHash('sha256').update(`${owner.tenantId}:${owner.userId}`).digest('hex').slice(0,32),url=new URL(`http://desktop.grok-user-${hash}.svc.cluster.local:8082/`),token=randomBytes(32).toString('base64url'),taskId=randomUUID(),screenId=randomUUID(),signal=new AbortController().signal;
 test('guarded worker scopes endpoint and task identity to the owner',async()=>{
  let calls=0;const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async (request,init)=>{calls++;assert.equal(new Headers(init?.headers).get('authorization'),`Bearer ${token}`);assert.equal(new Headers(init?.headers).get('x-coke-grok-screen-id'),screenId);if(calls===1){assert.equal(new URL(String(request)).pathname,'/v1/guarded/snapshot');return Response.json({owner:'agent',url:'https://example.test/',screenshotSha256:'a'.repeat(64)})}const body=JSON.parse(String(init?.body));assert.equal(body.action.taskId,taskId);assert.equal(body.action.action,'click');return Response.json({ready:true})});
@@ -17,4 +18,18 @@ test('guarded computer control records only safe auth and status failure codes',
  }
  const offline=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>{throw new Error('private URL and token must not be logged')});
  await assert.rejects(offline.control(signal),error=>error instanceof Error&&error.message==='COMPUTER_WORKER_TRANSPORT_FAILED');
+});
+test('guarded action failures preserve only a safe diagnostic code and HTTP status',async()=>{
+ const state={owner:'agent' as const,url:'https://example.test/',screenshotSha256:'a'.repeat(64)},action={kind:'browser',action:'navigate',url:'https://example.test/'};
+ for(const status of [400,409,503]){
+  const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>Response.json({error:'private upstream detail',token},{status}));
+  await assert.rejects(worker.performIfUnchanged(action,state,signal),error=>{
+   const metadata=safeDiagnosticMetadata(error);
+   return metadata.code==='COMPUTER_WORKER_HTTP_ERROR'&&metadata.status===status&&error instanceof Error&&error.message==='COMPUTER_WORKER_HTTP_ERROR';
+  });
+ }
+ const offline=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>{throw new Error(`private endpoint ${url.href} and ${token}`)});
+ await assert.rejects(offline.performIfUnchanged(action,state,signal),error=>safeDiagnosticMetadata(error).code==='COMPUTER_WORKER_TRANSPORT_FAILED');
+ const invalid=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>new Response('private upstream detail'));
+ await assert.rejects(invalid.performIfUnchanged(action,state,signal),error=>safeDiagnosticMetadata(error).code==='COMPUTER_WORKER_INVALID_RESPONSE');
 });

@@ -25,6 +25,10 @@ export async function captureDesktopScreen(run, bounds) {
   }
 }
 
+export async function captureFocusedDesktopScreen(run, page, bounds) {
+  return withFocusedDesktopPage(page, () => captureDesktopScreen(run, bounds));
+}
+
 export function createDesktopActionGate() {
   let tail = Promise.resolve();
   return async function withGate(action) {

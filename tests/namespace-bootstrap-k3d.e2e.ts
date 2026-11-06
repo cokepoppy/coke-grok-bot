@@ -46,8 +46,8 @@ try{
  assert.equal((await exec([`--as=${principal}`,'auth','can-i','get','secrets','-n','coke-grok-bot'])).out.trim(),'no');
  console.log('Namespace bootstrap K3D test passed: only the labeled personal namespace and designated broker binding were admitted; other-project access denied.');
 }finally{
- for(const object of created.reverse())await exec(['delete',object.kind,object.name,'--wait=false']);
- if(desktopCreated)await exec(['delete','namespace',desktop,'--wait=false']);
- if(secondDesktopEligible)await exec(['delete','namespace',secondDesktop,'--wait=false','--ignore-not-found']);
- if(controlCreated)await exec(['delete','namespace',control,'--wait=false']);
+ for(const object of created.reverse())await exec(['delete',object.kind,object.name,'--wait=true','--timeout=90s'],undefined,100_000);
+ if(desktopCreated)await exec(['delete','namespace',desktop,'--wait=true','--timeout=90s'],undefined,100_000);
+ if(secondDesktopEligible)await exec(['delete','namespace',secondDesktop,'--wait=true','--timeout=90s','--ignore-not-found'],undefined,100_000);
+ if(controlCreated)await exec(['delete','namespace',control,'--wait=true','--timeout=90s'],undefined,100_000);
 }

@@ -3,8 +3,8 @@ import { createHash } from 'node:crypto';
 type BrowserAction = 'navigate'|'open_artifact'|'click'|'fill'|'select'|'check'|'uncheck'|'press';
 type DesktopAction = 'click'|'type'|'press';
 type TerminalAction = 'run';
-export interface ComputerSnapshot { url:string; screenshotSha256:string }
-export interface ApprovedComputerAction { kind:'browser'|'desktop'|'terminal'; action:BrowserAction|DesktopAction|TerminalAction; arguments:Record<string,string|number>; page:string; stateSha256:string; screenshotSha256:string }
+export interface ComputerSnapshot { url:string; screenshotSha256:string; guardFingerprint?:string }
+export interface ApprovedComputerAction { kind:'browser'|'desktop'|'terminal'; action:BrowserAction|DesktopAction|TerminalAction; arguments:Record<string,string|number>; page:string; stateSha256:string; screenshotSha256:string; guardFingerprint?:string }
 const browserActions=new Set(['navigate','open_artifact','click','fill','select','check','uncheck','press']);
 const desktopActions=new Set(['click','type','press']);
 const terminalActions=new Set(['run']);
@@ -47,7 +47,8 @@ export function canonicalComputerAction(input:unknown,snapshot:ComputerSnapshot)
   allowed.push('key');const key=text(value.key,32);if(!keys.has(key))throw new Error('Invalid key');args.key=key;
  }
  if(Object.keys(value).some(key=>!allowed.includes(key)))throw new Error('Unexpected computer action field');
+ if(snapshot.guardFingerprint!==undefined&&!/^[a-f0-9]{64}$/.test(snapshot.guardFingerprint))throw new Error('Invalid computer state fingerprint');
  const current=location(snapshot.url);
- const result:ApprovedComputerAction={kind,action:action as BrowserAction|DesktopAction|TerminalAction,arguments:args,...current,screenshotSha256:snapshot.screenshotSha256};
+ const result:ApprovedComputerAction={kind,action:action as BrowserAction|DesktopAction|TerminalAction,arguments:args,...current,screenshotSha256:snapshot.screenshotSha256,...(snapshot.guardFingerprint?{guardFingerprint:snapshot.guardFingerprint}:{})};
  const serialized=JSON.stringify(result);if(serialized.length>4000)throw new Error('Computer action too large');return serialized;
 }

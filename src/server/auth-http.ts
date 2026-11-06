@@ -8,12 +8,13 @@ import type { ApprovalStore } from './approval-store.ts';
 import {parseUserAction,type UserComputer} from './user-computer.ts';
 import { parsePublicUrl } from './public-url.ts';
 import { cleanUploadName, uploadExtension, WorkspaceFileStore, validateUploadSize } from './file-store.ts';
-import { WorkspaceFileTransportError, type WorkspaceFileTransport } from './workspace-file-client.ts';
+import { WorkspaceFileTransportError, type WorkspaceFileTransportApi } from './workspace-file-client.ts';
 import {safeDiagnosticMetadata} from './safe-diagnostics.ts';
 import {GroupRequestConflict,type GroupChatStore} from './group-chat-store.ts';
+import {RoutineRequestConflict,type RoutineStore,type RoutineSchedule} from './routine-store.ts';
 
 // Mount only behind a trusted proxy that preserves the configured Host.
-export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi', files?:WorkspaceFileStore, workspaceFiles?:WorkspaceFileTransport, groupChats?:GroupChatStore) {
+export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi', files?:WorkspaceFileStore, workspaceFiles?:WorkspaceFileTransportApi, groupChats?:GroupChatStore, routines?:RoutineStore) {
   const origin = parsePublicUrl(publicOrigin);
   return createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -36,14 +37,14 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
       const computerMatch=url.pathname.match(new RegExp(`^${origin.prefix}/api/bots/([0-9a-f-]{36})/computer(?:/(screenshot|control|action))?$`,'i'));
       if(computer && computerMatch) {
         const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value))};
-        const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated'});
+        const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated',diagnostic:{code:'COMPUTER_AUTH_REQUIRED',status:401}});
         const botId=computerMatch[1],actionPath=computerMatch[2]||'';
-        if(!runs||!await runs.ownsBot(session,botId))return reply(404,{error:'Not found'});
+        if(!runs||!await runs.ownsBot(session,botId))return reply(404,{error:'Not found',diagnostic:{code:'COMPUTER_BOT_UNAVAILABLE',status:404}});
         // First access may create the user's persistent K3D desktop and PVC.
         const signal=AbortSignal.timeout(240_000);
-        if(req.method==='GET' && !actionPath){try{return reply(200,await computer.control(session,botId,signal))}catch(error){console.error('Computer request failed',{operation:'control',...safeDiagnosticMetadata(error)});return reply(503,{error:'Service unavailable'})}}
+        if(req.method==='GET' && !actionPath){try{return reply(200,await computer.control(session,botId,signal))}catch(error){const diagnostic=safeDiagnosticMetadata(error);console.error('Computer request failed',{operation:'control',...diagnostic});return reply(503,{error:'Service unavailable',diagnostic})}}
         if(req.method==='GET' && actionPath==='screenshot'){
-          try{const image=await computer.screenshot(session,botId,signal);res.writeHead(200,{'Content-Type':'image/png','Content-Length':image.length,'Cache-Control':'no-store'});return res.end(image)}catch(error){console.error('Computer request failed',{operation:'screenshot',...safeDiagnosticMetadata(error)});return reply(503,{error:'Service unavailable'})}
+          try{const image=await computer.screenshot(session,botId,signal);res.writeHead(200,{'Content-Type':'image/png','Content-Length':image.length,'Cache-Control':'no-store'});return res.end(image)}catch(error){const diagnostic=safeDiagnosticMetadata(error);console.error('Computer request failed',{operation:'screenshot',...diagnostic});return reply(503,{error:'Service unavailable',diagnostic})}
         }
         if(req.method!=='POST'||!['control','action'].includes(actionPath))return reply(405,{error:'Method not allowed'});
         if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
@@ -52,15 +53,58 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return reply(400,{error:'Invalid JSON'})}
         if(actionPath==='control'){
           if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||((body as {owner?:unknown}).owner!=='agent'&&(body as {owner?:unknown}).owner!=='user'))return reply(400,{error:'Invalid control'});
-          try{return reply(200,await computer.setControl(session,botId,(body as {owner:'agent'|'user'}).owner,signal))}catch(error){console.error('Computer request failed',{operation:'set-control',...safeDiagnosticMetadata(error)});return reply(503,{error:'Service unavailable'})}
+          try{return reply(200,await computer.setControl(session,botId,(body as {owner:'agent'|'user'}).owner,signal))}catch(error){const diagnostic=safeDiagnosticMetadata(error);console.error('Computer request failed',{operation:'set-control',...diagnostic});return reply(503,{error:'Service unavailable',diagnostic})}
         }
         let action;try{action=parseUserAction(body)}catch{return reply(400,{error:'Invalid computer action'})}
-        try{await computer.action(session,botId,action,signal);return reply(200,{ok:true})}catch(error){console.error('Computer request failed',{operation:'action',...safeDiagnosticMetadata(error)});return reply(503,{error:'Service unavailable'})}
+        try{await computer.action(session,botId,action,signal);return reply(200,{ok:true})}catch(error){const diagnostic=safeDiagnosticMetadata(error);console.error('Computer request failed',{operation:'action',...diagnostic});return reply(503,{error:'Service unavailable',diagnostic})}
       }
       const botPath = `${origin.prefix}/api/bots`;
+      const routineCollectionMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/routines$`,'i'));
+      const routineTestMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/routines/([0-9a-f-]{36})/test$`,'i'));
+      const routineItemMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/routines/([0-9a-f-]{36})$`,'i'));
+      if(routines&&(routineCollectionMatch||routineTestMatch||routineItemMatch)){
+        const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value))};
+        const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated'});
+        if(routineCollectionMatch&&req.method==='GET'){
+          const items=await routines.list(session,routineCollectionMatch[1]);
+          return items?reply(200,{routines:items}):reply(404,{error:'Not found'});
+        }
+        if(req.method==='POST'||req.method==='PATCH'||req.method==='DELETE'){
+          if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
+          if(req.method==='DELETE'){
+            if(!routineItemMatch)return reply(405,{error:'Method not allowed'});
+            return await routines.remove(session,routineItemMatch[2])?reply(200,{ok:true}):reply(404,{error:'Not found'});
+          }
+          if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return reply(415,{error:'Expected JSON'});
+          let size=0;const chunks:Buffer[]=[];for await(const chunk of req){size+=chunk.length;if(size>12000)return reply(413,{error:'Request too large'});chunks.push(chunk)}
+          let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return reply(400,{error:'Invalid JSON'})}
+          if(routineCollectionMatch&&req.method==='POST'){
+            try{
+              const item=await routines.create(session,routineCollectionMatch[1],body as {requestId:string;name:string;instruction:string;schedule:RoutineSchedule;timezone:string});
+              return item?reply(201,{routine:item}):reply(404,{error:'Not found'});
+            }catch(error){
+              if(error instanceof RoutineRequestConflict)return reply(409,{error:'Request ID already used'});
+              if(error instanceof Error&&/^Invalid routine|^Routine limit reached/.test(error.message))return reply(400,{error:error.message});
+              throw error;
+            }
+          }
+          if(routineItemMatch&&req.method==='PATCH'){
+            if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||typeof (body as {paused?:unknown}).paused!=='boolean')return reply(400,{error:'Invalid routine'});
+            const item=await routines.setPaused(session,routineItemMatch[2],(body as {paused:boolean}).paused);
+            return item?reply(200,{routine:item}):reply(404,{error:'Not found'});
+          }
+          if(routineTestMatch&&req.method==='POST'){
+            if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==0)return reply(400,{error:'Invalid routine test'});
+            const run=await routines.test(session,routineTestMatch[2]);
+            return run?reply(202,{run}):reply(404,{error:'Not found'});
+          }
+        }
+        return reply(405,{error:'Method not allowed'});
+      }
       const groupPath = `${origin.prefix}/api/groups`;
       const groupMatch = url.pathname.match(new RegExp(`^${groupPath}/([0-9a-f-]{36})$`,'i'));
       const groupMessagesMatch = url.pathname.match(new RegExp(`^${groupPath}/([0-9a-f-]{36})/messages$`,'i'));
+      const groupFilesMatch = url.pathname.match(new RegExp(`^${groupPath}/([0-9a-f-]{36})/files$`,'i'));
       const botMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})$`));
       const botFilesMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/files$`));
       const fileDownloadMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/files/([0-9a-f-]{36})$`));
@@ -71,11 +115,49 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
       const approvalListMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/runs/([0-9a-f-]{36})/approvals$`));
       const approvalMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/approvals/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`, 'i'));
       const approvalScreenshotMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/approvals/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})/screenshot$`, 'i'));
-      if(groupChats&&(url.pathname===groupPath||groupMatch||groupMessagesMatch)){
+      if(groupChats&&(url.pathname===groupPath||groupMatch||groupMessagesMatch||groupFilesMatch)){
         const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value))};
         const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated'});
         if(req.method==='GET'&&url.pathname===groupPath)return reply(200,{groups:await groupChats.list(session)});
         if(req.method==='GET'&&groupMatch){const chat=await groupChats.get(session,groupMatch[1]);return chat?reply(200,chat):reply(404,{error:'Not found'})}
+        if(groupFilesMatch){
+          if(req.method!=='POST')return reply(405,{error:'Method not allowed'});
+          if(req.headers.origin!==origin.origin){req.resume();return reply(403,{error:'Invalid origin'})}
+          if(!files||!workspaceFiles){req.resume();return reply(503,{error:'File service unavailable'})}
+          const botId=await groupChats.fileUploadBot(session,groupFilesMatch[1]);
+          if(!botId){req.resume();return reply(404,{error:'Not found'})}
+          const rawName=req.headers['x-file-name'];
+          if(typeof rawName!=='string'||rawName.length>1024){req.resume();return reply(400,{error:'Invalid file name'})}
+          const mimeType=String(req.headers['content-type']||'application/octet-stream').split(';',1)[0].trim().toLowerCase();
+          const size=Number(req.headers['content-length']);
+          let name:string;
+          try{name=cleanUploadName(decodeURIComponent(rawName));validateUploadSize(mimeType,size)}catch{req.resume();return reply(400,{error:'Invalid file metadata'})}
+          const signal=AbortSignal.timeout(5*60_000);
+          let file:ReturnType<WorkspaceFileStore['newUpload']>|null=null;
+          let registered=false;
+          try{
+            file=files.newUpload(botId,name,mimeType,size,'0'.repeat(64));
+            const receipt=await workspaceFiles.upload(session,{id:file.id,extension:uploadExtension(name),mimeType,size,body:req},signal);
+            if(receipt.size!==size)throw new Error('Uploaded file size did not match');
+            const stored={...file,sha256:receipt.sha256};
+            if(!await files.saveUpload(session,stored))throw new Error('File owner unavailable');
+            if(!await groupChats.registerUpload(session,groupFilesMatch[1],stored)){
+              const detached=await files.removeUnattachedUpload(session,stored.id);
+              if(detached)await workspaceFiles.removeUpload(session,stored.id,uploadExtension(name),AbortSignal.timeout(30_000)).catch(()=>undefined);
+              return reply(404,{error:'Not found'});
+            }
+            registered=true;
+            return reply(201,{file:{id:stored.id,name:stored.name,mimeType:stored.mimeType,size:stored.size,sha256:stored.sha256,kind:stored.kind}});
+          }catch(error){
+            if(file&&!registered){
+              await files.removeUnattachedUpload(session,file.id).catch(()=>null);
+              await workspaceFiles.removeUpload(session,file.id,uploadExtension(name),AbortSignal.timeout(30_000)).catch(()=>undefined);
+            }
+            const invalid=error instanceof Error&&/Invalid|too large|size limit/i.test(error.message);
+            console.error('Group file upload failed',{diagnostic:error instanceof WorkspaceFileTransportError?error.diagnosticCode:'UPLOAD_INTERNAL'});
+            return reply(invalid?400:503,{error:invalid?'Invalid file metadata':'File upload failed'});
+          }
+        }
         if(req.method!=='POST'||(url.pathname!==groupPath&&!groupMessagesMatch))return reply(405,{error:'Method not allowed'});
         if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
         if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return reply(415,{error:'Expected JSON'});
@@ -89,13 +171,14 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
             const group=await groupChats.create(session,{requestId:value.requestId,name:value.name,botIds:value.botIds});
             return group?reply(201,{group}):reply(404,{error:'Not found'});
           }
-          const value=body as {requestId?:unknown;text?:unknown};
+          const value=body as {requestId?:unknown;text?:unknown;targetBotIds?:unknown;files?:unknown};
           if(typeof value.requestId!=='string'||typeof value.text!=='string')return reply(400,{error:'Invalid group message'});
-          const chat=await groupChats.sendMessage(session,groupMessagesMatch![1],value.requestId,value.text);
+          if(value.targetBotIds!==undefined&&(!Array.isArray(value.targetBotIds)||value.targetBotIds.some(id=>typeof id!=='string')))return reply(400,{error:'Invalid group message'});
+          const chat=await groupChats.sendMessage(session,groupMessagesMatch![1],value.requestId,value.text,value.targetBotIds as string[]|undefined,value.files);
           return chat?reply(202,chat):reply(404,{error:'Not found'});
         }catch(error){
           if(error instanceof GroupRequestConflict)return reply(409,{error:'Request ID already used'});
-          if(error instanceof Error&&/^Invalid group(?: message)?$/.test(error.message))return reply(400,{error:'Invalid request'});
+          if(error instanceof Error&&(/^Invalid group(?: message)?$/.test(error.message)||/^Invalid attachment list$/.test(error.message)||/^Attachment /.test(error.message)))return reply(400,{error:'Invalid request'});
           throw error;
         }
       }
@@ -125,7 +208,7 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
           }
         }
         if(req.method!=='GET')return reply(405,{error:'Method not allowed'});
-        const file=await files.fileForDownload(session,fileDownloadMatch![1]);if(!file)return reply(404,{error:'Not found'});
+        const file=await files.fileForDownload(session,fileDownloadMatch![1])||await groupChats?.fileForDownload(session,fileDownloadMatch![1])||null;if(!file)return reply(404,{error:'Not found'});
         const downloadAbort=new AbortController(),downloadTimer=setTimeout(()=>downloadAbort.abort(),5*60_000);downloadTimer.unref();
         res.once('close',()=>{if(!res.writableEnded)downloadAbort.abort()});
         try{
@@ -183,7 +266,11 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
           return events ? reply(200,{events}) : reply(404,{error:'Not found'});
         }
         if (req.method === 'GET' && runMatch) {
-          const list=await runs.list(session,runMatch[1]);
+          let list=await runs.list(session,runMatch[1]);
+          if(list&&groupChats){
+            const prompts=await groupChats.visibleRunPrompts(session,runMatch[1],list.map(run=>run.id));
+            if(prompts.size)list=list.map(run=>prompts.has(run.id)?{...run,prompt:prompts.get(run.id)!}:run);
+          }
           return list ? reply(200,{runs:list}) : reply(404,{error:'Not found'});
         }
         if (req.method !== 'POST' || !runMatch) return reply(405,{error:'Method not allowed'});
@@ -193,13 +280,14 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         for await(const chunk of req) { size+=chunk.length; if(size>45000)return reply(413,{error:'Request too large'}); chunks.push(chunk); }
         let body:unknown; try { body=JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return reply(400,{error:'Invalid JSON'}); }
         if(!body || typeof body!=='object' || Array.isArray(body)) return reply(400,{error:'Invalid run'});
-        const {requestId,prompt,files:fileIds}=body as {requestId?:unknown;prompt?:unknown;files?:unknown};
+        const {requestId,prompt,files:fileIds,mentionBotIds}=body as {requestId?:unknown;prompt?:unknown;files?:unknown;mentionBotIds?:unknown};
         if(typeof requestId!=='string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId) || typeof prompt!=='string' || !prompt.trim() || prompt.trim().length>10000) return reply(400,{error:'Invalid run'});
+        if(mentionBotIds!==undefined&&(!Array.isArray(mentionBotIds)||mentionBotIds.length<1||mentionBotIds.length>6||mentionBotIds.some(id=>typeof id!=='string')))return reply(400,{error:'Invalid Bot mention targets'});
         try {
           WorkspaceFileStore.validateFileIds(fileIds);
-          const run=await runs.create(session,runMatch[1],requestId,prompt,fileIds);
+          const run=await runs.create(session,runMatch[1],requestId,prompt,fileIds,mentionBotIds);
           return run ? reply(200,{run}) : reply(404,{error:'Not found'});
-        } catch(error) { if(error instanceof RunRequestConflict) return reply(409,{error:'Request ID already used'}); if(error instanceof Error&&/Invalid attachment|Attachment is unavailable|attachments exceed|per-message limit|too large|Invalid file/.test(error.message))return reply(400,{error:'Invalid attachments'});throw error; }
+        } catch(error) { if(error instanceof RunRequestConflict) return reply(409,{error:'Request ID already used'}); if(error instanceof Error&&/Invalid Bot mention targets/.test(error.message))return reply(400,{error:'Invalid Bot mention targets'}); if(error instanceof Error&&/Invalid attachment|Attachment is unavailable|attachments exceed|per-message limit|too large|Invalid file/.test(error.message))return reply(400,{error:'Invalid attachments'});throw error; }
       }
       if (bots && messageMatch) {
         const reply = (status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
@@ -253,7 +341,8 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
           }
           if (Object.keys(body).length !== 1 || typeof body.name !== 'string') return reply(400, { error: 'Invalid bot' });
           if (!body.name.trim() || body.name.trim().length > 60) return reply(400, { error: 'Invalid bot' });
-          return await bots.rename(session, botMatch![1], body.name) ? reply(200, { ok: true }) : reply(404, { error: 'Not found' });
+          const renamed = await bots.rename(session, botMatch![1], body.name);
+          return renamed.ok ? reply(200, { ok: true, event: renamed.event }) : reply(404, { error: 'Not found' });
         }
         return reply(405, { error: 'Method not allowed' });
       }

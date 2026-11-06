@@ -9,7 +9,7 @@ import {desktopOwnerHash} from '../src/server/desktop-resources.ts';
 import {namespaceBootstrapResources,personalDesktopBinding} from '../src/server/namespace-bootstrap-resources.ts';
 
 const image=process.env.COKE_GROK_DESKTOP_TEST_IMAGE;if(!image||!/^coke-grok-desktop:sha-[a-f0-9]{40}$/.test(image))throw new Error('Pinned test desktop image required');
-const id=randomBytes(6).toString('hex'),control=`grok-dynamic-test-${id}`,policyPrefix=`grok-dynamic-${id}`,bootstrapRole=`grok-bootstrap-${id}`,brokerRole=`grok-desktop-${id}`,testImage=`grok-dynamic-integration:${id}`,owner={tenantId:randomUUID(),userId:randomUUID()},desktop=`grok-user-${desktopOwnerHash(owner)}`,dir=await mkdtemp(join(tmpdir(),'grok-dynamic-k3d-'));
+const id=randomBytes(6).toString('hex'),control=`grok-dynamic-test-${id}`,policyPrefix=`grok-dynamic-${id}`,bootstrapRole=`grok-bootstrap-${id}`,brokerRole=`grok-desktop-${id}`,testImage='grok-dynamic-integration:current',owner={tenantId:randomUUID(),userId:randomUUID()},desktop=`grok-user-${desktopOwnerHash(owner)}`,dir=await mkdtemp(join(tmpdir(),'grok-dynamic-k3d-'));
 const options={controlNamespace:control,bootstrapServiceAccount:'bootstrap',brokerServiceAccount:'broker',bootstrapRole,brokerRole,policyPrefix},principal=`system:serviceaccount:${control}:bootstrap`;
 let controlCreated=false,desktopEligible=false;const created:{kind:string;name:string}[]=[],extraDesktops:string[]=[];
 async function exec(command:string,args:string[],input?:string,timeout=120_000){const child=spawn(command,args,{stdio:['pipe','pipe','pipe']});let out='';for(const stream of [child.stdout,child.stderr]){stream.setEncoding('utf8');stream.on('data',c=>{out=(out+c).slice(-20000)})}child.stdin.end(input);const timer=setTimeout(()=>child.kill('SIGKILL'),timeout);try{const [code]=await once(child,'close') as [number|null];return {code:code??1,out}}finally{clearTimeout(timer)}}
@@ -80,9 +80,9 @@ try{
  await testMissingPolicy('binding',wrongBinding);
  console.log('Dynamic provisioning and admission preflight K3D test passed: both missing policies prevented creation.');
 }finally{
- for(const object of created.reverse())await exec('kubectl',['delete',object.kind,object.name,'--wait=false'],undefined,20_000);
- if(desktopEligible)await exec('kubectl',['delete','namespace',desktop,'--wait=false','--ignore-not-found'],undefined,20_000);
- for(const namespace of extraDesktops)await exec('kubectl',['delete','namespace',namespace,'--wait=false','--ignore-not-found'],undefined,20_000);
- if(controlCreated)await exec('kubectl',['delete','namespace',control,'--wait=false'],undefined,20_000);
+ for(const object of created.reverse())await exec('kubectl',['delete',object.kind,object.name,'--wait=true','--timeout=90s'],undefined,100_000);
+ if(desktopEligible)await exec('kubectl',['delete','namespace',desktop,'--wait=true','--timeout=90s','--ignore-not-found'],undefined,100_000);
+ for(const namespace of extraDesktops)await exec('kubectl',['delete','namespace',namespace,'--wait=true','--timeout=90s','--ignore-not-found'],undefined,100_000);
+ if(controlCreated)await exec('kubectl',['delete','namespace',control,'--wait=true','--timeout=90s'],undefined,100_000);
  await rm(dir,{recursive:true,force:true});
 }

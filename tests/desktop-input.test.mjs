@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { readFile, writeFile } from 'node:fs/promises';
-import { captureDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from '../deploy/desktop/desktop-input.mjs';
+import { captureDesktopScreen, captureFocusedDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from '../deploy/desktop/desktop-input.mjs';
 
 test('desktop screenshot captures only the Bot screen rectangle as PNG bytes', async () => {
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -15,6 +15,18 @@ test('desktop screenshot captures only the Bot screen rectangle as PNG bytes', a
   assert.match(capturePath, /\/coke-grok-screenshot-[^/]+\/capture\.png$/);
   assert.equal(call[2].timeout, 5_000);
   await assert.rejects(readFile(capturePath), { code: 'ENOENT' });
+});
+
+test('computer screenshot brings the selected Bot page forward before reading desktop pixels', async () => {
+  const events = [], png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const page = { async bringToFront() { events.push('focus-page'); } };
+  const result = await captureFocusedDesktopScreen(async (...args) => {
+    events.push('capture-pixels');
+    await writeFile(args[1][2], png);
+    return { stdout: Buffer.alloc(0) };
+  }, page, { left: 1472, top: 0, width: 1440, height: 900 });
+  assert.deepEqual(events, ['focus-page', 'capture-pixels']);
+  assert.deepEqual(result, png);
 });
 
 test('desktop click routes image coordinates to the Bot X11 region', async () => {

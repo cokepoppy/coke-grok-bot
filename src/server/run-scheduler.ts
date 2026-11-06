@@ -1,4 +1,5 @@
 import type { AgentRun, RunScreenScope } from './run-store.ts';
+import type { AgentExecutionAudit } from './execution-audit.ts';
 import { safeRunDiagnosticCode, type RunDiagnosticCode } from './run-diagnostics.ts';
 
 export interface SchedulerStore {
@@ -6,10 +7,10 @@ export interface SchedulerStore {
   queuedScreens(limit: number): Promise<RunScreenScope[]>;
   claimNext(screen: RunScreenScope, leaseSeconds: number): Promise<{run:AgentRun;leaseId:string}|null>;
   renew(runId:string, leaseId:string, leaseSeconds:number): Promise<boolean>;
-  finish(runId:string, leaseId:string, status:'completed'|'failed', result:string, artifacts?:unknown): Promise<boolean>;
+  finish(runId:string, leaseId:string, status:'completed'|'failed', result:string, artifacts?:unknown, executionAudit?:unknown): Promise<boolean>;
   markUnknown(runId:string, leaseId:string, diagnosticCode?:RunDiagnosticCode): Promise<boolean>;
 }
-export type ExecutionResult = {status:'completed'|'failed';result:string;artifacts?:unknown};
+export type ExecutionResult = {status:'completed'|'failed';result:string;artifacts?:unknown;executionAudit?:AgentExecutionAudit|null};
 export interface RunExecutor { execute(screen:RunScreenScope,run:AgentRun,signal:AbortSignal,leaseId:string):Promise<ExecutionResult> }
 
 /**
@@ -61,7 +62,7 @@ export class RunScheduler {
       const outcome = await this.executor.execute(screen,claim.run,abort.signal,claim.leaseId);
       if (leaseLost || abort.signal.aborted) { await this.store.markUnknown(claim.run.id,claim.leaseId,leaseLost?'lease_lost':'execution_aborted'); return; }
       if (!outcome || !['completed','failed'].includes(outcome.status) || typeof outcome.result !== 'string' || !outcome.result.trim() || outcome.result.length > 20000) throw new Error('Invalid executor result');
-      const saved = await this.store.finish(claim.run.id,claim.leaseId,outcome.status,outcome.result,outcome.artifacts);
+      const saved = await this.store.finish(claim.run.id,claim.leaseId,outcome.status,outcome.result,outcome.artifacts,outcome.executionAudit);
       if (!saved) await this.store.markUnknown(claim.run.id,claim.leaseId,'result_persist_failed');
     } catch (error) {
       // The executor might already have performed an external side effect. Do not repeat it.

@@ -42,7 +42,14 @@ test('runs are deduplicated, isolated, serialized per computer and never silentl
     assert.equal(await runs.hasLiveLease(sb,claim.run.id,claim.leaseId),false);
     assert.equal(await runs.hasLiveLease(sa,claim.run.id,randomUUID()),false);
     assert.equal(await runs.finish(claim.run.id,randomUUID(),'completed','forged'),false);
-    assert.equal(await runs.finish(claim.run.id,claim.leaseId,'completed','done'),true);
+    const auditWithUnsafeExtras={engine:'pi',model:'deepseek-v4.1-flash',modelCompleted:true,calls:[{tool:'computer_browser',action:'navigate',outcome:'succeeded',url:'https://example.test/private?access_token=never-store'}],truncated:false,apiKey:'never-store'};
+    assert.equal(await runs.finish(claim.run.id,claim.leaseId,'completed','done',[],auditWithUnsafeExtras),true);
+    const persistedAudit=(await runs.list(sa,claim.run.botId))?.find(run=>run.id===claim.run.id)?.executionAudit;
+    assert.deepEqual(persistedAudit,{engine:'pi',model:'deepseek-v4.1-flash',modelCompleted:true,calls:[{tool:'computer_browser',action:'navigate',outcome:'succeeded'}],truncated:false});
+    const [auditRows]=await pool.execute<mysql.RowDataPacket[]>('SELECT CAST(execution_audit AS CHAR) AS audit FROM agent_runs WHERE id=?',[claim.run.id]);
+    assert.equal(String(auditRows[0].audit).includes('access_token'),false);
+    assert.equal(String(auditRows[0].audit).includes('https://'),false);
+    assert.equal(String(auditRows[0].audit).includes('apiKey'),false);
     assert.equal(await runs.hasLiveLease(sa,claim.run.id,claim.leaseId),false);
     assert.equal(await runs.finish(claim.run.id,claim.leaseId,'completed','duplicate'),false);
     const next = await runs.claimNext(sa,1); assert.ok(next); assert.notEqual(next.run.id,claim.run.id);
@@ -64,7 +71,8 @@ test('runs are deduplicated, isolated, serialized per computer and never silentl
 
     const ackRequest=randomUUID(),ackQueued=await runs.create(sa,bot1.id,ackRequest,'acknowledge safely');assert.ok(ackQueued);
     const ackClaim=await runs.claimNext(sa,10);assert.ok(ackClaim);assert.equal(ackClaim.run.id,ackQueued.id);
-    assert.equal(await runs.markUnknown(ackClaim.run.id,ackClaim.leaseId),true);
+    assert.equal(await runs.markUnknown(ackClaim.run.id,ackClaim.leaseId,'agent_paused_for_control'),true);
+    assert.equal((await runs.list(sa,bot1.id))?.find(run=>run.id===ackClaim.run.id)?.diagnosticCode,'agent_paused_for_control');
     const afterAck=await runs.create(sa,bot2.id,randomUUID(),'continue after review');assert.ok(afterAck);assert.equal(await runs.claimNext(sa,10),null);
     const acknowledged=await runs.resolveUnknown(sa,ackClaim.run.id,'acknowledge');assert.deepEqual(acknowledged,{decision:'acknowledge',run:null});
     assert.deepEqual(await runs.resolveUnknown(sa,ackClaim.run.id,'acknowledge'),{decision:'acknowledge',run:null});
@@ -84,6 +92,18 @@ test('runs are deduplicated, isolated, serialized per computer and never silentl
     assert.equal(await runs.finish(attachedRun.id,attachedClaim!.leaseId,'completed','Created a text result.',[{name:'summary.txt',mimeType:'text/plain',size:outputBytes.length,sha256:await import('node:crypto').then(({createHash})=>createHash('sha256').update(outputBytes).digest('hex')),storageKey:`tasks/${attachedRun.id}/artifacts/summary.txt` }]),true);
     const completedFiles=(await runs.list(sa,bot1.id))?.find(run=>run.id===attachedRun.id)?.files||[];assert.deepEqual(completedFiles.map(file=>file.kind),['input','output']);
     const outputFile=completedFiles.find(file=>file.kind==='output')!;assert.equal((await runs.fileForDownload(sa,outputFile.id))?.storageKey,`tasks/${attachedRun.id}/artifacts/summary.txt`);assert.equal(await runs.fileForDownload(sb,outputFile.id),null);
+
+    const mentionRequestId=randomUUID(),mentionPrompt='Please ask @A2 to investigate this.';
+    const mentionRun=await runs.create(sa,bot1.id,mentionRequestId,mentionPrompt,undefined,[bot2.id]);assert.ok(mentionRun);
+    assert.equal(mentionRun.prompt,mentionPrompt);
+    assert.deepEqual(mentionRun.runtimeContext,{kind:'bot-mentions',targets:[{id:bot2.id,name:'A2',label:''}]});
+    await assert.rejects(runs.create(sa,bot1.id,mentionRequestId,mentionPrompt),/Request ID already used/);
+    await assert.rejects(runs.create(sa,bot1.id,randomUUID(),mentionPrompt,undefined,[bot1.id]),/Invalid Bot mention targets/);
+    await assert.rejects(runs.create(sa,bot1.id,randomUUID(),mentionPrompt,undefined,[bot3.id]),/Invalid Bot mention targets/);
+    const mentionClaim=await runs.claimNext(sa,30);assert.equal(mentionClaim?.run.id,mentionRun.id);
+    assert.equal(mentionClaim?.run.prompt,mentionPrompt);
+    assert.deepEqual(mentionClaim?.run.runtimeContext,mentionRun.runtimeContext);
+    assert.equal(await runs.finish(mentionRun.id,mentionClaim!.leaseId,'completed','A2 returned its findings.'),true);
   } finally { await pool.end(); await admin.query(`DROP DATABASE \`${database}\``); await admin.end(); }
 });
 
@@ -103,7 +123,7 @@ test('separate Bot screens can be leased in parallel while each Bot queue remain
     assert.equal(await runs.claimNext({...session,botId:botA.id},30),null);
     assert.equal(await runs.hasLiveLease(session,claimA!.run.id,claimA!.leaseId,botA.id),true);
     assert.equal(await runs.hasLiveLease(session,claimA!.run.id,claimA!.leaseId,botB.id),false);
-    assert.equal(await runs.markUnknown(claimA!.run.id,claimA!.leaseId),true);
+    assert.equal(await runs.markUnknown(claimA!.run.id,claimA!.leaseId,'agent_paused_for_control'),true);
     assert.deepEqual((await runs.queuedScreens(10)).map(screen=>screen.botId),[]);
     assert.equal(await runs.finish(claimB!.run.id,claimB!.leaseId,'completed','B finished'),true);
     assert.deepEqual((await runs.queuedScreens(10)).map(screen=>screen.botId),[botB.id]);

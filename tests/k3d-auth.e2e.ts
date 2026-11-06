@@ -89,8 +89,7 @@ try {
   if (paused) execFileSync('docker', ['unpause', 'coke-grok-k3d-readiness-mysql'], { stdio: 'ignore' });
   if (forward && forward.exitCode === null) { forward.kill('SIGTERM'); await once(forward, 'exit'); }
   if (created) {
-    try { kubectl(['delete', '-n', namespace, 'ingress', 'coke-grok-auth', '--ignore-not-found']); } catch { /* Preserve the original test error. */ }
-    try { kubectl(['scale', '-n', namespace, 'deployment/coke-grok-auth', '--replicas=0']); } catch { /* A failed apply may not have created the Deployment. */ }
+    try { kubectl(['delete', 'namespace', namespace, '--wait=true', '--timeout=90s']); } catch { /* Preserve the original test error. */ }
   }
   await admin.query(mysql.format('DROP USER IF EXISTS ?@?', [user, '%']));
   await admin.query(`DROP DATABASE IF EXISTS \`${database}\``);

@@ -22,8 +22,9 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   const state:unknown=await response.json();
   if(!state||typeof state!=='object'||Array.isArray(state))throw new Error('Invalid computer snapshot');
   const item=state as Partial<ComputerState>;
-  if((item.owner!=='agent'&&item.owner!=='user')||typeof item.url!=='string'||item.url.length>4096||typeof item.screenshotSha256!=='string'||!/^[a-f0-9]{64}$/.test(item.screenshotSha256))throw new Error('Invalid computer snapshot');
-  return {owner:item.owner,url:item.url,screenshotSha256:item.screenshotSha256};
+  const guardFingerprint=item.guardFingerprint??item.screenshotSha256;
+  if((item.owner!=='agent'&&item.owner!=='user')||typeof item.url!=='string'||item.url.length>4096||typeof item.screenshotSha256!=='string'||!/^[a-f0-9]{64}$/.test(item.screenshotSha256)||typeof guardFingerprint!=='string'||!/^[a-f0-9]{64}$/.test(guardFingerprint))throw new Error('Invalid computer snapshot');
+  return {owner:item.owner,url:item.url,screenshotSha256:item.screenshotSha256,guardFingerprint};
  }
  async snapshotWithImage(signal:AbortSignal):Promise<{state:ComputerState;image:Buffer}>{
   const response=await this.request(new URL('/v1/guarded/snapshot-image',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
@@ -31,9 +32,10 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>1500000)throw new Error('Computer snapshot too large');
   const text=await response.text();if(text.length>1500000)throw new Error('Computer snapshot too large');
   const item=JSON.parse(text) as Partial<ComputerState>&{image?:unknown};
-  if(!item || (item.owner!=='agent'&&item.owner!=='user') || typeof item.url!=='string' || item.url.length>4096 || typeof item.screenshotSha256!=='string' || !/^[a-f0-9]{64}$/.test(item.screenshotSha256) || typeof item.image!=='string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(item.image))throw new Error('Invalid computer snapshot');
+  const guardFingerprint=item?.guardFingerprint??item?.screenshotSha256;
+  if(!item || (item.owner!=='agent'&&item.owner!=='user') || typeof item.url!=='string' || item.url.length>4096 || typeof item.screenshotSha256!=='string' || !/^[a-f0-9]{64}$/.test(item.screenshotSha256) || typeof guardFingerprint!=='string' || !/^[a-f0-9]{64}$/.test(guardFingerprint) || typeof item.image!=='string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(item.image))throw new Error('Invalid computer snapshot');
   const image=Buffer.from(item.image,'base64');if(!image.length||image.length>1024*1024||createHash('sha256').update(image).digest('hex')!==item.screenshotSha256)throw new Error('Invalid computer screenshot');
-  return {state:{owner:item.owner,url:item.url,screenshotSha256:item.screenshotSha256},image};
+  return {state:{owner:item.owner,url:item.url,screenshotSha256:item.screenshotSha256,guardFingerprint},image};
  }
  async control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>{
   let response:Response;try{response=await this.request(new URL('/v1/guarded/control',this.endpoint),{headers:this.headers(),signal,redirect:'error'})}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED')}
@@ -77,9 +79,12 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Invalid computer action');
   const action=input as Record<string,unknown>;
   if('taskId' in action)throw new Error('Task identity is controlled by the server');
-  const response=await this.request(new URL('/v1/guarded/execute',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({action:{...action,...(action.kind==='browser'?{taskId:this.taskId}:{})},expected}),signal,redirect:'error'});
-  if(!response.ok)throw new Error('Guarded computer action was not confirmed');
-  const value:unknown=await response.json();if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid computer result');return value;
+  let response:Response;
+  try{response=await this.request(new URL('/v1/guarded/execute',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({action:{...action,...(action.kind==='browser'?{taskId:this.taskId}:{})},expected}),signal,redirect:'error'})}
+  catch{throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED')}
+  if(!response.ok)throw new SafeDiagnosticError('COMPUTER_WORKER_HTTP_ERROR',response.status);
+  let value:unknown;try{value=await response.json()}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE')}
+  if(!value||typeof value!=='object'||Array.isArray(value))throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE');return value;
  }
 }
 export type UserComputerAction={action:'click';x:number;y:number}|{action:'type';text:string}|{action:'press';key:string};

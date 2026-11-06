@@ -9,11 +9,12 @@ import {RunStore} from '../src/server/run-store.ts';
 import {ApprovalStore} from '../src/server/approval-store.ts';
 import {ModelGateway} from '../src/server/model-gateway.ts';
 import {ComputerBridge} from '../src/server/computer-bridge.ts';
+import {SafeDiagnosticError} from '../src/server/safe-diagnostics.ts';
 const port=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);if(!port)throw new Error('Disposable MySQL port required');
 test('computer gateway binds screen and action to one live user run and approval',async()=>{
  const db=`grok_computer_gateway_${randomUUID().replaceAll('-','')}`,admin=await mysql.createConnection({host:'127.0.0.1',port,user:'root'});await admin.query(`CREATE DATABASE \`${db}\``);const pool=mysql.createPool({host:'127.0.0.1',port,user:'root',database:db,timezone:'Z',connectionLimit:8});
  const ids=new TenantStore(pool),bots=new BotStore(pool),runs=new RunStore(pool),approvals=new ApprovalStore(pool);await ids.migrate();await bots.migrate();await runs.migrate();await approvals.migrate();let effects=0;
- const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'https://example.test/',screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true,text:'test page'}),screenshot:async()=>Buffer.from('png test'),performIfUnchanged:async()=>{effects++;return {ready:true}}};
+ let failExecution=false;const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'https://example.test/',screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true,text:'test page'}),screenshot:async()=>Buffer.from('png test'),performIfUnchanged:async()=>{effects++;if(failExecution)throw new SafeDiagnosticError('COMPUTER_WORKER_HTTP_ERROR',503);return {ready:true}}};
  const bridge=new ComputerBridge(runs,approvals,()=>worker),gateway=new ModelGateway('fake-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'),approvals,bridge),server=gateway.createServer();server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();if(!address||typeof address==='string')throw new Error('No gateway');const base=`http://127.0.0.1:${address.port}/v1/computer`;
  try{
   const identity=await ids.signInGoogle({subject:'gateway',email:'gateway@example.test',name:'Gateway'}),session:Session={...identity,email:'gateway@example.test',name:'Gateway',role:'owner'},bot=await bots.create(session,{name:'A',shape:'round',color:'#abcdef'}),run=await runs.create(session,bot.id,randomUUID(),'work');assert.ok(run);const claim=await runs.claimNext({...session,botId:bot.id},30);assert.ok(claim);
@@ -26,6 +27,11 @@ test('computer gateway binds screen and action to one live user run and approval
   assert.equal((await call(`/actions/${id}/execute`,token,{action:{...action,target:'Delete'}})).status,409);assert.equal(effects,0);
   assert.equal((await call(`/actions/${id}/execute`,token,{action})).status,200);assert.equal(effects,1);
   assert.equal((await call(`/actions/${id}/execute`,token,{action})).status,409);assert.equal(effects,1);
+  const failedProposal=await call('/actions',token,{action});assert.equal(failedProposal.status,201);const failedId=(await failedProposal.json() as {id:string}).id;
+  assert.equal(await approvals.decide(session,failedId,'approved'),'decided');failExecution=true;
+  const failedResponse=await call(`/actions/${failedId}/execute`,token,{action});assert.equal(failedResponse.status,409);
+  assert.deepEqual(await failedResponse.json(),{error:'computer_request_failed',diagnostic:{code:'COMPUTER_WORKER_HTTP_ERROR',status:503}});
+  assert.equal(effects,2);failExecution=false;
   await runs.markUnknown(run.id,claim.leaseId);assert.equal((await call('/inspect',token)).status,409);
  }finally{gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()));await pool.end();await admin.query(`DROP DATABASE \`${db}\``);await admin.end()}
 });

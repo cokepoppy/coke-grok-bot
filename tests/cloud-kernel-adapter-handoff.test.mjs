@@ -8,6 +8,7 @@ import {runCloudKernel} from '../deploy/desktop/cloud-kernel-adapter.mjs';
 
 const capability='h'.repeat(43);
 const sourceBot={id:randomUUID(),name:'Chief',label:'Operations'},targetBot={id:randomUUID(),name:'Sales Outbound',label:'Prospecting'};
+const sameNameBot={id:randomUUID(),name:'Sales Outbound',label:'Research'};
 const handoffs={mode:'mediated',bots:[targetBot]};
 
 test('Pi installs an owner-scoped private async Bot handoff tool and queues through the short-lived gateway capability',async()=>{
@@ -20,13 +21,16 @@ test('Pi installs an owner-scoped private async Bot handoff tool and queues thro
   createAgentSession:async value=>{options=value;return{session:{messages:[{role:'assistant',stopReason:'stop',content:[{type:'text',text:'{"status":"done","message":"Delegation queued."}'}]}],async prompt(prompt){assert.match(prompt,/Bot handoff policy/);},dispose(){}}}},
  };
  try{
-  await runCloudKernel({engine:'pi',modelConfig:{apiKey:capability,baseUrl:'https://gateway.example.test/v1',model:'deepseek-v4.1-flash'},handoffs,workspace,cwd:path.relative(workspace,cwd),prompt:'Ask Sales Outbound to research one safe example prospect. Do not contact anyone.',signal:new AbortController().signal},{piSdk:sdk});
+  await runCloudKernel({engine:'pi',modelConfig:{apiKey:capability,baseUrl:'https://gateway.example.test/v1',model:'deepseek-v4.1-flash'},handoffs:{...handoffs,bots:[targetBot,sameNameBot]},workspace,cwd:path.relative(workspace,cwd),prompt:'Ask Sales Outbound to research one safe example prospect. Do not contact anyone.',signal:new AbortController().signal},{piSdk:sdk});
   const tool=options.customTools.find(item=>item.name==='bot_handoff');assert.ok(tool);assert.ok(options.tools.includes('bot_handoff'));
-  assert.match(tool.description,/Sales Outbound \(Prospecting\)/);assert.match(tool.promptSnippet,/targetBotName/);
-  const queued=await tool.execute('tool-call',{targetBotName:'Sales Outbound (Prospecting)',message:'Research one fictional sample prospect without contacting anyone.'},new AbortController().signal);
+  assert.match(tool.description,/Sales Outbound \(Prospecting\).*Bot ID/);assert.match(tool.promptSnippet,/targetBotId/);
+  const queued=await tool.execute('tool-call',{targetBotId:targetBot.id,message:'Research one fictional sample prospect without contacting anyone.'},new AbortController().signal);
   assert.match(queued.content[0].text,/queued private task/i);assert.equal(request.url,'https://gateway.example.test/v1/bot-handoffs');assert.equal(request.method,'POST');
   assert.equal(request.headers.get('authorization'),`Bearer ${capability}`);assert.deepEqual(request.body,{targetBotId:targetBot.id,message:'Research one fictional sample prospect without contacting anyone.'});
   await assert.rejects(()=>tool.execute('tool-call',{targetBotName:sourceBot.name,message:'not in the owner-scoped roster'},new AbortController().signal),/target or message is invalid/);
+  await assert.rejects(()=>tool.execute('tool-call',{targetBotName:'Sales Outbound',message:'ambiguous display name'},new AbortController().signal),/target name is ambiguous/);
+  const fallback=await tool.execute('tool-call',{targetBotName:'Sales Outbound (Prospecting)',message:'Use the unique legacy name-and-label address.'},new AbortController().signal);
+  assert.match(fallback.content[0].text,/Sales Outbound/);assert.deepEqual(request.body,{targetBotId:targetBot.id,message:'Use the unique legacy name-and-label address.'});
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });
 
@@ -113,13 +117,18 @@ test('DeepSeek Harness records an event-confirmed handoff as pending delegation 
 test('DSH handoff plugin sends only rostered targets through the mediated gateway',async()=>{
  const url=path.resolve('deploy/desktop/dsh-handoff-plugin.mjs'),oldUrl=process.env.COKE_GROK_HANDOFF_BRIDGE_URL,oldToken=process.env.COKE_GROK_HANDOFF_BRIDGE_TOKEN,oldBots=process.env.COKE_GROK_HANDOFF_BOTS,oldFetch=globalThis.fetch;
  let request;
- process.env.COKE_GROK_HANDOFF_BRIDGE_URL='https://gateway.example.test/v1';process.env.COKE_GROK_HANDOFF_BRIDGE_TOKEN=capability;process.env.COKE_GROK_HANDOFF_BOTS=JSON.stringify([targetBot]);
+ process.env.COKE_GROK_HANDOFF_BRIDGE_URL='https://gateway.example.test/v1';process.env.COKE_GROK_HANDOFF_BRIDGE_TOKEN=capability;process.env.COKE_GROK_HANDOFF_BOTS=JSON.stringify([targetBot,sameNameBot]);
  globalThis.fetch=async(input,init={})=>{request={url:String(input),method:init.method,headers:new Headers(init.headers),body:JSON.parse(init.body)};return Response.json({handoff:{targetRunId:randomUUID()}},{status:202})};
  try{
   const module=await import(`${new URL(`file://${url}`).href}?case=${randomUUID()}`),tools=[];module.apply({tools:{register:tool=>tools.push(tool)}});const tool=tools.find(item=>item.name==='bot_handoff');assert.ok(tool);
-  const result=await tool.execute({targetBotName:'Sales Outbound (Prospecting)',message:'Check one harmless detail.'},{signal:new AbortController().signal});assert.equal(result.status,'queued');
+  assert.match(tool.description,/Bot ID/);
+  const result=await tool.execute({targetBotId:targetBot.id,message:'Check one harmless detail.'},{signal:new AbortController().signal});assert.equal(result.status,'queued');
   assert.equal(request.url,'https://gateway.example.test/v1/bot-handoffs');assert.equal(request.method,'POST');assert.equal(request.headers.get('authorization'),`Bearer ${capability}`);assert.deepEqual(request.body,{targetBotId:targetBot.id,message:'Check one harmless detail.'});
   await assert.rejects(()=>tool.execute({targetBotName:sourceBot.name,message:'outside roster'},{signal:new AbortController().signal}),/target or message is invalid/);
+  await assert.rejects(()=>tool.execute({targetBotName:'Sales Outbound',message:'ambiguous display name'},{signal:new AbortController().signal}),/target name is ambiguous/);
+  await assert.rejects(()=>tool.execute({targetBotId:randomUUID(),message:'unrostered id'},{signal:new AbortController().signal}),/target or message is invalid/);
+  const fallback=await tool.execute({targetBotName:'Sales Outbound (Prospecting)',message:'Legacy unique name-and-label address.'},{signal:new AbortController().signal});
+  assert.equal(fallback.status,'queued');assert.deepEqual(request.body,{targetBotId:targetBot.id,message:'Legacy unique name-and-label address.'});
  }finally{
   globalThis.fetch=oldFetch;
   for(const [key,value] of [['COKE_GROK_HANDOFF_BRIDGE_URL',oldUrl],['COKE_GROK_HANDOFF_BRIDGE_TOKEN',oldToken],['COKE_GROK_HANDOFF_BOTS',oldBots]])if(value===undefined)delete process.env[key];else process.env[key]=value;

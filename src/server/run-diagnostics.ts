@@ -1,6 +1,7 @@
 const runDiagnosticCodes = [
   'executor_error',
   'desktop_connect_failed',
+  'model_upstream_429',
   'bot_memory_preload_failed',
   'bot_memory_scope_invalid',
   'bot_handoff_scope_invalid',
@@ -20,6 +21,9 @@ const runDiagnosticCodes = [
   'agent_http_other',
   'agent_response_invalid',
   'agent_result_unconfirmed',
+  'agent_paused_for_control',
+  'agent_result_status_unconfirmed',
+  'agent_result_message_missing',
   'execution_aborted',
   'lease_lost',
   'result_persist_failed',

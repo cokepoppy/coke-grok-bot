@@ -10,7 +10,7 @@ import { BrowserContextNotReadyError, getBrowserPage, waitForDefaultBrowserConte
 import { createRendererHealthMonitor, RendererUnresponsiveError } from './renderer-health.mjs';
 import { BotScreenCapacityError, BotScreenPages } from './bot-screen-pages.mjs';
 import { createDesktopScreenLayout, parseDesktopScreenSlots } from './desktop-screen-layout.mjs';
-import { captureDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from './desktop-input.mjs';
+import { captureFocusedDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from './desktop-input.mjs';
 import { ensureSharedComputerRoots } from './shared-computer-root.mjs';
 import { createGuardedComputer } from '/opt/coke-grok/guarded-computer.mjs';
 
@@ -242,8 +242,9 @@ function screenIdFromRequest(req) {
 }
 
 async function screenshot(screenId) {
-  await pageForScreen(screenId);
-  return captureDesktopScreen(exec, await screenPages.geometry(screenId));
+  const browserPage = await pageForScreen(screenId);
+  const bounds = await screenPages.geometry(screenId);
+  return desktopActionGate(() => captureFocusedDesktopScreen(exec, browserPage, bounds));
 }
 
 const artifactTaskId = /^[a-f0-9-]{36}$/i;
@@ -335,7 +336,7 @@ async function command(input, screenId) {
       if (action === 'click') {
         const x = Number(input.x), y = Number(input.y);
         if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Click coordinates are invalid');
-        await clickDesktop(exec, bounds, Math.round(x), Math.round(y));
+        await withFocusedDesktopPage(browserPage, () => clickDesktop(exec, bounds, Math.round(x), Math.round(y)));
       } else if (action === 'type') {
         await withFocusedDesktopPage(browserPage, () => typeDesktop(spawn, String(input.text || '')));
       } else {
@@ -361,6 +362,7 @@ async function command(input, screenId) {
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Only credential-free HTTP and HTTPS URLs are allowed');
     await browserPage.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
   } else throw new Error('Unsupported desktop command');
+  await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => undefined));
   const currentOwner = await screenOwner(screenId);
   if (actor !== currentOwner) throw new Error('Computer ownership changed');
   return {
@@ -476,6 +478,7 @@ async function agentBrowserAction(input, screenId) {
     } else throw new Error('Unsupported Agent browser action');
 
     const title = await browserPage.title();
+    await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => undefined));
     return { ready: true, action, url: safePageUrl(browserPage.url()), title: title.slice(0, 300) };
   });
 }

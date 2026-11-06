@@ -7,6 +7,7 @@ import {createAuthServer} from '../src/server/auth-http.ts';
 import type {GoogleAuthService} from '../src/server/google-auth.ts';
 import type {Session} from '../src/server/tenant-store.ts';
 import {UserComputer} from '../src/server/user-computer.ts';
+import {SafeDiagnosticError} from '../src/server/safe-diagnostics.ts';
 
 test('computer API selects the authenticated user and protects actions with origin and ownership',async()=>{
  const a:Session={tenantId:randomUUID(),userId:randomUUID(),email:'a@example.test',name:'a',role:'owner'};
@@ -15,7 +16,7 @@ test('computer API selects the authenticated user and protects actions with orig
  const owners=new Map<string,'agent'|'user'>();owners.set(`${a.userId}:${botA}`,'agent');owners.set(`${a.userId}:${botA2}`,'agent');owners.set(`${b.userId}:${botB}`,'agent');const calls:string[]=[];
  const computer=new UserComputer((owner,botId)=>({
   async control(){return {owner:owners.get(`${owner.userId}:${botId}`) as 'agent'|'user'}},
-  async userScreenshot(){return Buffer.from(owner.userId)},
+  async userScreenshot(){if(botId===botA2)throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED',504);return Buffer.from(owner.userId)},
   async setControl(value){owners.set(`${owner.userId}:${botId}`,value);return {owner:value}},
   async userAction(action){if(owners.get(`${owner.userId}:${botId}`)!=='user')throw new Error('Not in control');calls.push(`${owner.userId}:${botId}:${action.action}`)},
  }));
@@ -27,9 +28,10 @@ test('computer API selects the authenticated user and protects actions with orig
  const request=(bot:string,path:string,cookie='',init:RequestInit={})=>fetch(`${origin}/grok-bot/api/bots/${bot}/computer${path}`,{...init,headers:{cookie,...init.headers}});
  const post=(bot:string,path:string,cookie:string,body:unknown,from=origin)=>request(bot,path,cookie,{method:'POST',headers:{origin:from,'content-type':'application/json'},body:JSON.stringify(body)});
  try{
-  assert.equal((await request(botA,'/screenshot')).status,401);
+  const unauthenticated=await request(botA,'/screenshot');assert.equal(unauthenticated.status,401);assert.deepEqual((await unauthenticated.json() as {diagnostic:unknown}).diagnostic,{code:'COMPUTER_AUTH_REQUIRED',status:401});
   const screenA=await request(botA,'/screenshot','a'),screenB=await request(botB,'/screenshot','b');assert.equal(screenA.headers.get('cache-control'),'no-store');assert.equal(await screenA.text(),a.userId);assert.equal(await screenB.text(),b.userId);
-  assert.equal((await request(botA,'/screenshot','b')).status,404);
+  const screenshotFailure=await request(botA2,'/screenshot','a');assert.equal(screenshotFailure.status,503);assert.deepEqual(await screenshotFailure.json(),{error:'Service unavailable',diagnostic:{code:'COMPUTER_WORKER_TRANSPORT_FAILED',status:504}});
+  const unavailable=await request(botA,'/screenshot','b');assert.equal(unavailable.status,404);assert.deepEqual((await unavailable.json() as {diagnostic:unknown}).diagnostic,{code:'COMPUTER_BOT_UNAVAILABLE',status:404});
   assert.equal((await post(botA,'/control','a',{owner:'user'},'https://other.example')).status,403);
   assert.equal((await post(botA,'/control','a',{owner:'user',userId:b.userId})).status,400);
   assert.equal((await post(botA,'/control','a',{owner:'user'})).status,200);

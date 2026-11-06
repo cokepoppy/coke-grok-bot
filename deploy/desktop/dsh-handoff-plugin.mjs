@@ -5,18 +5,27 @@ export const inject=['tools'];
 export function apply(ctx) {
   const bridge=readBridge();
   if(!bridge)throw new Error('The mediated Bot handoff bridge is not configured');
-  const address=bot=>`${bot.name}${bot.label?` (${bot.label})`:''}`;
+  const nameAddress=bot=>`${bot.name}${bot.label?` (${bot.label})`:''}`;
+  const address=bot=>`${nameAddress(bot)} [Bot ID ${bot.id}]`;
   ctx.tools.register({
     name:'bot_handoff',
-    description:`Send a private asynchronous task to another Bot owned by this same user. Available Bots (use the exact Bot name, adding its label in parentheses when needed): ${bridge.bots.map(address).join(', ')}. The recipient works on its own Pi/DSH run queue and replies later.`,
-    parameters:{type:'object',properties:{targetBotName:{type:'string',minLength:1,maxLength:200},message:{type:'string',minLength:1,maxLength:4000}},required:['targetBotName','message'],additionalProperties:false},
+    description:`Send a private asynchronous task to another Bot owned by this same user. Available Bots include stable IDs; use targetBotId when selecting a Bot, especially when names overlap: ${bridge.bots.map(address).join(', ')}. The recipient works on its own Pi/DSH run queue and replies later.`,
+    parameters:{type:'object',properties:{targetBotId:{type:'string',pattern:uuid.source},targetBotName:{type:'string',minLength:1,maxLength:200},message:{type:'string',minLength:1,maxLength:4000}},required:['message'],additionalProperties:false},
     output:{schema:{type:'object',additionalProperties:true},render:(_args,value)=>[{type:'text',text:JSON.stringify(value)}]},
     async execute(args,exec){
       if(exec.signal?.aborted)throw exec.signal.reason||new Error('Task was stopped');
-      const requested=typeof args.targetBotName==='string'?args.targetBotName.trim().toLocaleLowerCase():'';
-      const matches=bridge.bots.filter(bot=>address(bot).toLocaleLowerCase()===requested||bot.name.toLocaleLowerCase()===requested);
-      if(matches.length!==1||typeof args.message!=='string'||!args.message.trim()||args.message.length>4000)throw new Error(matches.length>1?'Bot handoff target name is ambiguous':'Bot handoff target or message is invalid');
-      const target=matches[0];
+      const hasId=typeof args.targetBotId==='string'&&args.targetBotId.length>0;
+      const hasName=typeof args.targetBotName==='string'&&args.targetBotName.trim().length>0;
+      if(hasId===hasName||typeof args.message!=='string'||!args.message.trim()||args.message.length>4000)throw new Error('Bot handoff target or message is invalid');
+      let target;
+      if(hasId)target=bridge.bots.find(bot=>bot.id===args.targetBotId);
+      else{
+        const requested=args.targetBotName.trim().toLocaleLowerCase();
+        const matches=bridge.bots.filter(bot=>nameAddress(bot).toLocaleLowerCase()===requested||bot.name.toLocaleLowerCase()===requested);
+        if(matches.length>1)throw new Error('Bot handoff target name is ambiguous');
+        target=matches[0];
+      }
+      if(!target)throw new Error('Bot handoff target or message is invalid');
       const response=await fetch(`${bridge.url}/bot-handoffs`,{
         method:'POST',headers:{authorization:`Bearer ${bridge.token}`,'content-type':'application/json'},
         body:JSON.stringify({targetBotId:target.id,message:args.message}),signal:exec.signal,redirect:'error',

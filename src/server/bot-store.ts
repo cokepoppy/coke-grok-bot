@@ -4,7 +4,8 @@ import type { Session } from './tenant-store.ts';
 
 export type BotShape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle' | 'oval' | 'square' | 'pill' | 'spark' | 'heart' | 'flower' | 'pentagon' | 'star';
 export interface StoredBot { id: string; name: string; label: string; color: string; shape: BotShape; group: string; pinned: boolean; hidden: boolean; preview: string; lastActivityAt: string | null }
-export interface StoredMessage { id: string; role: 'user'; text: string }
+export interface StoredMessage { id: string; role: 'user' | 'system'; text: string; createdAt: string }
+export interface RenameResult { ok: boolean; event?: StoredMessage }
 const shapes = new Set<BotShape>(['cloud', 'drop', 'hex', 'round', 'triangle', 'oval', 'square', 'pill', 'spark', 'heart', 'flower', 'pentagon', 'star']);
 
 export class BotStore {
@@ -24,11 +25,16 @@ export class BotStore {
       id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
       bot_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
       sequence BIGINT UNSIGNED NOT NULL AUTO_INCREMENT UNIQUE,
+      message_role ENUM('user','system') NOT NULL DEFAULT 'user',
       message_text TEXT NOT NULL,
       created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
       KEY bot_history (bot_id, sequence),
       FOREIGN KEY (bot_id) REFERENCES bots(id)
     ) ENGINE=InnoDB`);
+    const [messageColumns] = await this.pool.execute<RowDataPacket[]>(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='bot_messages'`);
+    if (!new Set(messageColumns.map(column => String(column.COLUMN_NAME))).has('message_role')) {
+      await this.pool.execute("ALTER TABLE bot_messages ADD COLUMN message_role ENUM('user','system') NOT NULL DEFAULT 'user' AFTER sequence");
+    }
     await this.pool.execute(`CREATE TABLE IF NOT EXISTS bot_sidebar_state (
       bot_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
       pinned BOOLEAN NOT NULL DEFAULT FALSE, hidden BOOLEAN NOT NULL DEFAULT FALSE,
@@ -38,17 +44,19 @@ export class BotStore {
   async messages(session: Session, botId: string): Promise<StoredMessage[] | null> {
     const [owners] = await this.pool.execute<RowDataPacket[]>('SELECT id FROM bots WHERE id=? AND tenant_id=? AND owner_id=?', [botId, session.tenantId, session.userId]);
     if (!owners.length) return null;
-    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT id, 'user' AS role, message_text AS text FROM bot_messages WHERE bot_id=? ORDER BY sequence", [botId]);
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT id,message_role AS role,message_text AS text,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt FROM bot_messages WHERE bot_id=? ORDER BY sequence", [botId]);
     return rows as StoredMessage[];
   }
   async addMessage(session: Session, botId: string, text: string): Promise<StoredMessage | null> {
     const clean = text.trim();
     if (!clean || clean.length > 10000) throw new Error('Invalid message');
-    const message: StoredMessage = { id: randomUUID(), role: 'user', text: clean };
+    const message: StoredMessage = { id: randomUUID(), role: 'user', text: clean, createdAt: new Date().toISOString() };
     const [result] = await this.pool.execute<import('mysql2').ResultSetHeader>(
-      'INSERT INTO bot_messages (id, bot_id, message_text) SELECT ?, id, ? FROM bots WHERE id=? AND tenant_id=? AND owner_id=?',
+      "INSERT INTO bot_messages (id,bot_id,message_role,message_text) SELECT ?,id,'user',? FROM bots WHERE id=? AND tenant_id=? AND owner_id=?",
       [message.id, clean, botId, session.tenantId, session.userId]);
-    return result.affectedRows ? message : null;
+    if (!result.affectedRows) return null;
+    const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT id,message_role AS role,message_text AS text,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt FROM bot_messages WHERE id=?", [message.id]);
+    return rows[0] as StoredMessage;
   }
   async list(session: Session, includeRuns = false): Promise<StoredBot[]> {
     const summaries = includeRuns
@@ -80,11 +88,25 @@ export class BotStore {
     await this.pool.execute('INSERT INTO bots (id, tenant_id, owner_id, name, color, shape) VALUES (?, ?, ?, ?, ?, ?)', [bot.id, session.tenantId, session.userId, bot.name, bot.color, bot.shape]);
     return bot;
   }
-  async rename(session: Session, id: string, name: string): Promise<boolean> {
+  async rename(session: Session, id: string, name: string): Promise<RenameResult> {
     const clean = name.trim();
     if (!clean || clean.length > 60) throw new Error('Invalid bot name');
-    const [result] = await this.pool.execute<import('mysql2').ResultSetHeader>('UPDATE bots SET name=? WHERE id=? AND tenant_id=? AND owner_id=?', [clean, id, session.tenantId, session.userId]);
-    return result.affectedRows > 0;
+    const connection = await this.pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [owned] = await connection.execute<RowDataPacket[]>('SELECT name FROM bots WHERE id=? AND tenant_id=? AND owner_id=? FOR UPDATE', [id, session.tenantId, session.userId]);
+      if (!owned.length) { await connection.rollback(); return { ok: false }; }
+      if (String(owned[0].name) === clean) { await connection.commit(); return { ok: true }; }
+      await connection.execute('UPDATE bots SET name=? WHERE id=? AND tenant_id=? AND owner_id=?', [clean, id, session.tenantId, session.userId]);
+      const eventId = randomUUID();
+      await connection.execute("INSERT INTO bot_messages (id,bot_id,message_role,message_text) VALUES (?,?,'system',?)", [eventId, id, `Renamed to ${clean}`]);
+      const [events] = await connection.execute<RowDataPacket[]>("SELECT id,message_role AS role,message_text AS text,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt FROM bot_messages WHERE id=?", [eventId]);
+      await connection.commit();
+      return { ok: true, event: events[0] as StoredMessage };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally { connection.release(); }
   }
   async setLabel(session: Session, id: string, label: string): Promise<boolean> {
     const clean = label.trim();

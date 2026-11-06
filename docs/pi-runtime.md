@@ -293,3 +293,74 @@ MySQL 只读核对确认 `Public E2E 2026-11-02` 的六条 Bot 运行全部 `com
 诊断时发现公网入口仍转发到 Mac 本机 K3D，但 `coke-grok-auth` 运行镜像是 `coke-grok-auth:public-sidebar-20261102-r1`。对应候选 manifest 的源码基线是 `fd3b02e6582a4a42f886bca7360371b563afe514`，而唯一功能分支 HEAD 已是 `2b45a9d70f21c2dd7b6eda15344f5d4b84bbeb30`；Auth 与当前源码不一致。Agent 和 Desktop Pod 显示 Running，分别使用 `coke-grok-desktop:sha-e3fd3c9422f4e7bbe4526c8be6f0321182739858` 与 `coke-grok-desktop:sha-057a5e58bd856da7a6df2b4a08b6f5c39cbd3bec`，但 Pod Ready 不代表 Bot 屏幕已连接。Auth 日志在相同时间窗包含 DeepSeek 上游 HTTP 200 及 `INTERNAL_FAILURE` 电脑请求；这只能证明有上游流量，不能证明每个 Bot 的电脑动作完成。
 
 本次没有部署或回滚镜像，没有改动 MySQL、PVC、K3D 工作负载或 VPS 隧道，也没有重试未知任务。先保留这条失败记录；在审批确认与 Bot 屏幕连接问题解决、当前 unknown 运行可安全收尾、候选源码与公网部署版本一致前，不把本次测试计为通过。11 月 2 日已完成的六 Bot 6/6 与本次失败是两次独立运行，应分别保留。
+
+### 2026-11-03 群聊结果文件公开链路验证
+
+群聊结果文件候选 `coke-grok-auth:group-result-files-20261103-r1` 已部署到 Mac 本机 K3D 的 Auth；公网 HTTPS 仍经 VPS 反向代理/隧道转发。使用已登录 Chrome 在 `https://codex.cokeagent.com/grok-bot/` 的 `Offsite crew` 群聊提交真实 Pi / `deepseek-v4.1-flash` 文件任务，六个 Bot 运行均在 UI 到达 `Done`，刷新后结果仍在。Chief 的 `group-result-check.txt` 卡片预览准确显示 `GROK_GROUP_RESULT_FILES_OK`，产品下载完成；下载结果 26 字节，SHA-256 为 `8b6fe9079b9dd280f8957b60b4c160dd87663c0b641afc264d01c169375a7b22`。这条文件任务没有调用 Browser User 或 Computer User，不作为云电脑验收。
+
+群聊消息被 fan-out 给全部六个成员；四个 Bot 独立写出了各自任务目录中的同名结果文件，两个 Bot 只作确认。因此该结果证明群聊 Bot 运行后的文件卡片、预览、授权下载和刷新持久化，不证明 `@Bot` 定向执行。测试消息、六次 Bot run 和四份结果文件留在现有群聊记录，下载校验文件留在用户 Downloads；没有清理它们。E2E 后候选 verifier 显示 `activeAgentRuns=0`，公网 Auth readiness 为 204，固定 Agent 镜像与 workspace PVC 正常。此候选用户最终验收仍待处理，未提交、合并、打 tag 或新建分支。
+
+### 2026-11-03 六 Bot 公网 Browser User / Computer User 复验
+
+随后另从已登录 Chrome 的公网 URL 向同一群组提交 Browser User + Computer User 只读任务。六个 Bot 的运行、浏览器结果和截图活动卡均完成；六个结果都报告 `document.title = "Example Domain"`、没有可见 h1。五个 Computer User 截图显示 Chromium 正打开目标页。Talent Scout 的截图显示 Chromium 新标签页，目标页在后台；切换标签的额外操作没有获批准，所以保留为一项屏幕对照不匹配，不再点击或重试。Account Manager 与 Inbox Manager 的目标页本来已打开，Browser User 检查当前 URL 后正常截图。
+
+因此这一组公网端到端结果是 6/6 Browser User 返回、6/6 Computer User 截图活动卡完成。Bot 回复声称五张截图与浏览器目标页相符，但我没有独立查看这些图；Talent Scout 的截图描述不匹配：Chromium 新标签页在前台，Example Domain 在后台。切换标签请求未获批准，也未重试。E2E 后打开 Talent Scout 和 Chief 的 Computer 详情面板时立即看到 `Computer not connected / Waiting for computer`；等待时间不足以区分延迟初始化与持续故障。故整体为部分通过，活动卡 `Done` 还不能证明持久 Computer 面板正常。之前的群聊文件任务是另一组验证，不能说那条文件任务运行了电脑工具。群聊运行和测试结果保留在产品中；无网页修改、表单提交、登录或外发消息。候选分支仍等待用户最终验收，没有提交、合并或打 tag。
+
+### 2026-11-03 screen-focus 发布后的最新六 Bot 公网状态
+
+修复 Provisioner 的 Desktop image pin 后，公网账号能打开实际 K3D Computer 面板，Account Manager 的当前桌面截图显示 Chromium 在 example.com；该截图不能把其先前的 Outcome unknown run 变成成功。继续通过登录态 Chrome 公网页面提交的最新独立六 Bot 任务中，Sales Outbound 和 Inbox Manager 显示 Done；Chief、Talent Scout、Account Manager、Expense Manager 在检查屏幕后仍为 Outcome unknown，队列已恢复但没有可恢复结果。本轮不重放这些未知任务，也不把更早不同运行的完成记录拼进来。
+
+本机 K3D 实际镜像为 Auth coke-grok-auth:group-input-files-20261103-r1、Agent coke-grok-desktop:sha-e3fd3c9422f4e7bbe4526c8be6f0321182739858、Desktop coke-grok-desktop:sha-da1b006ea82a619c16c682d54bdfc0de36c69965、Provisioner coke-grok-desktop-broker:diag-20261102-01。Provisioner 的 desktop image pin 与 Desktop 候选一致。Codex 自身的 Chrome 可见 UI 正常工作；这次失败来自 Grok Bot 产品内部的 K3D Browser User 审批/执行链，不是 Work 设置中 Codex 本地浏览器控制开关。
+
+代码路径区分两种错误：Computer action was not approved 表示 Agent 轮询到审批状态为 denied、expired 或 consumed；Approved computer action was not confirmed 表示审批状态为 approved 后，一次性 execute 请求返回非成功状态。公网当前 Agent/Auth 镜像没有包含工作区里新增的安全诊断解析与回传，因此后一错误仍无法从公网记录定位到具体 Broker、lease 或 worker 子原因。下一步先准备与 Broker pin 对齐的 Auth/Agent 候选并安全带出诊断码，再发起一条新的只读公网任务验证六个 Bot；不改 MySQL/PVC、不重试未知 run，结果未 6/6 持久化前不合并或打 tag。
+
+### 2026-11-04 Routine Tool
+
+`RoutineStore` creates the additive MySQL tables `bot_routines` and `routine_runs`; scheduled runs enter the existing Agent queue and are dispatched by the Mac/K3D Pi runtime. The owner web API supports list, pause/resume, Test, and delete. Create and edit are chat-first: both Pi and DSH expose the same `bot_routines` tool through `BotRoutineBridge` and the internal Model Gateway. Every Agent read/write checks the active owner, tenant, Bot, run, and unexpired lease. Create retries use a normalized deterministic request ID; field order in a repeated tool payload cannot create a duplicate. DSH plugin sources are copied into the pinned Desktop/Agent image, and the API capability remains short-lived and internal.
+
+Only weekly and interval schedules are supported in this candidate; external event triggers remain out of scope. Local validation on 2026-11-04: build passed, runtime 100/100, UI E2E passed, and isolated disposable-MySQL integration 18/18. The new release candidate has not yet been deployed to public K3D and has no public Routine acceptance. Rollback restores recorded Auth/Agent/Desktop pins and keeps MySQL data and workspace PVCs.
+
+### 2026-11-04 post-deployment status
+
+Later public verification confirmed the owner Agent and Desktop now run the fixed `coke-grok-desktop:sha-e0c080d63ccfb405d4ce162ce084b5b865aae2fa` runtime pin, with Auth on `group-retry-visibility-20261104-r1`; `auth-runtime-config` reports `engine=pi` and `model=deepseek-v4.1-flash`. A fresh six-Bot public Browser/Computer E2E and refresh persistence check passed. This verifies the shared runtime path, but no Routine was created, edited, or tested in that run. Public Routine acceptance is still pending; next verify chat-first create/edit and Computer-panel Test/persistence using a bounded test routine without an active recurring trigger.
+
+### 2026-11-04 Pi Routine capability forwarding fix
+
+The first visible public chat-first Routine creation attempt failed and saved nothing. The source root cause was in the shared Agent ingress: Auth sent `routines: { mode: 'mediated' }` and the Pi adapter supported `bot_routines`, but `deploy/desktop/agent-runtime.mjs` dropped the field when constructing its child-kernel payload. It now validates the mediated mode and forwards only that allowlisted mode to both Pi and DSH. The regression passed for both kernels, including rejection of an invalid mode and confirmation that caller-provided bridge credentials are not forwarded. Three adapter tests and the deployment build passed.
+
+Fixed ARM64 Agent/Desktop image: `coke-grok-desktop:sha-e2d3755840f8e897d2563aff970a533de8b89b05`, Docker image ID `sha256:e2d3755840f8e897d2563aff970a533de8b89b0524de9c606331bc9d79e458aa`. Preflight passed against the current public Auth, old e0 runtime, idle queue, MySQL, PVC, and public readiness. Rollout and public Routine persistence/Test E2E are still pending. No routine exists from the failed attempt and it was not resent.
+### 2026-11-04 公网 Routine / Browser User / Computer User 完整任务复验
+
+Routine 的真实公网测试先发现 Agent ingress 丢失 capability：Auth 请求已带 `routines: { mode: "mediated" }`，Pi 的 Routine adapter 也已安装，但 `deploy/desktop/agent-runtime.mjs` 没有把 `routines` 传入 Pi/DSH child kernel。新增白名单校验，只转发固定的 `mode: "mediated"`；拒绝未知模式，不接受用户提供的 bridge URL/token。Pi/DSH forwarding 回归、Routine adapter 3/3 与 `npm run build:deployment` 通过。
+
+修复镜像 `coke-grok-desktop:sha-e2d3755840f8e897d2563aff970a533de8b89b05` 部署到本机 K3D 当前用户 Agent/Desktop。Auth 保持 `coke-grok-auth:group-retry-visibility-20261104-r1`；Broker Ready，运行队列空，MySQL、workspace PVC 和 VPS 隧道未改动。首次发布脚本因 verifier 中 Auth tag 过期而自动回滚到 e0 Agent/Desktop；修复 verifier 后才重新 preflight 并部署。
+
+通过登录态 Chrome 可见 UI，为 E2E Test Bot 1030 创建每周日 04:00（`Asia/Shanghai`）Routine，创建后立刻暂停，再点击一次 Test。Browser User 对 `https://example.com/` 请求产品审批，准确批准只读导航。Pi/`deepseek-v4.1-flash` 真实运行结束为 `Succeeded`，返回 `document.title = "Example Domain"` 与“没有可见 h1”。Computer User 的活动卡为 `Done`；真实 K3D Chromium 截图显示目标页面。刷新公网页面后 Routine history、运行结果、截图卡均保留；该 Routine 仍暂停，没有额外 Test、删除或定时执行。
+
+这验证了当前所测的公网聊天创建 Routine → MySQL 持久记录 → Pi/DeepSeek → K3D Browser User → Computer User 截图 → 刷新恢复路径。它不验证 event-triggered routines、所有 Bot 并行多屏、跨用户隔离的新场景或像素级 UI；本功能分支仍需用户最终验收。
+
+### 2026-11-04 K3D 双屏 Worker 与公网结果持久化
+
+在固定 `coke-grok-desktop:sha-e2d3755840f8e897d2563aff970a533de8b89b05` 镜像上，`npm run test:desktop-worker-k3d` 通过。测试不调用模型，直接在隔离 K3D namespace 验证两个 Bot 屏幕、同用户共享浏览器 profile、Browser User 点击、真实 1440×900 X11 截图、Computer User 坐标输入、Bot 级接管与跨 Bot 隔离；测试创建的临时 namespace 已由测试 `finally` 清除。
+
+公网补充复核通过已登录 Chrome 可见 UI 分别运行 Chief 的只读 `example.com` 与 Sales Outbound 的只读 `example.org` 任务。精确导航审批后，两条真实 Bot run 均报告标题 `Example Domain`、无可见 h1，并完成 Computer User 截图；刷新后结果仍显示。Chief 的 K3D Computer 面板截图也显示 Chromium 在 example.com。此公网复核是不同 Bot 的串行队列任务，不是并行 Agent 运行证明；Worker 测试的双屏隔离不能替代用户在公网对完整产品的最终验收。
+
+### 2026-11-05 navigation approval 修复后的公网六 Bot E2E
+
+在已登录 Chrome 的公网 `https://codex.cokeagent.com/grok-bot/` 群聊通过可见 UI 提交 `Fresh post-deploy acceptance run`。MySQL 中对应一条群聊 turn 和六条 Bot run；六条均为 `completed`、`recovery_state=none`、`computer_used=1`。每条 `execution_audit` 都记录 `engine=pi`、`model=deepseek-v4.1-flash`、`modelCompleted=true`，Browser User 的 navigate 成功，Computer User 的 screenshot 成功；六条 `https://example.com/` 精确导航审批均为 `consumed`。页面回复报告的 title 为 `Example Domain`，无可见 h1。Auth 日志在 01:51–01:59 UTC 窗口有 29 条 `MODEL_UPSTREAM_OK`；这是时间窗口佐证，不是逐 run 请求映射。
+
+发布候选 `releases/candidate-grok-bot-navigation-approval-2026-11-05/` 已更新为部署后状态。只读 `scripts/verify.sh` 通过：Auth 与 `private-secrets` init 使用候选镜像，公网 readiness 为 204，运行队列空，Agent/Desktop 固定镜像未变，workspace PVC 为 Bound。实际 Agent 与 Desktop Pod 均 Ready，使用 `coke-grok-desktop:sha-7f256b731219515517905be73ad32512b411de3a`；MySQL 数据、PVC、Broker、其他工作负载和 VPS 隧道均未替换或清理，VPS 仍只作反向代理和隧道。
+
+浏览器控制仍须分层判断：Codex 扩展标签附着此前超时，Chrome 原生辅助功能可以读取公网页面；这不代表产品内 K3D Browser User 不可用。本轮原生 Chrome 后续出现用户切换页面信号，读取到的是另一个旧 Bot 对话，因此没有继续输入或刷新。之前短暂出现的 09:58/09:59 通用任务消息没有与 MySQL 新 turn 对上，不计入本轮验收。完整 feature 的视觉对图和用户最终验收仍待完成；本记录不代表已合并或打 checkpoint tag。
+
+### 2026-11-06 DeepSeek 官方 API key 轮换与连通验证
+
+用户提供的受保护 DeepSeek 官方 Key 已写入现有 K3D `coke-grok-bot/auth-runtime-secrets/model-key` Secret，并仅滚动重启现有 Auth 单副本。线上 ConfigMap 原本已是官方 `https://api.deepseek.com` 与 `deepseek-flash`，无需再次修改。Auth Pod Ready，公网 readiness 返回 204。此前用该 Key 请求官方 `/models` 返回 200；`deepseek-flash` 的最小 `/chat/completions` 返回 200、非空预期答复、`finish_reason=stop`，共 51 tokens。2026-11-06 再从用户提供的受保护文件与 K3D Secret 做进程内相等性核对，结果一致；对该官方端点发出一次最小补全请求，返回 200、预期哨兵答复匹配、`finish_reason=stop`，共 28 tokens。密钥、答复内容和响应体均未写入日志或仓库。
+
+这是 Provider API 与 Auth 健康检查，不是登录态网页中的 Pi → K3D Browser User/Computer User 全链路验收；公网产品 E2E 仍需单独完成。
+
+### 2026-11-06 已登录公网 Chrome 六 Bot 组聊 E2E 复测
+
+通过已登录 Chrome 在 `https://codex.cokeagent.com/grok-bot/` 打开 `Public Full-chain 20261106`，按界面创建的只读任务分别检查六个 Bot 的独立 K3D 屏幕和唯一 URL。Chief、Sales Outbound、Account Manager、Talent Scout、Expense Manager 五个 Bot 的新任务可见为 `Done`；各自报告导航到带 `grokbot-e2e=20261106-<bot>` 的 `https://example.com/`，标题 `Example Domain`，无可见 h1，且 Computer User 截图成功。Sales 与 Expense 的导航审批卡在公网 UI 中核对目标 URL 后批准。其余旧的 Sales/Expense 未决任务先查看各自 Computer 画面为 `about:blank`，在 UI 中确认检查完毕并恢复队列；旧任务结果仍按未知保留，没有重试。
+
+Inbox Manager 在新组任务中保持 `Outcome unknown`，按任务要求没有重试；因此本次六 Bot 新任务验收为 **5/6，未通过**。可见 Chrome 任务卡、精确导航审批、K3D Chromium 页面和完成截图证明这五条有实际网页/电脑操作证据；本轮没有逐条查询 MySQL `execution_audit` 以独立核对 Agent engine/model，因此不能把五条的 DeepSeek 路由计为已审计通过。前一节的官方 DeepSeek API 连通结果仍只是 provider 检查。群组消息、任务卡与运行历史保留在现有账户记录中，没有清理或重放未知任务。当前功能分支不合并、不打 checkpoint tag，等待 Inbox 的未知状态有安全、可审计的处理方案及用户最终验收。

@@ -13,7 +13,7 @@ async function freePort() {
   const port=server.address().port;await new Promise(resolve=>server.close(resolve));return port;
 }
 
-test('Agent runtime forwards only validated Bot memory and handoff rosters to Pi and DSH adapters',async()=>{
+test('Agent runtime forwards only validated Bot memory, group context, handoff rosters, and Routine capability to Pi and DSH adapters',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'grok-agent-runtime-memory-'));
   const workerToken=randomUUID(),runtimeToken=randomUUID(),runtimePort=await freePort(),workerPort=await freePort();
   const worker=createServer((req,res)=>{
@@ -34,23 +34,34 @@ test('Agent runtime forwards only validated Bot memory and handoff rosters to Pi
     }
     assert.equal(ready,true,'Agent runtime must become ready');
     for(const engine of ['pi','dsh']){
-      const taskId=randomUUID(),botId=randomUUID(),target={id:randomUUID(),name:'Sales Outbound',label:'Research'},memoryExtra='memory-extra-field-must-not-reach-adapter',handoffExtra='handoff-token-extra-must-not-reach-adapter';
-      const response=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId,botId,screenId:botId,cwd:`tasks/${taskId}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},memory:{mode:'mediated',token:memoryExtra},handoffs:{mode:'mediated',bots:[target],token:handoffExtra}})});
+      const taskId=randomUUID(),botId=randomUUID(),target={id:randomUUID(),name:'Sales Outbound',label:'Research'},memoryExtra='memory-extra-field-must-not-reach-adapter',handoffExtra='handoff-token-extra-must-not-reach-adapter',routineExtra='routine-url-extra-must-not-reach-adapter',contextExtra='group-context-extra-field-must-not-reach-adapter';
+      const runtimeContext={kind:'group-chat',groupName:'Offsite crew',currentBot:{name:'Chief',label:'Coordinator',credential:contextExtra},members:[{name:'Chief',label:'Coordinator'},{name:'Sales Outbound',label:'Research'}],targeted:false,extra:contextExtra};
+      const response=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId,botId,screenId:botId,cwd:`tasks/${taskId}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},runtimeContext,memory:{mode:'mediated',token:memoryExtra},handoffs:{mode:'mediated',bots:[target],token:handoffExtra},routines:{mode:'mediated',url:'https://untrusted.invalid/v1',token:routineExtra}})});
       assert.equal(response.status,200);assert.equal((await response.json()).status,'done');
       const captured=JSON.parse(await readFile(join(dir,`${taskId}.json`),'utf8'));
       assert.deepEqual(captured.memory,{mode:'mediated'},`${engine} must receive only the validated memory mode`);
+      assert.deepEqual(captured.runtimeContext,{kind:'group-chat',groupName:'Offsite crew',currentBot:{name:'Chief',label:'Coordinator'},members:[{name:'Chief',label:'Coordinator'},{name:'Sales Outbound',label:'Research'}],targeted:false},`${engine} must receive only validated group context`);
       assert.deepEqual(captured.handoffs,{mode:'mediated',bots:[target]},`${engine} must receive the sanitized same-owner Bot roster`);
+      assert.deepEqual(captured.routines,{mode:'mediated'},`${engine} must receive only the validated Routine mode`);
       assert.equal(JSON.stringify(captured).includes(memoryExtra),false,`${engine} must not receive caller-supplied memory credentials`);
       assert.equal(JSON.stringify(captured).includes(handoffExtra),false,`${engine} must not receive caller-supplied handoff credentials`);
+      assert.equal(JSON.stringify(captured).includes(routineExtra),false,`${engine} must not receive caller-supplied Routine bridge credentials`);
+      assert.equal(JSON.stringify(captured).includes(contextExtra),false,`${engine} must not receive extra group context fields`);
       const plainTask=randomUUID(),plainBot=randomUUID();
       const plain=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId:plainTask,botId:plainBot,screenId:plainBot,cwd:`tasks/${plainTask}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'}})});
-      assert.equal(plain.status,200);const plainInput=JSON.parse(await readFile(join(dir,`${plainTask}.json`),'utf8'));assert.equal(Object.hasOwn(plainInput,'memory'),false);assert.equal(Object.hasOwn(plainInput,'handoffs'),false);
+      assert.equal(plain.status,200);const plainInput=JSON.parse(await readFile(join(dir,`${plainTask}.json`),'utf8'));assert.equal(Object.hasOwn(plainInput,'runtimeContext'),false);assert.equal(Object.hasOwn(plainInput,'memory'),false);assert.equal(Object.hasOwn(plainInput,'handoffs'),false);assert.equal(Object.hasOwn(plainInput,'routines'),false);
       const invalidTask=randomUUID(),invalidBot=randomUUID();
       const invalid=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId:invalidTask,botId:invalidBot,screenId:invalidBot,cwd:`tasks/${invalidTask}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},memory:{mode:'untrusted',token:memoryExtra}})});
       assert.equal(invalid.status,400);assert.equal(await access(join(dir,`${invalidTask}.json`)).then(()=>true,()=>false),false,'invalid memory bridge input must fail before starting an adapter');
       const invalidHandoffTask=randomUUID(),invalidHandoffBot=randomUUID();
       const invalidHandoff=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId:invalidHandoffTask,botId:invalidHandoffBot,screenId:invalidHandoffBot,cwd:`tasks/${invalidHandoffTask}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},handoffs:{mode:'mediated',bots:[{id:'not-a-bot',name:'Foreign Bot',label:''}]}})});
       assert.equal(invalidHandoff.status,400);assert.equal(await access(join(dir,`${invalidHandoffTask}.json`)).then(()=>true,()=>false),false,'invalid Bot roster must fail before starting an adapter');
+      const invalidRoutineTask=randomUUID(),invalidRoutineBot=randomUUID();
+      const invalidRoutine=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId:invalidRoutineTask,botId:invalidRoutineBot,screenId:invalidRoutineBot,cwd:`tasks/${invalidRoutineTask}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},routines:{mode:'untrusted',token:routineExtra}})});
+      assert.equal(invalidRoutine.status,400);assert.equal(await access(join(dir,`${invalidRoutineTask}.json`)).then(()=>true,()=>false),false,'invalid Routine bridge input must fail before starting an adapter');
+      const invalidContextTask=randomUUID(),invalidContextBot=randomUUID();
+      const invalidContext=await fetch(`http://127.0.0.1:${runtimePort}/v1/tasks/run`,{method:'POST',headers:{authorization:`Bearer ${runtimeToken}`,'content-type':'application/json'},body:JSON.stringify({engine,taskId:invalidContextTask,botId:invalidContextBot,screenId:invalidContextBot,cwd:`tasks/${invalidContextTask}`,prompt:'synthetic runtime test',modelConfig:{apiKey:'synthetic-model-key',baseUrl:'https://model.invalid/v1',model:'fixture-model'},runtimeContext:{kind:'group-chat',groupName:'Invalid',currentBot:{name:'Solo',label:''},members:[{name:'Solo',label:''}],targeted:false}})});
+      assert.equal(invalidContext.status,400);assert.equal(await access(join(dir,`${invalidContextTask}.json`)).then(()=>true,()=>false),false,'invalid group context must fail before starting an adapter');
     }
   }finally{
     runtime.kill('SIGTERM');await Promise.race([once(runtime,'exit'),new Promise(resolve=>setTimeout(resolve,2000))]);

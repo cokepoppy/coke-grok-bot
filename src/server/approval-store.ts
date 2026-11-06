@@ -6,13 +6,14 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 function approvalActionHash(action:string):string{
  let canonical=action;
  try{
-  const value=JSON.parse(action) as {kind?:unknown;action?:unknown;screenshotSha256?:unknown};
-  // A focused Chromium address bar can blink while an owner reviews a Navigate
-  // request. The approved source and destination URLs remain bound by page and
-  // stateSha256; the screenshot is retained for the approval card, but its
-  // volatile pixels do not invalidate this URL-level operation.
-  if(value&&value.kind==='browser'&&value.action==='navigate'&&typeof value.screenshotSha256==='string'){
+  const value=JSON.parse(action) as {kind?:unknown;action?:unknown;screenshotSha256?:unknown;guardFingerprint?:unknown};
+  // Keep the exact approval image for the card, but compare the stable desktop
+  // surface fingerprint for actions whose target depends on the visible screen.
+  // Navigation is bound to its source URL and destination; the guarded worker
+  // intentionally permits harmless screen changes while that URL stays fixed.
+  if(value&&typeof value.screenshotSha256==='string'&&(typeof value.guardFingerprint==='string'||(value.kind==='browser'&&value.action==='navigate'))){
    delete (value as {screenshotSha256?:unknown}).screenshotSha256;
+   if(value.kind==='browser'&&value.action==='navigate')delete value.guardFingerprint;
    canonical=JSON.stringify(value);
   }
  }catch{/* Non-JSON legacy approvals stay byte-for-byte bound. */}

@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { chromium } from 'playwright-core';
-import { PNG } from 'pngjs';
 
 const progress = message => { if (process.env.E2E_PROGRESS === '1') console.log(`[ui-e2e] ${message}`); };
 
@@ -169,7 +168,7 @@ try {
   const referenceActivity = new Date();
   referenceActivity.setHours(15, 33, 0, 0);
   const yesterdayActivity = new Date(referenceActivity.getTime() - 24 * 60 * 60 * 1000).toISOString();
-  const demoBot = { id: 'sales-outbound', name: 'Sales Outbound', label: 'Sales', color: '#f19d39', shape: 'drop', group: 'Unassigned', pinned: false, hidden: false, preview: 'Done.', lastActivityAt: referenceActivity.toISOString() };
+  const demoBot = { id: 'sales-outbound', name: 'Sales Outbound', label: 'Sales', color: '#f19d39', shape: 'round', group: 'Unassigned', pinned: false, hidden: false, preview: 'Done.', lastActivityAt: referenceActivity.toISOString() };
   const demoBots = [
     { id: 'chief', name: 'Chief', label: '', color: '#50b8a6', shape: 'round', group: 'Unassigned', pinned: true, hidden: false, preview: 'booked the venue and sent the c…', lastActivityAt: yesterdayActivity },
     demoBot,
@@ -177,29 +176,70 @@ try {
     { id: 'account-manager', name: 'Account Manager', label: '', color: '#8a55f0', shape: 'round', group: 'Unassigned', pinned: false, hidden: false, preview: "invite's out to vicky. globex note …", lastActivityAt: new Date(referenceActivity.getFullYear(), referenceActivity.getMonth(), referenceActivity.getDate(), 10, 33).toISOString() },
     { id: 'talent-scout', name: 'Talent Scout', label: '', color: '#3e83f5', shape: 'round', group: 'Unassigned', pinned: false, hidden: false, preview: '3 intros drafted in your voice, hel…', lastActivityAt: new Date(referenceActivity.getFullYear(), referenceActivity.getMonth(), referenceActivity.getDate(), 7, 33).toISOString() },
     { id: 'expense-manager', name: 'Expense Manager', label: '', color: '#ef6e2d', shape: 'round', group: 'Unassigned', pinned: false, hidden: false, preview: 'report filed. 9 receipts, nothing o…', lastActivityAt: new Date(referenceActivity.getFullYear(), referenceActivity.getMonth(), referenceActivity.getDate(), 11, 33).toISOString() },
-    { id: 'offsite-crew', name: 'Offsite crew', label: '', color: '#48b9a7', shape: 'round', group: 'Unassigned', pinned: false, hidden: false, preview: "that leaves the pipeline. i'd spin …", lastActivityAt: new Date(referenceActivity.getFullYear(), referenceActivity.getMonth(), referenceActivity.getDate(), 9, 33).toISOString() },
   ];
-  const demoMessages = [
-    { id: 'welcome-message', role: 'bot', text: 'Hey Armand, good to meet you. What do you want me around for? Anything concrete, or more of a general sidekick?' },
-  ];
+  const demoGroups = [{
+    id: 'offsite-crew', name: 'Offsite crew', preview: "that leaves the pipeline. i'd spin …", lastActivityAt: new Date(referenceActivity.getFullYear(), referenceActivity.getMonth(), referenceActivity.getDate(), 9, 33).toISOString(),
+    members: [
+      { id: 'chief', name: 'Chief', label: '', color: '#50b8a6', shape: 'round', position: 0 },
+      { id: 'account-manager', name: 'Account Manager', label: '', color: '#8a55f0', shape: 'round', position: 1 },
+      { id: 'talent-scout', name: 'Talent Scout', label: '', color: '#3e83f5', shape: 'round', position: 2 },
+    ],
+  }];
   const demoRuns = [
-    { id: 'outbound-run', prompt: 'Overnight pipeline generation and outbound.\n\nPick eligible prospects from this Google Sheet, research them on the web, grab context on contacts and accounts from Hex, Sumble, and Salesforce. Draft email and LinkedIn sequences in my voice.', status: 'completed', result: "Checking what's connected. Hex, Gmail, and LinkedIn are already signed in. Salesforce isn't.", recoveryState: 'none', replacementRunId: null, computerUsed: false, updatedAt: referenceActivity.toISOString(), files: [] },
-    { id: 'live-computer-run', prompt: 'Sign in to Salesforce so I can see the accounts you own.', status: 'completed', result: 'Done.', recoveryState: 'none', replacementRunId: null, computerUsed: true, updatedAt: referenceActivity.toISOString(), files: [] },
+    { id: 'outbound-run', prompt: 'Overnight pipeline generation and outbound.\n\nPick eligible prospects from this Google Sheet, research them on the web, grab context on contacts and accounts from Hex, Sumble, and Salesforce. Draft email and LinkedIn sequences in my voice.', status: 'completed', result: "Checking what's connected. Hex, Gmail, and LinkedIn are already signed in. Salesforce isn't.", recoveryState: 'none', replacementRunId: null, computerUsed: false, createdAt: new Date(referenceActivity.getTime() - 15000).toISOString(), updatedAt: new Date(referenceActivity.getTime() + 1000).toISOString(), files: [] },
+    { id: 'live-computer-run', prompt: 'Sign in to Salesforce so I can see the accounts you own.', status: 'completed', result: 'Done.', recoveryState: 'none', replacementRunId: null, computerUsed: true, createdAt: new Date(referenceActivity.getTime() + 2000).toISOString(), updatedAt: new Date(referenceActivity.getTime() + 3000).toISOString(), files: [] },
   ];
-  const demoScreen = new PNG({ width: 32, height: 20 });
-  for (let y = 0; y < demoScreen.height; y++) for (let x = 0; x < demoScreen.width; x++) {
-    const offset = (demoScreen.width * y + x) << 2;
-    demoScreen.data[offset] = 60 + x * 3;
-    demoScreen.data[offset + 1] = 115 + y * 4;
-    demoScreen.data[offset + 2] = 160;
-    demoScreen.data[offset + 3] = 255;
-  }
-  const demoScreenBytes = PNG.sync.write(demoScreen);
+  let postedMentionBody = null;
+  const demoMessages = [
+    { id: 'welcome-message', role: 'bot', text: 'Hey Armand, good to meet you. What do you want me around for? Anything concrete, or more of a general sidekick?', createdAt: new Date(referenceActivity.getTime() - 60000).toISOString() },
+    { id: 'rename-event', role: 'system', text: 'Renamed to Sales Outbound', createdAt: referenceActivity.toISOString() },
+  ];
+  const demoRoutines = [{ id:'official-routine',botId:'sales-outbound',requestId:'official-routine-request',name:'Overnight outbound',instruction:'Prepare outbound drafts for review.',schedule:{kind:'weekly',weekday:0,hour:23,minute:0},timezone:'UTC',paused:false,when:'Sundays at 11:00 PM',nextRunAt:new Date(Date.now()+86_400_000).toISOString(),runs:[] }];
+  // Crop from the user-provided public x.ai/bot screenshot; this fixture is only used for visual UI tests.
+  const demoScreenBytes = await readFile(new URL('./fixtures/official-grok-bot-computer-preview.png', import.meta.url));
   await productShellPage.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
+    const routineCollection = '/api/bots/sales-outbound/routines';
+    if (path.endsWith(routineCollection)) {
+      if (route.request().method() === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ routines: demoRoutines }) });
+    }
+    if (path.startsWith(`${routineCollection}/`)) {
+      const testRun = path.endsWith('/test');
+      const routineId = path.slice(routineCollection.length + 1).replace(/\/test$/, '');
+      const index = demoRoutines.findIndex(routine => routine.id === routineId);
+      if (index < 0) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Not found' }) });
+      if (testRun && route.request().method() === 'POST') {
+        const run = { id: 'routine-run-e2e', status: 'queued', scheduledFor: new Date().toISOString(), result: null };
+        demoRoutines[index].runs.unshift(run);
+        return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ run }) });
+      }
+      if (route.request().method() === 'PATCH') {
+        demoRoutines[index].paused = route.request().postDataJSON().paused;
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ routine: demoRoutines[index] }) });
+      }
+      if (route.request().method() === 'DELETE') {
+        demoRoutines.splice(index, 1);
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+      }
+    }
+    if (path === '/api/bots/sales-outbound' && route.request().method() === 'PATCH') {
+      const name = String(route.request().postDataJSON().name || '');
+      const event = name !== demoBot.name ? { id: `rename-${Date.now()}`, role: 'system', text: `Renamed to ${name}`, createdAt: new Date().toISOString() } : undefined;
+      demoBot.name = name;
+      if (event) demoMessages.push(event);
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, ...(event ? { event } : {}) }) });
+    }
+    if (path === '/api/bots/sales-outbound/runs' && route.request().method() === 'POST') {
+      postedMentionBody = route.request().postDataJSON();
+      const run = { id:'mentioned-bot-run', prompt:postedMentionBody.prompt, status:'queued', result:null, recoveryState:'none', replacementRunId:null, computerUsed:false, files:[] };
+      demoRuns.push(run);
+      return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({run}) });
+    }
     if (path.endsWith('/api/bots/sales-outbound/computer/screenshot')) return route.fulfill({ status: 200, contentType: 'image/png', body: demoScreenBytes });
+    if (path.endsWith('/api/bots/sales-outbound/computer')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ owner: 'agent' }) });
     const data = path.endsWith('/api/auth/me') ? demoAccount
       : path.endsWith('/api/auth/features') ? { agent: true, engine: 'dsh' }
+        : path.endsWith('/api/groups') ? { groups: demoGroups }
         : path.endsWith('/api/bots') ? { bots: demoBots }
           : path.endsWith('/api/bots/sales-outbound/messages') ? { messages: demoMessages }
             : path.endsWith('/api/bots/sales-outbound/runs') ? { runs: demoRuns }
@@ -217,18 +257,32 @@ try {
   const appBox = await productShellPage.locator('.app.product-shell').boundingBox();
   const sidebarBox = await productShellPage.locator('.sidebar').boundingBox();
   const productComposerBox = await productShellPage.locator('.composer').boundingBox();
-  assert.deepEqual(appBox && { x: appBox.x, y: appBox.y, width: appBox.width, height: appBox.height }, { x: 6, y: 6, width: 983, height: 663 }, 'Authenticated product window should match the supplied 1990×1350 screenshot at 2× scale');
-  assert.ok(sidebarBox && Math.abs(sidebarBox.x - 6) <= 1 && Math.abs(sidebarBox.y - 50) <= 1 && Math.abs(sidebarBox.width - 280) <= 1, 'Product sidebar should align to the window header and match the reference width');
+  assert.deepEqual(appBox && { x: appBox.x, y: appBox.y, width: appBox.width, height: appBox.height }, { x: 6, y: 10, width: 978, height: 660 }, 'Authenticated product window should match the supplied 1996×1352 screenshot at 2× scale');
+  assert.ok(sidebarBox && Math.abs(sidebarBox.x - 6) <= 1 && Math.abs(sidebarBox.y - 54) <= 1 && Math.abs(sidebarBox.width - 280) <= 1, 'Product sidebar should align to the window header and match the reference width');
   assert.ok(productComposerBox && productComposerBox.x >= sidebarBox.x + sidebarBox.width && productComposerBox.x + productComposerBox.width <= 989 && productComposerBox.y + productComposerBox.height <= 674, 'Product composer should stay inside the two-column chat area');
   assert.equal(await productShellPage.getByLabel('Search bots').isVisible(), true);
   assert.equal(await productShellPage.locator('.bot-row').count(), 7, 'The official reference state shows the full Bot list');
+  const firstBotAvatarBounds = await productShellPage.locator('.bot-row').first().locator('.avatar').boundingBox();
+  assert.ok(firstBotAvatarBounds && Math.abs(firstBotAvatarBounds.width - 36) < 1 && Math.abs(firstBotAvatarBounds.y - 101.5) < 1, `The expanded Bot list should align avatar size and first-row spacing to the official screenshot: ${JSON.stringify(firstBotAvatarBounds)}`);
+  assert.equal(await productShellPage.locator('.group-row').count(), 1, 'The reference state contains six Bots and one separate group');
+  assert.equal(await productShellPage.locator('.group-row .group-avatar > span').count(), 3, 'The group avatar should stack its three member Bots');
+  assert.equal(await productShellPage.locator('.group-section-heading').isVisible(), false, 'The compact reference sidebar places the group directly after the Bot list');
   assert.equal(await productShellPage.locator('.bot-row.selected time').innerText(), '15:33');
-  assert.equal(await productShellPage.locator('.date-line').innerText(), '15:33', 'The chat timestamp should reflect the latest activity');
+  assert.equal(await productShellPage.locator('.date-line').innerText(), '15:33', 'The active Bot conversation shows its activity time above the timeline');
   const completedActivityCard=productShellPage.getByRole('region',{name:'Computer activity · Done'});
   await completedActivityCard.waitFor();
+  await productShellPage.getByText('Renamed to Sales Outbound', { exact: true }).waitFor();
+  const visibleTimelineOrder = await productShellPage.locator('.message-scroll > .message-line, .message-scroll > .system-event-line, .message-scroll > .computer-activity-line').evaluateAll(elements => elements.map(element => element.textContent || ''));
+  const timelinePosition = (text) => visibleTimelineOrder.findIndex(item => item.includes(text));
+  assert.ok(timelinePosition('Overnight pipeline generation and outbound.') < timelinePosition('Renamed to Sales Outbound') && timelinePosition('Renamed to Sales Outbound') < timelinePosition("Checking what's connected."), 'User tasks, persisted rename events, and Agent results should follow their event times');
+  assert.equal(await completedActivityCard.locator('.computer-activity-prompt').innerText(), 'Sign in to Salesforce so I can see the accounts you own.');
+  assert.equal(await productShellPage.locator('.message-line.user .message-bubble').count(), 1, 'Computer work should appear in its activity card without a duplicate user bubble');
+  assert.equal(await productShellPage.locator('.message-line.bot .message-bubble').filter({hasText: /^Done\.$/}).count(), 0, 'The activity status should carry a generic Done result without a duplicate reply bubble');
+  const activityCardBounds = await productShellPage.locator('.computer-activity-card').boundingBox();
+  assert.ok(activityCardBounds && activityCardBounds.width <= 421, 'Computer activity should match the reference card width');
   await completedActivityCard.getByRole('img',{name:'Current cloud computer screen'}).waitFor();
   assert.equal(await productShellPage.locator('.run-status').filter({ hasText: 'Completed' }).count(), 0, 'Completed agent responses should read as ordinary chat; the Computer card carries its own Done state');
-  await productShellPage.waitForFunction(()=>{const image=document.querySelector('.computer-activity-screen img');return Boolean(image&&image.complete&&image.naturalWidth===32)});
+  await productShellPage.waitForFunction(()=>{const image=document.querySelector('.computer-activity-screen img');return Boolean(image&&image.complete&&image.naturalWidth===464&&image.naturalHeight===290)});
   assert.equal(await productShellPage.getByRole('button', { name: 'New chat' }).isVisible(), true, 'the top-left create control should not be clipped by the sidebar');
   const computerPanelToggle = productShellPage.getByRole('button', { name: "Open Sales Outbound's computer" });
   assert.equal(await computerPanelToggle.count(), 1, 'The default workspace should show the monitor control');
@@ -241,21 +295,102 @@ try {
   assert.ok(await productShellPage.evaluate(() => document.documentElement.scrollWidth === window.innerWidth), 'Product shell should not create horizontal page whitespace');
   await mkdir('artifacts/ui', { recursive: true });
   await productShellPage.screenshot({ path: 'artifacts/ui/authenticated-product-window-reference-size-20261102.png' });
+  await computerPanelToggle.click();
+  await computerPanel.waitFor({ state: 'visible' });
+  const referenceRailWidth = await productShellPage.locator('.sidebar').evaluate(element => element.getBoundingClientRect().width);
+  const referenceComputerWidth = await computerPanel.evaluate(element => element.getBoundingClientRect().width);
+  const productViewportWidth = await productShellPage.evaluate(() => innerWidth);
+  const expectedComputerWidth = Math.max(240, Math.min(400, Math.floor((productViewportWidth - 16) * 0.27)));
+  assert.ok(Math.abs(referenceRailWidth - 84) <= 1, 'Opening Computer should collapse the expanded Bot list to the 84px icon rail');
+  assert.ok(Math.abs(referenceComputerWidth - expectedComputerWidth) <= 2, 'The default Computer pane should use the responsive width measured from the official reference');
+  assert.equal(await productShellPage.locator('.app.product-shell').evaluate(element => element.classList.contains('sidebar-collapsed')), true, 'Opening Computer should show the compact Bot icon rail');
+  await mkdir('artifacts/ui', { recursive: true });
+  await productShellPage.getByRole('button', { name: 'Overnight outbound, Sundays at 11:00 PM' }).waitFor();
+  const referenceMessageGeometry = await productShellPage.evaluate(() => {
+    const box = (selector, index = 0) => { const rect = document.querySelectorAll(selector)[index]?.getBoundingClientRect(); return rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height }; };
+    return { welcome: box('.message-line.bot .message-bubble', 0), prompt: box('.message-line.user .message-bubble'), response: box('.message-line.bot .message-bubble', 1), computer: box('.computer-activity-card'), screen: box('.computer-preview-button') };
+  });
+  assert.ok(referenceMessageGeometry.welcome && Math.abs(referenceMessageGeometry.welcome.x - 110.5) <= 3 && Math.abs(referenceMessageGeometry.welcome.width - 531) <= 8, 'The welcome message should align to the official panel-open chat geometry');
+  assert.ok(referenceMessageGeometry.welcome && Math.abs(referenceMessageGeometry.welcome.y - 54) <= 2, 'The welcome message should start at the official header baseline');
+  assert.ok(referenceMessageGeometry.prompt && Math.abs(referenceMessageGeometry.prompt.x - 267.5) <= 4 && Math.abs(referenceMessageGeometry.prompt.width - 420) <= 5, 'The user prompt should match the official message width and right alignment');
+  assert.ok(referenceMessageGeometry.prompt && Math.abs(referenceMessageGeometry.prompt.y - 121.5) <= 3, `The first task should start at the official vertical position: ${JSON.stringify(referenceMessageGeometry.prompt)}`);
+  assert.ok(referenceMessageGeometry.response && Math.abs(referenceMessageGeometry.response.x - 110.5) <= 3 && Math.abs(referenceMessageGeometry.response.width - 531) <= 8, 'The Agent response should match the official Bot bubble geometry');
+  assert.ok(referenceMessageGeometry.response && Math.abs(referenceMessageGeometry.response.y - 313.5) <= 2, 'The Agent response should match the official vertical position');
+  assert.ok(referenceMessageGeometry.computer && Math.abs(referenceMessageGeometry.computer.width - 420) <= 1, 'The Computer activity card should match the official card width');
+  assert.ok(referenceMessageGeometry.computer && Math.abs(referenceMessageGeometry.computer.y - 373.5) <= 2, 'The Computer activity card should follow the Agent response at the official position');
+  assert.ok(referenceMessageGeometry.screen && Math.abs(referenceMessageGeometry.screen.x - 735) <= 2 && Math.abs(referenceMessageGeometry.screen.y - 58.5) <= 2 && Math.abs(referenceMessageGeometry.screen.width - 231.5) <= 2, 'The live computer preview should align to the official right pane');
+  await productShellPage.screenshot({ path: 'artifacts/ui/authenticated-product-computer-panel-reference-size-20261105.png' });
+  demoRoutines.splice(0, demoRoutines.length);
+  await productShellPage.getByRole('button', { name: 'Hide computer' }).click();
+  await computerPanel.waitFor({ state: 'hidden' });
+  assert.equal(await productShellPage.getByRole('separator', { name: 'Resize sidebar' }).getAttribute('aria-valuenow'), '280', 'Closing Computer restores the saved expanded sidebar width');
   demoRuns[1].status = 'running';
   demoRuns[1].result = 'Salesforce needs your attention before I can continue.';
   await productShellPage.reload({ waitUntil: 'networkidle' });
   const runningActivityCard=productShellPage.getByRole('region',{name:'Computer activity · Working'});
   await runningActivityCard.waitFor();
   await runningActivityCard.getByRole('img',{name:'Current cloud computer screen'}).waitFor();
-  await productShellPage.waitForFunction(()=>{const image=document.querySelector('.computer-activity-screen img');return Boolean(image&&image.complete&&image.naturalWidth===32)});
+  await productShellPage.waitForFunction(()=>{const image=document.querySelector('.computer-activity-screen img');return Boolean(image&&image.complete&&image.naturalWidth===464&&image.naturalHeight===290)});
   await computerPanelToggle.click();
   await computerPanel.waitFor({ state: 'visible' });
   const computerPanelBox = await computerPanel.boundingBox();
   const conversationBox = await productShellPage.locator('.conversation').boundingBox();
-  assert.ok(computerPanelBox && computerPanelBox.x + computerPanelBox.width <= 989 && computerPanelBox.width >= 320, 'Expanded Computer panel should fit inside the rounded workspace window');
+  assert.ok(computerPanelBox && computerPanelBox.x + computerPanelBox.width <= 989 && computerPanelBox.width >= 240, 'Expanded Computer panel should fit inside the rounded workspace window');
   assert.ok(conversationBox && conversationBox.width >= 320, 'Opening the Computer panel should preserve useful chat width');
+  assert.equal(await productShellPage.getByRole('separator', { name: 'Resize sidebar' }).getAttribute('aria-valuenow'), '84', 'The Computer panel opens with the reference Bot icon rail');
+  const sidebarResizeWhileOpen = productShellPage.getByRole('separator', { name: 'Resize sidebar' });
+  await sidebarResizeWhileOpen.press('ArrowRight');
+  assert.equal(await sidebarResizeWhileOpen.getAttribute('aria-valuenow'), '100', 'The sidebar can still be expanded while the Computer panel is open');
+  await sidebarResizeWhileOpen.press('Home');
+  assert.equal(await sidebarResizeWhileOpen.getAttribute('aria-valuenow'), '84', 'Home restores the compact reference rail while Computer is open');
+  assert.equal(await productShellPage.getByRole('heading', { name: 'Routines' }).isVisible(), true, 'The Computer panel should include the official Routines section');
+  await productShellPage.getByText('Ask in chat to set a routine.', { exact: true }).waitFor();
+  assert.equal(await productShellPage.getByText('Ask in chat to set a routine.', { exact: true }).isVisible(), true, 'An empty routine list should use the official chat-first guidance');
+  demoRoutines.push({ id:'55555555-5555-4555-8555-555555555555',botId:'sales-outbound',requestId:'66666666-6666-4666-8666-666666666666',name:'Routine E2E',instruction:'Prepare drafts for review. Do not send.',schedule:{kind:'weekly',weekday:0,hour:23,minute:0},timezone:'UTC',paused:false,when:'Sundays at 11:00 PM',nextRunAt:new Date(Date.now()+86_400_000).toISOString(),runs:[] });
+  await productShellPage.reload({ waitUntil: 'networkidle' });
+  await computerPanelToggle.click();
+  await computerPanel.waitFor({ state: 'visible' });
+  const savedRoutine = productShellPage.getByRole('button', { name: 'Routine E2E, Sundays at 11:00 PM' });
+  await savedRoutine.waitFor();
+  await savedRoutine.click();
+  await productShellPage.getByRole('region', { name: 'Routine Routine E2E' }).waitFor();
+  await productShellPage.getByRole('button', { name: 'Pause', exact: true }).click();
+  await productShellPage.getByText('Paused', { exact: true }).waitFor();
+  await productShellPage.getByRole('button', { name: 'Resume', exact: true }).click();
+  await productShellPage.getByRole('button', { name: 'Test', exact: true }).click();
+  await productShellPage.getByRole('region', { name: 'Run history' }).getByText('Queued', { exact: true }).waitFor();
+  await productShellPage.getByRole('button', { name: 'Edit', exact: true }).click();
+  assert.equal(await productShellPage.getByLabel('Message Sales Outbound').inputValue(), 'Edit your routine: Routine E2E', 'Routine edit should return to the official chat workflow');
+  await computerPanelToggle.click();
+  await computerPanel.waitFor({ state: 'visible' });
+  await productShellPage.getByRole('button', { name: 'Routine E2E, Sundays at 11:00 PM' }).click();
+  await productShellPage.getByRole('button', { name: 'Delete routine', exact: true }).click();
+  await productShellPage.getByRole('button', { name: 'Delete routine', exact: true }).click();
+  await productShellPage.getByText('Ask in chat to set a routine.', { exact: true }).waitFor();
+  const openScreen = productShellPage.getByRole('button', { name: 'Open screen' });
+  await openScreen.click();
+  const computerScreenDialog = productShellPage.getByRole('dialog', { name: "Sales Outbound's computer screen" });
+  await computerScreenDialog.waitFor({ state: 'visible' });
+  const screenBounds = await computerScreenDialog.boundingBox();
+  const productViewport = await productShellPage.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+  assert.ok(screenBounds && screenBounds.x === 0 && screenBounds.y === 0 && screenBounds.width === productViewport.width && screenBounds.height === productViewport.height, 'The computer screen should fill the browser viewport');
+  await computerScreenDialog.getByRole('img', { name: 'Current computer screen' }).waitFor();
+  await productShellPage.waitForFunction(() => { const image = document.querySelector('.computer-large-screen img'); return Boolean(image && image.complete && image.naturalWidth === 464 && image.naturalHeight === 290); });
+  await mkdir('artifacts/ui', { recursive: true });
+  await computerScreenDialog.screenshot({ path: 'artifacts/ui/authenticated-product-computer-fullscreen-20261105.png' });
+  await computerScreenDialog.getByRole('button', { name: 'Enter computer full screen' }).click();
+  await productShellPage.waitForFunction(() => document.fullscreenElement === document.querySelector('.computer-screen-dialog'));
+  await computerScreenDialog.getByRole('button', { name: 'Exit computer full screen' }).click();
+  await productShellPage.waitForFunction(() => document.fullscreenElement === null);
+  await computerScreenDialog.getByRole('button', { name: 'Close screen' }).click();
+  await computerScreenDialog.waitFor({ state: 'hidden' });
+  await productShellPage.getByRole('button', { name: 'Agent settings' }).click();
+  assert.equal(await productShellPage.getByLabel('Name', { exact: true }).inputValue(), 'Sales Outbound');
+  assert.equal(await productShellPage.getByLabel('Title (optional)', { exact: true }).inputValue(), 'Sales');
+  await productShellPage.getByRole('button', { name: 'Back to computer' }).click();
+  assert.equal(await openScreen.isVisible(), true, 'Settings should return to the live Computer panel');
   await productShellPage.screenshot({ path: 'artifacts/ui/authenticated-product-computer-panel-20261102.png' });
-  await productShellPage.getByRole('button', { name: 'Hide computer' }).click();
+  await productShellPage.getByRole('button', { name: 'Close computer' }).click();
   await computerPanel.waitFor({ state: 'hidden' });
   const sidebarResize = productShellPage.getByRole('separator', { name: 'Resize sidebar' });
   assert.equal(await sidebarResize.getAttribute('aria-valuenow'), '280');
@@ -285,6 +420,16 @@ try {
   const persistedSidebarResize = productShellPage.getByRole('separator', { name: 'Resize sidebar' });
   await persistedSidebarResize.waitFor();
   assert.equal(Number(await persistedSidebarResize.getAttribute('aria-valuenow')), expandedWidth - 16, 'The sidebar width should persist across refreshes for this account');
+  const mentionedComposer=productShellPage.getByRole('textbox',{name:'Message Sales Outbound'});
+  await mentionedComposer.fill('Please ask @C');
+  const mentionOptions=productShellPage.getByRole('listbox',{name:'Mention a Bot'});
+  await mentionOptions.waitFor();
+  await mentionOptions.getByRole('option',{name:/Chief.*Bot/}).click();
+  await mentionedComposer.pressSequentially('to check the schedule.');
+  assert.equal(await mentionedComposer.inputValue(),'Please ask @Chief to check the schedule.');
+  await productShellPage.getByRole('button',{name:'Send task'}).click();
+  await productShellPage.getByText('Please ask @Chief to check the schedule.',{exact:true}).waitFor();
+  assert.deepEqual(postedMentionBody,{requestId:postedMentionBody.requestId,prompt:'Please ask @Chief to check the schedule.',files:[],mentionBotIds:['chief']});
   await productShellContext.close();
   authChild.kill('SIGTERM');
   authChild = undefined;

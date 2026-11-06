@@ -2,19 +2,6 @@
 FROM coke-dots-linux-desktop:sha-c4caa5bb8dab2c9f731e4c2f1a71b25266469cfc
 USER root
 RUN mkdir -p /opt/coke-grok
-COPY --chmod=0755 deploy/desktop/start-desktop.sh /usr/local/bin/start-grok-desktop
-COPY --chmod=0644 deploy/desktop/agent-runtime.mjs /opt/coke-grok/agent-runtime.mjs
-COPY --chmod=0644 deploy/desktop/cloud-kernel-adapter.mjs /opt/coke-dots/grok-kernel-adapter.mjs
-COPY --chmod=0644 deploy/desktop/computer-tools.mjs /opt/coke-dots/computer-tools.mjs
-COPY --chmod=0644 deploy/desktop/dsh-computer-plugin.mjs /opt/coke-dots/dsh-computer-plugin.mjs
-COPY --chmod=0644 deploy/desktop/dsh-memory-plugin.mjs /opt/coke-dots/dsh-memory-plugin.mjs
-COPY --chmod=0644 deploy/desktop/dsh-handoff-plugin.mjs /opt/coke-dots/dsh-handoff-plugin.mjs
-COPY --chmod=0644 deploy/desktop/computer-worker.mjs /opt/coke-dots/grok-computer-worker.mjs
-COPY --chmod=0644 deploy/desktop/bot-screen-pages.mjs /opt/coke-dots/bot-screen-pages.mjs
-COPY --chmod=0644 deploy/desktop/desktop-screen-layout.mjs /opt/coke-dots/desktop-screen-layout.mjs
-COPY --chmod=0644 deploy/desktop/desktop-input.mjs /opt/coke-dots/desktop-input.mjs
-COPY --chmod=0644 deploy/desktop/shared-computer-root.mjs /opt/coke-dots/shared-computer-root.mjs
-COPY --chmod=0644 deploy/desktop/guarded-computer.mjs /opt/coke-grok/guarded-computer.mjs
 COPY deploy/desktop/dsh-runtime/package.json deploy/desktop/dsh-runtime/package-lock.json /opt/coke-grok/dsh-runtime/
 RUN npm ci --prefix /opt/coke-grok/dsh-runtime --omit=dev --no-audit --no-fund \
     && test "$(/opt/coke-grok/dsh-runtime/node_modules/.bin/dsh --version)" = "0.2.1-rc.5" \
@@ -22,6 +9,20 @@ RUN npm ci --prefix /opt/coke-grok/dsh-runtime --omit=dev --no-audit --no-fund \
     && rm -rf /opt/coke-dots/node_modules/@deepseek-ai/dsh-sdk-client \
     && ln -s /opt/coke-grok/dsh-runtime/node_modules/@deepseek-ai/dsh-sdk-client /opt/coke-dots/node_modules/@deepseek-ai/dsh-sdk-client \
     && cd /opt/coke-grok/dsh-runtime && node --input-type=module -e 'console.log(import.meta.resolve("@deepseek-ai/dsh-sdk-client"))'
+COPY --chmod=0755 deploy/desktop/start-desktop.sh /usr/local/bin/start-grok-desktop
+COPY --chmod=0644 deploy/desktop/agent-runtime.mjs /opt/coke-grok/agent-runtime.mjs
+COPY --chmod=0644 deploy/desktop/cloud-kernel-adapter.mjs /opt/coke-dots/grok-kernel-adapter.mjs
+COPY --chmod=0644 deploy/desktop/computer-tools.mjs /opt/coke-dots/computer-tools.mjs
+COPY --chmod=0644 deploy/desktop/dsh-computer-plugin.mjs /opt/coke-dots/dsh-computer-plugin.mjs
+COPY --chmod=0644 deploy/desktop/dsh-memory-plugin.mjs /opt/coke-dots/dsh-memory-plugin.mjs
+COPY --chmod=0644 deploy/desktop/dsh-handoff-plugin.mjs /opt/coke-dots/dsh-handoff-plugin.mjs
+COPY --chmod=0644 deploy/desktop/dsh-routine-plugin.mjs /opt/coke-dots/dsh-routine-plugin.mjs
+COPY --chmod=0644 deploy/desktop/computer-worker.mjs /opt/coke-dots/grok-computer-worker.mjs
+COPY --chmod=0644 deploy/desktop/bot-screen-pages.mjs /opt/coke-dots/bot-screen-pages.mjs
+COPY --chmod=0644 deploy/desktop/desktop-screen-layout.mjs /opt/coke-dots/desktop-screen-layout.mjs
+COPY --chmod=0644 deploy/desktop/desktop-input.mjs /opt/coke-dots/desktop-input.mjs
+COPY --chmod=0644 deploy/desktop/shared-computer-root.mjs /opt/coke-dots/shared-computer-root.mjs
+COPY --chmod=0644 deploy/desktop/guarded-computer.mjs /opt/coke-grok/guarded-computer.mjs
 COPY --chmod=0755 deploy/desktop/clear-stale-x11.sh /usr/local/bin/clear-stale-grok-x11
 ENV DOTS_DSH_BIN=/opt/coke-grok/dsh-runtime/node_modules/.bin/dsh
 USER 1000:1000

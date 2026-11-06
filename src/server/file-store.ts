@@ -96,6 +96,24 @@ export class WorkspaceFileStore {
     return { ...row, id:String(row.id), botId:String(row.botId), name:String(row.name), mimeType:String(row.mimeType), size:Number(row.size), sha256:String(row.sha256), storageKey:String(row.storageKey), kind:row.kind as RunFileKind } as StoredWorkspaceFile;
   }
 
+  /** Remove metadata only while the uploaded bytes have no run or group references. */
+  async removeUnattachedUpload(session: Session, fileId: string): Promise<StoredWorkspaceFile | null> {
+    if (!uuid.test(fileId)) return null;
+    const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT f.id,f.bot_id AS botId,f.display_name AS name,f.mime_type AS mimeType,
+      f.size,f.sha256,f.storage_key AS storageKey FROM bot_files f JOIN bots b ON b.id=f.bot_id
+      WHERE f.id=? AND b.tenant_id=? AND b.owner_id=?
+        AND NOT EXISTS(SELECT 1 FROM agent_run_files rf WHERE rf.file_id=f.id)
+        AND NOT EXISTS(SELECT 1 FROM bot_group_files gf WHERE gf.file_id=f.id) LIMIT 1`,[fileId,session.tenantId,session.userId]);
+    if (!rows.length) return null;
+    const row=rows[0];
+    const [result]=await this.pool.execute<ResultSetHeader>(`DELETE f FROM bot_files f JOIN bots b ON b.id=f.bot_id
+      WHERE f.id=? AND b.tenant_id=? AND b.owner_id=?
+        AND NOT EXISTS(SELECT 1 FROM agent_run_files rf WHERE rf.file_id=f.id)
+        AND NOT EXISTS(SELECT 1 FROM bot_group_files gf WHERE gf.file_id=f.id)`,[fileId,session.tenantId,session.userId]);
+    if(result.affectedRows!==1)return null;
+    return {id:String(row.id),botId:String(row.botId),name:String(row.name),mimeType:String(row.mimeType),size:Number(row.size),sha256:String(row.sha256),storageKey:String(row.storageKey),kind:'input'};
+  }
+
   static validateFileIds(fileIds: unknown): string[] {
     if (fileIds === undefined) return [];
     if (!Array.isArray(fileIds) || fileIds.length > maxAttachments || fileIds.some(id => typeof id !== 'string' || !uuid.test(id)) || new Set(fileIds).size !== fileIds.length) throw new Error('Invalid attachment list');

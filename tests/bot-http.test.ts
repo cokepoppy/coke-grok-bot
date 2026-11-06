@@ -34,7 +34,8 @@ test('bot API uses session ownership and enforces origin for writes', async () =
     assert.deepEqual({id:createdBot.id,name:createdBot.name,color:createdBot.color,shape:createdBot.shape},{id:bot.id,name:'Maya',color:'#fb2b3e',shape:'star'});
     assert.equal((await request(`/api/bots/${bot.id}`,b,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({name:'Stolen'})})).status,404);
     assert.deepEqual((await (await request('/api/bots',b)).json() as {bots:unknown[]}).bots,[]);
-    assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({name:'Updated'})})).status,200);
+    const renameResponse=await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({name:'Updated'})});assert.equal(renameResponse.status,200);
+    const renameBody=await renameResponse.json() as {ok:boolean;event:{role:string;text:string}};assert.equal(renameBody.ok,true);assert.deepEqual({role:renameBody.event.role,text:renameBody.event.text},{role:'system',text:'Renamed to Updated'});
     assert.equal((await (await request('/api/bots',a)).json() as {bots:{name:string}[]}).bots[0].name,'Updated');
     assert.equal((await request(`/api/bots/${bot.id}`,b,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({label:'Stolen'})})).status,404);
     assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({label:'  Research  '})})).status,200);
@@ -57,14 +58,18 @@ test('bot API uses session ownership and enforces origin for writes', async () =
     assert.equal((await request(messagesPath,b,{method:'POST',headers:{origin,'content-type':'application/json'},body:messageBody})).status,404);
     assert.equal((await request(messagesPath,a,{method:'POST',headers:{origin:'https://evil.example','content-type':'application/json'},body:messageBody})).status,403);
     assert.equal((await request(messagesPath,a,{method:'POST',headers:{origin,'content-type':'application/json'},body:messageBody})).status,201);
-    assert.equal((await (await request(messagesPath,a)).json() as {messages:{text:string}[]}).messages[0].text,'Private message');
+    const firstHistory=(await (await request(messagesPath,a)).json() as {messages:{role:string;text:string}[]}).messages;
+    assert.equal(firstHistory.find(message=>message.role==='user')?.text,'Private message');
+    assert.equal(firstHistory.find(message=>message.role==='system')?.text,'Renamed to Updated');
     const hidden=JSON.stringify({hidden:true});
     assert.equal((await request(`/api/bots/${bot.id}`,b,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:hidden})).status,404);
     assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin:'https://evil.example','content-type':'application/json'},body:hidden})).status,403);
     assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:hidden})).status,200);
     assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({pinned:true})})).status,200);
     const listed=(await (await request('/api/bots',a)).json() as {bots:{hidden:boolean;pinned:boolean}[]}).bots[0];assert.deepEqual({hidden:listed.hidden,pinned:listed.pinned},{hidden:true,pinned:true});
-    assert.equal((await (await request(messagesPath,a)).json() as {messages:{text:string}[]}).messages[0].text,'Private message');
+    const hiddenHistory=(await (await request(messagesPath,a)).json() as {messages:{role:string;text:string}[]}).messages;
+    assert.equal(hiddenHistory.find(message=>message.role==='user')?.text,'Private message');
+    assert.equal(hiddenHistory.find(message=>message.role==='system')?.text,'Renamed to Updated');
     assert.equal((await request(`/api/bots/${bot.id}`,a,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:JSON.stringify({hidden:1})})).status,400);
     assert.equal((await request('/api/bots',a,{method:'POST',headers:{origin,'content-type':'application/json'},body:'{}'})).status,400);
   } finally { await new Promise<void>(resolve=>server.close(()=>resolve())); await pool.end(); await admin.query(`DROP DATABASE \`${database}\``); await admin.end(); }

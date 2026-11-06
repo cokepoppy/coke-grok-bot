@@ -151,6 +151,6 @@ try {
  console.log(`Desktop K3D test passed: split UID, protected browser profile, real Pi file, browser and screenshot-driven desktop click tasks, and PVC persistence after restart; provider requests ${calls}.`);
 } finally {
  forwarding?.kill('SIGTERM'); gateway?.close(); if(server) await new Promise<void>(resolve=>server!.close(()=>resolve()));
- if(created) await exec('kubectl',['delete','namespace',desktop.namespace,'--wait=false'],undefined,20_000);
+ if(created) await exec('kubectl',['delete','namespace',desktop.namespace,'--wait=true','--timeout=90s'],undefined,100_000);
  await rm(temp,{recursive:true,force:true});
 }

@@ -21,4 +21,4 @@ try{
  const first=await provisioner.connect(owner,new AbortController().signal);assert.equal(first.agentUrl.hostname,`agent.${identity.namespace}.svc.cluster.local`);
  const second=await provisioner.connect(owner,new AbortController().signal);assert.equal(second.agentUrl.href,first.agentUrl.href);
  console.log('K3D desktop provisioner passed: create, readiness and idempotent re-read.');
-}finally{if(created)await exec(['delete','namespace',identity.namespace,'--wait=false'],undefined,20_000)}
+}finally{if(created)await exec(['delete','namespace',identity.namespace,'--wait=true','--timeout=90s'],undefined,100_000)}

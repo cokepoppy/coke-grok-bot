@@ -56,6 +56,16 @@ function locateYellow(bytes: Buffer) {
   return { x: Math.round(sumX / count), y: Math.round(sumY / count), width, height };
 }
 
+function containsColor(bytes: Buffer, color: [number, number, number]) {
+  const { width, height, data } = PNG.sync.read(bytes);
+  let count = 0;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const index = (y * width + x) * 4;
+    if (data[index] === color[0] && data[index + 1] === color[1] && data[index + 2] === color[2]) count++;
+  }
+  return count > 100;
+}
+
 let workerPort = 0;
 async function worker(path: string, screenId: string, body?: unknown) {
   try {
@@ -100,11 +110,12 @@ try {
   const pod = await kubectl(['-n', identity.namespace, 'get', 'pods', '-l', 'app=grok-desktop', '-o', 'jsonpath={.items[0].metadata.name}']);
   const fixturePath = `/tmp/grok-screen-fixture-${randomUUID()}.cjs`;
   const fixtureHtml = `<!doctype html><title>SCREEN_LABEL</title><h1>SCREEN_LABEL</h1>
+    <div id="screen-marker" style="position:fixed;right:20px;top:20px;width:180px;height:90px;background:SCREEN_COLOR;color:#fff;font:24px sans-serif">SCREEN_LABEL</div>
     <button onclick="document.getElementById('browser').textContent='BROWSER_CLICK_OK'">Mark complete</button><p id="browser">WAITING</p>
     <form onsubmit="event.preventDefault();document.getElementById('computer').textContent='COMPUTER_INPUT_OK'"><input aria-label="Desktop input" oninput="document.getElementById('typed').textContent=this.value" style="position:fixed;left:120px;top:180px;width:360px;height:54px;background:rgb(255,230,20);font:24px sans-serif"><button type="submit" style="position:fixed;left:520px;top:180px;width:200px;height:54px;background:#155ab5;color:white">Submit</button></form>
     <p id="typed"></p>
     <p id="computer">WAITING</p><p id="shared"></p><script>const key='grok-shared',cookie='grok-shared=ok',had=localStorage.getItem(key)==='ok'&&document.cookie.split('; ').includes(cookie);if(localStorage.getItem(key)!=='ok')localStorage.setItem(key,'ok');if(!document.cookie.split('; ').includes(cookie))document.cookie=cookie+'; path=/';document.getElementById('shared').textContent=had?'SHARED_STATE_OK':'SHARED_STATE_INIT'</script>`;
-  const fixture = `const http=require('node:http');const html=${JSON.stringify(fixtureHtml)};http.createServer((req,res)=>{if(req.url==='/healthz'){res.writeHead(204);return res.end()}const label=req.url==='/a'?'BOT_A_SCREEN':'BOT_B_SCREEN';res.writeHead(200,{'content-type':'text/html; charset=utf-8'});res.end(html.replaceAll('SCREEN_LABEL',label))}).listen(18111,'0.0.0.0')`;
+  const fixture = `const http=require('node:http');const html=${JSON.stringify(fixtureHtml)};http.createServer((req,res)=>{if(req.url==='/healthz'){res.writeHead(204);return res.end()}const a=req.url==='/a';const label=a?'BOT_A_SCREEN':'BOT_B_SCREEN';const color=a?'rgb(230, 20, 140)':'rgb(20, 140, 230)';res.writeHead(200,{'content-type':'text/html; charset=utf-8'});res.end(html.replaceAll('SCREEN_LABEL',label).replaceAll('SCREEN_COLOR',color))}).listen(18111,'0.0.0.0')`;
   await kubectl(['-n', identity.namespace, 'exec', pod, '-c', 'agent', '--', 'node', '-e', `require('node:fs').writeFileSync(${JSON.stringify(fixturePath)},${JSON.stringify(fixture)})`]);
   await kubectl(['-n', identity.namespace, 'exec', pod, '-c', 'agent', '--', 'sh', '-c', `nohup node ${fixturePath} >/tmp/grok-screen-fixture.log 2>&1 </dev/null &`]);
 
@@ -166,8 +177,13 @@ try {
   stage = 'capture two 1440x900 Bot screenshots';
   const images = await Promise.all([screenA, screenB].map(screenId => worker('/v1/screenshot', screenId)));
   assert.ok(images.every(response => response.status === 200 && response.headers.get('content-type') === 'image/png'));
-  const screenPoints = await Promise.all(images.map(async response => {
-    const point = locateYellow(Buffer.from(await response.arrayBuffer()));
+  const screenshotBytes = await Promise.all(images.map(response => response.arrayBuffer().then(bytes => Buffer.from(bytes))));
+  assert.ok(containsColor(screenshotBytes[0], [230, 20, 140]), 'Bot A computer screenshot should show Bot A foreground page pixels');
+  assert.equal(containsColor(screenshotBytes[0], [20, 140, 230]), false, 'Bot A computer screenshot must not show Bot B foreground page pixels');
+  assert.ok(containsColor(screenshotBytes[1], [20, 140, 230]), 'Bot B computer screenshot should show Bot B foreground page pixels');
+  assert.equal(containsColor(screenshotBytes[1], [230, 20, 140]), false, 'Bot B computer screenshot must not show Bot A foreground page pixels');
+  const screenPoints = await Promise.all(screenshotBytes.map(async bytes => {
+    const point = locateYellow(bytes);
     assert.deepEqual([point.width, point.height], [1440, 900]);
     return point;
   }));

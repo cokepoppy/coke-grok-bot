@@ -68,6 +68,6 @@ try {
 } finally {
   gateway?.close();
   if (server) await new Promise<void>(resolve => server.close(() => resolve()));
-  if (namespaceCreated) await run('kubectl',['delete','namespace',namespace,'--wait=false'],undefined,20_000);
+  if (namespaceCreated) await run('kubectl',['delete','namespace',namespace,'--wait=true','--timeout=90s'],undefined,100_000);
   await rm(temp,{recursive:true,force:true});
 }
