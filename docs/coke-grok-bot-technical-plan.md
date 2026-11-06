@@ -1324,3 +1324,11 @@ K3D 有 12 个 8 天前遗留的 `coke-grok-auth-test-*` namespace 和一个 `co
 当前单一功能分支实现了按登录用户和 Bot 授权的 noVNC HTTP/WS 代理、用户接管后的全屏 iframe，并移除官方控制路径之外的“Type on computer”假输入。Pi 的 Computer Browser 导航仅在目标 origin 与本次用户直接请求的 URL/Gmail 精确匹配时免审批；点击、表单输入等继续审批，邮件/网页引文与明确禁止语句不会扩大导航范围。所有凭据仍由服务端控制，WS 代理不向桌面转发浏览器 Cookie。
 
 验证结果：本地浏览器集成用例加载了经登录态与 Bot 所属权检查的 noVNC fixture；专用代理测试核验登录态、Bot 归属、跨用户拒绝、HTTP 资源和 WebSocket 升级。现存 K3D 用户桌面 Service 的 6080 端口只读返回 `vnc_lite.html` HTTP 200，WebSocket 协议协商返回 101，首个二进制帧携带 RFB 3.8 greeting。这证明当前桌面镜像的 noVNC 服务可达，但没有通过浏览器实际输入键盘、没有经过新 Auth 路由、没有运行新候选镜像。`npm run build`、`npm run build:deployment`、`npm run test:runtime`（120/120）、固定测试 MySQL `13317` 的 `test:runtime-mysql`（18/18）、`test:run-browser` 与 `git diff --check` 通过。公网首页 200 仍对应旧部署；本次没有公网登录态 Chrome + Pi/DeepSeek + K3D 桌面完整验收，不提交验收通过结论。
+
+### 2026-11-06 公网接管实测复现失败
+
+在已登录 Chrome 的公网 `/grok-bot/` 中打开 `kaka` 的全屏云电脑，状态显示 `You are in control`。用可见鼠标点击远程 Chromium 的地址栏及新标签按钮，只有指针移动，地址栏没有聚焦，新标签没有打开；在外置 `Type on computer` 输入无害测试字符串 `example.org` 并点击 `Type`，字符串也没有进入远程地址栏。没有按 Enter、没有访问 Gmail、没有录入凭据，也没有确认或重试既有排队任务。故当前公网用户接管验收明确失败。
+
+此前通过的测试不能证明该路径：`tests/run-browser.e2e.ts` 在模拟身份、假 `UserComputer` 和只返回静态 HTML 的 noVNC fixture 上验证接管状态与 iframe；它没有将真实 noVNC WebSocket 与桌面进程连起来，也没有断言真实标签页点击或键盘输入。API/代理的 WebSocket 握手和 RFB greeting 测试只证明传输层建立，不证明桌面收到鼠标/键盘事件。此前通过的 Bot 任务执行、公网群聊及浏览器工具场景属于另一类 E2E，不能替代 Computer User 接管测试。
+
+本次公网仍运行旧 Auth/桌面镜像；包含接管代理改动的代码提交 `2a27610` 尚未部署。另有一条既存排队任务，为避免替换服务影响运行，保持原样，没有发布候选。重新验收必须使用候选 Auth + 桌面镜像，在公网已登录 Chrome 真实点击标签页和地址栏、输入 `example.org` 并回车，确认目标页标题/URL变化，再测试接管归还；任一操作未在真实远程桌面生效均判失败。静态 fixture、API 状态、RFB greeting 和 Agent Browser 工具成功不得抵销该失败。
