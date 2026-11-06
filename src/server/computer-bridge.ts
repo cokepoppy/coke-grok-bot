@@ -4,7 +4,7 @@ import { canonicalComputerAction } from './computer-action.ts';
 import type { RunOwner,RunStore } from './run-store.ts';
 import { SafeDiagnosticError } from './safe-diagnostics.ts';
 
-export interface RunScope {owner:RunOwner;runId:string;leaseId:string;botId:string}
+export interface RunScope {owner:RunOwner;runId:string;leaseId:string;botId:string;requestedNavigationOrigins?:readonly string[]}
 export interface ComputerReadWorker extends GuardedComputerWorker { control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>; inspect(signal:AbortSignal):Promise<unknown>; screenshot(signal:AbortSignal):Promise<Buffer> }
 /** Only the authenticated, live run capability may call these methods. */
 export class ComputerBridge {
@@ -19,7 +19,7 @@ export class ComputerBridge {
  async inspect(scope:RunScope,signal:AbortSignal):Promise<unknown>{const result=await (await this.authorize(scope,signal)).inspect(signal);await this.markUsed(scope);return result}
  async control(scope:RunScope,signal:AbortSignal):Promise<{owner:'agent'|'user'}>{return (await this.authorize(scope,signal)).control(signal)}
  async screenshot(scope:RunScope,signal:AbortSignal):Promise<Buffer>{const image=await (await this.authorize(scope,signal)).screenshot(signal);await this.markUsed(scope);return image}
- async propose(scope:RunScope,input:unknown,signal:AbortSignal):Promise<{id:string}>{
+ async propose(scope:RunScope,input:unknown,signal:AbortSignal):Promise<{id:string}|{status:'completed';result:unknown}>{
   const worker=await this.authorize(scope,signal);
   let captured:Awaited<ReturnType<NonNullable<ComputerReadWorker['snapshotWithImage']>>>|null=null;
   let state:ComputerState;
@@ -29,6 +29,18 @@ export class ComputerBridge {
   }
   if(state.owner!=='agent')throw new SafeDiagnosticError('COMPUTER_OWNER_USER');
   let action:string;try{action=canonicalComputerAction(input,state)}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
+  const canonical=JSON.parse(action) as {kind?:unknown;action?:unknown;arguments?:{url?:unknown}};
+  if(canonical.kind==='browser'&&canonical.action==='navigate'&&typeof canonical.arguments?.url==='string'){
+   let origin='';try{origin=new URL(canonical.arguments.url).origin}catch{/* The canonicalizer already validates the URL. */}
+   if(origin&&scope.requestedNavigationOrigins?.includes(origin)){
+    if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
+    try{
+     const result=await worker.performIfUnchanged(input,state,signal);
+     await this.markUsed(scope);
+     return {status:'completed',result};
+    }catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
+   }
+  }
   let approval:Awaited<ReturnType<ApprovalStore['propose']>>;
   try{approval=await this.approvals.propose(scope.runId,scope.leaseId,action,300,captured?.image)}catch{throw new SafeDiagnosticError('COMPUTER_APPROVAL_STORE_FAILED')}
   if(!approval)throw new SafeDiagnosticError('COMPUTER_APPROVAL_RUN_UNAVAILABLE');

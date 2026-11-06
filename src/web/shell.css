@@ -892,7 +892,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 }
 .computer-screen-dialog {
   display: grid;
-  grid-template-rows: 56px minmax(0, 1fr) auto;
+  grid-template-rows: 56px minmax(0, 1fr);
   width: 100vw;
   height: 100vh;
   height: 100dvh;
@@ -932,23 +932,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .computer-screen-actions > button[aria-label="Exit computer full screen"] svg { width: 19px; height: 19px; }
 .computer-large-screen { display: grid; place-items: center; min-width: 0; min-height: 0; overflow: hidden; padding: 10px clamp(14px, 3.55vw, 56px) clamp(14px, 3.2vh, 34px); box-sizing: border-box; background: #090909; }
 .computer-large-screen img { display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 3px; cursor: crosshair; }
+.computer-large-screen iframe { display: block; width: 100%; height: 100%; border: 0; background: #17191d; }
+.computer-large-screen:has(iframe) { padding: 0; }
 .computer-large-screen > span { padding: 36px; color: #aaa; font-size: 13px; }
-.computer-screen-dialog > footer { display: flex; align-items: center; gap: 8px; padding: 9px clamp(14px, 3.55vw, 56px); border-top: 1px solid #ffffff16; background: #101010; }
-.computer-screen-dialog footer form { display: flex; gap: 7px; margin-left: auto; }
-.computer-screen-dialog footer input { width: min(320px, 30vw); min-width: 120px; height: 34px; padding: 0 10px; border: 1px solid #ffffff30; border-radius: 9px; color: #fff; background: #ffffff0d; font: inherit; font-size: 12px; }
-.computer-screen-dialog footer > span { color: #aaa; font-size: 11px; }
 @media (prefers-reduced-motion: reduce) { .computer-open-screen { transition: none; } }
 @media (max-width: 760px) {
   .product-shell .details-panel:has(.computer-panel-live) { padding: 8px 12px 12px; }
   .product-shell .computer-panel-live { margin-top: 0; padding-top: 0; }
   .computer-panel-header { right: -12px; left: -12px; }
-  .computer-screen-dialog { grid-template-rows: 52px minmax(0, 1fr) auto; }
+  .computer-screen-dialog { grid-template-rows: 52px minmax(0, 1fr); }
   .computer-screen-dialog > header { padding-right: 10px; }
   .computer-screen-actions { gap: 2px; }
   .computer-screen-actions > button:not([aria-label="Close screen"]):not([aria-label="Enter computer full screen"]):not([aria-label="Exit computer full screen"]) { min-height: 30px; padding: 5px 8px; }
   .computer-large-screen { padding: 8px 10px 16px; }
-  .computer-screen-dialog > footer { flex-wrap: wrap; padding: 8px 10px; }
-  .computer-screen-dialog footer > span { flex-basis: 100%; order: 2; }
-  .computer-screen-dialog footer form { width: 100%; margin-left: 0; }
-  .computer-screen-dialog footer input { flex: 1; width: auto; }
 }

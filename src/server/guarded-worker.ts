@@ -16,6 +16,7 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   this.endpoint=endpoint;
  }
  private headers(json=false):Record<string,string>{return {authorization:`Bearer ${this.controlToken}`,'x-coke-grok-screen-id':this.screenId,...(json?{'content-type':'application/json'}:{})}}
+ vncEndpoint():URL{const endpoint=new URL(this.endpoint);endpoint.port='6080';endpoint.pathname='/';return endpoint}
  async snapshot(signal:AbortSignal):Promise<ComputerState>{
   const response=await this.request(new URL('/v1/guarded/snapshot',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
   if(!response.ok)throw new Error('Computer snapshot unavailable');

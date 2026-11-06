@@ -1316,3 +1316,11 @@ Chrome CUA 的 `getState` 与新建公网 Chrome 标签两次均超时；没有�
 K3D 有 12 个 8 天前遗留的 `coke-grok-auth-test-*` namespace 和一个 `coke-grok-ingress-check-20261029` namespace。只读检查显示其中 Deployment 均为 0/0、没有 Pod、PVC 或 Ingress；对应的 Service、ReplicaSet 和可能的测试 Secret 仍在。由于用户之前明确要求保留资源，本轮未删除这些 namespace 或对象。
 
 为防止新的测试残留，本分支里自建 K3D E2E namespace 的清理已从 `kubectl delete --wait=false` 改为等待删除完成（最长 90 秒，命令上限 100 秒），涵盖 Broker、Provisioner、网络策略、Guarded Computer、Pi/DSH、Kube client、动态 provisioning 和 namespace bootstrap 用例；固定测试镜像标签及共享测试 MySQL 契约保持不变。`tests/bundled-auth.e2e.ts` 仅在显式设置 `COKE_GROK_TEST_IMAGE` 时以 `docker run --rm` 启动一次短命认证镜像测试进程，默认走本机 Node；它不会留下容器。改动尚未运行测试，也未提交或部署。
+
+## 2026-11-06 云电脑接管测试盲区与修复
+
+用户反馈接管后无法切 Chrome 标签、聚焦地址栏或输入 URL。旧 `tests/run-browser.e2e.ts` 使用模拟身份/执行器和假 `UserComputer`，只检查截图被合成点击以及外置文本框输入；它未请求真实 noVNC 资源或 WebSocket。K3D Pi/DeepSeek 网页动作测试也未覆盖用户接管 UI。旧测试可以全通过，而真实网页根本没有可操作的桌面 iframe。这解释了“端到端通过但显眼问题仍存在”：测试替身模拟了被测动作，未连接用户真正操作的桌面链路。旧记录中的本地浏览器测试不得视为云电脑产品验收。
+
+当前单一功能分支实现了按登录用户和 Bot 授权的 noVNC HTTP/WS 代理、用户接管后的全屏 iframe，并移除官方控制路径之外的“Type on computer”假输入。Pi 的 Computer Browser 导航仅在目标 origin 与本次用户直接请求的 URL/Gmail 精确匹配时免审批；点击、表单输入等继续审批，邮件/网页引文与明确禁止语句不会扩大导航范围。所有凭据仍由服务端控制，WS 代理不向桌面转发浏览器 Cookie。
+
+验证结果：本地浏览器集成用例加载了经登录态与 Bot 所属权检查的 noVNC fixture；专用代理测试核验登录态、Bot 归属、跨用户拒绝、HTTP 资源和 WebSocket 升级。现存 K3D 用户桌面 Service 的 6080 端口只读返回 `vnc_lite.html` HTTP 200，WebSocket 协议协商返回 101，首个二进制帧携带 RFB 3.8 greeting。这证明当前桌面镜像的 noVNC 服务可达，但没有通过浏览器实际输入键盘、没有经过新 Auth 路由、没有运行新候选镜像。`npm run build`、`npm run build:deployment`、`npm run test:runtime`（120/120）、固定测试 MySQL `13317` 的 `test:runtime-mysql`（18/18）、`test:run-browser` 与 `git diff --check` 通过。公网首页 200 仍对应旧部署；本次没有公网登录态 Chrome + Pi/DeepSeek + K3D 桌面完整验收，不提交验收通过结论。

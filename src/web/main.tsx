@@ -274,6 +274,8 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
   const [screenFullscreen,setScreenFullscreen]=useState(false);
   const imageUrl=useRef(''),inFlight=useRef(false),mounted=useRef(true);
   const computerUrl=`${import.meta.env.BASE_URL}api/bots/${encodeURIComponent(botId)}/computer`;
+  const noVncPath=`${computerUrl}/vnc/websockify`.replace(/^\/+/, '');
+  const noVncViewer=`${computerUrl}/vnc/vnc_lite.html?scale=1&autoconnect=1&path=${encodeURIComponent(noVncPath)}`;
   const routinesUrl=`${import.meta.env.BASE_URL}api/bots/${encodeURIComponent(botId)}/routines`;
   const loadRoutines=async(signal?:AbortSignal)=>{
     const response=await fetch(routinesUrl,{credentials:'same-origin',cache:'no-store',signal});
@@ -404,12 +406,9 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
             <button ref={closeScreenButton} type="button" aria-label="Close screen" onClick={()=>{setScreenOpen(false);previewButton.current?.focus()}}><Icon name="close" /></button>
           </div>
         </header>
-        <div className="computer-large-screen">{image ? <img src={image} alt="Current computer screen" onClick={click} /> : <span>Computer not connected</span>}</div>
-        {owner==='user' && <footer>
-          <form onSubmit={event=>{event.preventDefault();if(text){void send('action',{action:'type',text});setText('')}}}><input aria-label="Type on computer" value={text} maxLength={2000} onChange={event=>setText(event.currentTarget.value)} /><button disabled={busy||!text}>Type</button></form>
-          <button type="button" disabled={busy} onClick={()=>void send('action',{action:'press',key:'Enter'})}>Enter</button>
-          <span>Click the screen to interact · The view refreshes every few seconds</span>
-        </footer>}
+        <div className="computer-large-screen">{owner==='user'
+          ? <iframe key={`${botId}-user-control`} title={`${name || 'Bot'} cloud computer`} src={noVncViewer} allow="clipboard-read; clipboard-write" />
+          : image ? <img src={image} alt="Current computer screen" onClick={click} /> : <span>Computer not connected</span>}</div>
         {error&&<span className="sr-only" role="status">{error}</span>}
       </section>
     </div>}

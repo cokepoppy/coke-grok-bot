@@ -7,6 +7,7 @@ export interface UserComputerWorker {
  userScreenshot(signal:AbortSignal):Promise<Buffer>;
  setControl(owner:'agent'|'user',signal:AbortSignal):Promise<{owner:'agent'|'user'}>;
  userAction(action:UserComputerAction,signal:AbortSignal):Promise<void>;
+ vncEndpoint?():URL;
 }
 
 /** Select a desktop only from the authenticated session, never from user input. */
@@ -34,6 +35,16 @@ export class UserComputer {
  async control(owner:Session,botId:string,signal:AbortSignal){try{return await (await this.getWorker(owner,botId,signal)).control(signal)}catch(error){throw this.workerError(error)}}
  async screenshot(owner:Session,botId:string,signal:AbortSignal){try{return await (await this.getWorker(owner,botId,signal)).userScreenshot(signal)}catch(error){throw this.workerError(error)}}
  async setControl(owner:Session,botId:string,value:'agent'|'user',signal:AbortSignal){try{return await (await this.getWorker(owner,botId,signal)).setControl(value,signal)}catch(error){throw this.workerError(error)}}
+ async vncEndpoint(owner:Session,botId:string,signal:AbortSignal):Promise<URL|null>{
+  try{
+   const worker=await this.getWorker(owner,botId,signal),state=await worker.control(signal);
+   if(state.owner!=='user')return null;
+   if(!worker.vncEndpoint)throw new Error('Computer stream is unavailable');
+   const endpoint=worker.vncEndpoint();
+   if(endpoint.protocol!=='http:'||!/^desktop\.grok-user-[a-f0-9]{32}\.svc\.cluster\.local$/.test(endpoint.hostname)||endpoint.port!=='6080'||endpoint.pathname!=='/'||endpoint.username||endpoint.password||endpoint.search||endpoint.hash)throw new Error('Invalid computer stream endpoint');
+   return endpoint;
+  }catch(error){throw this.workerError(error)}
+ }
  async action(owner:Session,botId:string,input:unknown,signal:AbortSignal){try{return await (await this.getWorker(owner,botId,signal)).userAction(parseUserAction(input),signal)}catch(error){throw this.workerError(error)}}
  private workerError(error:unknown):SafeDiagnosticError{return error instanceof SafeDiagnosticError?error:new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
 }

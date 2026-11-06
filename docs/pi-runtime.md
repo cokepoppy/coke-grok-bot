@@ -364,3 +364,11 @@ Routine 的真实公网测试先发现 Agent ingress 丢失 capability：Auth �
 通过已登录 Chrome 在 `https://codex.cokeagent.com/grok-bot/` 打开 `Public Full-chain 20261106`，按界面创建的只读任务分别检查六个 Bot 的独立 K3D 屏幕和唯一 URL。Chief、Sales Outbound、Account Manager、Talent Scout、Expense Manager 五个 Bot 的新任务可见为 `Done`；各自报告导航到带 `grokbot-e2e=20261106-<bot>` 的 `https://example.com/`，标题 `Example Domain`，无可见 h1，且 Computer User 截图成功。Sales 与 Expense 的导航审批卡在公网 UI 中核对目标 URL 后批准。其余旧的 Sales/Expense 未决任务先查看各自 Computer 画面为 `about:blank`，在 UI 中确认检查完毕并恢复队列；旧任务结果仍按未知保留，没有重试。
 
 Inbox Manager 在新组任务中保持 `Outcome unknown`，按任务要求没有重试；因此本次六 Bot 新任务验收为 **5/6，未通过**。可见 Chrome 任务卡、精确导航审批、K3D Chromium 页面和完成截图证明这五条有实际网页/电脑操作证据；本轮没有逐条查询 MySQL `execution_audit` 以独立核对 Agent engine/model，因此不能把五条的 DeepSeek 路由计为已审计通过。前一节的官方 DeepSeek API 连通结果仍只是 provider 检查。群组消息、任务卡与运行历史保留在现有账户记录中，没有清理或重放未知任务。当前功能分支不合并、不打 checkpoint tag，等待 Inbox 的未知状态有安全、可审计的处理方案及用户最终验收。
+
+### 2026-11-06 云电脑接管与测试盲区复核
+
+用户指出接管后无法像普通 Chrome 一样切换标签、聚焦地址栏和输入 URL。复核确认先前 `test:run-browser` 的相关测试使用模拟身份、模拟 Agent 和假 `UserComputer`；它断言接管按钮改了状态，并通过截图图片点击及页面内“Type on computer”输入框驱动假动作，没有请求 noVNC HTTP 资源或 WebSocket。独立 K3D Pi/DeepSeek 网页动作测试覆盖 Browser User/Computer User 工具，不覆盖登录态用户的 noVNC 接管界面。因此，旧测试通过不能证明实际云电脑可被接管；此前把它归为端到端产品验收是不准确的。
+
+当前唯一 feature 分支已改为：接管时显示经认证服务器代理的 noVNC，而不再把截图当作可操作画布或显示外置打字框；VNC 静态资源和 WebSocket 仅允许已登录的所属 Bot 用户访问，代理不把浏览器 Cookie 转发到桌面服务。用户明确要求的 Gmail/URL 只在该次运行的 `browser navigate` 精确目标匹配时免去重复审批；点击、表单输入和其他副作用仍保留逐动作审批。官方文档要求用户在登录、验证码等步骤接管电脑，因此导航至 Gmail 后可由用户通过桌面亲自完成登录。
+
+校正后的 `test:run-browser` 在本地模拟应用中实际加载了受认证资源代理返回的 VNC viewer fixture；独立代理测试验证 owner/cross-owner 权限、noVNC 资源转发和 WebSocket 101。另通过现存 K3D 桌面 Service 只读取得 noVNC HTML（HTTP 200），并经 WebSocket 收到 RFB 3.8 greeting。此证据只证明服务端 viewer/stream 可达，不证明网页中的真实键盘输入或公网新 Auth 代码已运行。当前验证：`npm run build`、`npm run build:deployment`、`npm run test:runtime`（120/120）、固定测试 MySQL `13317` 上的 `test:runtime-mysql`（18/18）、`test:run-browser` 和 `git diff --check` 通过。公网首页 200 仍是旧部署；没有完成已登录公网 Chrome、Pi/DeepSeek 与这台 K3D 电脑共同参与的真实验收，不能称本项已验收或已发布。

@@ -1,4 +1,5 @@
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { Duplex } from 'node:stream';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { GoogleAuthService } from './google-auth.ts';
@@ -13,10 +14,63 @@ import {safeDiagnosticMetadata} from './safe-diagnostics.ts';
 import {GroupRequestConflict,type GroupChatStore} from './group-chat-store.ts';
 import {RoutineRequestConflict,type RoutineStore,type RoutineSchedule} from './routine-store.ts';
 
+function validatedNovncAsset(value:string):string|null{
+ let path:string;try{path=decodeURIComponent(value)}catch{return null}
+ if(!path||path.length>512||path.startsWith('/')||path.includes('\\')||!/[.](?:html|js|mjs|css|svg|png|ico|json|wasm|woff2?|ttf)$/i.test(path))return null;
+ if(!/^[A-Za-z0-9_./-]+$/.test(path)||path.split('/').some(part=>!part||part==='.'||part==='..'))return null;
+ return path;
+}
+
+function proxyNovncAsset(endpoint:URL,asset:string,req:IncomingMessage,res:ServerResponse):Promise<void>{
+ return new Promise(resolve=>{
+  const target=new URL(asset,endpoint);
+  const upstream=httpRequest(target,{method:req.method==='HEAD'?'HEAD':'GET',headers:{accept:typeof req.headers.accept==='string'?req.headers.accept:'*/*'},timeout:15_000},response=>{
+   const headers:Record<string,string>={'x-content-type-options':'nosniff','cache-control':'private, max-age=300'};
+   for(const name of ['content-type','content-length','content-encoding','etag','last-modified'] as const){const value=response.headers[name];if(typeof value==='string')headers[name]=value}
+   res.writeHead(response.statusCode||502,headers);response.pipe(res);response.once('end',resolve);response.once('error',resolve);
+  });
+  upstream.once('timeout',()=>upstream.destroy(new Error('noVNC asset request timed out')));
+  upstream.once('error',()=>{if(!res.headersSent)res.writeHead(502,{'Cache-Control':'no-store'});res.end();resolve()});
+  req.once('aborted',()=>upstream.destroy());upstream.end();
+ });
+}
+
+function rejectUpgrade(socket:Duplex,status:number):void{
+ if(socket.destroyed)return;
+ const reason=status===401?'Unauthorized':status===403?'Forbidden':status===404?'Not Found':status===409?'Conflict':'Bad Gateway';
+ socket.end(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+}
+
+async function proxyNovncSocket(endpoint:URL,req:IncomingMessage,client:Duplex,head:Buffer):Promise<void>{
+ const target=new URL('/websockify',endpoint);
+ const headers:Record<string,string>={host:target.host,connection:'Upgrade',upgrade:'websocket'};
+ for(const name of ['sec-websocket-key','sec-websocket-version','sec-websocket-protocol','sec-websocket-extensions']){
+  const value=req.headers[name];if(typeof value==='string')headers[name]=value;
+ }
+ const upstream=httpRequest(target,{method:'GET',headers});
+ let upstreamSocket:Duplex|undefined;
+ const close=()=>{if(upstreamSocket&&!upstreamSocket.destroyed)upstreamSocket.destroy();if(!upstream.destroyed)upstream.destroy()};
+ client.once('close',close);client.once('error',close);
+ upstream.once('upgrade',(response,socket,upstreamHead)=>{
+  upstreamSocket=socket;
+  const lines=['HTTP/1.1 101 Switching Protocols','Upgrade: websocket','Connection: Upgrade'];
+  for(const name of ['sec-websocket-accept','sec-websocket-protocol','sec-websocket-extensions']){
+   const value=response.headers[name];if(typeof value==='string'&&!/[\r\n]/.test(value))lines.push(`${name}: ${value}`)
+  }
+  client.write(`${lines.join('\r\n')}\r\n\r\n`);
+  if(upstreamHead.length)client.write(upstreamHead);
+  if(head.length)socket.write(head);
+  client.pipe(socket);socket.pipe(client);
+ });
+ upstream.once('response',response=>{response.resume();rejectUpgrade(client,response.statusCode===401?401:502);close()});
+ upstream.once('error',()=>{rejectUpgrade(client,502);close()});
+ upstream.end();
+}
+
 // Mount only behind a trusted proxy that preserves the configured Host.
 export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi', files?:WorkspaceFileStore, workspaceFiles?:WorkspaceFileTransportApi, groupChats?:GroupChatStore, routines?:RoutineStore) {
   const origin = parsePublicUrl(publicOrigin);
-  return createServer(async (req, res) => {
+  const server=createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     if (req.headers.host !== origin.host) { res.writeHead(400); return res.end(); }
     let url: URL;
@@ -34,6 +88,15 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         return res.end(JSON.stringify({ agent: Boolean(runs), engine: runs ? agentEngine : null }));
       }
       if (req.method === 'POST' && url.pathname === `${origin.prefix}/api/auth/logout`) return await auth.logout(req, res);
+      const computerVncAssetMatch=url.pathname.match(new RegExp(`^${origin.prefix}/api/bots/([0-9a-f-]{36})/computer/vnc/(.+)$`,'i'));
+      if(computer&&computerVncAssetMatch){
+        if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405,{'Cache-Control':'no-store'});return res.end()}
+        const session=await auth.session(req);if(!session){res.writeHead(401,{'Cache-Control':'no-store'});return res.end()}
+        const botId=computerVncAssetMatch[1];if(!runs||!await runs.ownsBot(session,botId)){res.writeHead(404,{'Cache-Control':'no-store'});return res.end()}
+        const asset=validatedNovncAsset(computerVncAssetMatch[2]);if(!asset){res.writeHead(404,{'Cache-Control':'no-store'});return res.end()}
+        try{const endpoint=await computer.vncEndpoint(session,botId,AbortSignal.timeout(240_000));if(!endpoint){res.writeHead(409,{'Cache-Control':'no-store'});return res.end()}return await proxyNovncAsset(endpoint,asset,req,res)}
+        catch(error){const diagnostic=safeDiagnosticMetadata(error);console.error('Computer request failed',{operation:'novnc-asset',...diagnostic});res.writeHead(503,{'Cache-Control':'no-store'});return res.end()}
+      }
       const computerMatch=url.pathname.match(new RegExp(`^${origin.prefix}/api/bots/([0-9a-f-]{36})/computer(?:/(screenshot|control|action))?$`,'i'));
       if(computer && computerMatch) {
         const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value))};
@@ -367,4 +430,17 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
       res.end('{"error":"Service unavailable"}');
     }
   });
+  server.on('upgrade',(req,socket,head)=>{
+    void (async()=>{
+      if(!computer||req.headers.host!==origin.host||req.headers.origin!==origin.origin||req.method!=='GET'||String(req.headers.upgrade||'').toLowerCase()!=='websocket'||req.headers['sec-websocket-version']!=='13'||typeof req.headers['sec-websocket-key']!=='string')return rejectUpgrade(socket,403);
+      let requestUrl:URL;try{requestUrl=new URL(req.url||'/',origin.origin)}catch{return rejectUpgrade(socket,404)}
+      const match=requestUrl.pathname.match(new RegExp(`^${origin.prefix}/api/bots/([0-9a-f-]{36})/computer/vnc/websockify$`,'i'));
+      if(!match||requestUrl.search)return rejectUpgrade(socket,404);
+      const session=await auth.session(req);if(!session)return rejectUpgrade(socket,401);
+      const botId=match[1];if(!runs||!await runs.ownsBot(session,botId))return rejectUpgrade(socket,404);
+      const endpoint=await computer.vncEndpoint(session,botId,AbortSignal.timeout(240_000));if(!endpoint)return rejectUpgrade(socket,409);
+      await proxyNovncSocket(endpoint,req,socket,head);
+    })().catch(()=>rejectUpgrade(socket,502));
+  });
+  return server;
 }

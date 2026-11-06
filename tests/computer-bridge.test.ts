@@ -22,6 +22,19 @@ test('computer action proposal failures expose only fixed diagnostic codes',asyn
   await assert.rejects(bridge.propose(scope,input,signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode===code);
  }
 });
+test('only directly requested browser destinations skip computer approval',async()=>{
+ let approvalProposals=0,performed=0,marked=0;
+ const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'about:blank',screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async()=>{performed++;return {ready:true,url:'https://mail.google.com/'}}};
+ const approvals={propose:async()=>{approvalProposals++;return {id:randomUUID()}},consume:async()=>false,status:async()=>null};
+ const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>{marked++;return true}},approvals,()=>worker),signal=new AbortController().signal;
+ const scoped={...scope,requestedNavigationOrigins:['https://mail.google.com']};
+ const navigation=await bridge.propose(scoped,{kind:'browser',action:'navigate',url:'https://mail.google.com/'},signal);
+ assert.deepEqual(navigation,{status:'completed',result:{ready:true,url:'https://mail.google.com/'}});assert.equal(performed,1);assert.equal(marked,1);assert.equal(approvalProposals,0);
+ const click=await bridge.propose(scoped,{kind:'browser',action:'click',by:'text',target:'Compose'},signal);
+ assert.ok('id'in click);assert.equal(approvalProposals,1);
+ const otherDestination=await bridge.propose(scoped,{kind:'browser',action:'navigate',url:'https://example.com/'},signal);
+ assert.ok('id'in otherDestination);assert.equal(approvalProposals,2);
+});
 test('terminal approval is exact, lease-bound, screenshot-bound, and consumed before local execution',async()=>{
  let actionText='',consumed=0,workerActions=0,owner:'agent'|'user'='agent',screenshot='a'.repeat(64);
  const approvals:any={
