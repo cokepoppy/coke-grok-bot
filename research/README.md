@@ -7,7 +7,7 @@
 | ID | 来源 | 实际取得 | 已观看/逐帧范围 | 待办 |
 | --- | --- | --- | --- | --- |
 | O1 | [官方产品文档](https://docs.x.ai/grok-bot/overview) | 2026-11-02 复核 Overview 等；2026-11-06 复核 Message and collaborate、Skills and routines、Use the computer and apps；2026-11-07 复核 Approvals, security, and privacy（页面标记 2026-10-30 更新；页面未标客户端 build） | 行为参考，不是界面像素证据；官网营销页和详细文档须区分 | 版本有变化时重查 |
-| V1 | [官方 Grok Bot 101](https://www.youtube.com/watch?v=8xXhE25vJZY)，2026-10-06 | 已完整下载本机 MKV；1920×1080、30 fps、3400.761 秒；源视频 SHA-256 见帧 manifest | 连续逐帧窗口：22:08–22:53、26:48–51:38、51:43–53:08、53:13–56:40.633；每窗按 5 秒提取全部源帧并审阅联系图，关键状态另核对原尺寸帧；42:33–42:38 的 150 帧本轮补齐 | 已检查至片尾，但不是全片逐帧覆盖；尚有 22:53–26:48、51:38–51:43、53:08–53:13 等空档，以及其余开头时段待逐帧核对；官方录屏经过压缩/缩放，不能直接当作 CSS 像素基准 |
+| V1 | [官方 Grok Bot 101](https://www.youtube.com/watch?v=8xXhE25vJZY)，2026-10-06 | 已完整下载本机 MKV；1920×1080、30 fps、3400.761 秒；源视频 SHA-256 见帧 manifest | 连续逐帧窗口：22:08–22:53、26:48–56:40.633；每窗按 5 秒提取全部源帧并审阅联系图，关键状态另核对原尺寸帧；42:33–42:38、51:38–51:43、53:08–53:13 的 150 帧本轮补齐 | 已检查至片尾，但不是全片逐帧覆盖；尚有 22:53–26:48 与其余开头时段待逐帧核对；官方录屏经过压缩/缩放，不能直接当作 CSS 像素基准 |
 | V2 | [官方 Grok Bot 201](https://www.youtube.com/watch?v=rOVomdnWhjQ)，2026-10-21 | 已完整下载本机 MKV；1920×1080、25 fps、3326.421 秒 | 连续逐帧窗口：14:20.000–14:34.960 共 375 帧；14:40.000–21:14.960 共 9,875 帧，及 21:15.000–21:19.960 的 125 帧；逐窗检查联系图，状态切换核对关键原尺寸帧 | 20:50 后该教程转为第三方 Cursor 页面，不作为 Grok Bot UI 证据；其余视频仍待逐帧分析；官网嵌入演示须独立取证，不能把上传日期当成客户端版本日期，也不代表整片已逐帧看完 |
 | V3 | [官方 Introducing Grok Bot](https://www.youtube.com/watch?v=F1_0Lkp16Rc)，2026-08-11 | 已完整下载本机 MKV；3840×2160、24 fps、106.001 秒 | 0–53.08 秒通过 51 张联系图预览，逐张包含连续 25 个源帧；按用户于 2026-10-30 的指示停止，不作 UI 或交互基准 | 53.08–106.00 秒未审阅；宣传镜头屏幕细节不清，不继续逐帧分析 |
 | T1 | [Charlie Chang：The ONLY Grok Bot Tutorial You Need 2026](https://www.youtube.com/watch?v=q1IwR88mhaA)，2026-09-30 | 已完整下载本机 MKV；1920×1080、24000/1001 fps、840.621 秒；公开索引查询于 2026-10-30，播放量报告约 19.2–36.7 万、频道约 146 万订阅，索引数值明显冲突 | 全片按 10 秒采样联系图浏览；01:35–02:00 共 600 帧已逐张查看联系图，关键帧再看原尺寸图 | 后续按原视频核对电脑操作、设置、Routine、多 Bot；第三方解释不是官方协议证明 |
@@ -3645,7 +3645,12 @@ PTS 3091.000，Penny 新增回复：“Dex doesn't have the vote results, so I a
 
 PTS 3091.000，Penny 明确说 Dex 没有投票结果，因此已向 Maya 询问胜出者和贴纸图。PTS 3096.800 随后出现 Maya 给出的结果：“Winner is Looking at You — two bots side by side, about 254 of 614 votes (~41%). Runner-up is Cloud Nap.” 这里的票数是新的画面读数，与前段 Maya 报的 251/607 不同；视频还显示投票仍开放，所以记录为当时快照，不视为最终封票统计。PTS 3097.800 下方出现 `Messaged dex`、`Messaging dex`，Penny 正把结果转给 dex；右侧 Computer 仍为空白，未见贴纸图片或供应商调查结果，选择卡仍待用户决策。
 
-PTS 3100.800 仍显示 Penny 等待结果；PTS 3102.800 切到与 dex 的聊天视图，出现 dex 的完整回信：“Sticker vote winner for the Grokbot demo”。结果为 Looking at You，254/614（约 41%）；分项为 Looking at You 254（约 41.4%）、Cloud Nap 95（约 15.5%）、Piggyback 80（约 13%）、Stack of Three 78（约 12.7%）、Hello Blob 66（约 10.7%）、Whoa Wedge 41（约 6.7%）。回信还标出表单 “Grok Bot Sticker Vote” 的问题 “Which sticker should we print?”、Google Forms 编辑页引用、Figma 概念文件链接，以及设计说明 `Looking at You`（两只 Bot 面对面，红色圆点和青绿色水滴）。这是用户此前要求的跨 Bot 票数回传，较早 Maya 报告的是变化中的 251/607 快照；此处明确列出完整 254/614 分项。随后 Penny 回复要为 NYC 供应商获取胜出贴纸的可印刷导出，并把它标为 `Looking at You / Sticker 05`。窗口结束前未见实际图片、印刷文件附件或供应商报价；右侧 Computer 仍为空白。关键帧见 `research/frames/v1-3100-800-keyframe-single-20261106/manifest.json`、`research/frames/v1-3102-800-keyframe-single-20261106/manifest.json`。
+
+### V1 官方 Grok Bot 101 连续逐帧补齐（51:38–51:43，compact）
+
+检查本机官方源 PTS 3098.000–3102.967 秒连续 150 帧；六张联系图已逐张审阅，帧时间戳/像素哈希与联系图哈希见 `research/frames/v1-3098-3103-compact-audit-20261106/manifest.json`，源视频 SHA-256 与 V1 记录一致。原尺寸关键帧 PTS 3100.800、3102.800 分别见 `research/frames/v1-3100-800-keyframe-single-20261106/manifest.json` 和 `research/frames/v1-3102-800-keyframe-single-20261106/manifest.json`。
+
+窗口起始仍显示投票结果与 NYC 供应商选择卡，右侧 Computer 面板是空白占位。PTS 3100.800 聊天已显示 Maya 报出的 `Looking at You` 254/614 快照，底部出现 `Messaged dex` 和 `Working`；到 3102.800，视图切换到 Dex 的完整答复，列出六个选项分项并附表单与 Figma 引用。Penny 随后提出向 NYC 供应商获取印刷用导出，将作品标为 `Looking at You / Sticker 05`。画面没有印刷成品附件、报价或实际网站操作，因此只确认跨 Bot 结果回传和后续安排。
 
 ### V1 官方 Grok Bot 101 连续逐帧续看（51:43–51:48，compact）
 
@@ -3707,77 +3712,77 @@ Computer 展开画面在 PTS 3140.800 仍是深色空屏；到 3141.800 已出�
 
 窗口前半段，右侧 Computer 预览为黑屏；随后预览恢复为桌面背景，可见底部 Dock 中的 Chrome 等图标。PTS 3152.800，聊天下方的运行状态从前一段的 `Connecting to Figma` 变为 `Searching the web`。Computer 预览没有显示浏览器网页或 Printleaf 页面，仍未见 Figma 文件、打印素材下载或上传状态。这里只记录 UI 显示的检索状态，不把它等同于已完成供应商网站操作。下一段从 52:33 继续。
 
-### V1 官方 Grok Bot 101 连续逐帧续看（52:33–52:38，compact）
+### V1 官方 Grok Bot 101 连续逐帧续看（52:33–52:43，compact）
 
 检查官方源视频 PTS 3153.000–3162.967 秒连续 300 帧，分成 3153.000–3157.967 与 3158.000–3162.967 两个相邻五秒窗口；两段各 150 帧、六张联系图均已逐张审阅，源视频 SHA-256、PTS/像素哈希及联系图 SHA-256 均与 manifest 一致。第二段证据见 `research/frames/v1-3158-3163-compact-audit-20261106/manifest.json`。PTS 3157.800 和 3162.800 的原尺寸状态帧分别见 `research/frames/v1-3157-800-keyframe-single-20261106/manifest.json` 和 `research/frames/v1-3162-8-keyframe-single-20261106/manifest.json`；PNG SHA-256 分别为 `d2b20c3573c7e55ebf4b02326345d816e54c9d648a01a1060231f5b6f80724de` 与 `3297a68cfc652039a9d9d873c0569e95ecc927c15482620a07bcff55b1e4067c`。
 
-PTS 3157.800 首次出现 Penny 的新消息：“Got the Figma export — downloading the JPEG and opening Printleaf’s die-cut upload page now.” 同时运行状态为 `Running commands`。PTS 3160.800、3161.800、3162.800 仍显示同一消息与运行状态。Computer 预览继续显示浅灰桌面壁纸和底部应用图标，没有 Printleaf 网页、Figma 导出文件、下载提示或上传控件。因此视频确认的是聊天中的执行声明及持续运行状态，没有确认实际下载或供应商网站操作完成。连续审阅现覆盖 43:28.000–52:37.967，共 110 个五秒窗口、16,500 帧和 660 张联系图；下一段从 52:38 继续。
-
-### V1 官方 Grok Bot 101 连续逐帧续看（52:38–52:43，compact）
-
-检查 PTS 3163.000–3167.967 秒连续 150 帧；六张联系图均已逐张审阅，源视频 SHA-256、150 帧 PTS/像素哈希和联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3163-3168-compact-audit-20261106/manifest.json`。PTS 3167.800 的全尺寸关键帧及 PNG SHA-256 `8136f7355d13c8bb7e5581ed68d45946f794e6b48a15c12655cf2269bcd25330` 见 `research/frames/v1-3167-8-keyframe-single-20261106/manifest.json`。
-
-全尺寸帧显示 `Grok Bot Sticker Team` 相关对话，侧栏列出 Penny（sourcing）、Dex（designer）、Maya（community）；聊天含 `Looking at You` 投票摘要、预览裁图，以及 Penny 称已拿到 Figma 导出、正下载 JPEG 并打开 Printleaf 刀模上传页的消息。PTS 3167.800 的任务状态为 `On its computer`，较 3162.800 的 `Running commands` 已改变；准确切换帧未定位。右侧选中的 `Computer` 标签仍只显示浅灰桌面壁纸和 Dock 图标，没有 Printleaf 页面、下载对话框或上传进度，所以不能据聊天声明认定供应商操作已完成。此段将连续逐帧覆盖推进至 43:28.000–52:42.967，共 111 个五秒窗口、16,650 帧、666 张联系图；下一段从 52:43 继续。
+PTS 3157.800 首次出现 Penny 的新消息：“Got the Figma export — downloading the JPEG and opening Printleaf’s die-cut upload page now.” 同时运行状态为 `Running commands`。PTS 3160.800、3161.800、3162.800 仍显示同一消息与运行状态。Computer 预览继续显示浅灰桌面壁纸和底部应用图标，没有 Printleaf 网页、Figma 导出文件、下载提示或上传控件。因此视频确认的是聊天中的执行声明及持续运行状态，没有确认实际下载或供应商网站操作完成。连续审阅现覆盖 43:28.000–52:42.967，共 111 个五秒窗口、16,650 帧和 666 张联系图；下一段从 52:43 继续。
 
 ### V1 官方 Grok Bot 101 连续逐帧续看（52:43–52:48，compact）
 
-检查 PTS 3168.000–3172.967 秒连续 150 帧；六张联系图均已逐张审阅，源视频 SHA-256、逐帧 PTS/像素哈希和联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3168-3173-compact-audit-20261106/manifest.json`。PTS 3172.800 的原尺寸关键帧及 PNG SHA-256 `9d3a7822b80e63b8457c8b0680a8caac0eafe22efc9648ff410a31abcd336d5d` 见 `research/frames/v1-3172-8-keyframe-single-20261106/manifest.json`。
+检查 PTS 3163.000–3167.967 秒连续 150 帧；六张联系图均已逐张审阅，源视频 SHA-256、150 帧 PTS/像素哈希和联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3163-3168-compact-audit-20261106/manifest.json`。PTS 3167.800 的全尺寸关键帧及 PNG SHA-256 `8136f7355d13c8bb7e5581ed68d45946f794e6b48a15c12655cf2269bcd25330` 见 `research/frames/v1-3167-8-keyframe-single-20261106/manifest.json`。
 
-PTS 3172.800 的 Penny 对话新增消息：“JPEG is ready (1680×1920). Opening Printleaf on my computer and uploading Looking at You now — I’ll ping you when it’s on the page.” 运行提示显示 `penny is working`。画面仍选中 `Computer` 标签，右侧只是灰色桌面壁纸与 Dock 图标；没有浏览器窗口、Printleaf 页面或上传进度。因此只能确认聊天显示了文件尺寸与操作声明，不能确认 JPEG 文件实际存在或上传成功。连续逐帧覆盖现达 43:28.000–52:52.967，共 112 个五秒窗口、16,800 帧、672 张联系图；下一段从 52:53 继续。
+全尺寸帧显示 `Grok Bot Sticker Team` 相关对话，侧栏列出 Penny（sourcing）、Dex（designer）、Maya（community）；聊天含 `Looking at You` 投票摘要、预览裁图，以及 Penny 称已拿到 Figma 导出、正下载 JPEG 并打开 Printleaf 刀模上传页的消息。PTS 3167.800 的任务状态为 `On its computer`，较 3162.800 的 `Running commands` 已改变；准确切换帧未定位。右侧选中的 `Computer` 标签仍只显示浅灰桌面壁纸和 Dock 图标，没有 Printleaf 页面、下载对话框或上传进度，所以不能据聊天声明认定供应商操作已完成。此段将连续逐帧覆盖推进至 43:28.000–52:47.967，修正 51:38–51:43 补齐后的累计数，共 112 个五秒窗口、16,800 帧、672 张联系图；下一段从 52:48 继续。
 
 ### V1 官方 Grok Bot 101 连续逐帧续看（52:48–52:53，compact）
 
-检查 PTS 3173.000–3177.967 秒连续 150 帧；六张联系图均已逐张审阅，源视频 SHA-256、逐帧 PTS/像素哈希及联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3173-3178-compact-audit-20261106/manifest.json`。另核对 PTS 3174.800、3176.800、3177.800 三个原尺寸帧，清单分别见 `research/frames/v1-3174-8-keyframe-single-20261106/manifest.json`、`research/frames/v1-3176-8-keyframe-single-20261106/manifest.json` 和 `research/frames/v1-3177-8-keyframe-single-20261106/manifest.json`；对应 PNG SHA-256 依次为 `3d9993dec5adb8c7ef8ff68591439f220425633444099c15cc0efd8e90e204df`、`c4072b47caeb530c80d6b7044214c553abae207a3f22b605031a30ed9a29292c`、`7ca2cfb88553590808c8359b3502d6c4c67fb663f34ce3582395e52a24bc9961`。
+检查 PTS 3168.000–3172.967 秒连续 150 帧；六张联系图均已逐张审阅，源视频 SHA-256、逐帧 PTS/像素哈希和联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3168-3173-compact-audit-20261106/manifest.json`。PTS 3172.800 的原尺寸关键帧及 PNG SHA-256 `9d3a7822b80e63b8457c8b0680a8caac0eafe22efc9648ff410a31abcd336d5d` 见 `research/frames/v1-3172-8-keyframe-single-20261106/manifest.json`。
 
-PTS 3174.800 的 Computer 预览已出现浏览器窗口，但内容仍为空白；3176.800 已显示 Printleaf 的 `Die Cut Stickers` 商品页与配置区域；3177.800 可见商品预览图。Penny 聊天仍显示 `penny is working`，此前消息称 JPEG 已就绪并将上传。新画面确认已实际显示供应商网页，但没有文件选择器、已上传素材预览、提交确认或订单结果；商品页和通用商品图不能证明本任务 JPEG 已上传。连续逐帧覆盖推进至 43:28.000–52:57.967，共 113 个五秒窗口、16,950 帧、678 张联系图；下一段从 52:58 继续。
+PTS 3172.800 的 Penny 对话新增消息：“JPEG is ready (1680×1920). Opening Printleaf on my computer and uploading Looking at You now — I’ll ping you when it’s on the page.” 运行提示显示 `penny is working`。画面仍选中 `Computer` 标签，右侧只是灰色桌面壁纸与 Dock 图标；没有浏览器窗口、Printleaf 页面或上传进度。因此只能确认聊天显示了文件尺寸与操作声明，不能确认 JPEG 文件实际存在或上传成功。连续逐帧覆盖现达 43:28.000–52:52.967，共 113 个五秒窗口、16,950 帧、678 张联系图；下一段从 52:53 继续。
 
 ### V1 官方 Grok Bot 101 连续逐帧续看（52:53–52:58，compact）
 
-检查 PTS 3178.000–3182.967 秒连续 150 帧；六张联系图逐张审阅，源视频 SHA-256、逐帧 PTS/像素哈希及联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3178-3183-compact-audit-20261106/manifest.json`。PTS 3182.800 的全尺寸关键帧见 `research/frames/v1-3182-8-keyframe-single-20261106/manifest.json`，PNG SHA-256 为 `8df45b009a7caa144e5465f0e398884843f1a3075a025f6d34c152fdf0b331ce`。
+检查 PTS 3173.000–3177.967 秒连续 150 帧；六张联系图均已逐张审阅，源视频 SHA-256、逐帧 PTS/像素哈希及联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3173-3178-compact-audit-20261106/manifest.json`。另核对 PTS 3174.800、3176.800、3177.800 三个原尺寸帧，清单分别见 `research/frames/v1-3174-8-keyframe-single-20261106/manifest.json`、`research/frames/v1-3176-8-keyframe-single-20261106/manifest.json` 和 `research/frames/v1-3177-8-keyframe-single-20261106/manifest.json`；对应 PNG SHA-256 依次为 `3d9993dec5adb8c7ef8ff68591439f220425633444099c15cc0efd8e90e204df`、`c4072b47caeb530c80d6b7044214c553abae207a3f22b605031a30ed9a29292c`、`7ca2cfb88553590808c8359b3502d6c4c67fb663f34ce3582395e52a24bc9961`。
 
-整个窗口中，Computer 继续显示 Printleaf `Die Cut Stickers` 商品配置页，页面可见商品图库和 `Start Order`、`Start Design` 按钮；图库中的通用产品照片随时间变化。聊天保持 `penny is working`，没有新增上传结果、文件已附加提示、订单确认或成功状态。页面已实际打开，但当前证据仍不能证明 `Looking at You` 的 JPEG 已导入商品配置或提交到 Printleaf。逐帧覆盖现达 43:28.000–53:02.967，共 114 个五秒窗口、17,100 帧、684 张联系图；下一段从 53:03 继续。
+PTS 3174.800 的 Computer 预览已出现浏览器窗口，但内容仍为空白；3176.800 已显示 Printleaf 的 `Die Cut Stickers` 商品页与配置区域；3177.800 可见商品预览图。Penny 聊天仍显示 `penny is working`，此前消息称 JPEG 已就绪并将上传。新画面确认已实际显示供应商网页，但没有文件选择器、已上传素材预览、提交确认或订单结果；商品页和通用商品图不能证明本任务 JPEG 已上传。连续逐帧覆盖推进至 43:28.000–52:57.967，共 114 个五秒窗口、17,100 帧、684 张联系图；下一段从 52:58 继续。
 
 ### V1 官方 Grok Bot 101 连续逐帧续看（52:58–53:03，compact）
 
-检查 PTS 3183.000–3187.967 秒连续 150 帧；六张联系图已逐张审阅，源视频 SHA-256、逐帧 PTS/像素哈希和联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3183-3188-compact-audit-20261106/manifest.json`。
+检查 PTS 3178.000–3182.967 秒连续 150 帧；六张联系图逐张审阅，源视频 SHA-256、逐帧 PTS/像素哈希及联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3178-3183-compact-audit-20261106/manifest.json`。PTS 3182.800 的全尺寸关键帧见 `research/frames/v1-3182-8-keyframe-single-20261106/manifest.json`，PNG SHA-256 为 `8df45b009a7caa144e5465f0e398884843f1a3075a025f6d34c152fdf0b331ce`。
 
-Computer 仍停在 Printleaf 的 `Die Cut Stickers` 商品页，商品图库轮播不同的样例照片；聊天仍显示 `penny is working`，没有新的 Bot 完成消息、选取本地 JPEG、已上传标记、购物车/订单确认或结果卡。当前只证明供应商商品页已打开并在显示，任务是否继续或文件是否导入仍未证实。连续逐帧覆盖现达 43:28.000–53:07.967，共 115 个五秒窗口、17,250 帧、690 张联系图；下一段从 53:08 继续。
+整个窗口中，Computer 继续显示 Printleaf `Die Cut Stickers` 商品配置页，页面可见商品图库和 `Start Order`、`Start Design` 按钮；图库中的通用产品照片随时间变化。聊天保持 `penny is working`，没有新增上传结果、文件已附加提示、订单确认或成功状态。页面已实际打开，但当前证据仍不能证明 `Looking at You` 的 JPEG 已导入商品配置或提交到 Printleaf。逐帧覆盖现达 43:28.000–53:02.967，共 115 个五秒窗口、17,250 帧、690 张联系图；下一段从 53:03 继续。
 
 ### V1 官方 Grok Bot 101 连续逐帧续看（53:03–53:08，compact）
 
+检查 PTS 3183.000–3187.967 秒连续 150 帧；六张联系图已逐张审阅，源视频 SHA-256、逐帧 PTS/像素哈希和联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3183-3188-compact-audit-20261106/manifest.json`。
+
+Computer 仍停在 Printleaf 的 `Die Cut Stickers` 商品页，商品图库轮播不同的样例照片；聊天仍显示 `penny is working`，没有新的 Bot 完成消息、选取本地 JPEG、已上传标记、购物车/订单确认或结果卡。当前只证明供应商商品页已打开并在显示，任务是否继续或文件是否导入仍未证实。连续逐帧覆盖现达 43:28.000–53:07.967，共 116 个五秒窗口、17,400 帧、696 张联系图；下一段从 53:08 继续。
+
+### V1 官方 Grok Bot 101 连续逐帧补齐（53:08–53:13，compact）
+
 检查 PTS 3188.000–3192.967 秒连续 150 帧；六张联系图逐张审阅，源视频 SHA-256、逐帧 PTS/像素哈希及联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3188-3193-compact-audit-20261106/manifest.json`。PTS 3192.800 原尺寸帧见 `research/frames/v1-3192-8-keyframe-single-20261106/manifest.json`，PNG SHA-256 为 `7595878e9321d773f3e1602147cd4a7222040e714b53aafd250159f40f7c6785`。
 
-Computer 仍显示 Printleaf 商品配置页，聊天仍显示 JPEG 准备就绪的消息与 `penny is working`，没有任务完成或订单确认。PTS 3192.800 左侧 `Grok Bot Sticker Team` 清单中的 Penny、Dex、Maya、bobo 四行均呈蓝色高亮，左上工具栏出现文件夹、删除和关闭图标；此帧只证明批量选择视觉状态出现，无法判断由何种点击/拖动触发，也没有后续批量操作结果。逐帧覆盖现达 43:28.000–53:12.967，共 116 个五秒窗口、17,400 帧、696 张联系图；下一段从 53:13 继续。
+Computer 仍显示 Printleaf 商品配置页，聊天仍显示 JPEG 准备就绪的消息与 `penny is working`，没有任务完成或订单确认。PTS 3192.800 左侧 `Grok Bot Sticker Team` 清单中的 Penny、Dex、Maya、bobo 四行均呈蓝色高亮，打开的菜单包含 `Pin`、`Move 4 Bots to`、`Mark as Read`、`Rename Bot`、`Copy conversation ID`、`Hide 4 Bots from sidebar` 和 `Delete 4 Bots`；该帧只证明批量选择及菜单可见，无法判断触发方式，也没有后续操作结果。逐帧覆盖现达 43:28.000–53:12.967，包含本次补齐的 51:38–51:43 窗口，共 117 个五秒窗口、17,550 帧、702 张联系图；下一段从 53:13 继续。
 
 ### V1 官方 Grok Bot 101 连续逐帧续看（53:13–53:18，compact）
 
 检查 PTS 3193.000–3197.967 秒连续 150 帧；六张联系图已逐张审阅，源视频 SHA-256、逐帧 PTS/像素哈希和联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3193-3198-compact-audit-20261106/manifest.json`。PTS 3197.800 原尺寸帧见 `research/frames/v1-3197-8-keyframe-single-20261106/manifest.json`，PNG SHA-256 为 `5a140c81e2212789ea2c6c7cb1a48ef1567e6e72405528abef119c4bcca04b4c`。
 
-窗口前段，左侧 Bot 多选高亮消失并短暂显示一层操作菜单，画面没有展示菜单选择后的批量结果。PTS 3197.800，主面板切到 `To: Start a chat with...` 选择器；可见 `Create new Bot`、`Create group chat`、Penny、Dex、Maya、bobo、Sample support bot、Grok Bot、New Bot，以及底部 `Team Bots` 行和右箭头。底部 composer 为 `Message Bot`，尚未选 Bot 或提交群聊，也未观察到新对话已创建。此前 Penny 的任务卡仍在左侧摘要中，无法据此判断其后台任务是否停止；本帧的选择器不是任务完成证据。连续逐帧覆盖现达 43:28.000–53:17.967，共 117 个五秒窗口、17,550 帧、702 张联系图；下一段从 53:18 继续。
+窗口前段，左侧 Bot 多选高亮消失并短暂显示一层操作菜单，画面没有展示菜单选择后的批量结果。PTS 3197.800，主面板切到 `To: Start a chat with...` 选择器；可见 `Create new Bot`、`Create group chat`、Penny、Dex、Maya、bobo、Sample support bot、Grok Bot、New Bot，以及底部 `Team Bots` 行和右箭头。底部 composer 为 `Message Bot`，尚未选 Bot 或提交群聊，也未观察到新对话已创建。此前 Penny 的任务卡仍在左侧摘要中，无法据此判断其后台任务是否停止；本帧的选择器不是任务完成证据。连续逐帧覆盖现达 43:28.000–53:17.967，补齐 51:38–51:43 后共 118 个五秒窗口、17,700 帧、708 张联系图；下一段从 53:18 继续。
 
 ### V1 官方 Grok Bot 101 连续逐帧续看（53:18–53:23，compact）
 
 检查 PTS 3198.000–3202.967 秒连续 150 帧；六张联系图逐张审阅，源视频 SHA-256、逐帧 PTS/像素哈希和联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3198-3203-compact-audit-20261106/manifest.json`。PTS 3202.800 的原尺寸关键帧见 `research/frames/v1-3202-8-keyframe-single-20261106/manifest.json`，PNG SHA-256 为 `ba33d5f2ba98b8c5a00b100b2f7ae751f73fd45cf76b53e7121cb4b94623d3ac`。
 
-群聊选择器中，`To:` 后已有 Penny、Dex、Maya 三个带头像/颜色的可移除成员 token；composer 占位为 `Message penny, dex, and maya`。PTS 3202.800 鼠标停在 bobo 行时显示 `Add to group chat`，说明列表可继续向当前群聊草稿添加 Bot；`Team Bots` 作为独立底部入口仍可选。当前是未发送的群聊成员草稿，没有 bobo token、聊天消息或已创建群聊结果。逐帧覆盖现达 43:28.000–53:22.967，共 118 个五秒窗口、17,700 帧、708 张联系图；下一段从 53:23 继续。
+群聊选择器中，`To:` 后已有 Penny、Dex、Maya 三个带头像/颜色的可移除成员 token；composer 占位为 `Message penny, dex, and maya`。PTS 3202.800 鼠标停在 bobo 行时显示 `Add to group chat`，说明列表可继续向当前群聊草稿添加 Bot；`Team Bots` 作为独立底部入口仍可选。当前是未发送的群聊成员草稿，没有 bobo token、聊天消息或已创建群聊结果。逐帧覆盖现达 43:28.000–53:22.967，补齐 51:38–51:43 后共 119 个五秒窗口、17,850 帧、714 张联系图；下一段从 53:23 继续。
 
 ### V1 官方 Grok Bot 101 连续逐帧续看（53:23–53:28，compact）
 
 检查 PTS 3203.000–3207.967 秒连续 150 帧；六张联系图逐张审阅，源视频 SHA-256、逐帧 PTS/像素哈希和联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3203-3208-compact-audit-20261106/manifest.json`。PTS 3207.800 原尺寸关键帧见 `research/frames/v1-3207-8-keyframe-single-20261106/manifest.json`，PNG SHA-256 为 `f598b4c875ff757b70479700d0f9f0b25ed3826c005dd90cb245dcd2d56e7b99`。
 
-群聊草稿继续演进：PTS 3207.800 的 `To:` 行已有 Penny、Dex、Maya、bobo 四个 Bot token；底部 composer 开始出现未发送草稿 `Bobo, you have b…`（后文不可读）。主聊天区仍为空白，未见正式会话标题、已发送气泡或 Bot 任务启动。该帧证明四 Bot 可被选择并开始起草消息，尚不证明群聊创建或发送成功。连续逐帧覆盖现达 43:28.000–53:27.967，共 119 个五秒窗口、17,850 帧、714 张联系图；下一段从 53:28 继续。
+群聊草稿继续演进：PTS 3207.800 的 `To:` 行已有 Penny、Dex、Maya、bobo 四个 Bot token；底部 composer 开始出现未发送草稿 `Bobo, you have b…`（后文不可读）。主聊天区仍为空白，未见正式会话标题、已发送气泡或 Bot 任务启动。该帧证明四 Bot 可被选择并开始起草消息，尚不证明群聊创建或发送成功。连续逐帧覆盖现达 43:28.000–53:27.967，补齐 51:38–51:43 后共 120 个五秒窗口、18,000 帧、720 张联系图；下一段从 53:28 继续。
 
 ### V1 官方 Grok Bot 101 连续逐帧续看（53:28–53:33，compact）
 
 检查 PTS 3208.000–3212.967 秒连续 150 帧；六张联系图逐张审阅，源视频 SHA-256、逐帧 PTS/像素哈希和联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3208-3213-compact-audit-20261106/manifest.json`。PTS 3212.800 全尺寸帧见 `research/frames/v1-3212-8-keyframe-single-20261106/manifest.json`，PNG SHA-256 为 `703d1af9b6da9b7b0af016c090788842d3fd96e5731527c9be091c4d95e33bc8`。
 
-Penny、Dex、Maya、bobo 四个接收人 token 持续显示，主聊天区仍为空白。Composer 草稿逐字延长；PTS 3212.800 可读为 `Bobo, you have been promoted to chief of staff.`，发送箭头处于可用状态但尚未点击。没有已发送消息、群聊创建完成、Bot 回复或任务启动的视觉证据。连续逐帧覆盖现达 43:28.000–53:32.967，共 120 个五秒窗口、18,000 帧、720 张联系图；下一段从 53:33 继续。
+Penny、Dex、Maya、bobo 四个接收人 token 持续显示，主聊天区仍为空白。Composer 草稿逐字延长；PTS 3212.800 可读为 `Bobo, you have been promoted to chief of staff.`，发送箭头处于可用状态但尚未点击。没有已发送消息、群聊创建完成、Bot 回复或任务启动的视觉证据。连续逐帧覆盖现达 43:28.000–53:32.967，补齐 51:38–51:43 后共 121 个五秒窗口、18,150 帧、726 张联系图；下一段从 53:33 继续。
 
 ### V1 官方 Grok Bot 101 连续逐帧续看（53:33–53:38，compact）
 
 检查 PTS 3213.000–3217.967 秒连续 150 帧；六张联系图均已逐张审阅，源视频 SHA-256、150 帧 PTS/像素哈希和联系图 SHA-256 均与 manifest 一致，见 `research/frames/v1-3213-3218-compact-audit-20261106/manifest.json`。PTS 3217.800 原尺寸关键帧见 `research/frames/v1-3217-800-keyframe-single-20261106/manifest.json`，PNG SHA-256 为 `edcd2753871def953d805af89801d52f709a0dac706dbf661b28c98293f14fa6`。
 
-这一段仍停在群聊收件人/消息草稿界面：Penny、Dex、Maya、bobo 四个 token 与 `Start a chat with...` 入口保留，主聊天区空白；PTS 3217.800 的草稿可读为 `Bobo, you have been promoted to chief of staff. Dex, penny, and maya, can you`，发送按钮仍可用但没有点击。右上角还出现带 `martin Lacsamana` 标签的小视频画面。没有看到群聊创建、消息发送、Bot 回复或任务启动。连续逐帧覆盖现达 43:28.000–53:37.967，共 121 个五秒窗口、18,150 帧、726 张联系图；下一段从 53:38 继续。
+这一段仍停在群聊收件人/消息草稿界面：Penny、Dex、Maya、bobo 四个 token 与 `Start a chat with...` 入口保留，主聊天区空白；PTS 3217.800 的草稿可读为 `Bobo, you have been promoted to chief of staff. Dex, penny, and maya, can you`，发送按钮仍可用但没有点击。右上角还出现带 `martin Lacsamana` 标签的小视频画面。没有看到群聊创建、消息发送、Bot 回复或任务启动。连续逐帧覆盖现达 43:28.000–53:37.967，补齐 51:38–51:43 后共 122 个五秒窗口、18,300 帧、732 张联系图；下一段从 53:38 继续。
 
 ### V1 官方 Grok Bot 101 连续逐帧续看（53:38–53:43，compact）
 

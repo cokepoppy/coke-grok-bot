@@ -1574,3 +1574,9 @@ GitHub 直连因本机 DNS 无法解析 `github.com` 失败，`127.0.0.1:1080` �
 2026-11-07 12:37（Asia/Shanghai）在固定测试 MySQL `127.0.0.1:13317`、无源码覆盖的 `coke-grok-desktop:candidate-focus-screenshot-fix-20261107-r1` 上重新运行 `npm run test:gmail-handoff-k3d`，退出码 0：Pi/DeepSeek 共调用 8 次，在没有审批卡的情况下将真实 K3D Chromium 导航到 `accounts.google.com` 并停下；随后通过产品 UI Take control，经嵌入 noVNC 导航到 `example.com`，Return to Bot 后由 Pi 只读确认页面。未输入 Google 凭据或读取邮箱。测试结束后运行 Pod 数回到既有 11 个；Auth、Broker、用户 Agent/Desktop 镜像未滚动，未创建 MySQL 容器、未触碰用户 PVC。
 
 同日通过已登录公网 Chrome 只读打开 Bot 1029 的屏幕，最新可见状态仍为 `You are in control`；仅关闭查看弹层，没有切换 owner 或输入。公网仍加载 `index-C_ZPmWsX.js`，当前 Auth 为 `gmail-approval-20261106-r1`、Broker 与用户 Agent/Desktop 为 `candidate-gmail-approval-20261107-r2`。因此公网先前出现的 Browser navigate 审批卡、接管输入未导航仍是已观察到的失败；候选本机绿测不代表公网通过。由于唯一用户 Desktop Pod 仍由用户接管，本轮不部署或重启共享电脑，也不以旧公网页面重复发起任务。远端 feature 分支已含 `5a7cde1` 与 `dd0ef0c`；远端 `main` 仍为 `0fab4081c2f2fbe78e73640a93e17f788b8ce8fb`。尚未合并、创建 tag 或宣称发布验收通过。
+
+#### 2026-11-07 Gmail E2E 绿测范围复盘
+
+此前的 `tests/run-browser.e2e.ts` 使用模拟身份、假电脑和测试调度器；它不覆盖用户截图中的真实桌面点击。之后的 `npm run test:gmail-handoff-k3d` 使用真实 DeepSeek、隔离 K3D Chromium 和候选 UI/noVNC，监测到任何审批卡就失败；该次 8 次模型调用通过了无审批的 Google 导航及接管输入。但这是单次随机模型工具选择：记录到的执行走了 `computer_browser.navigate` 精确导航路径，没有复现截图里的 `Desktop: click` 审批路径。测试当时没有强制覆盖这条工具路径，也没有从公网已登录 Chrome 运行，因此其绿灯只表示这次候选链路成功，不能作为 Gmail 用户体验或公网验收通过。
+
+后续验收应分别覆盖两件事：在隔离集成测试中确定性调用 sign-in handoff 下的 Desktop click，确认控制面按预期拦截且不会创建审批卡；再从公网已登录 Chrome 点击发起同一 Gmail 任务，核对用户看到的审批卡、电脑 owner 和真实浏览器状态。一次模型执行通过不能代替这些分支和公网入口的覆盖。
