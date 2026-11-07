@@ -13,6 +13,10 @@
 !deploy/desktop/desktop-screen-layout.mjs
 !deploy/desktop/desktop-input.mjs
 !deploy/desktop/shared-computer-root.mjs
+!deploy/desktop/active-tab-extension/
+!deploy/desktop/active-tab-extension/manifest.json
+!deploy/desktop/active-tab-extension/service-worker.js
+!deploy/desktop/active-tab-extension/runtime-config.js
 !deploy/desktop/guarded-computer.mjs
 !deploy/desktop/dsh-runtime/
 !deploy/desktop/dsh-runtime/package.json

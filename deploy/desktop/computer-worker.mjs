@@ -8,7 +8,7 @@ import { chromium } from 'playwright-core';
 import { pathToFileURL } from 'node:url';
 import { BrowserContextNotReadyError, getBrowserPage, waitForDefaultBrowserContext } from './browser-context.mjs';
 import { createRendererHealthMonitor, RendererUnresponsiveError } from './renderer-health.mjs';
-import { BotScreenCapacityError, BotScreenPages } from './bot-screen-pages.mjs';
+import { ActiveTabResolutionError, BotScreenCapacityError, BotScreenPages } from './bot-screen-pages.mjs';
 import { createDesktopScreenLayout, parseDesktopScreenSlots } from './desktop-screen-layout.mjs';
 import { captureOwnedDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from './desktop-input.mjs';
 import { ensureSharedComputerRoots } from './shared-computer-root.mjs';
@@ -19,7 +19,9 @@ const token = String(process.env.LINUX_DESKTOP_WORKER_TOKEN || '');
 const port = Number(process.env.COKE_DESKTOP_WORKER_PORT || 8082);
 const guardedMode = process.env.COKE_GROK_GUARDED_MODE === '1';
 const controlToken = String(process.env.COKE_GROK_CONTROL_TOKEN || '');
+const activeTabBridgeToken = String(process.env.COKE_GROK_ACTIVE_TAB_BRIDGE_TOKEN || '');
 if (guardedMode && (!controlToken || controlToken === token)) throw new Error('A distinct control token is required in guarded mode');
+if (!activeTabBridgeToken || activeTabBridgeToken === token || activeTabBridgeToken === controlToken) throw new Error('A distinct active-tab bridge token is required');
 const screenIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const agentEndpoint = new URL(process.env.COKE_GROK_AGENT_URL || `http://127.0.0.1:${process.env.DOTS_AGENT_RUNTIME_PORT || 8083}/`);
 if (agentEndpoint.protocol !== 'http:' || agentEndpoint.username || agentEndpoint.password || agentEndpoint.search || agentEndpoint.hash || agentEndpoint.pathname !== '/' || !(agentEndpoint.hostname === '127.0.0.1' || /^agent\.grok-user-[a-f0-9]{32}\.svc\.cluster\.local$/.test(agentEndpoint.hostname)) || agentEndpoint.port !== '8083') throw new Error('Invalid agent endpoint');
@@ -32,6 +34,8 @@ let browserConnectPromise;
 let pageInitialization;
 const screenOwners = new Map();
 const guardedComputers = new Map();
+const activeBrowserTargets = new Map();
+const activeTabExtensionOrigin = 'chrome-extension://mdobclajabkmdikgdafkleajenblcbfj';
 const rendererTimeoutMs = 3_000;
 const rendererHealth = createRendererHealthMonitor(rendererTimeoutMs);
 let rendererProbeFailures = 0;
@@ -41,6 +45,10 @@ const screenPages = new BotScreenPages(async () => waitForDefaultBrowserContext(
   layout: screenLayout,
   createWindow: createBrowserWindow,
   placeWindow: placeBrowserWindow,
+  getActiveTarget: async windowId => {
+    const active = activeBrowserTargets.get(windowId);
+    return active && Date.now() - active.updatedAt <= 120_000 ? active.targetId : undefined;
+  },
   getFocusedWindow: focusedX11Window,
 });
 
@@ -529,6 +537,26 @@ http.createServer(async (req, res) => {
   try {
     const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;
     if (req.method === 'GET' && pathname === '/healthz') return send(res, 200, { ok: true });
+    if (pathname === '/v1/internal/active-tabs') {
+      if (req.headers.origin !== activeTabExtensionOrigin) return send(res, 403, { error: 'active tab extension origin is required' });
+      res.setHeader('access-control-allow-origin', activeTabExtensionOrigin);
+      res.setHeader('access-control-allow-methods', 'POST, OPTIONS');
+      res.setHeader('access-control-allow-headers', 'authorization, content-type');
+      res.setHeader('vary', 'Origin');
+      if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+      if (req.headers.authorization !== `Bearer ${activeTabBridgeToken}`) return send(res, 401, { error: 'active tab bridge token is required' });
+      if (req.method !== 'POST') return send(res, 405, { error: 'method not allowed' });
+      const input = await body(req);
+      if (!Array.isArray(input.windows) || input.windows.length > 32) return send(res, 400, { error: 'invalid active tab snapshot' });
+      const next = new Map();
+      for (const window of input.windows) {
+        if (!window || !Number.isSafeInteger(window.windowId) || window.windowId < 0 || !(window.targetId === null || typeof window.targetId === 'string' && /^[a-f0-9-]{16,128}$/i.test(window.targetId)) || next.has(window.windowId)) return send(res, 400, { error: 'invalid active tab snapshot' });
+        next.set(window.windowId, { targetId: window.targetId, updatedAt: Date.now() });
+      }
+      activeBrowserTargets.clear();
+      for (const [windowId, active] of next) activeBrowserTargets.set(windowId, active);
+      return send(res, 200, { ok: true });
+    }
     if (req.method === 'GET' && pathname === '/readyz') {
       try {
         if (!await rendererResponds()) return send(res, 503, { ok: false, code: 'DOTS_RENDERER_UNRESPONSIVE', error: '云电脑里的 Chromium 页面无响应，系统正在自动恢复' });
@@ -618,13 +646,14 @@ http.createServer(async (req, res) => {
     const contextUnavailable = error instanceof BrowserContextNotReadyError;
     const rendererUnresponsive = error instanceof RendererUnresponsiveError;
     const screenCapacity = error instanceof BotScreenCapacityError;
+    const activeTabUnresolved = error instanceof ActiveTabResolutionError;
     if (rendererUnresponsive) {
       rendererHealth.fail();
       void recoverChromium();
     }
-    return send(res, contextUnavailable || rendererUnresponsive || screenCapacity ? 503 : 400, {
+    return send(res, contextUnavailable || rendererUnresponsive || screenCapacity || activeTabUnresolved ? 503 : 400, {
       error: message.slice(0, 240),
-      ...(contextUnavailable || rendererUnresponsive || screenCapacity ? { code: error.code } : {}),
+      ...(contextUnavailable || rendererUnresponsive || screenCapacity || activeTabUnresolved ? { code: error.code } : {}),
     });
   }
 }).listen(port, '0.0.0.0', () => process.stdout.write(`Dots desktop worker listening on ${port}\n`));

@@ -4,7 +4,7 @@ import type { Session } from './tenant-store.ts';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const desktopImageRef = /^coke-grok-desktop:(?:sha-[a-f0-9]{40}|candidate-[a-z0-9]+(?:-[a-z0-9]+)*)$/;
-export interface DesktopIdentity { namespace: string; ownerHash: string; workerToken: string; agentToken: string; controlToken: string }
+export interface DesktopIdentity { namespace: string; ownerHash: string; workerToken: string; agentToken: string; controlToken: string; activeTabBridgeToken: string }
 export function desktopOwnerHash(session:Pick<Session,'tenantId'|'userId'>):string {
   if(!uuid.test(session.tenantId)||!uuid.test(session.userId))throw new Error('Invalid desktop identity');
   return createHash('sha256').update(`${session.tenantId.toLowerCase()}:${session.userId.toLowerCase()}`).digest('hex').slice(0,32);
@@ -14,13 +14,13 @@ export function desktopIdentity(session: Pick<Session,'tenantId'|'userId'>, sign
   const subject = `${session.tenantId.toLowerCase()}:${session.userId.toLowerCase()}`;
   const ownerHash = desktopOwnerHash(session);
   const token = (role: string) => createHmac('sha256',signingKey).update(`coke-grok-desktop:${role}:${subject}`).digest('base64url');
-  return { namespace:`grok-user-${ownerHash}`, ownerHash, workerToken:token('worker'), agentToken:token('agent'), controlToken:token('control') };
+  return { namespace:`grok-user-${ownerHash}`, ownerHash, workerToken:token('worker'), agentToken:token('agent'), controlToken:token('control'), activeTabBridgeToken:token('active-tab-bridge') };
 }
 
 /** Resources are specific to one tenant/user pair. The caller must verify ownership on existing objects. */
 export type DesktopProxyOptions={desktopProxyServer?:string;desktopProxyHostIp?:string};
 export function desktopResources(identity: DesktopIdentity, options: { image: string; controlNamespace: string; gatewayCA: string; guarded?:boolean }&DesktopProxyOptions): Record<string, unknown>[] {
-  if (!/^grok-user-[a-f0-9]{32}$/.test(identity.namespace) || !/^[a-f0-9]{32}$/.test(identity.ownerHash) || identity.namespace !== `grok-user-${identity.ownerHash}` || !/^[A-Za-z0-9_-]{43}$/.test(identity.workerToken) || !/^[A-Za-z0-9_-]{43}$/.test(identity.agentToken) || !/^[A-Za-z0-9_-]{43}$/.test(identity.controlToken) || new Set([identity.workerToken,identity.agentToken,identity.controlToken]).size!==3) throw new Error('Invalid desktop identity');
+  if (!/^grok-user-[a-f0-9]{32}$/.test(identity.namespace) || !/^[a-f0-9]{32}$/.test(identity.ownerHash) || identity.namespace !== `grok-user-${identity.ownerHash}` || !/^[A-Za-z0-9_-]{43}$/.test(identity.workerToken) || !/^[A-Za-z0-9_-]{43}$/.test(identity.agentToken) || !/^[A-Za-z0-9_-]{43}$/.test(identity.controlToken) || !/^[A-Za-z0-9_-]{43}$/.test(identity.activeTabBridgeToken) || new Set([identity.workerToken,identity.agentToken,identity.controlToken,identity.activeTabBridgeToken]).size!==4) throw new Error('Invalid desktop identity');
   if (!desktopImageRef.test(options.image) || !/^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/.test(options.controlNamespace) || !options.gatewayCA.includes('BEGIN CERTIFICATE') || options.gatewayCA.length > 16384) throw new Error('Invalid desktop configuration');
   const proxyServer=options.desktopProxyServer?.trim(),proxyHostIp=options.desktopProxyHostIp?.trim(),proxyConfigured=options.desktopProxyServer!==undefined||options.desktopProxyHostIp!==undefined;
   if(proxyConfigured&&(proxyServer!=='http://host.docker.internal:17891'||proxyHostIp!=='192.168.65.254'||isIP(proxyHostIp||'')!==4))throw new Error('Invalid desktop proxy configuration');
@@ -31,7 +31,7 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
   return [
     { apiVersion:'v1',kind:'Namespace',metadata:{name:ns,labels} },
     { apiVersion:'v1',kind:'PersistentVolumeClaim',metadata:meta('workspace'),spec:{accessModes:['ReadWriteOnce'],resources:{requests:{storage:'10Gi'}}} },
-    { apiVersion:'v1',kind:'Secret',metadata:meta('desktop-runtime'),type:'Opaque',stringData:{worker:identity.workerToken,agent:identity.agentToken,control:identity.controlToken} },
+    { apiVersion:'v1',kind:'Secret',metadata:meta('desktop-runtime'),type:'Opaque',stringData:{worker:identity.workerToken,agent:identity.agentToken,control:identity.controlToken,activeTabBridge:identity.activeTabBridgeToken,activeTabBridgeConfig:`self.COKE_GROK_ACTIVE_TAB_BRIDGE_TOKEN=${JSON.stringify(identity.activeTabBridgeToken)};`} },
     { apiVersion:'v1',kind:'ConfigMap',metadata:meta('model-ca'),data:{'ca.pem':options.gatewayCA} },
     { apiVersion:'networking.k8s.io/v1',kind:'NetworkPolicy',metadata:meta('desktop-isolation'),spec:{
       podSelector:{matchLabels:{app:'grok-desktop'}},policyTypes:['Ingress','Egress'],
@@ -47,12 +47,12 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
       automountServiceAccountToken:false,securityContext:{runAsNonRoot:true,fsGroup:1000,seccompProfile:{type:'RuntimeDefault'}},
       containers:[
         {name:'desktop',image:options.image,imagePullPolicy:'Never',
-          env:[secretEnv('LINUX_DESKTOP_WORKER_TOKEN','worker'),secretEnv('DOTS_AGENT_RUNTIME_TOKEN','agent'),...(options.guarded?[secretEnv('COKE_GROK_CONTROL_TOKEN','control'),{name:'COKE_GROK_GUARDED_MODE',value:'1'}]:[]),...(proxyConfigured?[{name:'COKE_DESKTOP_PROXY_SERVER',value:proxyServer!}]:[]),{name:'COKE_DESKTOP_VNC_AUTH_MODE',value:'gateway'},{name:'COKE_DESKTOP_RESOLUTION',value:'1440x900'},{name:'COKE_DESKTOP_SCREEN_SLOTS',value:'8'},{name:'COKE_DESKTOP_CHROME_NO_SANDBOX',value:'1'}],
+          env:[secretEnv('LINUX_DESKTOP_WORKER_TOKEN','worker'),secretEnv('DOTS_AGENT_RUNTIME_TOKEN','agent'),secretEnv('COKE_GROK_ACTIVE_TAB_BRIDGE_TOKEN','activeTabBridge'),...(options.guarded?[secretEnv('COKE_GROK_CONTROL_TOKEN','control'),{name:'COKE_GROK_GUARDED_MODE',value:'1'}]:[]),...(proxyConfigured?[{name:'COKE_DESKTOP_PROXY_SERVER',value:proxyServer!}]:[]),{name:'COKE_DESKTOP_VNC_AUTH_MODE',value:'gateway'},{name:'COKE_DESKTOP_RESOLUTION',value:'1440x900'},{name:'COKE_DESKTOP_SCREEN_SLOTS',value:'8'},{name:'COKE_DESKTOP_CHROME_NO_SANDBOX',value:'1'}],
           securityContext:security(1000,false),resources:{requests:{cpu:'200m',memory:'512Mi'},limits:{cpu:'2',memory:'2Gi'}},
           ports:[{name:'novnc',containerPort:6080},{name:'worker',containerPort:8082}],
           startupProbe:{httpGet:{path:'/healthz',port:8082},periodSeconds:5,timeoutSeconds:5,failureThreshold:36},
           readinessProbe:{httpGet:{path:'/readyz',port:8082},periodSeconds:5,timeoutSeconds:5,failureThreshold:2},
-          volumeMounts:[{name:'workspace',mountPath:'/workspace'},{name:'shm',mountPath:'/dev/shm'},{name:'desktop-tmp',mountPath:'/tmp'}]},
+          volumeMounts:[{name:'workspace',mountPath:'/workspace'},{name:'shm',mountPath:'/dev/shm'},{name:'desktop-tmp',mountPath:'/tmp'},{name:'active-tab-bridge',mountPath:'/opt/coke-grok/active-tab-extension/runtime-config.js',subPath:'runtime-config.js',readOnly:true}]},
         {name:'agent',image:options.image,imagePullPolicy:'Never',command:['/bin/sh','-c','umask 0002; mkdir -p /tmp/agent-home; exec node /opt/coke-grok/agent-runtime.mjs'],
           env:[secretEnv('LINUX_DESKTOP_WORKER_TOKEN','worker'),secretEnv('DOTS_AGENT_RUNTIME_TOKEN','agent'),{name:'HOME',value:'/tmp/agent-home'},{name:'NODE_EXTRA_CA_CERTS',value:'/run/model-ca/ca.pem'},
             {name:'DOTS_DESKTOP_AGENT_ADAPTERS',value:'pi,dsh'},{name:'DOTS_AGENT_KERNELS_JSON',value:JSON.stringify({pi:{command:'node',args:['/opt/coke-dots/grok-kernel-adapter.mjs']},dsh:{command:'node',args:['/opt/coke-dots/grok-kernel-adapter.mjs']}})}],
@@ -60,7 +60,7 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
           readinessProbe:{httpGet:{path:'/healthz',port:8083},periodSeconds:5,timeoutSeconds:2},
           volumeMounts:[{name:'workspace',mountPath:'/workspace'},{name:'agent-tmp',mountPath:'/tmp'},{name:'model-ca',mountPath:'/run/model-ca',readOnly:true}]},
       ],
-      volumes:[{name:'workspace',persistentVolumeClaim:{claimName:'workspace'}},{name:'shm',emptyDir:{medium:'Memory',sizeLimit:'512Mi'}},{name:'desktop-tmp',emptyDir:{sizeLimit:'512Mi'}},{name:'agent-tmp',emptyDir:{sizeLimit:'512Mi'}},{name:'model-ca',configMap:{name:'model-ca'}}],
+      volumes:[{name:'workspace',persistentVolumeClaim:{claimName:'workspace'}},{name:'shm',emptyDir:{medium:'Memory',sizeLimit:'512Mi'}},{name:'desktop-tmp',emptyDir:{sizeLimit:'512Mi'}},{name:'agent-tmp',emptyDir:{sizeLimit:'512Mi'}},{name:'model-ca',configMap:{name:'model-ca'}},{name:'active-tab-bridge',secret:{secretName:'desktop-runtime',items:[{key:'activeTabBridgeConfig',path:'runtime-config.js'}],defaultMode:288}}],
     }}}},
     { apiVersion:'v1',kind:'Service',metadata:meta('desktop'),spec:{type:'ClusterIP',selector:{app:'grok-desktop'},ports:[{name:'novnc',port:6080,targetPort:'novnc'},{name:'worker',port:8082,targetPort:'worker'},{name:'agent',port:8083,targetPort:'agent'}]} },
   ];
@@ -79,7 +79,7 @@ export function splitDesktopResources(identity:DesktopIdentity,options:{image:st
   desktopContainer.env.push({name:'COKE_GROK_AGENT_URL',value:`http://agent.${ns}.svc.cluster.local:8083/`});
   agentContainer.env=agentContainer.env.filter((entry:{name:string})=>entry.name!=='LINUX_DESKTOP_WORKER_TOKEN');
   agentContainer.env.push({name:'COKE_GROK_MEDIATED_COMPUTER',value:'1'});
-  pod.containers=[desktopContainer];pod.volumes=pod.volumes.filter((volume:{name:string})=>['workspace','shm','desktop-tmp'].includes(volume.name));
+  pod.containers=[desktopContainer];pod.volumes=pod.volumes.filter((volume:{name:string})=>['workspace','shm','desktop-tmp','active-tab-bridge'].includes(volume.name));
   const labels={'app.kubernetes.io/managed-by':'coke-grok-bot','coke-grok-bot.io/owner-hash':identity.ownerHash};
   const agentPod={automountServiceAccountToken:false,securityContext:{runAsNonRoot:true,fsGroup:1000,seccompProfile:{type:'RuntimeDefault'}},
     affinity:{podAffinity:{requiredDuringSchedulingIgnoredDuringExecution:[{labelSelector:{matchLabels:{app:'grok-desktop'}},topologyKey:'kubernetes.io/hostname'}]}},

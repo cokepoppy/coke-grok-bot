@@ -4,18 +4,23 @@ export class BotScreenCapacityError extends Error {
   constructor() { super('This user computer has no free Bot screen slot'); this.name = 'BotScreenCapacityError'; this.code = 'BOT_SCREEN_CAPACITY'; }
 }
 
+export class ActiveTabResolutionError extends Error {
+  constructor() { super('The active Chrome tab could not be identified safely'); this.name = 'ActiveTabResolutionError'; this.code = 'ACTIVE_TAB_UNRESOLVED'; }
+}
+
 /** Separate Bot browser windows inside one persistent browser context/profile. */
 export class BotScreenPages {
   constructor(contextProvider, options = {}) {
-    const { marker = 'coke-grok-screen:', layout = { width: 1440, height: 900, slots: 1, stride: 1472 }, createWindow, placeWindow, getWindowId = browserWindowId, getPageActivity = pageActivity, getFocusedWindow = noFocusedWindow } = options;
-    if (typeof contextProvider !== 'function' || typeof marker !== 'string' || !marker || !Number.isSafeInteger(layout?.slots) || layout.slots < 1 || layout.slots > 16 || !Number.isSafeInteger(layout.width) || !Number.isSafeInteger(layout.height) || typeof getWindowId !== 'function' || typeof getPageActivity !== 'function' || typeof getFocusedWindow !== 'function') throw new Error('Invalid Bot screen page manager');
+    const { marker = 'coke-grok-screen:', layout = { width: 1440, height: 900, slots: 1, stride: 1472 }, createWindow, placeWindow, getWindowId = browserWindowId, getTargetId = browserTargetId, getActiveTarget = noActiveTarget, getFocusedWindow = noFocusedWindow } = options;
+    if (typeof contextProvider !== 'function' || typeof marker !== 'string' || !marker || !Number.isSafeInteger(layout?.slots) || layout.slots < 1 || layout.slots > 16 || !Number.isSafeInteger(layout.width) || !Number.isSafeInteger(layout.height) || typeof getWindowId !== 'function' || typeof getTargetId !== 'function' || typeof getActiveTarget !== 'function' || typeof getFocusedWindow !== 'function') throw new Error('Invalid Bot screen page manager');
     this.contextProvider = contextProvider;
     this.marker = marker;
     this.layout = layout;
     this.createWindow = createWindow;
     this.placeWindow = placeWindow;
     this.getWindowId = getWindowId;
-    this.getPageActivity = getPageActivity;
+    this.getTargetId = getTargetId;
+    this.getActiveTarget = getActiveTarget;
     this.getFocusedWindow = getFocusedWindow;
     this.pages = new Map();
     this.slots = new Map();
@@ -73,30 +78,37 @@ export class BotScreenPages {
     }
 
     let selected = null;
+    const activeTarget = await this.getActiveTarget(windowId);
+    if (activeTarget !== undefined) {
+      if (typeof activeTarget !== 'string') throw new ActiveTabResolutionError();
+      for (const candidate of candidates) {
+        try {
+          if (await this.getTargetId(candidate) === activeTarget) { selected = candidate; break; }
+        } catch { /* A closing or navigating page is not selectable. */ }
+      }
+      if (!selected) throw new ActiveTabResolutionError();
+    }
+
     const slot = this.slots.get(screenId);
-    if (Number.isSafeInteger(slot)) {
+    if (!selected && Number.isSafeInteger(slot)) {
       let focusedWindow;
       try { focusedWindow = await this.getFocusedWindow(); } catch { /* CDP and page activity remain the fallback. */ }
       if (focusedWindowMatchesScreen(focusedWindow, this.bounds(slot))) {
         const focusedTitle = String(focusedWindow.title || '').trim().toLocaleLowerCase();
         if (focusedTitle) {
+          const matches = [];
           for (const candidate of candidates) {
             let title = '';
             try { title = await candidate.title(); } catch { /* A closing tab has no usable title. */ }
-            if (title && focusedTitle.includes(title.trim().toLocaleLowerCase())) { selected = candidate; break; }
+            if (title && focusedTitle.includes(title.trim().toLocaleLowerCase())) matches.push(candidate);
           }
+          if (matches.length === 1) selected = matches[0];
         }
       }
     }
 
-    let visiblePage = null;
-    if (!selected) for (const candidate of candidates) {
-      let activity;
-      try { activity = await this.getPageActivity(candidate); } catch { /* A closing or navigating tab is not selectable. */ }
-      if (activity?.focused === true) { selected = candidate; break; }
-      if (!visiblePage && (activity === true || activity?.visible === true)) visiblePage = candidate;
-    }
-    selected ||= visiblePage || mapped;
+    if (!selected && candidates.length === 1) selected = candidates[0];
+    if (!selected) throw new ActiveTabResolutionError();
 
     if (selected !== mapped) {
       const slot = this.slots.get(screenId);
@@ -228,11 +240,16 @@ async function browserWindowId(page) {
   } finally { await session.detach().catch(() => undefined); }
 }
 
-async function pageActivity(page) {
-  return await page.evaluate(() => ({ visible: document.visibilityState === 'visible', focused: document.hasFocus() }));
+async function browserTargetId(page) {
+  const session = await page.context().newCDPSession(page);
+  try {
+    const result = await session.send('Target.getTargetInfo');
+    return typeof result?.targetInfo?.targetId === 'string' ? result.targetInfo.targetId : null;
+  } finally { await session.detach().catch(() => undefined); }
 }
 
 async function noFocusedWindow() { return null; }
+async function noActiveTarget() { return undefined; }
 
 function focusedWindowMatchesScreen(windowInfo, bounds) {
   if (!windowInfo || ![windowInfo.x, windowInfo.y, windowInfo.width, windowInfo.height].every(Number.isFinite) || windowInfo.width <= 0 || windowInfo.height <= 0) return false;

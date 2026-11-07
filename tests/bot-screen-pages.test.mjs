@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BotScreenPages } from '../deploy/desktop/bot-screen-pages.mjs';
+import { ActiveTabResolutionError, BotScreenPages } from '../deploy/desktop/bot-screen-pages.mjs';
 import { randomUUID } from 'node:crypto';
 
 class FakePage {
-  constructor() { this.name = ''; this.href = 'about:blank'; this.closed = false; this.windowId = null; this.visible = false; this.titleText = ''; }
+  constructor() { this.name = ''; this.href = 'about:blank'; this.closed = false; this.windowId = null; this.targetId = null; this.visible = false; this.titleText = ''; }
   isClosed() { return this.closed; }
   url() { return this.href; }
   async title() { return this.titleText; }
@@ -78,6 +78,45 @@ test('Bot screen resolves the active tab only inside its own browser window and 
   manager.clear();
   assert.equal(await manager.active(botA), secondTabA, 'selected-tab mapping must be rediscovered after a worker restart');
   assert.equal((await manager.active(botA)).url(), 'https://example.test/owner-selected-tab');
+});
+
+test('authoritative Chrome active target distinguishes two tabs with the same title', async () => {
+  const pages = [new FakePage()];
+  const context = { pages: () => [...pages], async newPage() { const page = new FakePage(); pages.push(page); return page; } };
+  const manager = new BotScreenPages(async () => context, {
+    layout: { width: 1440, height: 900, slots: 1, stride: 1472 },
+    async getWindowId(page) { return page.windowId; },
+    async getTargetId(page) { return page.targetId; },
+    async getActiveTarget(windowId) { return windowId === 10 ? 'selected-target' : undefined; },
+    async getFocusedWindow() { return { x: 0, y: 0, width: 1440, height: 900, title: 'Example Domain - Chromium' }; },
+  });
+  const botId = randomUUID(), original = await manager.get(botId), selected = new FakePage();
+  original.windowId = selected.windowId = 10;
+  original.targetId = 'original-target'; selected.targetId = 'selected-target';
+  original.titleText = selected.titleText = 'Example Domain';
+  original.href = 'https://example.com/'; selected.href = 'https://example.org/';
+  pages.push(selected);
+
+  assert.equal(await manager.active(botId), selected);
+  assert.equal((await manager.active(botId)).url(), 'https://example.org/');
+});
+
+test('ambiguous same-title tabs fail closed when Chrome active-tab state is unavailable', async () => {
+  const pages = [new FakePage()];
+  const context = { pages: () => [...pages], async newPage() { const page = new FakePage(); pages.push(page); return page; } };
+  const manager = new BotScreenPages(async () => context, {
+    layout: { width: 1440, height: 900, slots: 1, stride: 1472 },
+    async getWindowId(page) { return page.windowId; },
+    async getTargetId(page) { return page.targetId; },
+    async getFocusedWindow() { return { x: 0, y: 0, width: 1440, height: 900, title: 'Example Domain - Chromium' }; },
+  });
+  const botId = randomUUID(), first = await manager.get(botId), second = new FakePage();
+  first.windowId = second.windowId = 10;
+  first.titleText = second.titleText = 'Example Domain';
+  first.targetId = 'first-target'; second.targetId = 'second-target';
+  pages.push(second);
+
+  await assert.rejects(manager.active(botId), error => error instanceof ActiveTabResolutionError && error.code === 'ACTIVE_TAB_UNRESOLVED');
 });
 
 test('a navigated Bot page cannot be reassigned while its window.name marker is temporarily cleared', async () => {

@@ -62,6 +62,7 @@ websockify_pid=$!
 chrome_flags=(
   --disable-dev-shm-usage --disable-gpu --disable-session-crashed-bubble --no-first-run --no-default-browser-check
   --password-store=basic --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222
+  --disable-extensions-except=/opt/coke-grok/active-tab-extension --load-extension=/opt/coke-grok/active-tab-extension
   --user-data-dir="$HOME/.config/chromium" --window-position=0,0 --window-size="${screen_width},${screen_height}"
 )
 if [[ -n "${COKE_DESKTOP_PROXY_SERVER:-}" ]]; then

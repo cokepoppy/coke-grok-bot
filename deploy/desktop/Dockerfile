@@ -1,7 +1,7 @@
 # Pinned Coke Dots Linux desktop image; no credentials or user data are copied.
 FROM coke-dots-linux-desktop:sha-c4caa5bb8dab2c9f731e4c2f1a71b25266469cfc
 USER root
-RUN mkdir -p /opt/coke-grok
+RUN mkdir -p /opt/coke-grok/active-tab-extension
 COPY deploy/desktop/dsh-runtime/package.json deploy/desktop/dsh-runtime/package-lock.json /opt/coke-grok/dsh-runtime/
 RUN npm ci --prefix /opt/coke-grok/dsh-runtime --omit=dev --no-audit --no-fund \
     && test "$(/opt/coke-grok/dsh-runtime/node_modules/.bin/dsh --version)" = "0.2.1-rc.5" \
@@ -19,6 +19,9 @@ COPY --chmod=0644 deploy/desktop/dsh-handoff-plugin.mjs /opt/coke-dots/dsh-hando
 COPY --chmod=0644 deploy/desktop/dsh-routine-plugin.mjs /opt/coke-dots/dsh-routine-plugin.mjs
 COPY --chmod=0644 deploy/desktop/computer-worker.mjs /opt/coke-dots/grok-computer-worker.mjs
 COPY --chmod=0644 deploy/desktop/bot-screen-pages.mjs /opt/coke-dots/bot-screen-pages.mjs
+COPY --chmod=0644 deploy/desktop/active-tab-extension/manifest.json /opt/coke-grok/active-tab-extension/manifest.json
+COPY --chmod=0644 deploy/desktop/active-tab-extension/service-worker.js /opt/coke-grok/active-tab-extension/service-worker.js
+COPY --chmod=0644 deploy/desktop/active-tab-extension/runtime-config.js /opt/coke-grok/active-tab-extension/runtime-config.js
 COPY --chmod=0644 deploy/desktop/desktop-screen-layout.mjs /opt/coke-dots/desktop-screen-layout.mjs
 COPY --chmod=0644 deploy/desktop/desktop-input.mjs /opt/coke-dots/desktop-input.mjs
 COPY --chmod=0644 deploy/desktop/shared-computer-root.mjs /opt/coke-dots/shared-computer-root.mjs

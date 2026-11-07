@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Coke Grok Bot Active Tab Bridge",
+  "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArKRySl4Llh1xFXgouCLl6sxF9DdrkCH1pyzd6U8pPfxKwRtYpk+iMPYQX3/ygL8vQ8toqJe41ZnKx6gNZFc4HvHCK+t3/B46b8g5YptA9i7mZucWDHu+c+KwtISMM1vY2LclQK6uUaUGDaRT9EVF/lP0ZtyhvYz/IlAQXOK2BCi4ivaR3v5nXA+yTtosEwfXhH9dAE5CoIMueZo8zuWc8fYNDdd27wZiMqIIcSo8TdzkWivcRs3bEkOHNy5V8D50simu8/oRRR2bq7l/6oRrZL5VOGZA0UyaJG/6aIH2kt3CAfz0cq0xuxEUuu3KCSk802LTfRl1Ou/6W50h+GUG7wIDAQAB",
+  "permissions": [
+    "alarms",
+    "debugger"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8082/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  }
+}

@@ -1635,4 +1635,14 @@ Computer 键盘问题则是另一条漏测：旧检查未把产品 Computer 面�
 
 测试本身也补强：源码覆盖现在包括 `computer-worker.mjs`、`bot-screen-pages.mjs` 和 `desktop-input.mjs`；真实 UI-only K3D 回归从产品 Computer 面板接管，经 noVNC 打开第二标签、逐次点击标签和地址栏、输入 IANA 唯一标题页面，确认输入期间 8 次截图轮询完成、Return to Bot 后 Worker inspect 读取新标签。随后 `npm run test:gmail-handoff-k3d` 使用真实 DeepSeek/Pi 和隔离 K3D Chrome，从产品 composer 发起 Gmail 登录交接（无重复审批），用户接管后在第二标签导航到 Example Domain，交还后 Pi 的 Browser User 读到了新标签；12 次模型调用，退出码 0。`npm run test:runtime` 138/138、`npx tsc --noEmit`、`git diff --check` 通过；测试 MySQL schema 计数为 0，K3D 回到既有 13 个 Pod，未滚动现有用户 Agent/Desktop Pod，也未触碰 PVC。
 
-限制与边界：Chrome 中若两个标签同时具有完全相同的标题，X11 标题本身无法唯一确定当前标签；本轮 UI-only 对照曾用 example.com 与 example.org（两者标题均为 Example Domain），该断言按预期失败，随后改为唯一标题的 IANA 页面。Gmail 登录页到 Example Domain 的真实链路标题不同并通过，但本候选尚未证明重复标题页面的通用活动标签识别。要作为已完整修复发布前，仍需解决该歧义并增加重复标题的真实 noVNC 回归。本轮候选仍只在 Mac/K3D 源码覆盖测试；未构建固定版本桌面镜像、未部署公网、未提交或合并，因此用户公网体验仍待验收。
+限制与边界：本节下方的后续补测已解决重复标题的活动标签识别，并通过真实 noVNC 回归；候选仍只在 Mac/K3D 源码覆盖测试，未构建固定版本桌面镜像、未部署公网、未合并，因此公网体验仍待验收。
+
+#### 2026-11-07 活动标签精确映射与旧 E2E 假绿修正
+
+复盘确认旧 E2E 漏掉了产品 Worker 的选页验证：屏幕截图来自 X11 实桌面，观察器通过 CDP 看到第二标签 URL 留存，但这两项都没有证明 Browser User/Pi 后续使用第二标签。此前补测又把相同标题的两页改成唯一标题来让断言通过，未能覆盖真实歧义。旧结果只能证明输入/画面链路，不能证明 Agent 读对活动标签；先前将其说成整条链路通过不准确。
+
+修复候选加入 Chromium Manifest V3 活动标签桥：扩展读取每个浏览器窗口的活动标签，并用 `chrome.debugger.getTargets()` 返回的 tab ID 映射到 CDP target ID；仅把 window ID 与 target ID 发给同 Pod 的 Worker loopback 路由，不传页面 URL 或标题。Worker 按 Bot 窗口筛选候选页，再用 target ID 精确选择。桥接数据缺失、目标不匹配或多标签仍无法区分时失败关闭，不回退到任意旧页。Worker 同时校验固定扩展 Origin 和按用户派生、独立于 Worker/控制令牌的桥接令牌；令牌仅通过该用户的 Kubernetes Secret 注入扩展后台。活动状态短时过期并由扩展定时刷新。
+
+最终认证版 `npm run test:computer-ui-k3d` 使用产品 UI Take control、noVNC 新建并导航第二标签；原标签 `example.com` 和新标签 `example.org` 标题都为 `Example Domain`。归还后经产品 Worker guarded inspect 确认 URL 是第二标签。该用例挂载本轮桌面 Worker、启动脚本和扩展源码，故证明真实 Chromium 扩展桥与 Worker 的运行关系，而不是只验证 CDP 观察器。最终认证版 `npm run test:gmail-handoff-k3d` 使用真实 DeepSeek/Pi、K3D Chromium 与 noVNC；从真实 Google 登录交接开始，Bot 无审批地交还控制后，Pi 的 Browser User 读到用户导航的新标签，9 次模型调用，退出码 0。两次最终 K3D 测试结束后 Pod 数回到 13，临时 `grok_mediated_*` schema 数为 0，未替换现有用户 Pod 或触碰 PVC。最终全套 `npm run test:runtime` 140/140、`npx tsc --noEmit`、`git diff --check` 通过。
+
+这仍是源码覆盖候选验证：尚未构建带扩展的固定版本镜像，未部署到公网，未做公网已登录 Chrome 验收，也未合并到 `main`。因此可以报告本机 K3D 的同标题活动标签回归通过，不能据此说用户公网问题已修复。
