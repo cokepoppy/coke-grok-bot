@@ -1564,3 +1564,13 @@ GitHub 直连因本机 DNS 无法解析 `github.com` 失败，`127.0.0.1:1080` �
 本轮再次用固定测试 MySQL `127.0.0.1:13317` 和 `coke-grok-desktop:candidate-focus-screenshot-fix-20261107-r1`、`COKE_GROK_DESKTOP_TEST_SOURCE_OVERLAY=0` 运行 `npm run test:computer-ui-k3d`，退出码 0。它真实打开测试产品的 Computer 全屏面板、执行 Take control，确认屏幕外聊天 composer 处于 inert 且焦点不能移出弹层；再由嵌入 noVNC 点击 Chrome 地址栏、输入并导航到 `example.org`，Return to Bot 后确认实际页面 URL 保留、owner 回到 Agent。输入时观察到 2 次产品截图轮询。测试未调用模型，因此只验证 Computer 接管交互，不代表 Pi/DeepSeek 或 Gmail 全链路通过。
 
 测试使用既有 MySQL 实例和隔离 namespace；结束后 K3D 回到 11 个运行 Pod，唯一 `grok-user-*` namespace 是既有用户 namespace，固定测试库中 `grok_mediated_*` schema 数为 0；没有新建 MySQL 容器、没有滚动现有 Auth/Broker/Agent/Desktop，也没有改用户 PVC。只读公网检查仍返回 `/grok-bot/assets/index-C_ZPmWsX.js`，当前 Auth/Broker 与用户 Agent/Desktop 仍是此前部署版本；本机焦点修复候选没有部署到公网，故公网验收仍未完成。CUA 读取公网标签和随后读取浏览器状态各在 30 秒超时；这不能说明 Work 设置禁用了浏览器。尝试 `git fetch origin main` 因 DNS 无法解析 `github.com` 失败；只可确认本地 `origin/main` 仍为 `0fab4081c2f2fbe78e73640a93e17f788b8ce8fb`，功能分支比该本地引用领先 13 个提交。未提交、推送、合并、部署或打 tag；不得把候选本机回归说成公网端到端验收。
+
+#### 2026-11-07 官方审批规则与 Gmail 交接复验
+
+复核现行 [官方 Computer 文档](https://docs.x.ai/grok-bot/computer-and-apps) 与 [Approvals, security, and privacy](https://docs.x.ai/grok-bot/approvals-security-and-privacy)（后者标注 2026-10-30 更新）：同一用户的 Bots 共用一台持久电脑，各有独立屏幕；敏感登录步骤应通过 Take control 交给用户。Auto Review 默认开启，但多数操作自动执行，只有审核判断或用户 Ask first 规则命中时才显示审批卡；用户可对适用操作选择 Always allow 保存规则。审批卡与登录/秘密收集卡是不同机制。
+
+本机候选当前仅对用户明确请求的精确 Browser 导航 origin 自动放行；Sign-in handoff 只允许 Browser navigate，并明确拒绝 Desktop click/type/press 与浏览器页面交互，避免在用户要求“到登录页停下”时弹出逐步点击审批。普通 Browser click 和 Desktop click 仍全部进入审批。这与官方 Auto Review 的多数操作自动执行仍有行为差距，应在后续补齐设置及风险/规则匹配，不能把一次性 Approve 当成永久规则。
+
+2026-11-07 12:37（Asia/Shanghai）在固定测试 MySQL `127.0.0.1:13317`、无源码覆盖的 `coke-grok-desktop:candidate-focus-screenshot-fix-20261107-r1` 上重新运行 `npm run test:gmail-handoff-k3d`，退出码 0：Pi/DeepSeek 共调用 8 次，在没有审批卡的情况下将真实 K3D Chromium 导航到 `accounts.google.com` 并停下；随后通过产品 UI Take control，经嵌入 noVNC 导航到 `example.com`，Return to Bot 后由 Pi 只读确认页面。未输入 Google 凭据或读取邮箱。测试结束后运行 Pod 数回到既有 11 个；Auth、Broker、用户 Agent/Desktop 镜像未滚动，未创建 MySQL 容器、未触碰用户 PVC。
+
+同日通过已登录公网 Chrome 只读打开 Bot 1029 的屏幕，最新可见状态仍为 `You are in control`；仅关闭查看弹层，没有切换 owner 或输入。公网仍加载 `index-C_ZPmWsX.js`，当前 Auth 为 `gmail-approval-20261106-r1`、Broker 与用户 Agent/Desktop 为 `candidate-gmail-approval-20261107-r2`。因此公网先前出现的 Browser navigate 审批卡、接管输入未导航仍是已观察到的失败；候选本机绿测不代表公网通过。由于唯一用户 Desktop Pod 仍由用户接管，本轮不部署或重启共享电脑，也不以旧公网页面重复发起任务。远端 feature 分支已含 `5a7cde1` 与 `dd0ef0c`；远端 `main` 仍为 `0fab4081c2f2fbe78e73640a93e17f788b8ce8fb`。尚未合并、创建 tag 或宣称发布验收通过。
