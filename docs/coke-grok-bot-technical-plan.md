@@ -1553,6 +1553,12 @@ GitHub 直连因本机 DNS 无法解析 `github.com` 失败，`127.0.0.1:1080` �
 
 本轮对当前工作树复验：`npm run test:computer-ui-k3d` 使用本机候选桌面镜像、禁用源码覆盖和固定测试 MySQL 通过；地址栏输入期间观察到 1 次截图轮询，任务结束后临时 namespace 清理。`npm run test:ui` 通过，`npm run test:runtime` 为 134/134，`npm run build:deployment` 成功并产出前端 `index-DaR-4V2E.js`。`npm run test:computer-vnc-input-protocol` 首次因缺少测试端口转发失败；复用已有 Desktop Pod 的临时 `16080:6080` 只读转发后通过，确认 noVNC 客户端向 RFB fixture 发送键盘事件。该协议夹具不证明公网 VPS 路由或 X11 实际收键；公网真实界面观察仍显示导航未发生。所有测试结束后端口转发已停止，K3D 仍为既有 11 个 Pods。
 
+#### 2026-11-07 分支推送与部署安全检查
+
+已将本轮 41 个源代码、测试和研究文档路径提交为 `5a7cde1`（`fix: restore reliable computer takeover input`），并推送到唯一 feature 分支 `codex/grok-bot-persistent-group-chat`。通过本机 SOCKS 代理访问 GitHub；远端 `main` 仍为 `0fab4081c2f2fbe78e73640a93e17f788b8ce8fb`，没有合并、部署或创建 tag。未提交的 `releases/candidate-*` 目录仍留在工作区，未纳入提交。
+
+部署前只读打开公网 Bot 1029 的 Computer screen，确认状态仍为 `You are in control`；关闭了只读查看弹层，没有点击 `Return to Bot`。用户 Desktop Pod 是当前唯一共享电脑进程，滚动该 Deployment 会打断其正在进行的用户接管，因此这次不发布桌面镜像。公网仍加载旧 bundle `index-C_ZPmWsX.js`，本机修复还未对外生效。feature commit 保持可回退；待电脑 owner 回到 Bot 且队列空闲后再进行公网候选部署和真实点击验收。
+
 #### 2026-11-07 接管 UI 回归复验与当前公网边界
 
 本轮再次用固定测试 MySQL `127.0.0.1:13317` 和 `coke-grok-desktop:candidate-focus-screenshot-fix-20261107-r1`、`COKE_GROK_DESKTOP_TEST_SOURCE_OVERLAY=0` 运行 `npm run test:computer-ui-k3d`，退出码 0。它真实打开测试产品的 Computer 全屏面板、执行 Take control，确认屏幕外聊天 composer 处于 inert 且焦点不能移出弹层；再由嵌入 noVNC 点击 Chrome 地址栏、输入并导航到 `example.org`，Return to Bot 后确认实际页面 URL 保留、owner 回到 Agent。输入时观察到 2 次产品截图轮询。测试未调用模型，因此只验证 Computer 接管交互，不代表 Pi/DeepSeek 或 Gmail 全链路通过。
