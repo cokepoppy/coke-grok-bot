@@ -1677,4 +1677,12 @@ Computer 键盘问题则是另一条漏测：旧检查未把产品 Computer 面�
 
 在已登录公网 Chrome 对新部署提交相同的只读 Gmail 导航提示。`Public Takeover E2E 20261107` 和隔离的 `E2E Test Bot 1029` 都先显示 `Queued · waiting for your computer`，随后进入 `Outcome unknown · check before retrying`，UI 明确说明“电脑正由你控制”，因此 Browser User 没有开始执行；本轮没有出现 `Approval requested` 卡片。只读屏幕预览中，前一个 Bot 停在 `accounts.google.com` 登录页，后一个 Bot 是 `about:blank`。这是控制权占用导致的未完成运行，不是导航审批修复的公网通过证据。
 
-结论：旧 E2E 的明显遗漏已定位——此前成功用例使用 `example.com` 或不同措辞，没有覆盖用户实际 Gmail 提示触发的导航授权解析；本轮新增策略、桥接回归和真实 K3D Pi/DeepSeek 测试覆盖了该精确提示，并通过。但部署后公网 UI 的真实 Pi/Browser User Gmail 任务目前因电脑控制权占用而未执行，不能把本地 K3D 通过、HTTP/readiness 或旧的 Gmail marketing-page 结果说成公网端到端验收通过。下一步须先解决/释放该电脑控制权状态，再从已登录公网 UI 重跑一次精确提示；不输入账号、不查看收件箱。源码分支仍为唯一 feature `codex/grok-bot-persistent-group-chat`，公网推送/合并待网络恢复及完整验收。
+截至本段记录时，旧 E2E 的明显遗漏已定位：此前成功用例使用 `example.com` 或不同措辞，没有覆盖用户实际 Gmail 提示触发的导航授权解析；新增策略、桥接回归和真实 K3D Pi/DeepSeek 测试覆盖了该精确提示并通过。部署后的两条公网任务当时因电脑仍由用户控制而未执行，不能记为公网通过。接管状态的后续复核、释放后的公网复测结果见下一节。源码分支仍为唯一 feature `codex/grok-bot-persistent-group-chat`，公网推送/合并待网络恢复及完整验收。
+
+#### 2026-11-07 公网 Gmail 复测与旧 E2E 覆盖缺口
+
+后续从同一个已登录公网 Chrome 检查电脑状态，发现 Bot `E2E Test Bot 1029` 显示 `You are in control`。点击 `Return to Bot` 后恢复 `Bot is in control`。此前两条公网任务的 `Outcome unknown` 是持有中的接管状态阻塞了执行，不是导航审批回归失败；这些任务不能记为通过。
+
+释放接管后，使用用户报告的只读 Gmail 导航提示重新提交公网任务。真实 Pi/Browser User 执行完成，没有 `Approval requested` 卡片；但 `https://mail.google.com` 被 Google 重定向到 Gmail 产品介绍页，而非登录表单。随后用公网 UI 直接导航到 `https://accounts.google.com/`，也没有审批卡片，页面标题为 `Sign in - Google Accounts`，最终 URL 为 `https://accounts.google.com/v3/signin/identifier`，可见 Google 登录表单。未输入凭据、未提交表单、未打开 Gmail 收件箱。
+
+因此用户指出的“明显问题为什么旧端到端通过”成立：既有绿测是本机 K3D 的 Pi/DeepSeek/Chromium 链路，以及使用 `example.com` 或不同措辞的请求；它们没有断言用户这条公网 Gmail 请求无审批、也没有校验 Gmail 根域最终落点。此前“Gmail E2E 通过”的概括超出了测试证据。此次只确认公网精确请求不再弹导航审批，以及 Google 登录表单可达；实际 Google 登录、Gmail 收件箱和完整用户流程仍未验收。项目报告必须逐项标注环境、入口、提示文本、断言和结果，不以相邻测试或本机 K3D 绿测代替公网 E2E。
