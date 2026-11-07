@@ -1694,3 +1694,13 @@ Computer 键盘问题则是另一条漏测：旧检查未把产品 Computer 面�
 公网 Bot `Public Takeover E2E 20261107` 的 Computer screen 明确显示 `You are in control`。为避免夺回可能正在由用户操作的电脑，没有按 `Return to Bot`。在公网 UI 新建独立测试 Bot `Gmail Handoff E2E 20261107`，通过产品聊天 composer 发送明确要求进入 `accounts.google.com`、停在登录表单并交还控制的中文任务，明确禁止输入凭据、提交表单或查看邮箱。页面显示 `Queued · waiting for your computer`；任务尚未运行，也没有审批或成功证据。这个结果仅证明用户接管期间新任务会排队，不能算 Gmail 交接 E2E 通过。
 
 当前唯一 feature 分支 `codex/grok-bot-persistent-group-chat` 的三项本地提交已通过单命令代理推送到同名远端分支，远端 feature HEAD 为 `b8f132e`；远端 `main` 仍为 `0fab408`。因公网登录交接仍排队、未完成实际导航及控制权回交，不合并 main、不建 tag、不发布。此前创建的测试 Bot 和这条 queued 任务保留在公网账户中供后续验收，不删除或重试；待该用户电脑控制权回到 Bot 后，再通过公网 UI 单次继续该测试。
+
+#### 2026-11-07 公网 Gmail 登录页与控制权交接完成
+
+后续在同一个已登录 Chrome 中复核时，`Gmail Handoff E2E 20261107` 的排队任务已显示 `Computer activity · Done`；状态何时、由谁释放先前占用的电脑没有直接观察到，不推断原因。该轮使用原始中文登录交接意图，明确目标 `accounts.google.com`，停在登录表单并交还控制；网页没有出现审批卡。
+
+通过公网产品 UI 打开该 Bot 的 Computer screen。可见电脑截图显示 Chrome 标签 `Sign in - Google Accounts`、地址栏为 `accounts.google.com/v3/signin/identifier`，登录邮箱输入框为空，尚未进入 Gmail。起初屏幕 owner 为 `Bot is in control`；点击产品 `Take control` 后 UI 显示 `You are in control` 和 `Return to Bot`，确认实际云电脑控制权已交给用户。没有输入账号或密码、提交表单、进入收件箱或读取账号数据。公网聊天消息与实际电脑画面共同证明本次任务到达 Google 登录页并完成用户接管；登录和 Gmail 邮箱内容仍由用户处理，不计入本次验收。
+
+这次通过的请求明确要求打开 Google/Gmail 登录页，且明确列出 `accounts.google.com`；前一条仅要求导航至 `https://mail.google.com` 的只读测试仍会跳到 Gmail 营销页，两种目标和结果不可混写。此前排队情况是当时真实状态，后续任务现已完成，不再是当前 queued blocker。当前用户控制权按请求保留在 `Gmail Handoff E2E 20261107`；不要在用户完成登录前点击 `Return to Bot` 或继续浏览器操作。
+
+远端 feature 分支已更新至本节记录前的 `b7bba97`；本次公网可见验收结果仍待提交到同一唯一 feature 分支。远端 `main` 未改变；不因单条登录交接通过而宣称全产品像素验收、全功能验收或创建 release/tag 完成。
