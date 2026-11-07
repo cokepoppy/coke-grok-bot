@@ -46,6 +46,26 @@ test('Pi dispatch is once, scoped to owner and revokes its capability after comp
  }finally{gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}
 });
 
+test('Pi sends an explicit Gmail navigation and user sign-in handoff instruction to the Agent',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const gmailRun:AgentRun={...run,prompt:'帮我打开谷歌，然后登录我的 Gmail，登录时停下来让我操作。'};
+ let receivedPrompt='';
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
+  const body=JSON.parse(String(init?.body));receivedPrompt=body.prompt;
+  assert.equal(body.prompt.includes(gmailRun.prompt),true);
+  return Response.json({status:'done',message:'Gmail is open for sign-in.'});
+ });
+ try{
+  const result=await executor.execute(screen,gmailRun,new AbortController().signal,randomUUID());
+  assert.equal(result.result,'Gmail is open for sign-in.');
+  assert.match(receivedPrompt,/https:\/\/mail\.google\.com/);
+  assert.match(receivedPrompt,/computer_browser\.navigate directly/);
+  assert.match(receivedPrompt,/stop at the sign-in page/i);
+  assert.match(receivedPrompt,/This run is a sign-in handoff/i);
+  assert.match(receivedPrompt,/never enter or request their credentials/i);
+ }finally{await executor.close();gateway.close()}
+});
+
 test('Pi routes a selected direct-chat Bot mention by stable ID while preserving the visible user prompt',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const target={id:randomUUID(),name:'Dex',label:'Research'};

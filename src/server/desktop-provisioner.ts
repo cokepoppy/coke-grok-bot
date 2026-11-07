@@ -1,4 +1,4 @@
-import { desktopIdentity, desktopResources, splitDesktopResources } from './desktop-resources.ts';
+import { desktopIdentity, desktopResources, splitDesktopResources,type DesktopProxyOptions } from './desktop-resources.ts';
 import type { DesktopConnection, DesktopConnections } from './pi-executor.ts';
 import type { RunOwner } from './run-store.ts';
 import type {NamespaceBootstrapConnection} from './namespace-bootstrap-service.ts';
@@ -14,7 +14,7 @@ export interface DesktopKubernetes {
 
 /** Create only this user's resources; refuse drift rather than overwrite state or data. */
 export class DesktopProvisioner implements DesktopConnections {
-  constructor(private readonly kube:DesktopKubernetes,private readonly signingKey:Buffer,private readonly options:{image:string;agentImage?:string;controlNamespace:string;gatewayCA:string;split?:boolean;bootstrap?:NamespaceBootstrapConnection}) {}
+  constructor(private readonly kube:DesktopKubernetes,private readonly signingKey:Buffer,private readonly options:{image:string;agentImage?:string;controlNamespace:string;gatewayCA:string;split?:boolean;bootstrap?:NamespaceBootstrapConnection}&DesktopProxyOptions) {}
   async connect(owner:RunOwner,signal:AbortSignal):Promise<DesktopConnection> {
     if(signal.aborted) throw new Error('Desktop provisioning cancelled');
     const identity=desktopIdentity(owner,this.signingKey);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { readFile, writeFile } from 'node:fs/promises';
-import { captureDesktopScreen, captureFocusedDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from '../deploy/desktop/desktop-input.mjs';
+import { captureDesktopScreen, captureFocusedDesktopScreen, captureOwnedDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from '../deploy/desktop/desktop-input.mjs';
 
 test('desktop screenshot captures only the Bot screen rectangle as PNG bytes', async () => {
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -27,6 +27,19 @@ test('computer screenshot brings the selected Bot page forward before reading de
   }, page, { left: 1472, top: 0, width: 1440, height: 900 });
   assert.deepEqual(events, ['focus-page', 'capture-pixels']);
   assert.deepEqual(result, png);
+});
+
+test('user computer screenshots do not steal focus from the owner', async () => {
+  const events = [], png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const page = { async bringToFront() { events.push('focus-page'); } };
+  const result = await captureOwnedDesktopScreen(async (...args) => {
+    events.push('capture-pixels');
+    await writeFile(args[1][2], png);
+    return { stdout: Buffer.alloc(0) };
+  }, page, { left: 0, top: 0, width: 1440, height: 900 }, 'user');
+  assert.deepEqual(events, ['capture-pixels']);
+  assert.deepEqual(result, png);
+  await assert.rejects(captureOwnedDesktopScreen(async () => {}, page, { left: 0, top: 0, width: 1440, height: 900 }, 'unknown'), /owner is invalid/);
 });
 
 test('desktop click routes image coordinates to the Bot X11 region', async () => {

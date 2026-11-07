@@ -64,3 +64,15 @@ test('user computer provisions once per authenticated owner before serving contr
  assert.deepEqual(await control,{owner:'agent'});assert.equal((await screenshot).toString(),'ready');
  assert.equal(workerCalls,2);
 });
+test('Bot viewport is available only while the authenticated user owns computer control',async()=>{
+ const owner:Session={tenantId:randomUUID(),userId:randomUUID(),email:'owner@example.test',name:'owner',role:'owner'};
+ let control:'agent'|'user'='agent';
+ const computer=new UserComputer(()=>({
+  async control(){return {owner:control}},async userScreenshot(){return Buffer.from('screen')},async setControl(value){control=value;return {owner:value}},async userAction(){},
+  async vncViewport(){return {left:1472,top:0,width:1440,height:900}},
+ }));
+ const botId=randomUUID(),signal=new AbortController().signal;
+ assert.equal(await computer.vncViewport(owner,botId,signal),null);
+ control='user';
+ assert.deepEqual(await computer.vncViewport(owner,botId,signal),{left:1472,top:0,width:1440,height:900});
+});

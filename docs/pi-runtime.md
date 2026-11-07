@@ -372,3 +372,9 @@ Inbox Manager 在新组任务中保持 `Outcome unknown`，按任务要求没有
 当前唯一 feature 分支已改为：接管时显示经认证服务器代理的 noVNC，而不再把截图当作可操作画布或显示外置打字框；VNC 静态资源和 WebSocket 仅允许已登录的所属 Bot 用户访问，代理不把浏览器 Cookie 转发到桌面服务。用户明确要求的 Gmail/URL 只在该次运行的 `browser navigate` 精确目标匹配时免去重复审批；点击、表单输入和其他副作用仍保留逐动作审批。官方文档要求用户在登录、验证码等步骤接管电脑，因此导航至 Gmail 后可由用户通过桌面亲自完成登录。
 
 校正后的 `test:run-browser` 在本地模拟应用中实际加载了受认证资源代理返回的 VNC viewer fixture；独立代理测试验证 owner/cross-owner 权限、noVNC 资源转发和 WebSocket 101。另通过现存 K3D 桌面 Service 只读取得 noVNC HTML（HTTP 200），并经 WebSocket 收到 RFB 3.8 greeting。此证据只证明服务端 viewer/stream 可达，不证明网页中的真实键盘输入或公网新 Auth 代码已运行。当前验证：`npm run build`、`npm run build:deployment`、`npm run test:runtime`（120/120）、固定测试 MySQL `13317` 上的 `test:runtime-mysql`（18/18）、`test:run-browser` 和 `git diff --check` 通过。公网首页 200 仍是旧部署；没有完成已登录公网 Chrome、Pi/DeepSeek 与这台 K3D 电脑共同参与的真实验收，不能称本项已验收或已发布。
+
+### Mac/K3D 桌面访问 Google 的代理桥
+
+当本机 Mihomo 仅监听 `127.0.0.1:7890`、而 K3D Desktop Pod 不能直接访问 Google 时，可启动固定本机桥：`npm run start:desktop-proxy-bridge`。它仅绑定 `127.0.0.1:17891` 并转发到本机 `127.0.0.1:7890`，不修改 macOS 全局代理，也不应改成监听 `0.0.0.0`。
+
+新建 Desktop 资源时，Broker 可通过 `COKE_GROK_DESKTOP_PROXY_SERVER=http://host.docker.internal:17891` 和 `COKE_GROK_DESKTOP_PROXY_HOST_IP=192.168.65.254` 注入 Chromium 专用代理变量及单 IP/端口 egress 规则；Agent Pod 不使用此出口。现有 Desktop 是 create-only 管理的资源，不能假定配置变更会原地同步。部署前须验证资源归属、空队列和无人接管，并受控迁移 Deployment/NetworkPolicy。公网迁移与登录态 Chrome Gmail 验收完成前，本地隔离 K3D 的成功只代表候选验证。

@@ -13,6 +13,7 @@ import { WorkspaceFileTransportError, type WorkspaceFileTransportApi } from './w
 import {safeDiagnosticMetadata} from './safe-diagnostics.ts';
 import {GroupRequestConflict,type GroupChatStore} from './group-chat-store.ts';
 import {RoutineRequestConflict,type RoutineStore,type RoutineSchedule} from './routine-store.ts';
+import {computerVncViewerHtml} from './computer-vnc-viewer.ts';
 
 function validatedNovncAsset(value:string):string|null{
  let path:string;try{path=decodeURIComponent(value)}catch{return null}
@@ -94,6 +95,15 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         const session=await auth.session(req);if(!session){res.writeHead(401,{'Cache-Control':'no-store'});return res.end()}
         const botId=computerVncAssetMatch[1];if(!runs||!await runs.ownsBot(session,botId)){res.writeHead(404,{'Cache-Control':'no-store'});return res.end()}
         const asset=validatedNovncAsset(computerVncAssetMatch[2]);if(!asset){res.writeHead(404,{'Cache-Control':'no-store'});return res.end()}
+        if(req.method==='GET'&&asset==='viewer.html'){
+          try{
+            const viewport=await computer.vncViewport(session,botId,AbortSignal.timeout(240_000));
+            if(!viewport){res.writeHead(409,{'Cache-Control':'no-store'});return res.end()}
+            const html=computerVncViewerHtml(viewport);
+            res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'});
+            return res.end(html);
+          }catch(error){const diagnostic=safeDiagnosticMetadata(error);console.error('Computer request failed',{operation:'novnc-viewer',...diagnostic});res.writeHead(503,{'Cache-Control':'no-store'});return res.end()}
+        }
         try{const endpoint=await computer.vncEndpoint(session,botId,AbortSignal.timeout(240_000));if(!endpoint){res.writeHead(409,{'Cache-Control':'no-store'});return res.end()}return await proxyNovncAsset(endpoint,asset,req,res)}
         catch(error){const diagnostic=safeDiagnosticMetadata(error);console.error('Computer request failed',{operation:'novnc-asset',...diagnostic});res.writeHead(503,{'Cache-Control':'no-store'});return res.end()}
       }

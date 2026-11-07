@@ -1,5 +1,5 @@
 import type { Session } from './tenant-store.ts';
-import type { UserComputerAction } from './guarded-worker.ts';
+import {parseComputerViewport,type ComputerViewport,type UserComputerAction } from './guarded-worker.ts';
 import {SafeDiagnosticError} from './safe-diagnostics.ts';
 
 export interface UserComputerWorker {
@@ -8,6 +8,7 @@ export interface UserComputerWorker {
  setControl(owner:'agent'|'user',signal:AbortSignal):Promise<{owner:'agent'|'user'}>;
  userAction(action:UserComputerAction,signal:AbortSignal):Promise<void>;
  vncEndpoint?():URL;
+ vncViewport?(signal:AbortSignal):Promise<ComputerViewport>;
 }
 
 /** Select a desktop only from the authenticated session, never from user input. */
@@ -43,6 +44,14 @@ export class UserComputer {
    const endpoint=worker.vncEndpoint();
    if(endpoint.protocol!=='http:'||!/^desktop\.grok-user-[a-f0-9]{32}\.svc\.cluster\.local$/.test(endpoint.hostname)||endpoint.port!=='6080'||endpoint.pathname!=='/'||endpoint.username||endpoint.password||endpoint.search||endpoint.hash)throw new Error('Invalid computer stream endpoint');
    return endpoint;
+  }catch(error){throw this.workerError(error)}
+ }
+ async vncViewport(owner:Session,botId:string,signal:AbortSignal):Promise<ComputerViewport|null>{
+  try{
+   const worker=await this.getWorker(owner,botId,signal),state=await worker.control(signal);
+   if(state.owner!=='user')return null;
+   if(!worker.vncViewport)throw new Error('Computer viewport is unavailable');
+   return parseComputerViewport(await worker.vncViewport(signal));
   }catch(error){throw this.workerError(error)}
  }
  async action(owner:Session,botId:string,input:unknown,signal:AbortSignal){try{return await (await this.getWorker(owner,botId,signal)).userAction(parseUserAction(input),signal)}catch(error){throw this.workerError(error)}}

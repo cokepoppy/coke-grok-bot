@@ -40,4 +40,14 @@ test('experimental layout separates the Agent network from the desktop',()=>{
  assert.equal(JSON.stringify(policy.spec.egress).includes('grok-desktop'),false);
  assert.equal((resources.find(item=>item.kind==='Service'&&(item.metadata as {name:string}).name==='desktop') as any).spec.ports.some((p:any)=>p.port===8083),false);
  assert.throws(()=>splitDesktopResources(identity,{image:'coke-grok-desktop:latest',agentImage:'coke-grok-desktop:latest',controlNamespace:'coke-grok-bot',gatewayCA:'-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----'}));
+ assert.doesNotThrow(()=>splitDesktopResources(identity,{image:'coke-grok-desktop:candidate-gmail-approval-20261107-r1',agentImage:'coke-grok-desktop:candidate-gmail-approval-20261107-r1',controlNamespace:'coke-grok-bot',gatewayCA:'-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----'}));
+});
+test('desktop Google proxy is explicit, host-scoped, and available only to Chromium',()=>{
+ const identity=desktopIdentity({tenantId:randomUUID(),userId:randomUUID()},randomBytes(32)),options={image:`coke-grok-desktop:sha-${'a'.repeat(40)}`,controlNamespace:'coke-grok-bot',gatewayCA:'-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----',desktopProxyServer:'http://host.docker.internal:17891',desktopProxyHostIp:'192.168.65.254'};
+ const resources=splitDesktopResources(identity,options),desktop=resources.find(item=>item.kind==='Deployment'&&(item.metadata as {name:string}).name==='desktop') as any,agent=resources.find(item=>item.kind==='Deployment'&&(item.metadata as {name:string}).name==='agent') as any,desktopPolicy=resources.find(item=>item.kind==='NetworkPolicy'&&(item.metadata as {name:string}).name==='desktop-isolation') as any;
+ assert.equal(desktop.spec.template.spec.containers[0].env.find((entry:any)=>entry.name==='COKE_DESKTOP_PROXY_SERVER').value,options.desktopProxyServer);
+ assert.equal(agent.spec.template.spec.containers[0].env.some((entry:any)=>entry.name==='COKE_DESKTOP_PROXY_SERVER'),false);
+ assert.ok(desktopPolicy.spec.egress.some((rule:any)=>rule.to?.some((target:any)=>target.ipBlock?.cidr==='192.168.65.254/32')&&rule.ports?.some((port:any)=>port.protocol==='TCP'&&port.port===17891)));
+ assert.throws(()=>splitDesktopResources(identity,{...options,desktopProxyServer:'http://host.docker.internal:7890'}));
+ assert.throws(()=>splitDesktopResources(identity,{...options,desktopProxyHostIp:'0.0.0.0'}));
 });

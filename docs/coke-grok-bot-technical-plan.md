@@ -36,7 +36,9 @@
 5. [官方 YouTube：Grok Bot 101](https://www.youtube.com/watch?v=8xXhE25vJZY)：优先研究创建 Bot、消息、电脑、Skill 的操作路径。
 6. [官方 YouTube：Grok Bot 201](https://www.youtube.com/watch?v=rOVomdnWhjQ)：优先研究多 Bot、Routine 和团队协作。
 
-**当前证据限制**：V1 官方 Grok Bot 101 的 27:53–36:18 已连续逐帧覆盖，共 15,150 个源帧。原先标注的 29:28–29:48 缺口已由 29:28–29:43 与 29:43–29:53 窗口覆盖，29:48–29:53 为重叠复核；26:48–27:53 另有连续 1,950 帧，22:08–22:28 有 600 帧。36:03–36:08 中，Dex 的 Figma 任务保持在聊天区，Computer 预览仍为灰色占位；原尺寸帧 30 显示 `Reading file`，帧 35 状态文字暂时消失，帧 40 起显示 `Running commands`。36:08–36:13 的 150 帧仍显示 `Running commands`，没有可见电脑画面或任务产物；36:13–36:18 继续显示该状态，右侧 Computer 仍为灰色占位，36:17.233 起输入框出现 8 个贴纸的未发送草稿。视频显示 `@dex` 候选与富 token、Maya 发信、Dex 会话的 `Message from maya` 和 `dex is working`，33:37.933 的完整来信与 `Thinking`，以及 33:42.400 的贴纸投票澄清卡、选项/自由输入和 33:42.500 回到 Dex 单聊；澄清卡至 34:27.967 保持未回答，34:29.767 后被标为 `Dismissed`。34:20.767 首次出现关于 8 个贴纸的完整 composer 草稿，34:29.767 首次显示为已发送消息，34:30.200 首次出现 `dex is working`；34:34.233 首次出现 Dex 对 Figma 的回复，34:34.300 首次显示 `Connecting to Figma`，34:42.900 首次打开 Marketplace，34:45.967 的 Figma 插件详情显示 `default` 账户为 `Connected`，并列出 Figma connector 和 14 项 Skills；34:52.967 首次清楚显示 `41 of 41 enabled`。34:53.000–34:57.967 继续停留在 Figma 插件详情和 Skill 列表；34:58.400 工具清单展开，画面可见 Get screenshot、Get design context、Get motion context 等开启状态的开关。35:09.133 起面板继续向下滚动，可读到 Weave list tools、Weave get tool inputs、Weave run tool 等条目，可见开关仍为开启状态；至 35:12.967 仍在工具配置页。35:21.167 Figma 详情关闭并露出 Dex 对话；35:30.333 仍显示 `Reading file`，下一帧 35:30.367 切为 `Thinking`，35:31.600 首次显示 `Running commands`，并持续到 35:42.967。35:43.467 起录屏构图切到 macOS 桌面与 Notes 窗口，Grok Bot 应用被裁切到画面右侧；这不是右栏 Computer 预览的画面，预览仍为灰色占位。35:46.667 应用重新完整入镜时可见状态为 `Connecting to Figma`，并持续到 35:52.967；35:55.967 首次出现助手称已取得 Figma 近景并在读取的更新，35:56.467 首次确认 `dex is working`，35:57.633 首次确认 `Running commands`。新增四窗 35:38–35:58 共 600 帧逐帧检查，联系图、关键帧及 PTS/SHA manifest 已核验；至 35:57.967 未见 Computer 预览变化、工具返回结果、Figma 文件内容或贴纸产物。33:56.167 起画面缩放/平移并露出 macOS 桌面，33:57.900 的 Dock hover 出现截断任务标题；之后 Notes 显示 8 个 GrokBot 贴纸的任务简报和设计参考，34:02.333 起录屏回切到 Grok Bot。切换原因和简报是否被 Bot 读取均未知；不能据此确认路由载荷已进入真实 runtime 或任务已完成。群聊交接、权限和 Routine 以现行官方文档为行为基准，视频补足可见交互。2026-11-02 复核现行官方文档，重申个人 Bots 共用持久电脑、文件和浏览器会话，各 Bot 有独立屏幕，可并行操作；同一屏幕同时最多执行一个电脑任务；Connected App 是结构化工具路径，已连接状态不证明具体调用成功。mention 支持在聊天中指定 Bot、群组、Routine 或 App。文档描述的是外部行为，没有公开私有 runtime 协议。尚未完成同视口的真实官方客户端截图比对；YouTube 视频经压缩/缩放，因此这不是像素一致性结论。本轮重新读取 [x.ai/bot](https://x.ai/bot) 与 [Computer/App 文档](https://docs.x.ai/grok-bot/computer-and-apps)：官网当前文案强调真实工具任务与多 Bot 并行，Computer 段展示 Zendesk 登录场景；公开页面抓取本身只提供文案。此前 CUA 标签读取曾超时；本轮通过可见 Chrome 实际打开、关闭官网演示的 Computer 侧栏与 `Open screen` 弹层。演示画面位于营销页面中央并有外层网页留白；这些是嵌入演示容器的视觉状态，不代表正式桌面客户端应有居中边距，也不是同视口客户端的几何测量。视频经压缩/缩放，以上仍不是像素一致性结论；逐帧证据和不确定项见 `research/README.md`。
+**当前证据限制**：V1 官方 Grok Bot 101 已按源 PTS 对多个片段连续逐帧审阅，但不是全片连续覆盖；当前覆盖范围和空档见[研究证据台账](../research/README.md)。27:53–36:18 已连续逐帧覆盖，共 15,150 个源帧。原先标注的 29:28–29:48 缺口已由 29:28–29:43 与 29:43–29:53 窗口覆盖，29:48–29:53 为重叠复核；26:48–27:53 另有连续 1,950 帧，22:08–22:28 有 600 帧。36:03–36:08 中，Dex 的 Figma 任务保持在聊天区，Computer 预览仍为灰色占位；原尺寸帧 30 显示 `Reading file`，帧 35 状态文字暂时消失，帧 40 起显示 `Running commands`。36:08–36:13 的 150 帧仍显示 `Running commands`，没有可见电脑画面或任务产物；36:13–36:18 继续显示该状态，右侧 Computer 仍为灰色占位，36:17.233 起输入框出现 8 个贴纸的未发送草稿。视频显示 `@dex` 候选与富 token、Maya 发信、Dex 会话的 `Message from maya` 和 `dex is working`，33:37.933 的完整来信与 `Thinking`，以及 33:42.400 的贴纸投票澄清卡、选项/自由输入和 33:42.500 回到 Dex 单聊；澄清卡至 34:27.967 保持未回答，34:29.767 后被标为 `Dismissed`。34:20.767 首次出现关于 8 个贴纸的完整 composer 草稿，34:29.767 首次显示为已发送消息，34:30.200 首次出现 `dex is working`；34:34.233 首次出现 Dex 对 Figma 的回复，34:34.300 首次显示 `Connecting to Figma`，34:42.900 首次打开 Marketplace，34:45.967 的 Figma 插件详情显示 `default` 账户为 `Connected`，并列出 Figma connector 和 14 项 Skills；34:52.967 首次清楚显示 `41 of 41 enabled`。34:53.000–34:57.967 继续停留在 Figma 插件详情和 Skill 列表；34:58.400 工具清单展开，画面可见 Get screenshot、Get design context、Get motion context 等开启状态的开关。35:09.133 起面板继续向下滚动，可读到 Weave list tools、Weave get tool inputs、Weave run tool 等条目，可见开关仍为开启状态；至 35:12.967 仍在工具配置页。35:21.167 Figma 详情关闭并露出 Dex 对话；35:30.333 仍显示 `Reading file`，下一帧 35:30.367 切为 `Thinking`，35:31.600 首次显示 `Running commands`，并持续到 35:42.967。35:43.467 起录屏构图切到 macOS 桌面与 Notes 窗口，Grok Bot 应用被裁切到画面右侧；这不是右栏 Computer 预览的画面，预览仍为灰色占位。35:46.667 应用重新完整入镜时可见状态为 `Connecting to Figma`，并持续到 35:52.967；35:55.967 首次出现助手称已取得 Figma 近景并在读取的更新，35:56.467 首次确认 `dex is working`，35:57.633 首次确认 `Running commands`。新增四窗 35:38–35:58 共 600 帧逐帧检查，联系图、关键帧及 PTS/SHA manifest 已核验；至 35:57.967 未见 Computer 预览变化、工具返回结果、Figma 文件内容或贴纸产物。33:56.167 起画面缩放/平移并露出 macOS 桌面，33:57.900 的 Dock hover 出现截断任务标题；之后 Notes 显示 8 个 GrokBot 贴纸的任务简报和设计参考，34:02.333 起录屏回切到 Grok Bot。切换原因和简报是否被 Bot 读取均未知；不能据此确认路由载荷已进入真实 runtime 或任务已完成。群聊交接、权限和 Routine 以现行官方文档为行为基准，视频补足可见交互。2026-11-02 复核现行官方文档，重申个人 Bots 共用持久电脑、文件和浏览器会话，各 Bot 有独立屏幕，可并行操作；同一屏幕同时最多执行一个电脑任务；Connected App 是结构化工具路径，已连接状态不证明具体调用成功。mention 支持在聊天中指定 Bot、群组、Routine 或 App。文档描述的是外部行为，没有公开私有 runtime 协议。尚未完成同视口的真实官方客户端截图比对；YouTube 视频经压缩/缩放，因此这不是像素一致性结论。本轮重新读取 [x.ai/bot](https://x.ai/bot) 与 [Computer/App 文档](https://docs.x.ai/grok-bot/computer-and-apps)：官网当前文案强调真实工具任务与多 Bot 并行，Computer 段展示 Zendesk 登录场景；公开页面抓取本身只提供文案。此前 CUA 标签读取曾超时；本轮通过可见 Chrome 实际打开、关闭官网演示的 Computer 侧栏与 `Open screen` 弹层。演示画面位于营销页面中央并有外层网页留白；这些是嵌入演示容器的视觉状态，不代表正式桌面客户端应有居中边距，也不是同视口客户端的几何测量。视频经压缩/缩放，以上仍不是像素一致性结论；逐帧证据和不确定项见 `research/README.md`。
+
+2026-11-06 补充逐帧证据：V1 的 42:33–42:38 连续 150 帧仍显示 Maya 工作中和 Google Forms 首页，只有消息 hover 操作栏变化，未见发布或链接交付；V2 的 21:15–21:19.960 连续 125 帧仍是第三方 Cursor 页面，不作 Grok Bot UI 依据。联系图、PTS 与像素哈希见 `research/README.md` 对应条目。
 
 ## 3. Coke Dots 复用方案
 
@@ -1332,3 +1334,227 @@ K3D 有 12 个 8 天前遗留的 `coke-grok-auth-test-*` namespace 和一个 `co
 此前通过的测试不能证明该路径：`tests/run-browser.e2e.ts` 在模拟身份、假 `UserComputer` 和只返回静态 HTML 的 noVNC fixture 上验证接管状态与 iframe；它没有将真实 noVNC WebSocket 与桌面进程连起来，也没有断言真实标签页点击或键盘输入。API/代理的 WebSocket 握手和 RFB greeting 测试只证明传输层建立，不证明桌面收到鼠标/键盘事件。此前通过的 Bot 任务执行、公网群聊及浏览器工具场景属于另一类 E2E，不能替代 Computer User 接管测试。
 
 本次公网仍运行旧 Auth/桌面镜像；包含接管代理改动的代码提交 `2a27610` 尚未部署。另有一条既存排队任务，为避免替换服务影响运行，保持原样，没有发布候选。重新验收必须使用候选 Auth + 桌面镜像，在公网已登录 Chrome 真实点击标签页和地址栏、输入 `example.org` 并回车，确认目标页标题/URL变化，再测试接管归还；任一操作未在真实远程桌面生效均判失败。静态 fixture、API 状态、RFB greeting 和 Agent Browser 工具成功不得抵销该失败。
+
+### 2026-11-06 Bot 屏幕视口修复候选（未部署）
+
+只读检查当前桌面 Pod 的 Xvfb 分辨率为 `11776×900`，由 8 个 `1440×900` Bot 窗口以 32 px 间隔横向拼接。旧接管 iframe 把整个 framebuffer 用 `scale=1` 塞进浏览器视口，所以每个 Bot 的窗口被压缩到几乎无法操作。当前分支改为由 Guarded Computer Worker 仅在用户接管时返回当前 Bot 的屏幕几何，Auth 校验 Bot 所属和用户控制权后生成同源 noVNC viewer；viewer 只显示当前 Bot 区域、限制视口移动不越过该 Bot，并按 iframe 尺寸缩放。保留 noVNC 自己的 1440×900 裁切坐标，同时让放大后的 canvas 溢出内部屏幕容器、由最外层浏览器视口裁切；覆写 noVNC 缩放回调，避免重置缩放或将点击坐标带偏。framebuffer 尺寸不含所选 Bot 区域时断开，避免把错位输入送到另一 Bot。noVNC 的 JS 模块和 WebSocket 仍由原登录态、Bot 授权代理转发。
+
+候选验证：`npm run build:deployment` 通过；最终几何调整后 `npm run test:runtime` 122/122 通过，VNC 代理、worker 几何校验、UserComputer 用户控制权测试 8/8 通过。代理用例执行生成的 viewer 脚本并用 Display 测试夹具覆盖裁切定位、窄视口缩放居中、放大画布不被 Bot 尺寸裁切、禁止跨 Bot 平移，以及 framebuffer 放不下目标 Bot 时断开。另用本地候选 Auth 代理连接现有 K3D Desktop Service 的真实 noVNC 模块和 RFB WebSocket，分别以左边界 0 和 1472 做只读 smoke；两次状态均为 `Connected`，实际画布为 1440×900，内部 overflow 为 visible，未发送鼠标或键盘事件。该 smoke 使用测试 session、临时 Bot ID 和合成槽位几何，不验证生产登录、Worker 几何 API、画面内容归属或用户输入。固定测试 MySQL `13317` 上的浏览器 UI 集成通过，临时 `grok_run_ui_*` schema 为 0；它使用模拟身份和执行器，并明确排除 Computer takeover。`git diff --check` 通过。只读检查确认已安装 noVNC 有所需 Display API。
+
+本候选尚未部署、提交或推送。当前 K3D Auth Deployment 镜像为 `coke-grok-auth:deepseek-official-20261106-8ca157147408`，只读检查其 `/app/auth.cjs` 没有 `viewer.html` 路由。2026-11-06 本轮再次只读统计 `coke_grok_local.agent_runs`，仍为 `queued=1, running=0`，排队记录时间为当日 08:59（只查询状态与时间，未读任务正文/标识、未修改数据库）；因此不滚动更新 Auth/桌面。UI 集成回归通过，但日志明确写明 Computer takeover excluded。上述真实 RFB smoke 仍未经过生产登录或公网 Chrome，也未验证生产 Bot 屏幕映射、键鼠输入、Pi/DeepSeek、地址栏导航、标签切换或归还控制。当前 K3D 桌面和用户数据保持原样；待队列终止后，在现有 K3D 桌面验证真实画面、地址栏点击与输入、标签切换和归还控制，完成前不合并或标记验收通过。
+
+### 2026-11-06 接管漏测复核
+
+再次核对当前运行环境：Auth 仍为 `coke-grok-auth:deepseek-official-20261106-8ca157147408`，Desktop 仍为 `coke-grok-desktop:sha-528fc179cfa7d602f3ff9861e66f2e1ba437f99a`；候选 `viewer.html` 路由未部署。固定 MySQL 中 `agent_runs` 状态计数为 `queued=1, completed=172, failed=21, unknown=44`；专用 `E2E Test Bot 1030` 自身 `queued=0, running=0`，但它尚未分配桌面屏幕。当前桌面 8 个槽位已有 7 个映射，未创建测试窗口或发送输入。全局仍有其他 Bot 排队，因此不滚动共享 Auth/Desktop。
+
+Chrome 的 CUA 状态盘点能列出已登录公网标签，但按 URL 或已知标签 ID 获取该标签均超时；没有改用其他方式操控用户本机浏览器，也没有据此记为验收。候选本地端口 `3187` 已无监听进程。当前没有新的公网键鼠 E2E 结果；前述接管失败仍是唯一有效产品验收结论。下一步在共享队列终止且浏览器控制恢复后，经候选 Auth/桌面镜像和已登录公网 Chrome，对空闲测试 Bot 完成真实标签点击、地址栏输入/回车、URL/标题变化及归还控制，再决定是否合并。
+
+2026-11-06 20:25（Asia/Shanghai）再次复核候选：`npm run build:deployment` 成功；接管相关三个测试文件共 8/8 通过，覆盖授权代理、viewport 几何验证和用户控制权。它们仍使用测试夹具，不能证明真实 noVNC 鼠标/键盘事件到达 Chrome。本轮 `cua.getState()` 两次都在 30 秒超时，没有返回 Work 设置禁用提示；本机 `127.0.0.1:3001` 无监听，公网 `/grok-bot/` 返回 200，当前 K3D 仍运行现有 Auth/Broker 与用户桌面。GitHub `origin/main` 查询因本机无法解析 `github.com` 失败。本轮没有部署、提交、推送或合并；候选仍需已登录公网 Chrome 的真实接管验收。
+
+### 2026-11-06 公网 Chrome 接管复测（20:47）
+
+通过 CUA 原生 Chrome 新开标签访问已登录的 `https://codex.cokeagent.com/grok-bot/`，选择专用 E2E Test Bot 并打开其电脑屏幕。公网当前部署展示截图轮询式电脑画面，底部有独立的 `Type on computer` 输入框和“view refreshes every few seconds”说明；远程 Chrome 当前在 `about:blank`。点击 `Take control` 后状态变为 `You are in control`。在远程 Chrome 地址栏和新标签位置执行可见点击，并向焦点发送无害文本 `example.org`；地址栏仍为 `about:blank`，新标签未打开，输入未进入远程浏览器。随后点击 `Return to Bot`，状态恢复 `Bot is in control`。没有访问 Gmail、没有输入凭据，也没有触碰 `kaka` 会话中的排队任务。
+
+这次是当前公网已部署版本的真实 UI 失败证据。公网画面仍是旧截图轮询/外置文本框实现；它没有运行候选 `viewer.html` noVNC 视口修复，因此此次结果不能证明候选版本效果。候选 `npm run build:deployment` 成功，接管相关 8 个本地组件测试通过，但生产键鼠输入仍未验收。候选 Auth 和桌面镜像尚未部署；有排队任务时不滚动共享服务。后续验收必须在候选镜像上重走本次公网步骤并确认远端地址栏、标签页和返回控制的状态变化，不能由截图、RFB 握手或本地夹具抵销。
+
+### 2026-11-06 官方文档复核：聊天 composer 与电脑接管
+
+复核官方[电脑与应用文档](https://docs.x.ai/grok-bot/computer-and-apps)及[消息与协作文档](https://docs.x.ai/grok-bot/chat-and-collaboration)：点击对话右侧的 Computer 预览可打开电脑；需要人工完成受阻步骤时，用户在电脑中接管，完成该步骤后再告诉 Bot 继续。聊天 composer 用于发消息，也允许工作进行时追加指令。因此主聊天区底部的 `Message …` 输入框是预期的聊天控件，不是远程 Chrome 的键盘输入框；远程浏览器的地址栏、标签页和页面内容必须由电脑画面本身的鼠标/键盘控制。官方文档没有明确说明全屏接管时聊天 composer 是否仍应可见，不能据此推断布局要求。源码里的 `Type on computer` 文本输入属于 `official=false` 预览分支，不能当作官方接管交互或真实键盘验收。
+
+### 2026-11-06 Gmail 审批导航路径复核
+
+用户指出“打开 Gmail 并在登录时交还操作”仍出现桌面点击审批。源码检查发现，Gmail 中文请求已被导航策略映射为唯一目标 `https://mail.google.com`，且 `ComputerBridge` 对精确目标的 `computer_browser.navigate` 返回即时完成回执。Pi 已能消费该回执，但 DSH 插件错误地只接受审批 ID，因此会把免审批导航当成无效审批；其工具描述也错误地称每个浏览器动作都需审批，可能诱导模型使用逐动作审批的桌面点击。修复了 DSH 即时完成回执处理，调整 Pi/DSH 指引：用浏览器直接导航到请求站点；若用户要自行登录，则停在登录页并交给用户接管，不输入或索取凭据。
+
+隔离回归：`tests/dsh-computer-plugin.test.mjs` 为 7/7；`tests/computer-navigation-policy.test.ts`、`tests/computer-bridge.test.ts`、`tests/pi-executor.test.ts` 合计 18/18；固定测试 MySQL `13317` 上的 `tests/computer-gateway.test.ts` 为 1/1。该 Gateway 用例分别让 DSH 插件和 Pi `runCloudKernel` 的 Browser 工具经本地 ModelGateway/ComputerBridge 导航至 Gmail，确认到达 Worker 测试夹具且审批记录数不增加；Pi 使用假 SDK 运行，不包含真实模型请求。PiExecutor 提示用例确认 Agent 会收到登录交接指引。这些集成测试未使用公网 Chrome、当前 K3D noVNC 或真实 Gmail 会话，因此不能单独作为公网端到端验收。
+
+当前仍有一条 `agent_runs` 排队任务，Auth 运行旧镜像 `coke-grok-auth:deepseek-official-20261106-8ca157147408`；本次修改未部署、提交或推送。队列结束前不滚动共享 Auth/桌面。待可安全部署后，必须在已登录公网 Chrome 的空闲测试 Bot 上实际运行 Pi/DeepSeek 与 DSH 各自的 Gmail 导航/登录交接流程，并确认没有逐次审批卡、用户接管输入正常、归还后 Agent 控制恢复，再决定是否合并。
+
+### 2026-11-06 候选导航策略的真实模型工具选择探测
+
+通过 DeepSeek 官方 `deepseek-flash` Chat Completions 接口发出两次隔离探测，分别使用候选 DSH 工具描述和当前激活的 Pi Browser/Computer 工具说明及其导航指引，输入均为用户 Gmail 登录交接请求。两次均返回 HTTP 200、`finish_reason=tool_calls`，选择 `computer_browser.navigate` 并指向 `https://mail.google.com`，未选择 `computer_desktop`。探测只验证模型对给定提示和工具说明的选择，不执行工具、不启动 Bot 任务、不访问 Gmail；不等同于 Pi/DSH harness 的实际运行或公网验收。
+
+本轮重新验证：DSH 插件 7/7、导航策略/ComputerBridge/PiExecutor 18/18、固定测试 MySQL `13317` 上的 ComputerGateway 1/1（内含 Pi 与 DSH 两条适配路径），noVNC 代理/Worker 几何/UserComputer 控制权 8/8，`npx tsc --noEmit`、`git diff --check` 和 `npm run build:deployment` 均通过。CUA 能枚举 Chrome 标签，但获取公网标签超时；遗留候选标签对应的本机 `3187` 端口已无监听，故不把它显示的 Disconnected 归因于当前 viewer 代码。实时聚合仍为 queued=1、running=0；当前 Auth 还是旧镜像，未部署、提交或推送。GitHub `origin/main` 的实时查询因本机无法解析 `github.com` 失败；保留单一功能分支和现有工作区修改。
+
+### 2026-11-06 公网 Gmail 导航复测与验收口径纠正
+
+在签名态公网 Chrome 的专用 `E2E Test Bot 1030` 会话中，真实提交“打开 Google/Gmail，在登录时停下交给用户；不读邮件、不填凭据”的任务。公网运行显示 `Approval requested`，动作为 `Browser: navigate`，目标 `https://www.google.com/`。我批准一次后，同一目标导航又出现待批准卡片；为避免把重复点击审批误记为成功，没有再批准。浏览器没有完成 Gmail 导航，未打开或读取邮箱，未输入任何凭据。该公网版本的该路径未通过，重复批准现象已由真实 UI 复现。
+
+原因进一步定位：此前候选 `requestedNavigationOrigins` 在文本同时含有“谷歌”和“Gmail”时只返回 `https://mail.google.com`，因为规则优先选择 Gmail 主机；真实 Pi/DeepSeek 先按用户原话调用了 `https://www.google.com/`，该主机不在授权范围，所以第一次审批卡是代码按当前白名单工作的结果，但白名单漏掉了用户明确点名的 Google 目标。原导航策略测试也把“只返回 Gmail”写成预期，未覆盖真实首步。刚补的候选改为分别允许请求明确提到的 Google 与 Gmail 精确 origin，并添加 ComputerBridge、Pi、DSH 两级用例；尚未部署。
+
+另查到 Pi 的 `computer_browser` 和 `computer_desktop` 调用 `mediatedAction` 时没有传入拒绝回调；因此当审批状态确实被拒绝后，Pi 没有像 terminal 和 DSH 一样锁住后续计算机动作，模型重试时可以再创建一张审批卡。候选已给这两个 Pi 工具加上 task 内拒绝锁，新增用例验证一次拒绝后重试不会产生第二张审批。它可解释拒绝后重复请求的代码路径；但此前“批准后”卡片再次出现的运行阶段，仅凭 UI 仍无法判定是模型重复调用还是审批执行未确认。公网当前镜像仍是旧版，候选修复尚未影响线上。
+
+候选复测：导航策略与 ComputerBridge 10/10、Pi adapter 拒绝锁回归 5/5、固定测试 MySQL `13317` 上的 ComputerGateway 1/1（Pi、DSH 均连续导航 Google、重复导航 Google、再导航 Gmail，审批数保持不变），`npx tsc --noEmit` 及 `npm run build:deployment` 通过。这些均为本地受控测试，未替代公网真实验收。公网点击当前重复卡的 `Deny` 后，卡片短暂消失又重新显示，Bot 仍为 `Working…`；仅凭 UI 无法确认拒绝是否提交成功，故未继续点击或重发任务。另一 Bot `kaka` 仍显示 `Queued`，当前运行 Auth 镜像为 `coke-grok-auth:deepseek-official-20261106-8ca157147408`；为避免打断共享队列，候选未部署、提交或推送。
+
+此前称为“端到端通过”的测试覆盖不足，不能支持该结论。`tests/run-browser.e2e.ts` 使用模拟 Google 身份、假的 `UserComputer`/截图和测试 `RunScheduler` 执行器；它验证 Bot/聊天/附件/审批卡等网页与 API 状态，却没有真实 Pi/DeepSeek、生产 K3D 电脑或 Gmail 浏览器交互。`tests/mediated-pi-k3d.e2e.ts` 虽覆盖真实模型和 K3D runtime，但通过 API 直接提交任务，并由测试脚本直接 POST 审批结果；这绕过了用户实际点击和连续审批体验。Gmail ComputerGateway 用例同样使用假 Pi SDK 和 Worker 夹具。因此这些用例通过只能证明各自范围内的组件/协议行为，不能算公网登录态的全链路用户验收。我之前把这些不同层次的测试统称为 E2E 并据此表达“通过”，是测试分类和验收结论错误。
+
+后续验收必须新增并实际运行一条公网可见交互：从签名态页面发起“打开 Google 再到 Gmail”的登录交接，确认两个用户明确请求的导航目标都不会反复要求人工批准，抵达登录页后由用户接管，再在不读邮件/不代填凭据的前提下核实云电脑的鼠标键盘输入、停止/恢复 Agent 控制及刷新后的任务状态。真实 Browser User、Computer User、Pi/DeepSeek、Mac/K3D 与公网 UI 逐层留证；脚本自动 POST 审批、测试夹具、模型工具选择探测均不能替代这项验收。当前公网测试任务仍停在重复审批卡上；本次公网验收判失败，不继续批准或重复提交，也不触碰其他 Bot 的排队任务。共享运行镜像仍因既有 queued 任务保持未滚动。
+
+### 2026-11-06 公网 Gmail 任务回看与测试范围更正
+
+用户追问为何先前端到端测试没有发现逐步审批问题。重新查看专用 `E2E Test Bot 1030` 的真实云电脑画面，当前浏览器仍停在 `example.com`，没有进入 Google 或 Gmail；聊天记录显示原 Gmail 任务处于 `Review uncertain task outcome`。我只在观察到无副作用的 Example Domain 页面后点击 `I checked · continue` 清除不确定结果，没有重试任务、读取邮箱或输入凭据。此观察说明 Gmail 登录交接仍未完成，也不能据此断言之前重现的重复审批由何种运行阶段触发。
+
+此前“E2E 通过”的描述把自动化层次混在一起了：浏览器 UI 集成用例替身执行器/电脑验证页面状态；Pi+K3D 用例通过 API 提交并由脚本直接审批；Gateway 用例用假 SDK 和 Worker。它们没有覆盖公网真实鼠标点击审批、Pi/DeepSeek 在线调用、真实 K3D 浏览器导航与接管。因此原来的通过结果不含本次 Google→Gmail 路径，不能作为该体验已通过的证据。当前只能报告局部隔离测试通过、产品级 Gmail 公网验收未通过/未完成；候选改动仍未部署，等待共享 Bot 队列安全后再执行真实交互验收。
+
+### 2026-11-06 公网 Gmail 审批记录核对
+
+使用现有固定 MySQL 服务执行只读聚合查询；密码仅由进程读取，未输出。任务序号 `244` 的状态为 `unknown`，关联的 4 条审批记录依序为：`browser/navigate` 到 `www.google.com`（`consumed`）、同站 `browser/navigate`（`pending`）、`desktop/click`（`pending`，坐标 `648,90`）、再次同站 `browser/navigate`（`pending`）。运行记录为 `computer_used=1`、`recovery_state=acknowledged`、无结果，事件为 queued/running/unknown/unknown；这证明曾执行过某个电脑动作，但不能证明 Google→Gmail 导航完成。数据库确实留有多个后续动作提案；但记录本身不能解释模型为何在第一次导航完成后又选择相同导航，也不能证明网页上用户后续点击是否到达服务端。
+
+同次只读统计为 `queued=1, completed=172, failed=21, unknown=45`。Auth 仍运行旧镜像 `coke-grok-auth:deepseek-official-20261106-8ca157147408`。候选的 Google+Gmail 精确 origin 白名单和“直接使用 Browser 导航、不要点地址栏”的 Pi 指引仍未部署；队列清空前不滚动共享 Auth/电脑。候选本地测试不等于公网回归通过。
+
+### 2026-11-06 22:34（Asia/Shanghai）运行环境恢复及候选复核
+
+重新检查当前环境：Docker Desktop Engine 已响应，7 个容器（4 个运行、3 个停止）；K3D `k3d-tp1121-sandbox-dev` 可访问，`coke-grok-bot` 中 Auth、Desktop Broker 与 namespace bootstrap 均为 Ready，公网 `/grok-bot/` 返回 HTTP 200。Auth 仍运行旧镜像 `coke-grok-auth:deepseek-official-20261106-8ca157147408`，候选未部署。MySQL 只读聚合状态为 `queued=1, completed=172, failed=21, unknown=45`；仍有一条排队任务，因此保留共享 Auth/桌面不滚动。
+
+同一候选分支复核：`npm run test:runtime` 128/128、固定测试 MySQL `13317` 上 `tests/computer-gateway.test.ts` 1/1、`npx tsc --noEmit` 和 `npm run build:deployment` 通过。运行时构建仍没有公网 Pi/DeepSeek、Google→Gmail 导航或远程键鼠输入证据。宿主数据卷约 19 GiB 可用、96% 使用；未构建额外 Docker 镜像或创建容器。GitHub `ls-remote` 仍因 DNS 无法解析 `github.com` 失败；没有提交、推送、部署或合并。后续先等待队列结束并重查，再按同一分支完成候选运行时更新和公网点击验收；在验收通过前不合并、不打接受性 checkpoint。
+
+### 2026-11-06 23:39（Asia/Shanghai）当前公网验收状态复核
+
+公网 `/grok-bot/` 返回 HTTP 200。Chrome 扩展标签绑定和状态调用两次超时，没有收到 Work 设置禁用提示；改用受支持的原生 Chrome 可访问性树成功读取当前页面。页面仍显示 `E2E Test Bot 1030` 的 Gmail 请求处于 `Computer activity · Review`，我没有打开电脑、批准、拒绝、重试任务或输入凭据。
+
+固定 MySQL 只读聚合仍为 `queued=1, running=0`；只输出计数的子查询确认唯一排队任务与同 Bot 的 `unknown/recovery_state=pending` 记录相冲突。没有修改该任务或其他 Bot 状态。K3D 的 Auth 仍为 `coke-grok-auth:deepseek-official-20261106-8ca157147408`，用户 Agent 和 Desktop 仍为旧 `coke-grok-desktop:sha-528fc179cfa7d602f3ff9861e66f2e1ba437f99a`，共享 workspace PVC 保持 Bound。候选 Desktop 镜像已在本地 Docker 构建，摘要为 `sha256:a0a16ffc1283a69d22853893b117085964b5cb767ba31958434834193effdd70`、linux/arm64、约 913 MB；尚未导入 K3D，也未部署候选 Auth。因旧 Gmail 任务待人工复核且有排队记录，本轮不滚动共享电脑或 Auth。
+
+本次公网 Chrome 真实用户交互验收仍未通过或完成：扩展控制桥超时，原生 Chrome 只读观察成功，没有执行鼠标键盘测试。该超时不等同于 Work 设置禁用，也不能由构建成功或 MySQL 组件测试替代。远端 main 查询没有取得可核对的提交回执；当前保持唯一功能分支与工作区改动，不提交、推送、合并或创建 checkpoint。
+
+### 2026-11-07 00:02（Asia/Shanghai）测试结论与候选滚动失败复盘
+
+用户指出公网 Bot 登录 Gmail 时重复弹出人工审批。复盘确认先前称“E2E 通过”不准确：浏览器 UI 用例使用模拟 Google 身份、假的电脑/截图和测试 scheduler；Pi+K3D 用例以 API 创建任务并由脚本直接提交审批；Gmail Gateway 用例使用假 Pi SDK 和 Worker。这些没有覆盖签名态公网 Chrome 的真实点击、线上 DeepSeek/Pi、用户 K3D Chrome 和连续审批，因此不能算产品 E2E。真正公网 Gmail 路径第一次复现后，事实是白名单只允许 Gmail 精确域名；模型按原话先导航到 Google 首页，随后触发桌面点击审批；原测试却把“只允许 Gmail”当预期，漏测了这一步。该测试范围与代码预期错误已在上文更正。
+
+随后尝试部署候选 Auth 与 Desktop/Agent 镜像，公网电脑请求返回 503。日志显示旧 Desktop Broker 报 `RESOURCE_MISMATCH`，Auth 显示 `BROKER_REJECTED`。原因在发布脚本：它修改了 Broker 的 `envFrom` 来源 `auth-runtime-config`，却没有滚动 Broker Pod；Kubernetes 不会把 ConfigMap 的环境变量热更新到既有进程。现有 Desktop/Agent 已切换候选镜像，未重启的 Broker 仍用旧镜像配置校验，于是拒绝了镜像差异。立即运行一对一回退脚本恢复 Auth、Agent、Desktop 和 ConfigMap；Broker 镜像没有被替换，数据库状态与 Bound workspace PVC 未修改，未重试 Gmail 任务，也未输入凭据或读取邮箱。
+
+回退后核对的实际镜像为 Auth `coke-grok-auth:deepseek-official-20261106-8ca157147408`、Broker `coke-grok-desktop-broker:diag-20261102-01`、Agent/Desktop `coke-grok-desktop:sha-528fc179cfa7d602f3ff9861e66f2e1ba437f99a`，用户 workspace PVC 仍 Bound。公网 HTTP 200 仅代表入口可访问，不代表任务可用或验收通过。
+
+为防止同一发布错误再现，候选包现要求更新 ConfigMap 后滚动 Broker，并在部署与回退时同步更新主容器和私有 Secret init 容器镜像；运行时 Broker 候选已本地构建并记录镜像摘要。桌面运行镜像配置校验保留提交 SHA 标签，同时增加明确的 `candidate-...` 标签形式以支持未验收候选；普通 `latest` 仍拒绝。`test:desktop-resources` 2/2、Broker bundle build、Docker Broker image build、发布脚本语法、manifest JSON 和 `git diff --check` 通过。这些只验证发布准备，候选尚未重新部署，公网 Gmail/接管产品 E2E 仍失败/未完成；不得把 503 回退恢复、镜像构建、局部测试或入口 HTTP 200表述为 E2E 通过。唯一功能分支未提交、推送、合并，未创建新分支或 checkpoint。
+
+### 2026-11-07 公网云电脑接管 WebSocket 修复与 E2E 范围纠正
+
+用户追问先前端到端测试为何没发现云电脑无法操作。原因已经定位并通过公网 Chrome 实测：VPS 生效的两个 `/grok-bot/` Nginx location 没有转发 HTTP/1.1 WebSocket Upgrade/Connection 头，noVNC 握手以 1006 失败，所以用户看到 `Connection failed`。仅更新 K3D Auth/桌面镜像不会改变 VPS 入口的 Nginx 行为。现已备份 VPS 配置到 `/etc/nginx/coke-grok-backups/coke-openrouter.pre-grok-bot-ws-20261106T170518Z`，只给 Grok Bot location 补齐 HTTP/1.1 Upgrade、Connection 和长读写超时；`nginx -t` 通过并平滑 reload。仓库模板 `deploy/vps/grok-bot.locations.conf` 已同步，并新增静态回归测试检查这些配置。
+
+候选 Auth、Broker、Agent、Desktop 现各以单副本 Ready；`verify.sh` 确认用户 workspace PVC 为 Bound、公网入口 200。登录态 Chrome 的实际接管从 WebSocket 1006 / `Connection failed` 变为 101 / `Connected`；真实画面显示 K3D Chromium，鼠标点击打开新标签，键盘输入送达地址栏并可将远程 Chrome 导航到 `example.org`；之后已 Return to Bot。MySQL 和 PVC 未更改。该结果证明公网 Computer takeover 的鼠标、键盘链路可用，但不等于 Pi/DeepSeek 执行 Google→Gmail 任务或审批逻辑的完整产品验收。
+
+漏测来自测试分层标注错误：`tests/run-browser.e2e.ts` 用模拟身份、假 `UserComputer`、静态截图和测试 scheduler；`tests/mediated-pi-k3d.e2e.ts` 虽接真实模型/K3D，仍由 API 建任务并脚本 POST 审批；`tests/computer-vnc-proxy.test.ts` 用 FakeRFB 验证代理握手、授权和几何。这些用例不穿过公网 VPS Nginx、不打开真实 noVNC 到 Chromium 的交互，也不检查真实鼠标键盘事件。此前把它们统称为“端到端通过”是错误的验收结论。现在 `test:runtime` 增加 VPS WebSocket 模板静态回归，但它也只防仓库模板回退；未来产品验收仍必须在已登录公网 Chrome 实际接管电脑，输入 URL、确认页面变化并归还控制。此次 Pi/DeepSeek Google/Gmail 任务和重复审批体验仍未通过验收。
+
+同日稍后重新操作当前已登录公网 Chrome：画面和 `Connected` 状态正常，Bot owner 显示为 user，但点击云电脑 Chrome 的地址栏/新标签并输入地址都没有观察到远程页面变化。因此，上段此前“公网鼠标/键盘可用”的记录不能作为当前候选的通过证据；当前接管交互验收为失败。源码复查发现自定义 `viewer.html` 外层按缩放后的画布居中，但 noVNC 的 canvas 默认还会在原始尺寸的父 screen 内再次居中，窄视口下可能造成可见画布偏移及裁切。候选保留原生 framebuffer 尺寸的 mount/screen，并把 noVNC canvas 对齐到左上角，避免第二次居中；`tests/computer-vnc-proxy.test.ts` 的合成布局断言通过。另新增 `npm run test:computer-vnc-input-protocol`：用已安装的真实 noVNC 客户端、Chromium 和本地 WebSocket RFB 协议夹具，确认可见点击映射到预期 framebuffer 坐标、键盘事件实际发出；noVNC 静态文件仅通过 K3D 桌面 Pod 的只读 port-forward 读取（`kubectl -n <user-namespace> port-forward pod/<running-desktop-pod> 16080:6080`），夹具不连接真实桌面。它验证浏览器/noVNC 输入协议，但不验证 K3D X11 输入或公网部署。当前公开 Bot 的真实屏幕几何为 `{left:4416,top:0,width:1440,height:900}`；协议夹具改为校验第三个 Bot 槽位的绝对 framebuffer 坐标。只读核对发现公网 Auth 仍为 `coke-grok-auth:gmail-approval-20261106-r1`，其 `/app/auth.cjs` 不含候选 `canvas.style.margin='0px'`；修复仍只在工作区，未部署。当前用户接管仍在线，不滚动 Auth 或桌面；须在候选版本上以真实公网输入改变页面后才可通过验收。
+
+补充线上复核：之前确有一次公网 noVNC 接管实测成功（点击新标签、输入 `example.org`、导航并归还控制），但它发生在当前画布裁切候选之前，只能证明当时部署版本可用，不能证明后续改动未回归。当前 Auth 镜像 `coke-grok-auth:gmail-approval-20261106-r1` 含 `viewer.html` 和视口定位逻辑，但不含候选 `canvas.style.margin='0px'`；当前 Desktop/Broker 使用 `candidate-gmail-approval-20261107-r2`。本轮公网 Chrome 仍显示 `You are in control` / `Connected`，重复点击未观察到地址变化。只读 X11 显示桌面为 `11776×900`，有多个 `1440×900` Chromium Bot 窗口；当前指针/活动窗口抽样不能与公网显示建立一对一映射，故不据焦点标题变化宣称点击成功。测试通过原因已更正为版本和测试层级错位：旧公网实测属于旧 viewer；新候选的真实 noVNC 测试连接本地 RFB 夹具，并未连接真实 X11。当前用户接管仍在线，不滚动 Auth 或桌面；待控制安全释放后，必须在带候选修复的公网版本重新逐步验证地址栏焦点、输入、真实页面变化及归还控制。
+
+### 2026-11-07 Mac/K3D Google 出站与 Gmail 登录交接候选
+
+针对真实 Pi/DeepSeek/K3D 隔离回归的 `net::ERR_ABORTED` 重新核实出站路径：Mac Mihomo 的 `127.0.0.1:7890` 通过 HTTPS CONNECT 访问 Google 返回 `204`；同一 K3D 云电脑资源此前没有 `COKE_DESKTOP_PROXY_SERVER`，NetworkPolicy 也没有允许访问宿主代理的窄规则。真实模型仍返回 200，却因 Chromium 不能到达 Google 重复提议导航，最终失败；这是运行环境出站路径缺失，单改导航白名单不足以修复。
+
+在独立 K3D 命名空间中验证 Docker Desktop 宿主别名到 Mac 回环服务的路径：Pod 内经 `host.docker.internal` 连接仅绑定在本机回环的临时监听成功；添加精确 `192.168.65.254/32` 与代理 TCP 端口的 NetworkPolicy 规则后，通过宿主代理的 CONNECT 返回 `200`，Google `generate_204` 返回 `204`。所有网络探针命名空间已自动删除。
+
+当前候选加入固定回环代理桥 `scripts/desktop-proxy-bridge.mjs`，只监听 `127.0.0.1:17891` 并转发到本机 Mihomo `127.0.0.1:7890`，不修改 macOS 全局代理设置；`npm run start:desktop-proxy-bridge` 可启动该固定服务。Desktop Provisioner 仅向 Chromium 容器设置 `COKE_DESKTOP_PROXY_SERVER=http://host.docker.internal:17891`，其 NetworkPolicy 仅允许该宿主 IP/端口；Agent Pod 不获此出口。K3D 配置通过 `COKE_GROK_DESKTOP_PROXY_SERVER` 和 `COKE_GROK_DESKTOP_PROXY_HOST_IP` 显式打开，资源生成器拒绝其他代理地址。
+
+候选回归使用固定测试 MySQL `13317` 的随机 schema、真实 DeepSeek API、Pi 与临时 K3D 桌面镜像；6 次模型调用后任务完成，没有审批卡，真实 Chrome 到达 `accounts.google.com`。随后通过与产品相同的用户控制 API 将电脑 owner 从 `agent` 切到 `user` 并核实成功；未点击登录页、未输入任何凭据、未读取邮箱。临时 schema 和隔离 K3D 命名空间已清理，固定 MySQL、Bot 1029 的共享桌面及其 PVC 未改动。
+
+验证结果：`test:runtime` 133/133，桌面资源/接管定向测试通过，`npx tsc --noEmit`、`npm run build:deployment`、代理桥/Worker 语法检查及 `git diff --check` 通过。只读复查时公网 Auth/Broker 和 Bot 1029 的 Agent/Desktop 均为 Ready；本轮没有滚动或修改公网部署。上述结果证明隔离 K3D 的 Google 导航和用户控制权路径可用，不是公网已登录 Chrome 的 Gmail 产品验收；该浏览器 UI 验收仍待执行。工作仍留在唯一 feature 分支，尚未提交、推送、合并或打 tag。
+
+部署限制：当前 Desktop Provisioner 是 create-only，并会按资源配置拒绝现有 Desktop Deployment/NetworkPolicy 的漂移。已经运行的用户桌面没有代理环境变量和宿主代理 egress 规则；只更新 Broker 配置不能自动补齐它们，且可能因资源指纹不匹配而拒绝请求。公网发布前必须设计并执行一次有所有权校验的定向迁移：确认共享电脑队列为空、没有任何 Bot/用户接管屏幕，逐个核对 Deployment/NetworkPolicy 属于本应用后再更新。Bot 1029 当前由用户控制的桌面不得滚动。迁移完成后还要通过已登录公网 Chrome 实际提交 Gmail 任务，确认 K3D Chromium 可导航至 Google、没有重复审批卡、用户能接管并完成 Google 登录交接。此次隔离命名空间测试不代表该公网验收已经通过。
+
+### 2026-11-07 公网 Computer Use 点击复核
+
+在已登录 Chrome 的 Bot 1029 云电脑全屏页观察到 `You are in control`、`Connected`，内层仍是 `Example Domain - Chromium`。本轮通过原生 CUA 在屏幕上对准内层 Chrome 新标签按钮点击，并尝试 `Ctrl+L`；截图可见指针移到目标附近，但内层标签、地址和页面均未变化。之后对外层“Enter computer full screen”按钮的原生点击也未改变外层状态；只读 X11 查询仍为 `X=4449,Y=30`、活动窗口 `Example Domain - Chromium`，没有收到这几次点击对应的远端指针事件。
+
+这组结果说明当前自动化输入没有完成真实点击，但尚不能单独归因于 Grok Bot 的 noVNC 路由：原生 CUA 对外层按钮也无可见响应；Chrome 扩展绑定现有用户标签、在新标签导航及 `cua.getTab` 分别超时约 30 秒。没有证据证明自动化点击已送入浏览器 DOM 或公网 WebSocket，因此不把它作为产品输入链路的确定性回归。网页画面与 WebSocket `Connected` 只证明读流/握手，不证明客户端输入到达 X11。复测需先让浏览器自动化提供可验证的可见点击，再检查 X11 鼠标坐标、地址栏焦点、键盘输入和页面 URL；此前完成的公网接管实测属于旧版本，当前候选仍未验收。
+
+本轮未重启 Auth/Broker/Desktop、未修改 MySQL/PVC、未输入登录凭据。Bot 1029 仍由用户控制，不应为了复测而夺回控制或滚动其桌面。
+
+### 2026-11-07 本轮候选回归与公网验收阻断
+
+在当前唯一功能分支上重新验证登录交接与电脑控制候选：定向 Computer Bridge/导航策略/Pi/noVNC 代理/UserComputer 测试 28/28，DSH Harness 插件测试 13/13；完整 `npm run test:runtime` 为 133/133，固定测试 MySQL `13317` 上 `tests/computer-gateway.test.ts` 为 1/1，`npx tsc --noEmit` 与 `npm run build:deployment` 通过。Gateway 用例使用临时 schema 并清理，未创建容器或连接真实 Gmail。`npm run test:computer-vnc-input-protocol` 使用真实 noVNC 客户端和本地 RFB 夹具通过，确认第三个 Bot 槽位的点击坐标映射与键盘事件发出；它不连接真实 X11、VPS 或登录态产品 UI。
+
+该协议测试依赖从现有 K3D Desktop Pod 只读获取 noVNC 静态资源。未建立端口转发时，原测试等到 8 秒连接超时；现在新增资产预检，缺少资源时会立即提示只读 `kubectl port-forward` 前置步骤。复测通过临时转发现有 `desktop-7dc9fd7fb6-btv7h:6080` 到本机 `16080` 完成，随后停止转发；未创建容器/Pod，未向远程桌面发送输入。
+
+公网 Chrome 当前仍不能完成可靠的可见操作：浏览器标签枚举可读，但绑定现有公网标签超时 45 秒；原生 Chrome AX 能读取 Bot 1029 的 `You are in control` / `Connected` 状态。切到隔离 E2E 标签后，原生点击 Bot 1030 列表行没有切换选择；随后用搜索框与键盘 Tab/Enter 才能切到 Bot 1030，并看到既有 Gmail 请求仍停在 `Computer activity · Review`。没有批准、拒绝或重试该请求，也没有提交新公网任务、改变电脑 owner 或打扰 Bot 1029。由此确认该 Gmail 公网流程没有完成，但不能把原生鼠标点击无响应单独归因于 noVNC 代码。
+
+当前 K3D 镜像仍不一致：Auth 为 `coke-grok-auth:gmail-approval-20261106-r1`，Broker 为 `candidate-gmail-approval-20261107-r2`，对应用户 Agent/Desktop 也为 `candidate-gmail-approval-20261107-r2`。Auth 仍是旧版本，故最新登录交接候选没有在统一版本的公网链路验证。用户接管屏幕未释放前不滚动 Auth/Desktop；待控制与任务队列安全释放，再按单一发布包统一更新并执行公网 Gmail 无审批交接、真实云电脑输入、页面变化和归还控制验收。
+
+GitHub 直连因本机 DNS 无法解析 `github.com` 失败，`127.0.0.1:1080` 代理端口拒绝连接；按项目要求改为仅对单条 Git 命令使用 `http://127.0.0.1:7890` 后成功读取并 fetch 远端。`origin/main` 为 `0fab4081c2f2fbe78e73640a93e17f788b8ce8fb`，是当前 HEAD `1bda009f1662acf57870239e9ed890957529ad01` 的祖先；功能分支基于最新 main。没有提交、推送、合并或创建 tag；唯一功能分支和工作区修改继续保留。
+
+### 2026-11-07 端到端通过原因复盘：实际 Computer UI 链路
+
+用户追问“端到端测试为何通过，却没发现接管后地址栏不能操作”。结论是此前把不同测试层级统称为 E2E：`tests/run-browser.e2e.ts` 使用模拟身份、执行器和 `UserComputer`；`test:computer-vnc-input-protocol` 使用真实 noVNC 客户端但连接本地 RFB 夹具；先前 Gmail/K3D 用例通过 API 直接把电脑 owner 改成 `user`，再打开裸 `viewer.html`，没有点击 Grok Bot 的 Computer 面板、“Open screen”或“Take control”按钮。它们能证明 Bot 任务或协议片段工作，不能证明用户在产品 UI 里能接管并输入。先前将这些结果说成覆盖了用户接管，是验收范围错误。
+
+新加的 `test:computer-ui-k3d` 在本机 K3D 临时 namespace、临时 MySQL schema 和候选 Desktop 镜像上加载当前 `dist` 产品 UI，按 Bot ID 选择目标 Bot，经 Computer 面板打开屏幕，并点击产品的 `Take control` 按钮。真实 Worker owner 随之变为 `user`，内嵌 noVNC 状态为 `Connected`。实测鼠标和键盘都被 noVNC 客户端编码为 RFB 输入帧；X11 指针坐标到达远程 Chrome 地址栏区域 `{x:718,y:116}`，但输入 `https://example.org` 后远程 Chrome URL 仍为 `example.com`。因此该产品 UI 的 Computer 用户交互用例目前失败；这证明旧测试漏掉了问题，但还没有定位键盘帧从 WebSocket 到 X11/Chrome 的最后一段为何未产生导航。不能报告接管输入已修复或该用例通过。
+
+作为对照，较早一轮通过的真实 DeepSeek/Pi/K3D 用例只在直接打开的全屏 `viewer.html` 页面验证了 noVNC 输入，且用 API 切换 owner；它不经过产品 UI 的嵌入式 iframe。另一次模型运行返回 `unknown`，没有自动重试。后续必须分开验证：产品按钮确实转移 owner、真实内嵌 iframe 的鼠标/键盘事件抵达 X11、地址栏聚焦并导航、UI 归还控制；然后再与真实 Pi/DeepSeek Gmail 登录交接场景组合。经用户确认的公网 Chrome 与当前版本也尚未完成这条验收。
+
+本轮仅在本机临时 namespace/schema 中测试并由脚本清理；没有更新公网 Auth/Broker/Desktop、没有改 MySQL 用户数据/PVC、没有执行登录或读取邮箱。`npx tsc --noEmit` 与 `git diff --check` 通过；`npm run test:computer-ui-k3d` 当前失败。唯一功能分支仍未提交、推送、合并或打 tag。
+
+### 2026-11-07 Computer 接管时的截图焦点修复
+
+隔离 K3D 的真实产品 UI 测试确认失败原因：`ComputerPanel` 每两秒请求一次 `/computer/screenshot`；Desktop Worker 的截图实现先调用 Playwright `page.bringToFront()`，这会在用户控制电脑期间把 Chromium 焦点从地址栏移回网页。测试中，点击地址栏的截图能看到地址文本已选中；截图请求后再按 `Ctrl+A`，焦点却落到网页正文，因而地址没有改变。这是产品截图轮询对实际用户输入的干扰，早期只检查 RFB 输入帧的测试没有覆盖到。
+
+修复后，Worker 根据当前控制者截图：Agent 控制时仍把对应 Bot 页面置前以读取正确屏幕；用户控制时只用 `scrot` 读取固定 Bot 屏幕区域，不调用 `bringToFront()`。截图读取和 owner 切换通过同一桌面操作门串行化，避免已经开始的截图在控制转交后才抢焦点。新增 `desktop-input` 单测验证用户截图不置前；完整 `npm run test:runtime` 为 134/134，`npm run build:deployment`、Worker 语法检查、E2E 源语法检查及 `git diff --check` 通过。
+
+`npm run test:computer-ui-k3d` 在真实本机 K3D 隔离桌面上通过：测试经产品 UI 选择 Bot、打开屏幕、点击 `Take control`；noVNC 接管后点击 Chromium 地址栏，在截图刷新仍运行时输入网址并导航到 `example.org`，随后点 `Return to Bot`，Agent 重新获得 owner，实际页面仍保留该 URL。为避免本机已有 243 个 Docker 镜像时再构建/导入一份大型桌面镜像，本次临时 Desktop Pod 使用已存在的 `candidate-gmail-approval-20261107-r2` 镜像，并通过只存在于隔离测试 namespace 的 ConfigMap 覆盖当前 `computer-worker.mjs` 和 `desktop-input.mjs`；因此这证明了当前源码在真实 K3D/Chromium/noVNC 产品 UI 链路中的运行，不证明新发布镜像已经构建或发布。测试退出码为 0；临时 namespace 已自动删除，K3D 中只剩既有项目用户 namespace，测试 MySQL 中没有残留 `grok_mediated_*` 数据库。
+
+本机 UI-only 测试没有部署公网、没有触碰仍在运行的用户桌面或 PVC，也没有进行 Gmail 登录；该测试只验证电脑 UI 接管和地址栏输入。随后又运行了完整 Pi/DeepSeek 登录交接测试：
+
+使用本地密钥文件和官方 `https://api.deepseek.com` 的 `deepseek-flash` 完成真实 Pi 登录交接；DeepSeek 官方 API 文档将 `deepseek-flash` 列为有效模型 ID，并说明它指向当前 V4.1 Flash 模型。5 次模型调用后，Pi 在没有生成任何审批卡的情况下将 K3D Chromium 导航到 `accounts.google.com` 并停止；测试通过 Grok Bot 产品 UI 把 owner 交给用户，noVNC 在用户控制期间导航到 `example.com`，再把 owner 还给 Pi，后续只读 Pi 任务确认实际页面。没有输入或读取 Google 凭据，也没有读取邮箱。`npm run test:gmail-handoff-k3d` 退出码为 0；隔离 namespace 和临时 schema 均已删除，现有用户 Desktop Pod/PVC 没有滚动或更改。该真实模型/电脑结果仍是本机 K3D 候选验收，不代表已登录公网 Chrome 或公网版本验收。 [DeepSeek Chat Completions API](https://api-docs.deepseek.com/api/create-chat-completion/)
+
+公网登录态 Chrome 验收、固定发布镜像构建和发布验收仍待完成；本轮没有提交、推送、合并或创建 checkpoint tag。
+
+### 2026-11-07 候选镜像内复验：禁用源码覆盖
+
+为排除测试 ConfigMap 覆盖导致的假阳性，给隔离 E2E 增加 `COKE_GROK_DESKTOP_TEST_SOURCE_OVERLAY=0` 模式，并从当前工作树构建桌面候选镜像 `coke-grok-desktop:candidate-focus-screenshot-fix-20261107-r1`（image ID `sha256:15826ee7698da3b1ce1f4b1a389e58e3b3a463a2a63ccfb2a434f3f0e3d16436`）。K3D 导入成功；隔离 Desktop Pod 使用该镜像自身的 Worker 和桌面输入代码，不挂载当前源码 ConfigMap。
+
+`test:computer-ui-k3d` 以该镜像、禁用源码覆盖通过：产品 UI 打开 Computer、Take control、截图轮询期间点击并输入地址栏、导航到 `example.org`、Return to Bot，并确认真实 K3D 页面 URL 保留且 owner 恢复为 Agent。随后 `test:gmail-handoff-k3d` 使用同一桌面镜像和 DeepSeek 官方 API，在无审批卡的情况下导航到 Google 登录页；经产品 UI 接管，在 noVNC 中导航到 `example.com`，归还后由 Pi 只读确认页面，模型调用数为 7。没有输入 Google 凭据或访问 Gmail 内容。
+
+第一次无源码覆盖的 DeepSeek 运行在 5 次模型调用后结束为 `unknown`，没有审批卡或 Desktop Worker 错误；隔离数据已随测试清理。第二次运行通过。失败原因尚未定位，说明真实模型测试仍有间歇性失败，不能仅凭一次成功声称稳定。为诊断后续失败，测试现在只在失败时记录经密钥遮盖的 Agent 错误摘要；目前通过的运行没有 Agent 错误摘要。
+
+两次测试的临时 namespace 和 `grok_mediated_*` MySQL schema 均已清除。现有用户 namespace 的 Agent/Desktop Pods 仍运行旧 `candidate-gmail-approval-20261107-r2`，Auth/Broker 也未滚动；未改 MySQL 用户数据或 PVC。公网入口 HTTP 仍为 200，但本轮 Chrome CUA `getState` 超时，无法完成已登录公网浏览器验收。候选镜像还没有作为发布目录、已提交版本或公网部署发布；当前功能分支继续保持唯一，未提交、推送、合并或打 tag。
+
+### 2026-11-07 接管时隔离聊天输入并保持电脑焦点
+
+复核官方 V1 `26:53.800–26:54.400` 原尺寸帧：普通三栏聊天状态仍显示主聊天 composer；下一帧切入深色放大电脑视图后，composer 不再出现在画面中，浏览器随后占据电脑视图。composer 用于给 Bot 发消息，不属于云电脑输入界面。此视觉记录不推断官方内部如何管理 DOM。
+
+旧版放大电脑弹层只声明 `aria-modal`，并未实际隔离背景焦点。新增 UI 回归先复现 Tab 焦点可离开弹层；修复后，弹层打开时将其外部兄弟分支设为 inert，阻止主聊天 composer 接受焦点，Tab 在弹层控件间循环，焦点意外移出时回到弹层。控制权交给用户后焦点进入 noVNC iframe；交还给 Agent 后焦点回到弹层控制按钮；关闭时恢复背景 inert 状态并把焦点归还 Computer 预览按钮。
+
+验证：`npm run test:ui` 通过，包含 composer inert、底部 composer 屏幕坐标由电脑遮罩命中、尝试聚焦 composer 仍留在弹层，以及连续 Tab 不离开弹层；`npm run build:deployment` 通过。扩展 `tests/mediated-pi-k3d.e2e.ts`，在真实产品 UI/隔离 K3D Chromium 流程中检查 takeover 下 composer inert 和焦点边界，再通过 noVNC 点击地址栏、输入并导航到 `example.org`，Return to Bot 后确认 Agent owner 与实际 URL。使用固定测试 MySQL `127.0.0.1:13317` 和候选 Desktop 镜像 `candidate-focus-screenshot-fix-20261107-r1`，禁用源码覆盖；退出码 0。隔离 namespace 已清理；测试库没有 `grok_mediated_*` schema，未新建容器，也未触及用户 PVC。
+
+该结果仍是 Mac/K3D 本机候选验收。已尝试检查当前登录 Chrome 公网页面，但 CUA `getState` 在 30 秒后超时；未据此声称公网已修复或已验收，未部署公网。唯一 feature 分支仍未提交、推送、合并或打 tag。
+
+#### 公网接管路径复核（2026-11-07）
+
+此前对当前公网登录 Chrome 的扩展标签页连接超时后，改用受支持的 Chrome 原生窗口控制完成只读检查。公网仍加载旧前端资源 `/grok-bot/assets/index-C_ZPmWsX.js`，本机候选构建引用 `/grok-bot/assets/index-DaR-4V2E.js`，因此本机 K3D 修复尚未进入公网。
+
+公网 Bot 1029 的放大电脑面板显示 `You are in control`、noVNC `Connected`，浏览器停在只读测试 URL `example.com/?grokbot-e2e=20261107-public-browser-check`。本次没有切换 owner、输入或导航，也没有打断该用户接管会话。Bot 1030 有一个既存 Gmail 电脑任务处于 Review，电脑显示由 Bot 控制、页面为 `example.net`，另有两条 routine 暂停；未批准、重试或改动该任务。
+
+这次明确了此前测试为何会漏掉明显故障：旧的绿灯覆盖的是模拟 `UserComputer`、本地 RFB fixture、API 层 owner 切换或原始 `viewer.html` 输入；它们没有同时经过产品内 Computer 面板的 `Take control`、持续截图轮询、嵌入式 noVNC 地址栏输入和 `Return to Bot`。截图轮询的 `page.bringToFront()` 抢走用户键盘焦点只有在这条真实组合路径里才会暴露。故先前通过的是窄范围组件/协议检查，不是接管功能的端到端验收。
+
+目前本地真实 K3D 候选已覆盖上述 UI 接管与地址栏导航，但公网产品验收仍未完成。公网正在使用的 Bot 1029 是用户控制态，Bot 1030 也有待审任务；在没有安全空闲测试会话时，不滚动线上 Broker/Desktop、不操作这两个会话。唯一 feature 分支维持未提交状态，未推送、合并或打 tag。
+
+#### 2026-11-07 接管期间截图轮询并发门与真实模型复验
+
+为避免接管测试因轮询未发生而偶然通过，`tests/mediated-pi-k3d.e2e.ts` 现在在地址栏逐字输入期间监听产品 UI 对 `/api/bots/{botId}/computer/screenshot` 的请求，并断言至少有一次截图轮询与输入重叠。输入延迟调到每字符 200 ms，保证测试窗口覆盖两秒刷新周期。使用候选桌面镜像且 `COKE_GROK_DESKTOP_TEST_SOURCE_OVERLAY=0`，固定测试 MySQL `127.0.0.1:13317`，`npm run test:computer-ui-k3d` 连续两次通过；第二次明确观察到 2 次轮询发生在地址栏输入期间。两次都从产品 Computer 面板 Take control，真实 noVNC Chromium 导航至 `example.org`，Return to Bot 后确认 Agent owner 和真实页面 URL。
+
+随后 `npm run test:gmail-handoff-k3d` 使用独立测试 MySQL、同一固定桌面镜像（无源码覆盖）和 DeepSeek 官方 API (`https://api.deepseek.com`, `deepseek-flash`) 通过，模型调用 8 次。Pi 经真实 K3D Chromium 打开 `accounts.google.com` 并停止，没有生成审批卡；测试未输入 Google 凭据或读取邮箱。随后经产品 Computer 面板接管，在 noVNC 地址栏导航到 `example.com`，归还给 Agent 后由 Pi 只读核实页面标题。这个全链路也通过了“地址栏输入时必须有产品截图轮询”的断言。
+
+两类测试结束后，临时 K3D namespace 已清理，测试 MySQL 的 `grok_mediated_*` schema 数为 0；集群总运行 Pod 数回到 11，既有用户 Agent/Desktop 仍使用 `candidate-gmail-approval-20261107-r2`。本轮仅构建本机部署制品和在隔离 namespace 执行候选，不部署公网、不更改用户 PVC、不创建额外 MySQL/测试容器。公网仍为旧前端资源；公网 Bot 1029 的接管态和 Bot 1030 的 Review 任务保持未触碰。因此这证明候选本机 UI、Pi/DeepSeek 和真实 K3D 电脑链路，不等于公网接受或发布完成。
+
+同一工作树的补充回归：`npm run build:deployment`、`npm run test:ui`、`npm run test:runtime`（134/134）、`COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:runtime-mysql`（18/18）、`npm run test:mysql`（1/1）、`npm run test:auth`（1/1）及 `git diff --check` 均通过。测试 MySQL 使用既有固定实例，随机数据库在用例 `finally` 中删除；未创建新的 Docker 测试容器。
+
+#### 旧桌面镜像红测对照
+
+为了确认新 E2E 门确实能区分回归，在临时 K3D namespace 使用当前用户 Pod 已在运行的旧桌面镜像 `candidate-gmail-approval-20261107-r2`，关闭源码覆盖，运行同一 `test:computer-ui-k3d`。测试确认截图轮询与输入重叠后进入失败断言：noVNC 已发送键盘输入，x11vnc 日志收到 76 个 KeyEvent，但 Chromium URL 仍是 `example.com`；失败截图中网页正文被 `Ctrl+A` 选中，地址栏没有导航到目标 `example.org`。这次真实产品 UI 红测复现了旧绿灯的覆盖缺口；本机焦点修复镜像 r1 则连续两次绿测，其中第二次观察到输入期间 2 次截图轮询。
+
+这次红测的临时 namespace 和测试 schema 均已清理，K3D 运行 Pod 数仍为 11，现有用户 Agent/Desktop 未滚动；为避免临时目录堆积，已删除本次失败自动生成的 7 张诊断截图（合计 893,571 字节），保留测试结论于本记录。失败诊断现会显式打印输入期间观察到的截图轮询次数，便于后续区分焦点回归与未触发轮询的假阴性。
+
+#### 2026-11-07 公网 Chrome 实际点击复测
+
+通过 Chrome 原生窗口在公网 `/grok-bot/` 打开独立测试标签，并从产品 UI 创建 `Public Takeover E2E 20261107`。经真实 Browser User 发送只读请求访问 `example.com` 后，产品出现一次针对 `Browser: navigate` 的审批卡；按此前用户明确授权的测试任务予以批准，Pi/Browser User 随后完成导航并报告标题 `Example Domain`、无可见 `h1`。右侧真实云电脑画面显示带验收 query 的 Example Domain 页面。
+
+随后在该 Bot 的 Computer 面板点击 `Open screen` 与 `Take control`，状态切为 `You are in control`，嵌入 noVNC 显示 `Connected`。在云电脑画面中点击 Chrome 地址栏，等待超过一个截图刷新周期后尝试键盘选择和输入新 `example.org` 地址，画面仍保留原 `example.com/?grokbot-public-e2e=20261107-takeover` 地址。随后点 `Return to Bot`，产品恢复 `Bot is in control`，并关闭本次屏幕弹层。
+
+这证明公网旧版的真实 Browser User 只读流程成功，且 Computer 接管/noVNC 连接建立；地址栏输入未导航，符合已知接管焦点问题的表现。Mac 主机 CUA 对嵌入式 noVNC 的按键是否完整送达没有独立键事件遥测，因此该公网观察单独看不能断言原因；根因仍由隔离 K3D 旧镜像红测中的 76 个 x11vnc KeyEvent、网页正文误选及 URL 不变确认。公网仍返回旧静态包 `index-C_ZPmWsX.js`，本机修复候选未部署；这次也只完成一个 Bot 的 Browser/Computer 检查，不等于多 Bot 群聊全链路验收。
+
+本次只新增一个专用测试 Bot 与一条只读测试任务，现有 Bot 1029/1030 会话、K3D Pod/PVC 与 MySQL 用户数据未改动。公网会话仍保留该测试 Bot 作为验收记录。公开 GitHub 直连 DNS 失败；通过单条命令使用本机 SOCKS 代理后确认远端 `main` 为 `0fab4081c2f2fbe78e73640a93e17f788b8ce8fb`、feature 分支远端仍为 `1bda009f1662acf57870239e9ed890957529ad01`。尚未提交/推送本轮代码或部署，因此公网仍未包含修复。
+
+本轮对当前工作树复验：`npm run test:computer-ui-k3d` 使用本机候选桌面镜像、禁用源码覆盖和固定测试 MySQL 通过；地址栏输入期间观察到 1 次截图轮询，任务结束后临时 namespace 清理。`npm run test:ui` 通过，`npm run test:runtime` 为 134/134，`npm run build:deployment` 成功并产出前端 `index-DaR-4V2E.js`。`npm run test:computer-vnc-input-protocol` 首次因缺少测试端口转发失败；复用已有 Desktop Pod 的临时 `16080:6080` 只读转发后通过，确认 noVNC 客户端向 RFB fixture 发送键盘事件。该协议夹具不证明公网 VPS 路由或 X11 实际收键；公网真实界面观察仍显示导航未发生。所有测试结束后端口转发已停止，K3D 仍为既有 11 个 Pods。
+
+#### 2026-11-07 接管 UI 回归复验与当前公网边界
+
+本轮再次用固定测试 MySQL `127.0.0.1:13317` 和 `coke-grok-desktop:candidate-focus-screenshot-fix-20261107-r1`、`COKE_GROK_DESKTOP_TEST_SOURCE_OVERLAY=0` 运行 `npm run test:computer-ui-k3d`，退出码 0。它真实打开测试产品的 Computer 全屏面板、执行 Take control，确认屏幕外聊天 composer 处于 inert 且焦点不能移出弹层；再由嵌入 noVNC 点击 Chrome 地址栏、输入并导航到 `example.org`，Return to Bot 后确认实际页面 URL 保留、owner 回到 Agent。输入时观察到 2 次产品截图轮询。测试未调用模型，因此只验证 Computer 接管交互，不代表 Pi/DeepSeek 或 Gmail 全链路通过。
+
+测试使用既有 MySQL 实例和隔离 namespace；结束后 K3D 回到 11 个运行 Pod，唯一 `grok-user-*` namespace 是既有用户 namespace，固定测试库中 `grok_mediated_*` schema 数为 0；没有新建 MySQL 容器、没有滚动现有 Auth/Broker/Agent/Desktop，也没有改用户 PVC。只读公网检查仍返回 `/grok-bot/assets/index-C_ZPmWsX.js`，当前 Auth/Broker 与用户 Agent/Desktop 仍是此前部署版本；本机焦点修复候选没有部署到公网，故公网验收仍未完成。CUA 读取公网标签和随后读取浏览器状态各在 30 秒超时；这不能说明 Work 设置禁用了浏览器。尝试 `git fetch origin main` 因 DNS 无法解析 `github.com` 失败；只可确认本地 `origin/main` 仍为 `0fab4081c2f2fbe78e73640a93e17f788b8ce8fb`，功能分支比该本地引用领先 13 个提交。未提交、推送、合并、部署或打 tag；不得把候选本机回归说成公网端到端验收。

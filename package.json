@@ -15,6 +15,7 @@
     "compare:reference": "node --import tsx scripts/compare-reference.ts",
     "test:auth": "node --import tsx --test tests/google-auth.test.ts",
     "start:auth": "node --import tsx src/server/start-auth.ts",
+    "start:desktop-proxy-bridge": "node scripts/desktop-proxy-bridge.mjs",
     "test:auth-browser": "node --import tsx tests/auth-browser.e2e.ts",
     "test:google-proxy": "node --import tsx --test tests/google-proxy.test.ts",
     "build:server": "esbuild src/server/start-auth.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist/server/auth.cjs",
@@ -29,9 +30,10 @@
     "test:desktop-k3d": "node --import tsx tests/desktop-k3d.e2e.ts",
     "test:desktop-worker-k3d": "node --import tsx tests/desktop-worker-k3d.e2e.ts",
     "test:desktop-resources": "node --import tsx --test tests/desktop-resources.test.ts",
-    "test:runtime": "node --import tsx --test tests/agent-runtime-memory.test.mjs tests/agent-runtime-screens.test.mjs tests/bot-screen-pages.test.mjs tests/desktop-screen-layout.test.mjs tests/desktop-input.test.mjs tests/shared-computer-root.test.mjs tests/run-scheduler-screens.test.mjs tests/desktop-image-packaging.test.mjs tests/explicit-memory-request.test.ts tests/execution-audit.test.ts tests/model-gateway.test.ts tests/desktop-resources.test.ts tests/desktop-provisioner.test.ts tests/desktop-kubernetes.test.ts tests/desktop-broker.test.ts tests/namespace-bootstrap.test.ts tests/namespace-start.test.ts tests/pi-executor.test.ts tests/dsh-executor.test.ts tests/cloud-kernel-adapter-dsh.test.mjs tests/cloud-kernel-adapter-pi.test.mjs tests/cloud-kernel-adapter-memory.test.mjs tests/cloud-kernel-adapter-handoff.test.mjs tests/cloud-kernel-adapter-routine.test.mjs tests/dsh-computer-plugin.test.mjs tests/dsh-memory-plugin.test.mjs tests/computer-tools.test.mjs tests/file-store.test.ts tests/workspace-files-runtime.test.mjs tests/clear-stale-x11.test.mjs tests/pi-runtime.test.ts tests/computer-action.test.ts tests/computer-bridge.test.ts tests/computer-navigation-policy.test.ts tests/computer-vnc-proxy.test.ts tests/user-computer-http.test.ts tests/guarded-worker.test.ts tests/guarded-computer.test.mjs tests/routine-schedule.test.ts",
+    "test:runtime": "node --import tsx --test tests/agent-runtime-memory.test.mjs tests/agent-runtime-screens.test.mjs tests/bot-screen-pages.test.mjs tests/desktop-screen-layout.test.mjs tests/desktop-input.test.mjs tests/shared-computer-root.test.mjs tests/run-scheduler-screens.test.mjs tests/desktop-image-packaging.test.mjs tests/explicit-memory-request.test.ts tests/execution-audit.test.ts tests/model-gateway.test.ts tests/desktop-resources.test.ts tests/desktop-provisioner.test.ts tests/desktop-kubernetes.test.ts tests/desktop-broker.test.ts tests/namespace-bootstrap.test.ts tests/namespace-start.test.ts tests/pi-executor.test.ts tests/dsh-executor.test.ts tests/cloud-kernel-adapter-dsh.test.mjs tests/cloud-kernel-adapter-pi.test.mjs tests/cloud-kernel-adapter-memory.test.mjs tests/cloud-kernel-adapter-handoff.test.mjs tests/cloud-kernel-adapter-routine.test.mjs tests/dsh-computer-plugin.test.mjs tests/dsh-memory-plugin.test.mjs tests/computer-tools.test.mjs tests/file-store.test.ts tests/workspace-files-runtime.test.mjs tests/clear-stale-x11.test.mjs tests/pi-runtime.test.ts tests/computer-action.test.ts tests/computer-bridge.test.ts tests/computer-navigation-policy.test.ts tests/computer-vnc-proxy.test.ts tests/vps-grok-bot-websocket-config.test.mjs tests/user-computer-http.test.ts tests/guarded-worker.test.ts tests/guarded-computer.test.mjs tests/routine-schedule.test.ts",
     "test:runtime-mysql": "node --import tsx --test tests/run-store.test.ts tests/run-store-order.test.ts tests/run-scheduler.test.ts tests/run-http.test.ts tests/run-pipeline.test.ts tests/approval-store.test.ts tests/approval-http.test.ts tests/approval-gateway.test.ts tests/computer-broker.test.ts tests/computer-gateway.test.ts tests/bot-memory.test.ts tests/bot-handoff.test.ts tests/group-chat-store.test.ts tests/routine-store.test.ts",
     "test:run-browser": "node --import tsx tests/run-browser.e2e.ts",
+    "test:computer-vnc-input-protocol": "node --import tsx tests/computer-vnc-input.protocol.ts",
     "test:provisioner-k3d": "node --import tsx tests/desktop-provisioner-k3d.e2e.ts",
     "test:kube-client-k3d": "node --import tsx tests/kube-client-k3d.e2e.ts",
     "test:desktop-broker-k3d": "node --import tsx tests/desktop-broker-k3d.e2e.ts",
@@ -44,6 +46,8 @@
     "test:pi-pipeline-k3d": "node --import tsx tests/pi-pipeline-k3d.e2e.ts",
     "test:mediated-agent-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts",
     "test:bot-memory-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts --memory-only",
+    "test:gmail-handoff-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts --gmail-handoff-only",
+    "test:computer-ui-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts --gmail-handoff-only --computer-ui-only",
     "build:deployment": "VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build && VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true node scripts/mark-web-build.mjs && npm run build:server && npm run build:desktop-broker && npm run build:namespace-bootstrap"
   },
   "dependencies": {

@@ -3,6 +3,14 @@ import type { ComputerState,GuardedComputerWorker } from './computer-broker.ts';
 import type { RunOwner } from './run-store.ts';
 import {SafeDiagnosticError} from './safe-diagnostics.ts';
 
+export type ComputerViewport={left:number;top:number;width:number;height:number};
+export function parseComputerViewport(value:unknown):ComputerViewport{
+ if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid computer viewport');
+ const item=value as Partial<ComputerViewport>;
+ if(![item.left,item.top,item.width,item.height].every(Number.isSafeInteger)||typeof item.left!=='number'||typeof item.top!=='number'||typeof item.width!=='number'||typeof item.height!=='number'||item.left<0||item.top<0||item.width<640||item.width>3840||item.height<480||item.height>2160||item.left+item.width>32767||item.top+item.height>32767)throw new Error('Invalid computer viewport');
+ return {left:item.left,top:item.top,width:item.width,height:item.height};
+}
+
 /** Private worker connection; callers must authenticate the run before constructing it. */
 export class HttpGuardedComputerWorker implements GuardedComputerWorker {
  private readonly endpoint:URL;
@@ -17,6 +25,12 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
  }
  private headers(json=false):Record<string,string>{return {authorization:`Bearer ${this.controlToken}`,'x-coke-grok-screen-id':this.screenId,...(json?{'content-type':'application/json'}:{})}}
  vncEndpoint():URL{const endpoint=new URL(this.endpoint);endpoint.port='6080';endpoint.pathname='/';return endpoint}
+ async vncViewport(signal:AbortSignal):Promise<ComputerViewport>{
+  const response=await this.request(new URL('/v1/guarded/viewport',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
+  if(!response.ok)throw new Error('Computer viewport unavailable');
+  const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>4096)throw new Error('Computer viewport too large');
+  return parseComputerViewport(await response.json());
+ }
  async snapshot(signal:AbortSignal):Promise<ComputerState>{
   const response=await this.request(new URL('/v1/guarded/snapshot',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
   if(!response.ok)throw new Error('Computer snapshot unavailable');

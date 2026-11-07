@@ -11,6 +11,19 @@ test('guarded worker scopes endpoint and task identity to the owner',async()=>{
  assert.throws(()=>new HttpGuardedComputerWorker(owner,screenId,new URL('http://other.svc:8082/'),token,taskId));
  assert.throws(()=>new HttpGuardedComputerWorker(owner,'not-a-bot',url,token,taskId));
 });
+test('guarded worker returns only a validated Bot viewport while preserving worker scope',async()=>{
+ const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async(request,init)=>{
+  assert.equal(new URL(String(request)).pathname,'/v1/guarded/viewport');
+  assert.equal(new Headers(init?.headers).get('authorization'),`Bearer ${token}`);
+  assert.equal(new Headers(init?.headers).get('x-coke-grok-screen-id'),screenId);
+  return Response.json({slot:1,left:1472,top:0,width:1440,height:900});
+ });
+ assert.deepEqual(await worker.vncViewport(signal),{left:1472,top:0,width:1440,height:900});
+ for(const viewport of [{left:-1,top:0,width:1440,height:900},{left:0,top:0,width:0,height:900},{left:32700,top:0,width:1440,height:900}]){
+  const invalid=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>Response.json(viewport));
+  await assert.rejects(invalid.vncViewport(signal),/Invalid computer viewport/);
+ }
+});
 test('guarded computer control records only safe auth and status failure codes',async()=>{
  for(const [status,code] of [[401,'COMPUTER_WORKER_AUTH_REJECTED'],[403,'COMPUTER_WORKER_FORBIDDEN'],[503,'COMPUTER_WORKER_HTTP_ERROR']] as const){
   const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>new Response('private upstream detail',{status}));

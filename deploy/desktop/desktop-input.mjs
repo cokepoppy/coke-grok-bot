@@ -29,6 +29,13 @@ export async function captureFocusedDesktopScreen(run, page, bounds) {
   return withFocusedDesktopPage(page, () => captureDesktopScreen(run, bounds));
 }
 
+/** Never raise Chromium while the owner is actively using its desktop. */
+export async function captureOwnedDesktopScreen(run, page, bounds, owner) {
+  if (owner === 'user') return captureDesktopScreen(run, bounds);
+  if (owner === 'agent') return captureFocusedDesktopScreen(run, page, bounds);
+  throw new Error('Computer owner is invalid');
+}
+
 export function createDesktopActionGate() {
   let tail = Promise.resolve();
   return async function withGate(action) {

@@ -90,6 +90,36 @@ test('DSH browser mutations use one exact approved action and never retry execut
   }
 });
 
+test('DSH direct Gmail navigation consumes an immediate completion without creating an approval', async () => {
+  const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
+  const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
+  const oldFetch = globalThis.fetch;
+  process.env.COKE_GROK_COMPUTER_BRIDGE_URL = 'https://gateway.example.test/v1';
+  process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = bridgeToken;
+  const calls = [], destination = { ready: true, url: 'https://mail.google.com/' };
+  globalThis.fetch = async (url, init = {}) => {
+    const path = new URL(String(url)).pathname;
+    calls.push({ path, method: init.method || 'GET', body: init.body ? JSON.parse(init.body) : undefined });
+    if (path.endsWith('/computer/control')) return Response.json({ owner: 'agent' });
+    if (path.endsWith('/computer/actions')) return Response.json({ status: 'completed', result: destination }, { status: 201 });
+    throw new Error('Direct Gmail navigation should not poll for or execute an approval');
+  };
+  try {
+    const { tools } = mount(), browser = tools.get('computer_browser');
+    const value = await browser.execute({ action: 'navigate', url: 'https://mail.google.com/' }, { signal: new AbortController().signal });
+    assert.equal(value.action, 'navigate');
+    assert.deepEqual(JSON.parse(value.text), destination);
+    assert.equal(calls.filter(call => call.path.endsWith('/computer/actions')).length, 1);
+    assert.equal(calls.length, 2, 'only check control and navigate; do not create, poll, or execute an approval');
+    assert.match(browser.description, /navigation to a destination directly requested by the owner do not require approval/i);
+    assert.match(browser.description, /stop at the sign-in page/i);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
+    if (oldToken === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN; else process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = oldToken;
+  }
+});
+
 test('DSH computer plugin refuses actions when the user owns the screen and rejects an invalid gateway', async () => {
   const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
   const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;

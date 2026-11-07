@@ -10,7 +10,7 @@ import { BrowserContextNotReadyError, getBrowserPage, waitForDefaultBrowserConte
 import { createRendererHealthMonitor, RendererUnresponsiveError } from './renderer-health.mjs';
 import { BotScreenCapacityError, BotScreenPages } from './bot-screen-pages.mjs';
 import { createDesktopScreenLayout, parseDesktopScreenSlots } from './desktop-screen-layout.mjs';
-import { captureFocusedDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from './desktop-input.mjs';
+import { captureOwnedDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from './desktop-input.mjs';
 import { ensureSharedComputerRoots } from './shared-computer-root.mjs';
 import { createGuardedComputer } from '/opt/coke-grok/guarded-computer.mjs';
 
@@ -244,7 +244,7 @@ function screenIdFromRequest(req) {
 async function screenshot(screenId) {
   const browserPage = await pageForScreen(screenId);
   const bounds = await screenPages.geometry(screenId);
-  return desktopActionGate(() => captureFocusedDesktopScreen(exec, browserPage, bounds));
+  return desktopActionGate(async () => captureOwnedDesktopScreen(exec, browserPage, bounds, await screenOwner(screenId)));
 }
 
 const artifactTaskId = /^[a-f0-9-]{36}$/i;
@@ -402,6 +402,17 @@ async function agentBrowserAction(input, screenId) {
   if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
   const action = String(input.action || '');
   const browserPage = await pageForScreen(screenId);
+  if (action === 'navigate') {
+    const url = new URL(String(input.url || ''));
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.href.length > 2048) throw new Error('Only credential-free HTTP and HTTPS URLs are allowed');
+    if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
+    // Real sites can take longer than the short renderer health probe. Keep
+    // the explicit 30s navigation timeout without latching the renderer as
+    // unresponsive after the probe's 3s deadline.
+    await browserPage.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => undefined));
+    return { ready: true, action, url: safePageUrl(browserPage.url()), title: await rendererHealth.run(() => browserPage.title()) };
+  }
   return rendererHealth.run(async () => {
     if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
     if (action === 'inspect') {
@@ -441,12 +452,7 @@ async function agentBrowserAction(input, screenId) {
       return { ready: true, action, url: safePageUrl(browserPage.url()), title: snapshot.title, text: snapshot.text, visibleH1: snapshot.visibleH1, controls: snapshot.controls };
     }
 
-    if (action === 'navigate') {
-      const url = new URL(String(input.url || ''));
-      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.href.length > 2048) throw new Error('Only credential-free HTTP and HTTPS URLs are allowed');
-      if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
-      await browserPage.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    } else if (action === 'open_artifact') {
+    if (action === 'open_artifact') {
       const taskId = String(input.taskId || '');
       if (!/^[a-f0-9-]{36}$/i.test(taskId)) throw new Error('Task id is invalid');
       const resolved = await resolveArtifact(taskId, String(input.path || ''));
@@ -527,6 +533,11 @@ http.createServer(async (req, res) => {
     const guardedComputer = screenId ? guardedComputerFor(screenId) : null;
     if (screenId) await screenOwner(screenId);
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/control') return send(res, 200, {owner:await screenOwner(screenId)});
+    if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/viewport') {
+      if (await screenOwner(screenId) !== 'user') throw new Error('The user does not control this computer');
+      const {left,top,width,height}=await screenPages.geometry(screenId);
+      return send(res, 200, {left,top,width,height});
+    }
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/snapshot') return send(res, 200, await guardedComputer.snapshot());
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/snapshot-image') return send(res, 200, await guardedComputer.snapshotWithImage());
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/inspect') return await guardedComputer.locked(async () => send(res, 200, await agentBrowserAction({action:'inspect'}, screenId)));
@@ -558,7 +569,7 @@ http.createServer(async (req, res) => {
       const input = await body(req);
       if (input.owner !== 'agent' && input.owner !== 'user') return send(res, 400, { error: 'invalid control owner' });
       return await guardedComputer.locked(async () => {
-        await setScreenOwner(screenId, input.owner);
+        await desktopActionGate(() => setScreenOwner(screenId, input.owner));
         if (input.owner === 'user') {
           await fetch(new URL('/v1/tasks/pause',agentEndpoint), {
             method: 'POST', headers: { authorization: `Bearer ${process.env.DOTS_AGENT_RUNTIME_TOKEN}`,'content-type':'application/json' }, body:JSON.stringify({botId:screenId}), signal: AbortSignal.timeout(1500),

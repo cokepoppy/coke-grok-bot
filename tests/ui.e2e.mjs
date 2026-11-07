@@ -371,6 +371,21 @@ try {
   await openScreen.click();
   const computerScreenDialog = productShellPage.getByRole('dialog', { name: "Sales Outbound's computer screen" });
   await computerScreenDialog.waitFor({ state: 'visible' });
+  const chatComposerDuringTakeover = productShellPage.getByLabel('Message Sales Outbound');
+  assert.equal(await chatComposerDuringTakeover.evaluate(element => element.closest('[inert]') !== null), true, 'The external chat composer must be inert while the computer screen is open');
+  assert.equal(await productShellPage.evaluate(() => {
+    const composer = document.querySelector('.composer textarea');
+    if (!composer) return false;
+    const bounds = composer.getBoundingClientRect();
+    const topmost = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    return topmost?.closest('.computer-screen-overlay') !== null;
+  }), true, 'The expanded computer view must visually cover the external chat composer');
+  await chatComposerDuringTakeover.evaluate(element => element.focus());
+  assert.equal(await computerScreenDialog.evaluate(dialog => dialog.contains(document.activeElement)), true, 'Focus must remain inside the computer dialog instead of moving to the external chat composer');
+  for (let index = 0; index < 5; index += 1) {
+    await productShellPage.keyboard.press('Tab');
+    assert.equal(await computerScreenDialog.evaluate(dialog => dialog.contains(document.activeElement)), true, 'Tab navigation must not escape the computer dialog');
+  }
   const screenBounds = await computerScreenDialog.boundingBox();
   const productViewport = await productShellPage.evaluate(() => ({ width: innerWidth, height: innerHeight }));
   assert.ok(screenBounds && screenBounds.x === 0 && screenBounds.y === 0 && screenBounds.width === productViewport.width && screenBounds.height === productViewport.height, 'The computer screen should fill the browser viewport');

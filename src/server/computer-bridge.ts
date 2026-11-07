@@ -4,7 +4,7 @@ import { canonicalComputerAction } from './computer-action.ts';
 import type { RunOwner,RunStore } from './run-store.ts';
 import { SafeDiagnosticError } from './safe-diagnostics.ts';
 
-export interface RunScope {owner:RunOwner;runId:string;leaseId:string;botId:string;requestedNavigationOrigins?:readonly string[]}
+export interface RunScope {owner:RunOwner;runId:string;leaseId:string;botId:string;requestedNavigationOrigins?:readonly string[];signInHandoff?:boolean}
 export interface ComputerReadWorker extends GuardedComputerWorker { control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>; inspect(signal:AbortSignal):Promise<unknown>; screenshot(signal:AbortSignal):Promise<Buffer> }
 /** Only the authenticated, live run capability may call these methods. */
 export class ComputerBridge {
@@ -30,6 +30,7 @@ export class ComputerBridge {
   if(state.owner!=='agent')throw new SafeDiagnosticError('COMPUTER_OWNER_USER');
   let action:string;try{action=canonicalComputerAction(input,state)}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
   const canonical=JSON.parse(action) as {kind?:unknown;action?:unknown;arguments?:{url?:unknown}};
+  if(disallowedDuringSignInHandoff(scope,canonical))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
   if(canonical.kind==='browser'&&canonical.action==='navigate'&&typeof canonical.arguments?.url==='string'){
    let origin='';try{origin=new URL(canonical.arguments.url).origin}catch{/* The canonicalizer already validates the URL. */}
    if(origin&&scope.requestedNavigationOrigins?.includes(origin)){
@@ -51,6 +52,12 @@ export class ComputerBridge {
  }
  async execute(scope:RunScope,id:string,input:unknown,signal:AbortSignal):Promise<unknown>{
   const worker=await this.authorize(scope,signal);
+  if(scope.signInHandoff){
+   const state=await worker.snapshot(signal);if(state.owner!=='agent')throw new SafeDiagnosticError('COMPUTER_OWNER_USER');
+   let action:string;try{action=canonicalComputerAction(input,state)}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
+   const canonical=JSON.parse(action) as {kind?:unknown;action?:unknown};
+   if(disallowedDuringSignInHandoff(scope,canonical))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
+  }
   if(input&&typeof input==='object'&&!Array.isArray(input)&&(input as {kind?:unknown}).kind==='terminal'){
    if(signal.aborted)throw new Error('Task stopped');
    const state=await worker.snapshot(signal);if(state.owner!=='agent')throw new Error('User controls the computer');
@@ -64,4 +71,8 @@ export class ComputerBridge {
   await this.markUsed(scope);
   return result;
  }
+}
+
+function disallowedDuringSignInHandoff(scope:RunScope,action:{kind?:unknown;action?:unknown}):boolean{
+ return scope.signInHandoff===true&&(action.kind!=='browser'||action.action!=='navigate');
 }

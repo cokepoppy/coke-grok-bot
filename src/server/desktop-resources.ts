@@ -1,7 +1,9 @@
 import { createHash, createHmac } from 'node:crypto';
+import { isIP } from 'node:net';
 import type { Session } from './tenant-store.ts';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const desktopImageRef = /^coke-grok-desktop:(?:sha-[a-f0-9]{40}|candidate-[a-z0-9]+(?:-[a-z0-9]+)*)$/;
 export interface DesktopIdentity { namespace: string; ownerHash: string; workerToken: string; agentToken: string; controlToken: string }
 export function desktopOwnerHash(session:Pick<Session,'tenantId'|'userId'>):string {
   if(!uuid.test(session.tenantId)||!uuid.test(session.userId))throw new Error('Invalid desktop identity');
@@ -16,9 +18,12 @@ export function desktopIdentity(session: Pick<Session,'tenantId'|'userId'>, sign
 }
 
 /** Resources are specific to one tenant/user pair. The caller must verify ownership on existing objects. */
-export function desktopResources(identity: DesktopIdentity, options: { image: string; controlNamespace: string; gatewayCA: string; guarded?:boolean }): Record<string, unknown>[] {
+export type DesktopProxyOptions={desktopProxyServer?:string;desktopProxyHostIp?:string};
+export function desktopResources(identity: DesktopIdentity, options: { image: string; controlNamespace: string; gatewayCA: string; guarded?:boolean }&DesktopProxyOptions): Record<string, unknown>[] {
   if (!/^grok-user-[a-f0-9]{32}$/.test(identity.namespace) || !/^[a-f0-9]{32}$/.test(identity.ownerHash) || identity.namespace !== `grok-user-${identity.ownerHash}` || !/^[A-Za-z0-9_-]{43}$/.test(identity.workerToken) || !/^[A-Za-z0-9_-]{43}$/.test(identity.agentToken) || !/^[A-Za-z0-9_-]{43}$/.test(identity.controlToken) || new Set([identity.workerToken,identity.agentToken,identity.controlToken]).size!==3) throw new Error('Invalid desktop identity');
-  if (!/^coke-grok-desktop:sha-[a-f0-9]{40}$/.test(options.image) || !/^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/.test(options.controlNamespace) || !options.gatewayCA.includes('BEGIN CERTIFICATE') || options.gatewayCA.length > 16384) throw new Error('Invalid desktop configuration');
+  if (!desktopImageRef.test(options.image) || !/^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/.test(options.controlNamespace) || !options.gatewayCA.includes('BEGIN CERTIFICATE') || options.gatewayCA.length > 16384) throw new Error('Invalid desktop configuration');
+  const proxyServer=options.desktopProxyServer?.trim(),proxyHostIp=options.desktopProxyHostIp?.trim(),proxyConfigured=options.desktopProxyServer!==undefined||options.desktopProxyHostIp!==undefined;
+  if(proxyConfigured&&(proxyServer!=='http://host.docker.internal:17891'||proxyHostIp!=='192.168.65.254'||isIP(proxyHostIp||'')!==4))throw new Error('Invalid desktop proxy configuration');
   const ns = identity.namespace, labels = { 'app.kubernetes.io/managed-by':'coke-grok-bot', 'coke-grok-bot.io/owner-hash':identity.ownerHash };
   const meta = (name:string) => ({name,namespace:ns,labels});
   const security = (uid:number, readOnlyRootFilesystem:boolean) => ({runAsNonRoot:true,runAsUser:uid,runAsGroup:1000,allowPrivilegeEscalation:false,readOnlyRootFilesystem,capabilities:{drop:['ALL']}});
@@ -34,6 +39,7 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
       egress:[
         {to:[{namespaceSelector:{matchLabels:{'kubernetes.io/metadata.name':'kube-system'}}}],ports:[{protocol:'UDP',port:53},{protocol:'TCP',port:53}]},
         {to:[{namespaceSelector:{matchLabels:{'kubernetes.io/metadata.name':options.controlNamespace}},podSelector:{matchLabels:{app:'coke-grok-auth'}}}],ports:[{protocol:'TCP',port:3002}]},
+        ...(proxyConfigured?[{to:[{ipBlock:{cidr:`${proxyHostIp!}/32`}}],ports:[{protocol:'TCP',port:17891}]}]:[]),
         {to:[{ipBlock:{cidr:'0.0.0.0/0',except:['10.0.0.0/8','172.16.0.0/12','192.168.0.0/16','169.254.0.0/16','127.0.0.0/8']}}],ports:[{protocol:'TCP',port:80},{protocol:'TCP',port:443}]},
       ],
     } },
@@ -41,7 +47,7 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
       automountServiceAccountToken:false,securityContext:{runAsNonRoot:true,fsGroup:1000,seccompProfile:{type:'RuntimeDefault'}},
       containers:[
         {name:'desktop',image:options.image,imagePullPolicy:'Never',
-          env:[secretEnv('LINUX_DESKTOP_WORKER_TOKEN','worker'),secretEnv('DOTS_AGENT_RUNTIME_TOKEN','agent'),...(options.guarded?[secretEnv('COKE_GROK_CONTROL_TOKEN','control'),{name:'COKE_GROK_GUARDED_MODE',value:'1'}]:[]),{name:'COKE_DESKTOP_VNC_AUTH_MODE',value:'gateway'},{name:'COKE_DESKTOP_RESOLUTION',value:'1440x900'},{name:'COKE_DESKTOP_SCREEN_SLOTS',value:'8'},{name:'COKE_DESKTOP_CHROME_NO_SANDBOX',value:'1'}],
+          env:[secretEnv('LINUX_DESKTOP_WORKER_TOKEN','worker'),secretEnv('DOTS_AGENT_RUNTIME_TOKEN','agent'),...(options.guarded?[secretEnv('COKE_GROK_CONTROL_TOKEN','control'),{name:'COKE_GROK_GUARDED_MODE',value:'1'}]:[]),...(proxyConfigured?[{name:'COKE_DESKTOP_PROXY_SERVER',value:proxyServer!}]:[]),{name:'COKE_DESKTOP_VNC_AUTH_MODE',value:'gateway'},{name:'COKE_DESKTOP_RESOLUTION',value:'1440x900'},{name:'COKE_DESKTOP_SCREEN_SLOTS',value:'8'},{name:'COKE_DESKTOP_CHROME_NO_SANDBOX',value:'1'}],
           securityContext:security(1000,false),resources:{requests:{cpu:'200m',memory:'512Mi'},limits:{cpu:'2',memory:'2Gi'}},
           ports:[{name:'novnc',containerPort:6080},{name:'worker',containerPort:8082}],
           startupProbe:{httpGet:{path:'/healthz',port:8082},periodSeconds:5,timeoutSeconds:5,failureThreshold:36},
@@ -61,9 +67,9 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
 }
 
 /** Separate computer and Agent Pods with independently pinned runtime images. */
-export function splitDesktopResources(identity:DesktopIdentity,options:{image:string;agentImage?:string;controlNamespace:string;gatewayCA:string}):Record<string,unknown>[] {
+export function splitDesktopResources(identity:DesktopIdentity,options:{image:string;agentImage?:string;controlNamespace:string;gatewayCA:string}&DesktopProxyOptions):Record<string,unknown>[] {
   const agentImage=options.agentImage ?? options.image;
-  if(!/^coke-grok-desktop:sha-[a-f0-9]{40}$/.test(agentImage))throw new Error('Invalid desktop configuration');
+  if(!desktopImageRef.test(agentImage))throw new Error('Invalid desktop configuration');
   const resources=structuredClone(desktopResources(identity,{...options,image:options.image,guarded:true}));
   const ns=identity.namespace;
   const find=(kind:string,name:string)=>{const resource=resources.find(item=>item.kind===kind&&(item.metadata as {name?:string})?.name===name);if(!resource)throw new Error('Missing desktop resource');return resource as any};

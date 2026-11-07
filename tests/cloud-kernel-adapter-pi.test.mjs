@@ -90,6 +90,36 @@ test('Pi reports only the allowlisted computer diagnostic after an approved acti
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });
 
+test('Pi does not create another browser or desktop approval after the owner denies it',async()=>{
+ const workspace=await mkdtemp(path.join(os.tmpdir(),'grok-pi-denied-computer-action-')),cwd=path.join(workspace,'tasks','denied');await mkdir(cwd,{recursive:true});
+ const oldFetch=globalThis.fetch,approvalIds=[],token='x'.repeat(43);let options;
+ globalThis.fetch=async(url,init={})=>{
+  const pathname=new URL(String(url)).pathname,method=init.method||'GET';
+  if(pathname.endsWith('/computer/control'))return Response.json({owner:'agent'});
+  if(pathname.endsWith('/computer/actions')&&method==='POST'){const id=randomUUID();approvalIds.push(id);return Response.json({id},{status:201})}
+  const denied=pathname.match(/\/computer\/actions\/([0-9a-f-]+)$/i);
+  if(denied&&approvalIds.includes(denied[1])&&method==='GET')return Response.json({status:'denied'});
+  throw new Error(`Unexpected computer gateway request: ${method} ${pathname}`);
+ };
+ const sdk={
+  AuthStorage:{inMemory:()=>({setRuntimeApiKey(){}})},ModelRegistry:{inMemory:()=>({registerProvider(){},find:()=>({id:'deepseek-v4.1-flash'})})},
+  SessionManager:{list:async()=>[],create:()=>({getSessionId:()=>randomUUID()})},
+  createAgentSession:async value=>{options=value;return{session:{messages:[{role:'assistant',stopReason:'stop',content:[{type:'text',text:'{"status":"done","message":"Adapter ready."}'}]}],async prompt(){},dispose(){}}}},
+ };
+ try{
+  await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:token},prompt:'Use the requested browser site.',signal:new AbortController().signal},{piSdk:sdk});
+  const browser=options.customTools.find(tool=>tool.name==='computer_browser'),desktop=options.customTools.find(tool=>tool.name==='computer_desktop');assert.ok(browser);assert.ok(desktop);
+  await assert.rejects(()=>browser.execute('browser-navigate',{action:'navigate',url:'https://www.google.com/'},new AbortController().signal),/Computer action was not approved/);
+  assert.equal(approvalIds.length,1);
+  await assert.rejects(()=>browser.execute('browser-retry',{action:'navigate',url:'https://www.google.com/'},new AbortController().signal),/owner denied a computer action; wait for a new user message/);
+  assert.equal(approvalIds.length,1,'Pi must not create another browser approval after owner denial');
+  await assert.rejects(()=>desktop.execute('desktop-click',{action:'click',x:10,y:10},new AbortController().signal),/Computer action was not approved/);
+  assert.equal(approvalIds.length,2);
+  await assert.rejects(()=>desktop.execute('desktop-retry',{action:'click',x:10,y:10},new AbortController().signal),/owner denied a computer action; wait for a new user message/);
+  assert.equal(approvalIds.length,2,'Pi must not create another desktop approval after owner denial');
+ }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
+});
+
 test('Pi keeps group orchestration context in the system prompt and the user message intact',async()=>{
  const workspace=await mkdtemp(path.join(os.tmpdir(),'grok-pi-group-context-')),cwd=path.join(workspace,'tasks','group');await mkdir(cwd,{recursive:true});
  let options,loaderOptions,loaded=false,userMessage='';

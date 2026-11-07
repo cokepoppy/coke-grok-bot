@@ -24,16 +24,39 @@ test('computer action proposal failures expose only fixed diagnostic codes',asyn
 });
 test('only directly requested browser destinations skip computer approval',async()=>{
  let approvalProposals=0,performed=0,marked=0;
- const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'about:blank',screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async()=>{performed++;return {ready:true,url:'https://mail.google.com/'}}};
+ const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'about:blank',screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async(input?:unknown)=>{performed++;const url=input&&typeof input==='object'?(input as {url?:unknown}).url:undefined;return {ready:true,...(typeof url==='string'?{url}:{})}}};
  const approvals={propose:async()=>{approvalProposals++;return {id:randomUUID()}},consume:async()=>false,status:async()=>null};
  const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>{marked++;return true}},approvals,()=>worker),signal=new AbortController().signal;
- const scoped={...scope,requestedNavigationOrigins:['https://mail.google.com']};
+ const scoped={...scope,requestedNavigationOrigins:['https://www.google.com','https://mail.google.com']};
+ const googleNavigation=await bridge.propose(scoped,{kind:'browser',action:'navigate',url:'https://www.google.com/'},signal);
+ assert.deepEqual(googleNavigation,{status:'completed',result:{ready:true,url:'https://www.google.com/'}});
  const navigation=await bridge.propose(scoped,{kind:'browser',action:'navigate',url:'https://mail.google.com/'},signal);
- assert.deepEqual(navigation,{status:'completed',result:{ready:true,url:'https://mail.google.com/'}});assert.equal(performed,1);assert.equal(marked,1);assert.equal(approvalProposals,0);
+ assert.deepEqual(navigation,{status:'completed',result:{ready:true,url:'https://mail.google.com/'}});assert.equal(performed,2);assert.equal(marked,2);assert.equal(approvalProposals,0);
  const click=await bridge.propose(scoped,{kind:'browser',action:'click',by:'text',target:'Compose'},signal);
  assert.ok('id'in click);assert.equal(approvalProposals,1);
  const otherDestination=await bridge.propose(scoped,{kind:'browser',action:'navigate',url:'https://example.com/'},signal);
  assert.ok('id'in otherDestination);assert.equal(approvalProposals,2);
+ const ordinaryDesktopClick=await bridge.propose(scoped,{kind:'desktop',action:'click',x:100,y:100},signal);
+ assert.ok('id'in ordinaryDesktopClick);assert.equal(approvalProposals,3,'ordinary desktop actions remain approval-gated');
+});
+test('sign-in handoff rejects desktop and browser interaction proposals instead of creating approval prompts',async()=>{
+ let approvalProposals=0,approvalConsumes=0,performed=0;
+ const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'https://example.test/',screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async(input?:unknown)=>{performed++;const url=input&&typeof input==='object'?(input as {url?:unknown}).url:undefined;return {ready:true,...(typeof url==='string'?{url}:{})}}};
+ const approvals={propose:async()=>{approvalProposals++;return {id:randomUUID()}},consume:async()=>{approvalConsumes++;return false},status:async()=>null};
+ const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>true},approvals,()=>worker),signal=new AbortController().signal;
+ const scoped={...scope,requestedNavigationOrigins:['https://www.google.com','https://mail.google.com'],signInHandoff:true};
+ for(const action of [
+  {kind:'desktop',action:'click',x:100,y:100},
+  {kind:'desktop',action:'type',text:'https://mail.google.com'},
+  {kind:'desktop',action:'press',key:'Enter'},
+  {kind:'browser',action:'click',by:'text',target:'Sign in'},
+ ] as const){
+  await assert.rejects(bridge.propose(scoped,action,signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_SIGNIN_HANDOFF_REQUIRED');
+ }
+ const navigation=await bridge.propose(scoped,{kind:'browser',action:'navigate',url:'https://mail.google.com/'},signal);
+ assert.deepEqual(navigation,{status:'completed',result:{ready:true,url:'https://mail.google.com/'}});
+ await assert.rejects(bridge.execute(scoped,randomUUID(),{kind:'terminal',action:'run',command:'printf unsafe',directory:'task'},signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_SIGNIN_HANDOFF_REQUIRED');
+ assert.equal(approvalProposals,0);assert.equal(approvalConsumes,0);assert.equal(performed,1);
 });
 test('terminal approval is exact, lease-bound, screenshot-bound, and consumed before local execution',async()=>{
  let actionText='',consumed=0,workerActions=0,owner:'agent'|'user'='agent',screenshot='a'.repeat(64);

@@ -271,11 +271,13 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
   const previewButton=useRef<HTMLButtonElement>(null);
   const closeScreenButton=useRef<HTMLButtonElement>(null);
   const screenDialog=useRef<HTMLElement>(null);
+  const screenControlButton=useRef<HTMLButtonElement>(null);
+  const screenFrame=useRef<HTMLIFrameElement>(null);
+  const lastScreenOwner=useRef<'agent'|'user'|null>(owner);
   const [screenFullscreen,setScreenFullscreen]=useState(false);
   const imageUrl=useRef(''),inFlight=useRef(false),mounted=useRef(true);
   const computerUrl=`${import.meta.env.BASE_URL}api/bots/${encodeURIComponent(botId)}/computer`;
-  const noVncPath=`${computerUrl}/vnc/websockify`.replace(/^\/+/, '');
-  const noVncViewer=`${computerUrl}/vnc/vnc_lite.html?scale=1&autoconnect=1&path=${encodeURIComponent(noVncPath)}`;
+  const noVncViewer=`${computerUrl}/vnc/viewer.html`;
   const routinesUrl=`${import.meta.env.BASE_URL}api/bots/${encodeURIComponent(botId)}/routines`;
   const loadRoutines=async(signal?:AbortSignal)=>{
     const response=await fetch(routinesUrl,{credentials:'same-origin',cache:'no-store',signal});
@@ -310,13 +312,45 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
   },[official,routinesUrl]);
   useEffect(()=>{
     if(!screenOpen)return;
+    const dialog=screenDialog.current;
+    const inerted:Array<{element:HTMLElement;wasInert:boolean}>=[];
+    let branch=dialog?.closest<HTMLElement>('.computer-screen-overlay')||null;
+    while(branch?.parentElement&&branch.parentElement!==document.body){
+      const parent=branch.parentElement;
+      for(const sibling of Array.from(parent.children)){
+        if(sibling===branch||!(sibling instanceof HTMLElement))continue;
+        inerted.push({element:sibling,wasInert:sibling.inert});
+        sibling.inert=true;
+      }
+      branch=parent;
+    }
     closeScreenButton.current?.focus();
-    const onKeyDown=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();setScreenOpen(false);previewButton.current?.focus()}};
+    const onFocusIn=(event:FocusEvent)=>{if(dialog&&event.target instanceof Node&&!dialog.contains(event.target))closeScreenButton.current?.focus()};
+    const onKeyDown=(event:KeyboardEvent)=>{
+      if(event.key==='Escape'){event.preventDefault();setScreenOpen(false);return}
+      if(event.key!=='Tab'||!dialog)return;
+      const focusable=Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),textarea:not(:disabled),select:not(:disabled),iframe,[tabindex]:not([tabindex="-1"])')).filter(element=>element.getClientRects().length>0&&!element.closest('[inert]'));
+      const first=focusable[0],last=focusable.at(-1),active=document.activeElement;
+      if(!first||!last){event.preventDefault();dialog.focus();return}
+      if(event.shiftKey&&(active===first||!dialog.contains(active))){event.preventDefault();last.focus()}
+      else if(!event.shiftKey&&(active===last||!dialog.contains(active))){event.preventDefault();first.focus()}
+    };
     const onFullscreenChange=()=>setScreenFullscreen(document.fullscreenElement===screenDialog.current);
     onFullscreenChange();document.addEventListener('fullscreenchange',onFullscreenChange);
-    window.addEventListener('keydown',onKeyDown);
-    return()=>{window.removeEventListener('keydown',onKeyDown);document.removeEventListener('fullscreenchange',onFullscreenChange)};
+    document.addEventListener('focusin',onFocusIn,true);
+    document.addEventListener('keydown',onKeyDown,true);
+    return()=>{
+      document.removeEventListener('keydown',onKeyDown,true);document.removeEventListener('fullscreenchange',onFullscreenChange);document.removeEventListener('focusin',onFocusIn,true);
+      for(const {element,wasInert} of inerted)element.inert=wasInert;
+      requestAnimationFrame(()=>previewButton.current?.focus());
+    };
   },[screenOpen]);
+  useEffect(()=>{
+    if(lastScreenOwner.current===owner)return;
+    lastScreenOwner.current=owner;
+    if(!screenOpen)return;
+    requestAnimationFrame(()=>{if(owner==='user')screenFrame.current?.focus();else screenControlButton.current?.focus()});
+  },[owner,screenOpen]);
   const send=async(path:'control'|'action',body:unknown)=>{
     if(inFlight.current)return;inFlight.current=true;setBusy(true);setError('');
     try{const response=await fetch(`${computerUrl}/${path}`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!response.ok)throw new Error();
@@ -394,20 +428,20 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
       <span className="sr-only" role="status" aria-live="polite">{diagnostic}</span>
       {error && <p role="alert">{error}</p>}
     </>}
-    {screenOpen && <div className="computer-screen-overlay" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget){setScreenOpen(false);previewButton.current?.focus()}}}>
+    {screenOpen && <div className="computer-screen-overlay" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setScreenOpen(false)}}>
       <section ref={screenDialog} className="computer-screen-dialog" role="dialog" aria-modal="true" aria-label={name + "'s computer screen"}>
         <header>
           <span className={`computer-screen-status${owner?' connected':''}`}><i aria-hidden="true" />{controlLabel}</span>
           <div className="computer-screen-actions">
-            {owner && <button type="button" disabled={busy} onClick={()=>void send('control',{owner:owner==='agent'?'user':'agent'})}>{owner==='agent'?'Take control':'Return to Bot'}</button>}
+            {owner && <button ref={screenControlButton} type="button" disabled={busy} onClick={()=>void send('control',{owner:owner==='agent'?'user':'agent'})}>{owner==='agent'?'Take control':'Return to Bot'}</button>}
             <button type="button" aria-label={screenFullscreen?'Exit computer full screen':'Enter computer full screen'} onClick={()=>void toggleScreenFullscreen()}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d={screenFullscreen?'M8 3v5H3M16 3v5h5M8 21v-5H3m13 5v-5h5':'M8 3H3v5m13-5h5v5M8 21H3v-5m13 5h5v-5'} /></svg>
             </button>
-            <button ref={closeScreenButton} type="button" aria-label="Close screen" onClick={()=>{setScreenOpen(false);previewButton.current?.focus()}}><Icon name="close" /></button>
+            <button ref={closeScreenButton} type="button" aria-label="Close screen" onClick={()=>setScreenOpen(false)}><Icon name="close" /></button>
           </div>
         </header>
         <div className="computer-large-screen">{owner==='user'
-          ? <iframe key={`${botId}-user-control`} title={`${name || 'Bot'} cloud computer`} src={noVncViewer} allow="clipboard-read; clipboard-write" />
+          ? <iframe ref={screenFrame} key={`${botId}-user-control`} title={`${name || 'Bot'} cloud computer`} src={noVncViewer} allow="clipboard-read; clipboard-write" />
           : image ? <img src={image} alt="Current computer screen" onClick={click} /> : <span>Computer not connected</span>}</div>
         {error&&<span className="sr-only" role="status">{error}</span>}
       </section>
