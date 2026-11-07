@@ -11,7 +11,7 @@ export type RecoveryState = 'none' | 'pending' | 'retried' | 'acknowledged';
 export interface GroupRunContext { kind:'group-chat';groupName:string;currentBot:{name:string;label:string};members:Array<{name:string;label:string}>;targeted:boolean }
 export interface BotMentionRunContext { kind:'bot-mentions';targets:Array<{id:string;name:string;label:string}> }
 export type AgentRuntimeContext = GroupRunContext | BotMentionRunContext;
-export interface AgentRun { id: string; botId: string; prompt: string; status: RunStatus; result: string | null; recoveryState: RecoveryState; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: RunDiagnosticCode | null; runtimeContext?:AgentRuntimeContext|null; executionAudit?:AgentExecutionAudit|null }
+export interface AgentRun { id: string; botId: string; prompt: string; status: RunStatus; result: string | null; recoveryState: RecoveryState; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: RunDiagnosticCode | null; runtimeContext?:AgentRuntimeContext|null; executionAudit?:AgentExecutionAudit|null; previousPrompts?:string[] }
 export interface RunRecoveryResult { decision: 'retry' | 'acknowledge'; run: AgentRun | null }
 export type RunOwner = Pick<Session, 'tenantId' | 'userId'>;
 export interface RunScreenScope extends RunOwner { botId: string }
@@ -155,9 +155,11 @@ export class RunStore {
         : await connection.execute<RowDataPacket[]>(`SELECT r.id,r.bot_id AS botId,r.prompt,r.status,r.result,r.recovery_state AS recoveryState,r.replacement_run_id AS replacementRunId,r.runtime_context AS runtimeContext FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND r.status='queued' ORDER BY r.sequence LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
       if (!rows.length) return null;
       const row=rows[0],run = row as AgentRun, runtimeContext=parseAgentRuntimeContext(row.runtimeContext), leaseId = randomUUID();
+      const [previousRows]=await connection.execute<RowDataPacket[]>(`SELECT prompt FROM agent_runs WHERE bot_id=? AND sequence<(SELECT sequence FROM agent_runs WHERE id=?) AND created_at>=DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 20 MINUTE) ORDER BY sequence DESC LIMIT 1`,[run.botId,run.id]);
+      const previousPrompts=previousRows.map(previous=>String(previous.prompt));
       await connection.execute(`UPDATE agent_runs SET status='running',lease_id=?,lease_until=DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? SECOND) WHERE id=?`,[leaseId,leaseSeconds,run.id]);
       await connection.execute(`INSERT INTO agent_run_events (run_id,status) VALUES (?,'running')`,[run.id]);
-      return { run:{...run,status:'running',files:await this.filesForRun(connection,run.id),runtimeContext}, leaseId };
+      return { run:{...run,status:'running',files:await this.filesForRun(connection,run.id),runtimeContext,previousPrompts}, leaseId };
     });
   }
   async finish(runId: string, leaseId: string, status: 'completed' | 'failed', result: string, artifactsValue: unknown = [], executionAuditValue: unknown = null): Promise<boolean> {

@@ -104,6 +104,20 @@ test('runs are deduplicated, isolated, serialized per computer and never silentl
     assert.equal(mentionClaim?.run.prompt,mentionPrompt);
     assert.deepEqual(mentionClaim?.run.runtimeContext,mentionRun.runtimeContext);
     assert.equal(await runs.finish(mentionRun.id,mentionClaim!.leaseId,'completed','A2 returned its findings.'),true);
+
+    const handoffBot=await bots.create(sa,{name:'Sign-in Handoff',shape:'hex',color:'#abcdef'});
+    const handoffPrompt='Open Gmail and stop at sign-in so I can take control.';
+    const handoffRun=await runs.create(sa,handoffBot.id,randomUUID(),handoffPrompt);assert.ok(handoffRun);
+    const handoffClaim=await runs.claimNext({...sa,botId:handoffBot.id},30);assert.equal(handoffClaim?.run.id,handoffRun.id);
+    assert.deepEqual(handoffClaim?.run.previousPrompts,[]);
+    assert.equal(await runs.finish(handoffRun.id,handoffClaim!.leaseId,'completed','Stopped at sign-in.'),true);
+    const continuation=await runs.create(sa,handoffBot.id,randomUUID(),'Do not ask me for approval every step; open it directly.');assert.ok(continuation);
+    const continuationClaim=await runs.claimNext({...sa,botId:handoffBot.id},30);assert.equal(continuationClaim?.run.id,continuation.id);
+    assert.deepEqual(continuationClaim?.run.previousPrompts,[handoffPrompt]);
+    assert.equal(await runs.finish(continuation.id,continuationClaim!.leaseId,'completed','Continued.'),true);
+    const unrelated=await runs.create(sa,bot2.id,randomUUID(),'Do not ask me for approval every step; open it directly.');assert.ok(unrelated);
+    const unrelatedClaim=await runs.claimNext({...sa,botId:bot2.id},30);assert.equal(unrelatedClaim?.run.id,unrelated.id);
+    assert.equal(unrelatedClaim?.run.previousPrompts?.includes(handoffPrompt),false, 'Prior prompts must remain isolated to the same Bot');
   } finally { await pool.end(); await admin.query(`DROP DATABASE \`${database}\``); await admin.end(); }
 });
 

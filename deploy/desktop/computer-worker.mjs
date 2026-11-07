@@ -41,6 +41,7 @@ const screenPages = new BotScreenPages(async () => waitForDefaultBrowserContext(
   layout: screenLayout,
   createWindow: createBrowserWindow,
   placeWindow: placeBrowserWindow,
+  getFocusedWindow: focusedX11Window,
 });
 
 if (!token) throw new Error('LINUX_DESKTOP_WORKER_TOKEN is required');
@@ -73,6 +74,22 @@ async function placeBrowserWindow(browserPage, bounds) {
       bounds: { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height, windowState: 'normal' },
     });
   } finally { await session.detach().catch(() => undefined); }
+}
+
+async function focusedX11Window() {
+  try {
+    const focused = (await exec('xdotool', ['getwindowfocus'], { timeout: 1_000 })).stdout.trim();
+    if (!/^\d+$/.test(focused)) return null;
+    const [geometry, title] = await Promise.all([
+      exec('xdotool', ['getwindowgeometry', '--shell', focused], { timeout: 1_000 }),
+      exec('xdotool', ['getwindowname', focused], { timeout: 1_000 }),
+    ]);
+    const read = key => {
+      const match = String(geometry.stdout).match(new RegExp(`^${key}=(-?\\d+)$`, 'm'));
+      return match ? Number(match[1]) : NaN;
+    };
+    return { x: read('X'), y: read('Y'), width: read('WIDTH'), height: read('HEIGHT'), title: title.stdout.trim() };
+  } catch { return null; }
 }
 
 async function createBrowserWindow(context, bounds) {
@@ -201,13 +218,13 @@ const workspace = path.resolve(process.env.DOTS_AGENT_WORKSPACE || '/workspace')
 async function pageForScreen(screenId) {
   if (!screenIdPattern.test(screenId)) throw new Error('Invalid Bot screen id');
   try {
-    return await screenPages.get(screenId);
+    return await screenPages.active(screenId);
   } catch (error) {
     if (!(error instanceof BrowserContextNotReadyError)) throw error;
     process.stderr.write(`${JSON.stringify({ event: 'dots_browser_context_unavailable', at: new Date().toISOString(), recoveryAttempt: 1 })}\n`);
     clearBrowserHandles();
     await new Promise(resolve => setTimeout(resolve, 100));
-    return screenPages.get(screenId);
+    return screenPages.active(screenId);
   }
 }
 

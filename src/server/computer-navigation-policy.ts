@@ -43,3 +43,14 @@ export function requestsUserSignInHandoff(request: string): boolean {
   const english = /(?:\b(?:stop|pause|wait)\b.{0,60}\b(?:until|while|for)\s+(?:i|me|the user)\b.{0,30}\b(?:sign[ -]?in|log[ -]?in|take control)\b|\b(?:let|allow)\s+me\b.{0,40}\b(?:sign[ -]?in|log[ -]?in|take control)\b|\b(?:sign[ -]?in|log[ -]?in)\b.{0,50}\b(?:i(?:'ll| will)|let me|user can|take control)\b)/i;
   return chinese.test(text) || english.test(text);
 }
+
+/** A short follow-up that refers to continuing the same handoff rather than authorizing a new task. */
+export function continuesUserSignInHandoff(request: string): boolean {
+  const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';
+  if (!text) return false;
+  const chineseApproval = /(?:不需要|不用|别|不要).{0,24}(?:批准|审批)|(?:每步|每一步|每次).{0,12}(?:让我|我)?(?:批准|审批)/i.test(text);
+  const chineseContinuation = /(?:直接.{0,12}(?:打开|进入|去)|继续.{0,12}(?:打开|进入|操作)?)/i.test(text);
+  const englishApproval = /(?:don't|do not|stop asking).{0,48}(?:approve|approval)|(?:every|each)\s+step.{0,20}(?:approve|approval)/i.test(text);
+  const englishContinuation = /(?:open|go ahead|continue|proceed).{0,24}(?:it|there|directly|now)?/i.test(text);
+  return (chineseApproval && chineseContinuation) || (englishApproval && englishContinuation);
+}

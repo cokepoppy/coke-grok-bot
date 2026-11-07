@@ -4,9 +4,10 @@ import { BotScreenPages } from '../deploy/desktop/bot-screen-pages.mjs';
 import { randomUUID } from 'node:crypto';
 
 class FakePage {
-  constructor() { this.name = ''; this.href = 'about:blank'; this.closed = false; }
+  constructor() { this.name = ''; this.href = 'about:blank'; this.closed = false; this.windowId = null; this.visible = false; this.titleText = ''; }
   isClosed() { return this.closed; }
   url() { return this.href; }
+  async title() { return this.titleText; }
   handlers = new Map();
   on(event, handler) { const listeners=this.handlers.get(event)||[];listeners.push(handler);this.handlers.set(event,listeners); }
   mainFrame() { return this; }
@@ -40,6 +41,43 @@ test('Bot screen IDs bind to distinct pages in one persistent browser context an
   await a.navigate('https://other-origin.example/');
   assert.equal(await manager.get(botA),a,'cross-site navigation must not lose the Bot page binding');
   assert.equal(await a.evaluate(()=>window.name),`coke-grok-screen:${botA}:0`);
+});
+
+test('Bot screen resolves the active tab only inside its own browser window and survives manager restart', async () => {
+  const pages = [new FakePage()];
+  const context = { pages: () => [...pages], async newPage() { const page = new FakePage(); pages.push(page); return page; } };
+  const manager = new BotScreenPages(async () => context, {
+    layout: { width: 1440, height: 900, slots: 2, stride: 1472 },
+    async createWindow(_context) { return context.newPage(); },
+    async getWindowId(page) { return page.windowId; },
+    async getPageActivity(page) { return { visible: page.visible, focused: page.focused === true }; },
+    async getFocusedWindow() { return { x: 0, y: 0, width: 1440, height: 900, title: 'Example Domain - Chromium' }; },
+  });
+  const botA = randomUUID(), botB = randomUUID();
+  const pageA = await manager.get(botA), pageB = await manager.get(botB);
+  pageA.windowId = 10;
+  pageA.visible = true;
+  pageA.focused = true;
+  pageA.titleText = 'Gmail';
+  pageB.windowId = 20;
+  pageB.visible = true;
+  pageB.focused = true;
+  pageB.titleText = 'Example Domain';
+  const secondTabA = new FakePage();
+  secondTabA.windowId = 10;
+  secondTabA.visible = true;
+  secondTabA.focused = true;
+  secondTabA.titleText = 'Example Domain';
+  secondTabA.href = 'https://example.test/owner-selected-tab';
+  pages.push(secondTabA);
+
+  assert.equal(await manager.active(botA), secondTabA, 'Browser User must bind to the selected tab in Bot A window');
+  assert.equal(await manager.active(botB), pageB, 'Bot B must remain bound to its separate window');
+  assert.equal(await secondTabA.evaluate(() => window.name), `coke-grok-screen:${botA}:0`);
+
+  manager.clear();
+  assert.equal(await manager.active(botA), secondTabA, 'selected-tab mapping must be rediscovered after a worker restart');
+  assert.equal((await manager.active(botA)).url(), 'https://example.test/owner-selected-tab');
 });
 
 test('a navigated Bot page cannot be reassigned while its window.name marker is temporarily cleared', async () => {

@@ -66,6 +66,42 @@ test('Pi sends an explicit Gmail navigation and user sign-in handoff instruction
  }finally{await executor.close();gateway.close()}
 });
 
+test('Pi carries a recent same-Bot sign-in handoff into an approval follow-up without expanding its scope',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const original='帮我打开谷歌，然后登录我的 Gmail，然后你在登录的时候停下来，让我去操作。在云电脑里面打开 Chrome 浏览器。';
+ const followup:AgentRun={...run,prompt:'不需要我的批准呢，你直接去打开它，你不要每步都让我批准。',previousPrompts:[original]};
+ let receivedPrompt='';
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
+  receivedPrompt=JSON.parse(String(init?.body)).prompt;
+  return Response.json({status:'done',message:'Stopped at Google sign-in for you to take control.'});
+ });
+ try{
+  const result=await executor.execute(screen,followup,new AbortController().signal,randomUUID());
+  assert.equal(result.status,'completed');
+  assert.match(receivedPrompt,/https:\/\/accounts\.google\.com/);
+  assert.match(receivedPrompt,/continues the user's recent sign-in handoff/i);
+  assert.match(receivedPrompt,/desktop clicks, typing, key presses/i);
+  assert.match(receivedPrompt,/Do not interpret the request to avoid repeated approvals as permission to enter credentials/i);
+ }finally{await executor.close();gateway.close()}
+});
+
+test('Pi does not carry a sign-in handoff across an intervening same-Bot task',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const original='帮我打开谷歌，然后登录我的 Gmail，然后你在登录的时候停下来，让我去操作。';
+ const followup:AgentRun={...run,prompt:'不需要我的批准呢，你直接去打开它，你不要每步都让我批准。',previousPrompts:[original,'Tell me whether it will rain tomorrow.']};
+ let receivedPrompt='';
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
+  receivedPrompt=JSON.parse(String(init?.body)).prompt;
+  return Response.json({status:'done',message:'The unrelated task is complete.'});
+ });
+ try{
+  const result=await executor.execute(screen,followup,new AbortController().signal,randomUUID());
+  assert.equal(result.status,'completed');
+  assert.doesNotMatch(receivedPrompt,/https:\/\/accounts\.google\.com/);
+  assert.doesNotMatch(receivedPrompt,/continues the user's recent sign-in handoff/i);
+ }finally{await executor.close();gateway.close()}
+});
+
 test('Pi routes a selected direct-chat Bot mention by stable ID while preserving the visible user prompt',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const target={id:randomUUID(),name:'Dex',label:'Research'};

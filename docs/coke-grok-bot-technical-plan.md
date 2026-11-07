@@ -1580,3 +1580,59 @@ GitHub 直连因本机 DNS 无法解析 `github.com` 失败，`127.0.0.1:1080` �
 此前的 `tests/run-browser.e2e.ts` 使用模拟身份、假电脑和测试调度器；它不覆盖用户截图中的真实桌面点击。之后的 `npm run test:gmail-handoff-k3d` 使用真实 DeepSeek、隔离 K3D Chromium 和候选 noVNC；测试通过直接 API `submitRun` 创建任务，再用测试浏览器接管电脑，并在监测到审批记录时失败。该次 8 次模型调用通过了无审批的 Google 导航及接管输入。但这是单次随机模型工具选择：记录到的执行走了 `computer_browser.navigate` 精确导航路径，没有复现截图里的 `Desktop: click` 审批路径。测试当时既没有强制覆盖这条工具路径，也没有从公网已登录 Chrome 点击 composer 发起任务，因此其绿灯只表示这次候选 API/K3D 链路成功，不能作为 Gmail 用户体验或公网验收通过。
 
 后续验收应分别覆盖两件事：在隔离集成测试中确定性调用 sign-in handoff 下的 Desktop click，确认控制面按预期拦截且不会创建审批卡；再从公网已登录 Chrome 点击发起同一 Gmail 任务，核对用户看到的审批卡、电脑 owner 和真实浏览器状态。一次模型执行通过不能代替这些分支和公网入口的覆盖。
+
+#### 2026-11-07 Gmail 后续指令续接修复与候选复验
+
+复查发现另一处会让“不要每一步都让我批准”漏出交接保护的原因：Agent UI 的每条发送会新建独立 run，旧 `PiExecutor` 只把当前 `run.prompt` 交给 Harness；即使聊天界面保留了同 Bot 的前一条 Gmail 登录请求，后续短句本身没有 Google/Gmail 或“登录时停下”措辞，便不会启用 `signInHandoff` 与已授权精确 origin。此前单条 Gmail K3D 测试的真实模型选择了 `computer_browser.navigate`，所以它没有覆盖这种后续指令，也没有触发截图中的 `Desktop: click` 分支。
+
+当前候选在 `RunStore.claimNext` 中只向同一用户所拥有的同一 Bot 任务附带最近 20 分钟、最多 8 条先前用户 prompt；字段仅用于内部执行，不进入公开历史 API。只有当历史 prompt 明确要求在登录时交给用户，且当前短句同时表达“不要反复批准”和“继续打开/继续操作”时，Pi/DSH 共用 executor 才会续接原交接；它只继承原始用户请求中的精确 Google/Gmail origin，仍只允许 Browser navigate，仍禁止桌面点击、输入、浏览器页面交互与终端，并明确不允许把“少审批”当作输入凭据或账户操作授权。其他 Bot、普通请求和单独的审批偏好不会获得该范围。
+
+覆盖证据：策略单测验证中文/英文续接短句及不相关/不完整语句；Pi executor 测试验证续接 prompt 的精确 origin、交接指令和不扩权边界；MySQL RunStore 测试验证同 Bot 取回历史及不同 Bot 隔离；已有 ComputerBridge 测试确定性断言交接中的 Desktop click、type、press 和 Browser click 被拒绝且不创建审批。`npm run build:deployment` 通过；`npm run test:runtime` 136/136；`COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:runtime-mysql` 18/18。
+
+扩展后的 `npm run test:gmail-handoff-k3d` 使用官方 DeepSeek API、真实隔离 K3D Chromium、固定桌面候选镜像且禁用源码覆盖。首条 Gmail 交接与截图中同义的第二条“不要每步都让我批准”均完成、审批记录为零；浏览器到达 `accounts.google.com`。随后测试通过产品 UI Take control 与 noVNC 将真实云电脑导航到 `example.com`，Return to Bot 后确认 owner 回到 Agent，并由 Pi 只读确认页面；模型调用 14 次，退出码 0。第一次复跑因测试静态站点以根路径构建、却挂载在 `/grok-bot/` 而未找到 Bot；改用正确的 `npm run build:deployment` 后完整测试通过。该结果是 Mac/K3D 候选证据，不代表公网发布验收。
+
+结束后隔离 K3D namespace 已删除，MySQL `grok_mediated_*` schema 计数为 0；现有用户 Agent/Desktop Pod 未滚动，用户 PVC 未更改。只读核对公网仍加载旧 `index-C_ZPmWsX.js`，Auth 为 `gmail-approval-20261106-r1`，Broker 和用户 Agent/Desktop 为 `candidate-gmail-approval-20261107-r2`。公网 Chrome CUA 两次只读绑定超时；未对公网发任务、切换用户电脑 owner 或滚动服务，因此公网 Gmail/审批体验仍未验收。单一 feature 分支保留未提交状态，未推送、合并或打 tag。
+
+#### 2026-11-07 Gmail 用户可见链路复测：修正 API 级假绿灯
+
+复盘“为什么 E2E 通过但用户仍看到重复审批”：此前测试用 `submitRun()` 直接 POST 创建首条与后续任务，实际 DeepSeek 选择的是精确 Google/Gmail origin 的 `computer_browser.navigate`，没有经过截图中的 Desktop click 审批路径；测试也没有从同一聊天框发送“不要每步都让我批准”的后续消息。接管后的页面检查同样曾由 API 提交，因此即使云电脑模态框仍打开、聊天 composer 因模态而 inert，测试仍能通过。旧绿灯只覆盖 API/Agent/电脑的一种工具选择，不是用户可见链路。
+
+现已将 `tests/mediated-pi-k3d.e2e.ts --gmail-handoff-only` 改为：本地真实产品页选 Bot 后，从 composer 点击发送 Gmail 登录请求及后续指令；每条任务仍由真实 DeepSeek/Pi 和隔离 K3D Chromium 执行；检查服务端审批记录和 `.approval-card` UI 均为零；从同一产品页进入电脑 screen、Take control，通过真实 noVNC 地址栏输入 `example.com`，Return to Bot，等待界面与 K3D owner 同步，再关闭 screen 并确认 composer 解锁；最后从 composer 发送只读验证，让 Pi 读取实际页面标题。测试中途曾先后暴露并修正测试 harness 自身的浏览器过早关闭、异步 Return 状态未等待、关闭接管模态后 composer 才恢复等遗漏；不能把这些脚本问题误判为产品成功。
+
+复测证据：`npm run build:deployment`、`npx tsc --noEmit` 和 `git diff --check` 通过；`npm run test:computer-ui-k3d` 通过，包含真实 noVNC 输入、Return to Bot 和关闭模态；`npm run test:gmail-handoff-k3d` 退出码 0，真实 DeepSeek 12 次模型调用，两个 Gmail 对话步骤均无审批卡，浏览器到达 `accounts.google.com`，用户接管后导航到 `example.com`，Pi 返回后读到页面。临时 K3D namespace 和数据库在脚本退出时清理。
+
+范围仍是本机隔离候选。2026-11-07 对公网 `/grok-bot/` 做只读 GET，仍返回 `assets/index-C_ZPmWsX.js`；公网已登录 Chrome 尚未执行同样的 composer 端到端验收。未部署、未提交或推送本轮候选、未合并或打 tag，不能据此声称用户截图问题已在公网修复。
+
+#### 2026-11-07 Gmail 后续指令收窄后的复验与当前状态
+
+在上述用户可见 E2E 通过后，进一步收窄续接条件：只读取同一 Bot 最近 20 分钟内紧邻的上一条用户请求；只有该请求本身明确是 Gmail/Google 登录交接，且当前短句同时表达“不要每一步都让我批准”和“继续打开/继续操作”时才复用精确 Google origin。中间插入其他任务、跨 Bot、普通审批偏好均不继承；新增 Pi executor 回归覆盖被中间任务隔断的情形。
+
+收窄后的验证：`npm run test:runtime` 137/137；`COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:runtime-mysql` 18/18；`npm run build:deployment`、`npm run test:ui`、`git diff --check` 通过。`npm run test:gmail-handoff-k3d` 使用正式 DeepSeek API、真实隔离 K3D Chromium、固定候选桌面镜像并关闭源码覆盖，退出码 0、13 次模型调用；产品聊天 composer 发送首条 Gmail 交接与后续短句，两步都没有审批卡，浏览器抵达 `accounts.google.com`；再经产品 Computer 面板接管、noVNC 地址栏导航到 `example.com`、归还 Agent 并从 composer 让 Pi 读取实际页面。没有输入 Google 凭据或读取邮箱。
+
+复核失败测试残留后，固定测试 MySQL 中 `grok_mediated_*` schema 数为 0，K3D Pod 回到既有 13 个。公网 `/grok-bot/` 仍返回旧资源 `index-C_ZPmWsX.js`，本机候选没有部署；现有用户 Desktop/Agent Pod 未滚动、用户 PVC 未触碰。测试证明收窄后的 Mac/K3D 候选链路，不证明公网版本已修复，也不能替代用户在公网验收。唯一 feature 分支仍未提交、推送、合并或打 tag。
+
+#### 2026-11-07 为什么先前的“端到端绿灯”漏掉了用户可见问题
+
+这是测试范围定义错误，不是问题不明显。早期 `run-browser.e2e.ts` 是假电脑/假调度器；部分 K3D Gmail 检查通过 `submitRun()` API 创建任务，且真实模型当次选择了精确 URL 的 `computer_browser.navigate`，没有走截图中的 `Desktop: click` 审批路径。后来的 Gmail 测试改成从产品 composer 发消息，但模型工具选择仍不确定，因此一次无审批通过只能证明那次选择的路径成功，不能证明所有分支或公网用户流程正确。此前“E2E 通过”的说法超出了证据，应按实际覆盖范围更正。
+
+Computer 键盘问题则是另一条漏测：旧检查未把产品 Computer 面板、Take control、持续截图轮询、嵌入 noVNC 地址栏输入和真实导航同时放入一个测试。焦点回归只有在 `page.bringToFront()` 截图轮询与用户输入并发时才出现，所以隔离 API、RFB fixture 或没有轮询的接管测试都可能绿。新增的 `test:computer-ui-k3d` 明确在输入期间断言产品截图请求仍发生；旧桌面镜像实测红测（键盘事件已送达但 URL 不变），候选镜像实测可通过真实地址栏导航。这是 Mac/K3D 候选的回归证据，公网仍加载旧前端，不能说线上已修复。
+
+官方 Grok Bot 101 本轮补看 23:28–26:48 的连续 6,000 帧、240 张联系图（逐张审阅），源视频 PTS/像素哈希清单见 `research/frames/v1-1408-1413-compact-audit-20261107/manifest.json` 至 `research/frames/v1-1603-1608-compact-audit-20261107/manifest.json`。PTS 1547 秒可见用户在聊天中要求打开 Google Forms 并让其接管；约 PTS 1552 秒 Bot 回复正在电脑上打开；PTS 1606.500（26:46.500）原尺寸帧显示 Computer 任务卡 `Action needed`、`Take over` / `I'm done` / `Skip`，以及右侧 `Needs your attention`。细节与哈希见 `research/README.md` 的 V1 23:28–26:48 记录及同窗口 `keyframes/manifest.json`。这为“聊天发起任务 → 电脑任务卡 → 用户接管/完成”的官方可见交互提供了证据；视频没有展示后续地址栏输入是否成功，因此不能拿它代替真实键盘验收。
+
+后续对外报告必须分开写：组件/策略测试、API/模型运行、产品 UI 的真实云电脑输入、公网已登录 Chrome、不同工具选择分支。只有同一个用户可见流程中完成发送、Bot 执行、Computer 接管、浏览器导航、归还控制并核对持久结果，才可称该条产品端到端路径通过；单条绿测不能外推到未触及分支或公网版本。
+
+#### 2026-11-07 接管后新标签页导航回归补测
+
+为回应“测试为何通过但接管后不能像普通 Chrome 一样切标签和输入网址”，将 `test:computer-ui-k3d` 扩展到真实第二标签页：从产品 UI 打开 Computer、Take control，经 noVNC 键盘新建标签页，再实际点击第二个标签和地址栏，慢速输入带唯一标记的 URL；测试确认输入期间有 7 次产品截图轮询请求完整结束，再用只读 CDP 观察器区分原标签与新标签，要求 URL 落在新标签本身且归还 Agent 后仍保留。鼠标/键盘动作均经产品嵌入的 noVNC，不通过 CDP 执行。此前测试只在原标签地址栏输入，并用 Worker 绑定的原 Playwright Page URL 验证，因此漏掉了新标签焦点被截图轮询抢回的问题。
+
+候选验证：固定 MySQL `127.0.0.1:13317`、`coke-grok-desktop:candidate-focus-screenshot-fix-20261107-r1`、源码覆盖关闭；`npm run test:computer-ui-k3d` 退出码 0，真实第二标签页导航成功，7 次截图轮询在地址输入期间完成。`npx tsc --noEmit` 与 `git diff --check` 通过；测试临时 namespace 删除、MySQL `grok_mediated_*` schema 计数回到 0，K3D Pod 总数回到原有 13。此为本机候选的回归证据，未部署或验证公网，因此不能据此称公网体验已修复。
+
+#### 2026-11-07 端到端绿灯漏掉活动标签页
+
+用户追问端到端测试为什么没有发现“接管 Chrome 后切标签、输入网址，Bot 却仍看旧页面”。复盘确认此前的绿色结果确实漏测了这条用户路径：早期电脑 UI 回归一直在 Worker 绑定的原始 Playwright `Page` 输入，没有打开并切换第二个 Chrome 标签；之后补的第二标签测试只用只读 CDP 观察器确认新标签 URL 留存，未要求 Worker 的 Browser User 或 Pi 在归还控制后读取所选标签。截图轮询能显示真实 X11 桌面，因此“屏幕上已是新页”与“Browser User 仍读旧 Page”可以同时发生。E2E 是覆盖范围不足造成的假绿灯，先前把它表述成整条用户链路通过是不准确的。
+
+首轮把 `BotScreenPages.active()` 接入 Worker 后，真实 K3D 复测证明 Playwright 对同一 Chrome 窗口中后台与前台标签均报告 `document.visibilityState=visible`、`document.hasFocus()=true`，这两个 DOM 状态不能辨认选中标签。当前候选改为：仅在 X11 焦点窗口几何覆盖该 Bot 屏幕区域时，将其窗口标题与同一 CDP 窗口内页面标题匹配；这样 Gmail 与 Example Domain 标题不同时可选到用户实际留下的页，且不跨到另一 Bot 的窗口。`BotScreenPages` 单测覆盖同窗口活动页和不同 Bot 窗口隔离。
+
+测试本身也补强：源码覆盖现在包括 `computer-worker.mjs`、`bot-screen-pages.mjs` 和 `desktop-input.mjs`；真实 UI-only K3D 回归从产品 Computer 面板接管，经 noVNC 打开第二标签、逐次点击标签和地址栏、输入 IANA 唯一标题页面，确认输入期间 8 次截图轮询完成、Return to Bot 后 Worker inspect 读取新标签。随后 `npm run test:gmail-handoff-k3d` 使用真实 DeepSeek/Pi 和隔离 K3D Chrome，从产品 composer 发起 Gmail 登录交接（无重复审批），用户接管后在第二标签导航到 Example Domain，交还后 Pi 的 Browser User 读到了新标签；12 次模型调用，退出码 0。`npm run test:runtime` 138/138、`npx tsc --noEmit`、`git diff --check` 通过；测试 MySQL schema 计数为 0，K3D 回到既有 13 个 Pod，未滚动现有用户 Agent/Desktop Pod，也未触碰 PVC。
+
+限制与边界：Chrome 中若两个标签同时具有完全相同的标题，X11 标题本身无法唯一确定当前标签；本轮 UI-only 对照曾用 example.com 与 example.org（两者标题均为 Example Domain），该断言按预期失败，随后改为唯一标题的 IANA 页面。Gmail 登录页到 Example Domain 的真实链路标题不同并通过，但本候选尚未证明重复标题页面的通用活动标签识别。要作为已完整修复发布前，仍需解决该歧义并增加重复标题的真实 noVNC 回归。本轮候选仍只在 Mac/K3D 源码覆盖测试；未构建固定版本桌面镜像、未部署公网、未提交或合并，因此用户公网体验仍待验收。

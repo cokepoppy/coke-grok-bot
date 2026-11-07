@@ -7,17 +7,21 @@ export class BotScreenCapacityError extends Error {
 /** Separate Bot browser windows inside one persistent browser context/profile. */
 export class BotScreenPages {
   constructor(contextProvider, options = {}) {
-    const { marker = 'coke-grok-screen:', layout = { width: 1440, height: 900, slots: 1, stride: 1472 }, createWindow, placeWindow } = options;
-    if (typeof contextProvider !== 'function' || typeof marker !== 'string' || !marker || !Number.isSafeInteger(layout?.slots) || layout.slots < 1 || layout.slots > 16 || !Number.isSafeInteger(layout.width) || !Number.isSafeInteger(layout.height)) throw new Error('Invalid Bot screen page manager');
+    const { marker = 'coke-grok-screen:', layout = { width: 1440, height: 900, slots: 1, stride: 1472 }, createWindow, placeWindow, getWindowId = browserWindowId, getPageActivity = pageActivity, getFocusedWindow = noFocusedWindow } = options;
+    if (typeof contextProvider !== 'function' || typeof marker !== 'string' || !marker || !Number.isSafeInteger(layout?.slots) || layout.slots < 1 || layout.slots > 16 || !Number.isSafeInteger(layout.width) || !Number.isSafeInteger(layout.height) || typeof getWindowId !== 'function' || typeof getPageActivity !== 'function' || typeof getFocusedWindow !== 'function') throw new Error('Invalid Bot screen page manager');
     this.contextProvider = contextProvider;
     this.marker = marker;
     this.layout = layout;
     this.createWindow = createWindow;
     this.placeWindow = placeWindow;
+    this.getWindowId = getWindowId;
+    this.getPageActivity = getPageActivity;
+    this.getFocusedWindow = getFocusedWindow;
     this.pages = new Map();
     this.slots = new Map();
     this.pending = new Map();
     this.boundPages = new WeakSet();
+    this.windowIds = new WeakMap();
     this.allocation = Promise.resolve();
   }
 
@@ -53,6 +57,64 @@ export class BotScreenPages {
     });
     this.pending.set(screenId, pending);
     return pending;
+  }
+
+  /** Return the selected Chrome tab in this Bot's window, preserving per-Bot window isolation. */
+  async active(screenId) {
+    const mapped = await this.get(screenId);
+    const context = await this.contextProvider();
+    const windowId = await this.windowId(mapped);
+    if (windowId === null || windowId === undefined) return mapped;
+
+    const candidates = [];
+    for (const candidate of context.pages()) {
+      if (candidate.isClosed()) continue;
+      if (await this.windowId(candidate) === windowId) candidates.push(candidate);
+    }
+
+    let selected = null;
+    const slot = this.slots.get(screenId);
+    if (Number.isSafeInteger(slot)) {
+      let focusedWindow;
+      try { focusedWindow = await this.getFocusedWindow(); } catch { /* CDP and page activity remain the fallback. */ }
+      if (focusedWindowMatchesScreen(focusedWindow, this.bounds(slot))) {
+        const focusedTitle = String(focusedWindow.title || '').trim().toLocaleLowerCase();
+        if (focusedTitle) {
+          for (const candidate of candidates) {
+            let title = '';
+            try { title = await candidate.title(); } catch { /* A closing tab has no usable title. */ }
+            if (title && focusedTitle.includes(title.trim().toLocaleLowerCase())) { selected = candidate; break; }
+          }
+        }
+      }
+    }
+
+    let visiblePage = null;
+    if (!selected) for (const candidate of candidates) {
+      let activity;
+      try { activity = await this.getPageActivity(candidate); } catch { /* A closing or navigating tab is not selectable. */ }
+      if (activity?.focused === true) { selected = candidate; break; }
+      if (!visiblePage && (activity === true || activity?.visible === true)) visiblePage = candidate;
+    }
+    selected ||= visiblePage || mapped;
+
+    if (selected !== mapped) {
+      const slot = this.slots.get(screenId);
+      if (!Number.isSafeInteger(slot)) return mapped;
+      const markerValue = `${this.marker}${screenId}:${slot}`;
+      this.bind(selected, markerValue);
+      await selected.evaluate(value => { window.name = value; }, markerValue).catch(() => {});
+      this.pages.set(screenId, selected);
+    }
+    return selected;
+  }
+
+  async windowId(page) {
+    if (this.windowIds.has(page)) return this.windowIds.get(page);
+    let id = null;
+    try { id = await this.getWindowId(page); } catch { /* Fall back to the Bot's original page if CDP cannot identify this tab. */ }
+    if (id !== null && id !== undefined) this.windowIds.set(page, id);
+    return id;
   }
 
   async allocate(screenId) {
@@ -153,5 +215,28 @@ export class BotScreenPages {
     this.pages.clear();
     this.slots.clear();
     this.pending.clear();
+    this.windowIds = new WeakMap();
   }
+}
+
+async function browserWindowId(page) {
+  const context = page.context();
+  const session = await context.newCDPSession(page);
+  try {
+    const result = await session.send('Browser.getWindowForTarget');
+    return Number.isSafeInteger(result?.windowId) ? result.windowId : null;
+  } finally { await session.detach().catch(() => undefined); }
+}
+
+async function pageActivity(page) {
+  return await page.evaluate(() => ({ visible: document.visibilityState === 'visible', focused: document.hasFocus() }));
+}
+
+async function noFocusedWindow() { return null; }
+
+function focusedWindowMatchesScreen(windowInfo, bounds) {
+  if (!windowInfo || ![windowInfo.x, windowInfo.y, windowInfo.width, windowInfo.height].every(Number.isFinite) || windowInfo.width <= 0 || windowInfo.height <= 0) return false;
+  const overlapX = Math.max(0, Math.min(windowInfo.x + windowInfo.width, bounds.left + bounds.width) - Math.max(windowInfo.x, bounds.left));
+  const overlapY = Math.max(0, Math.min(windowInfo.y + windowInfo.height, bounds.top + bounds.height) - Math.max(windowInfo.y, bounds.top));
+  return overlapX >= bounds.width * 0.65 && overlapY >= bounds.height * 0.65;
 }
