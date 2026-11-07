@@ -1671,4 +1671,10 @@ Computer 键盘问题则是另一条漏测：旧检查未把产品 Computer 面�
 
 曾将英文精确请求与下一条连续任务放在同一次运行中；首个任务和接管已完成，但第二条任务的重复导航遇到 Worker HTTP 400 `Target page, context or browser has been closed`，状态为 `unknown`。因此精确英文提示的当前全链路证据覆盖单次任务、真实接管与回交，不覆盖这条英文提示后的第二次 Gmail 导航；该失败保留为待查，不以单次通过替代。两次最终通过的运行结束后，K3D 保持 13 个 Pod，临时 `grok_mediated_*` schema 为 0，沿用固定的测试 MySQL 容器 `13317`。
 
-本节源代码与测试改动尚未部署。公网当前 Auth Deployment 仍是固定镜像 `coke-grok-auth:sha-e18f71547116d965c5abc5db9227b74729983588`；因此公网审批现象尚未在线修复。本轮没有改生产数据库、VPS 或其他 Pod。
+源码及回归测试已于 2026-11-07 提交为 `b30aec1`，并部署到 Mac 本机 K3D 的 Auth Deployment，镜像为 `coke-grok-auth:sha-b30aec1`，rollout revision 70。公网页面返回 HTTP 200、Auth readiness 返回 204，已加载新 JS/CSS。部署只更新 Auth 与 `private-secrets` init 镜像；MySQL 容器/卷、用户 workspace PVC、其他 Pod 和 VPS 均未改动。
+
+#### 2026-11-07 部署后公网 Gmail 回归的控制权中断
+
+在已登录公网 Chrome 对新部署提交相同的只读 Gmail 导航提示。`Public Takeover E2E 20261107` 和隔离的 `E2E Test Bot 1029` 都先显示 `Queued · waiting for your computer`，随后进入 `Outcome unknown · check before retrying`，UI 明确说明“电脑正由你控制”，因此 Browser User 没有开始执行；本轮没有出现 `Approval requested` 卡片。只读屏幕预览中，前一个 Bot 停在 `accounts.google.com` 登录页，后一个 Bot 是 `about:blank`。这是控制权占用导致的未完成运行，不是导航审批修复的公网通过证据。
+
+结论：旧 E2E 的明显遗漏已定位——此前成功用例使用 `example.com` 或不同措辞，没有覆盖用户实际 Gmail 提示触发的导航授权解析；本轮新增策略、桥接回归和真实 K3D Pi/DeepSeek 测试覆盖了该精确提示，并通过。但部署后公网 UI 的真实 Pi/Browser User Gmail 任务目前因电脑控制权占用而未执行，不能把本地 K3D 通过、HTTP/readiness 或旧的 Gmail marketing-page 结果说成公网端到端验收通过。下一步须先解决/释放该电脑控制权状态，再从已登录公网 UI 重跑一次精确提示；不输入账号、不查看收件箱。源码分支仍为唯一 feature `codex/grok-bot-persistent-group-chat`，公网推送/合并待网络恢复及完整验收。
