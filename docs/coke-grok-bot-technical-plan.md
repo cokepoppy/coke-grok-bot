@@ -1686,3 +1686,11 @@ Computer 键盘问题则是另一条漏测：旧检查未把产品 Computer 面�
 释放接管后，使用用户报告的只读 Gmail 导航提示重新提交公网任务。真实 Pi/Browser User 执行完成，没有 `Approval requested` 卡片；但 `https://mail.google.com` 被 Google 重定向到 Gmail 产品介绍页，而非登录表单。随后用公网 UI 直接导航到 `https://accounts.google.com/`，也没有审批卡片，页面标题为 `Sign in - Google Accounts`，最终 URL 为 `https://accounts.google.com/v3/signin/identifier`，可见 Google 登录表单。未输入凭据、未提交表单、未打开 Gmail 收件箱。
 
 因此用户指出的“明显问题为什么旧端到端通过”成立：既有绿测是本机 K3D 的 Pi/DeepSeek/Chromium 链路，以及使用 `example.com` 或不同措辞的请求；它们没有断言用户这条公网 Gmail 请求无审批、也没有校验 Gmail 根域最终落点。此前“Gmail E2E 通过”的概括超出了测试证据。此次只确认公网精确请求不再弹导航审批，以及 Google 登录表单可达；实际 Google 登录、Gmail 收件箱和完整用户流程仍未验收。项目报告必须逐项标注环境、入口、提示文本、断言和结果，不以相邻测试或本机 K3D 绿测代替公网 E2E。
+
+#### 2026-11-07 公网登录交接任务排队复测
+
+本轮尝试继续从已登录公网 Chrome 执行原始中文 Gmail 登录交接请求。Chrome CUA 的 `getTab()` 和随后一次 `getState()` 各等待 30 秒超时；改用受支持的 `getApp("Google Chrome")` 后成功读取并操作原生 Chrome AX，因此本轮不是 Work 设置明确禁用浏览器控制的情形；Chrome 扩展标签附着超时仍待定位。
+
+公网 Bot `Public Takeover E2E 20261107` 的 Computer screen 明确显示 `You are in control`。为避免夺回可能正在由用户操作的电脑，没有按 `Return to Bot`。在公网 UI 新建独立测试 Bot `Gmail Handoff E2E 20261107`，通过产品聊天 composer 发送明确要求进入 `accounts.google.com`、停在登录表单并交还控制的中文任务，明确禁止输入凭据、提交表单或查看邮箱。页面显示 `Queued · waiting for your computer`；任务尚未运行，也没有审批或成功证据。这个结果仅证明用户接管期间新任务会排队，不能算 Gmail 交接 E2E 通过。
+
+当前唯一 feature 分支 `codex/grok-bot-persistent-group-chat` 的三项本地提交已通过单命令代理推送到同名远端分支，远端 feature HEAD 为 `b8f132e`；远端 `main` 仍为 `0fab408`。因公网登录交接仍排队、未完成实际导航及控制权回交，不合并 main、不建 tag、不发布。此前创建的测试 Bot 和这条 queued 任务保留在公网账户中供后续验收，不删除或重试；待该用户电脑控制权回到 Bot 后，再通过公网 UI 单次继续该测试。
