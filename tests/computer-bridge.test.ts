@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {ComputerBridge,type RunScope} from '../src/server/computer-bridge.ts';
+import {requestedNavigationOrigins} from '../src/server/computer-navigation-policy.ts';
 import {SafeDiagnosticError} from '../src/server/safe-diagnostics.ts';
 const scope:RunScope={owner:{tenantId:randomUUID(),userId:randomUUID()},botId:randomUUID(),runId:randomUUID(),leaseId:randomUUID()};
 test('bridge refuses expired or mismatched run scopes before reading a desktop',async()=>{
@@ -32,6 +33,10 @@ test('only directly requested browser destinations skip computer approval',async
  assert.deepEqual(googleNavigation,{status:'completed',result:{ready:true,url:'https://www.google.com/'}});
  const navigation=await bridge.propose(scoped,{kind:'browser',action:'navigate',url:'https://mail.google.com/'},signal);
  assert.deepEqual(navigation,{status:'completed',result:{ready:true,url:'https://mail.google.com/'}});assert.equal(performed,2);assert.equal(marked,2);assert.equal(approvalProposals,0);
+ const publicPrompt='For this read-only public end-to-end check, use Browser User on this Bot\'s cloud computer to open https://mail.google.com. If a Google sign-in page is visible, stop and report only its page title. If the existing session goes past sign-in, do not inspect messages or account data; stop and say the browser is already signed in. Do not use Desktop User, click page content, enter credentials, submit forms, or inspect the inbox.';
+ const publicScope={...scope,requestedNavigationOrigins:requestedNavigationOrigins(publicPrompt)};assert.deepEqual(publicScope.requestedNavigationOrigins,['https://mail.google.com']);
+ const publicNavigation=await bridge.propose(publicScope,{kind:'browser',action:'navigate',url:'https://mail.google.com/'},signal);
+ assert.deepEqual(publicNavigation,{status:'completed',result:{ready:true,url:'https://mail.google.com/'}});assert.equal(performed,3);assert.equal(marked,3);assert.equal(approvalProposals,0,'the exact read-only public Gmail request must not create a repetitive navigation approval');
  const click=await bridge.propose(scoped,{kind:'browser',action:'click',by:'text',target:'Compose'},signal);
  assert.ok('id'in click);assert.equal(approvalProposals,1);
  const otherDestination=await bridge.propose(scoped,{kind:'browser',action:'navigate',url:'https://example.com/'},signal);

@@ -1,4 +1,4 @@
-const directNavigationRequest = /^\s*(?:(?:please|can you|could you|help me|i want you to)\s+)*(?:open|navigate(?:\s+to)?|go\s+to|visit|load|read|inspect|check|search|access|log\s+in\s+to|sign\s+in\s+to)\b|^\s*for this (?:task|test),?[^\n]{0,100}\b(?:open|navigate|visit|load|read|inspect|check|search|access)\b|^\s*(?:(?:请帮我|麻烦|帮我|请|你)?\s*(?:(?:在|用)(?:云电脑|浏览器)(?:里面|里)?\s*)?(?:直接)?(?:打开|访问|进入|导航到|前往|查看|读取|搜索|登录|登陆))/i;
+const directNavigationRequest = /^\s*(?:(?:please|can you|could you|help me|i want you to)\s+)*(?:open|navigate(?:\s+to)?|go\s+to|visit|load|read|inspect|check|search|access|log\s+in\s+to|sign\s+in\s+to)\b|^\s*for this (?:(?:read[- ]only|public|end[- ]to[- ]end|e2e|browser|gmail)\s+){0,4}(?:task|test|check)\b[^\n]{0,180}\b(?:open|navigate|visit|load|read|inspect|check|search|access)\b|^\s*(?:please\s+)?use\s+(?:(?:the\s+)?browser(?:\s+user)?|(?:the\s+)?cloud\s+browser|(?:the\s+)?browser\s+on\s+(?:the\s+)?cloud\s+computer)[^\n]{0,180}\b(?:open|navigate(?:\s+to)?|go\s+to|visit|load|read|inspect|check|search|access)\b|^\s*(?:(?:请帮我|麻烦|帮我|请|你)?\s*(?:(?:在|用)(?:云电脑|浏览器)(?:里面|里)?\s*)?(?:直接)?(?:打开|访问|进入|导航到|前往|查看|读取|搜索|登录|登陆))/i;
 const deniedNavigationVerbs = /\b(?:do\s+not|don't|never|avoid)\s+(?:open|navigate|visit|load|access)|不要(?:打开|访问|进入|导航)|禁止(?:打开|访问|进入)/i;
 const quotedSourceInstructions = /^\s*(?:(?:please|help me|can you)\s+)?(?:read|inspect|check|open)\s+(?:this|the)\s+(?:email|message|webpage|page|file|document|attachment)\b[^\n]{0,120}\b(?:says|contains|instructions?|写着|内容|要求)/i;
 const openedQuotedSource = /^\s*(?:(?:please|help me|can you)\s+)?(?:read|inspect|check|open)\s+(?:this|the)\s+(?:email|message|webpage|page|file|document|attachment|邮件|消息|网页|页面|文件|文档|附件)\b[^\n]{0,120}[:：“”"']/i;
@@ -26,7 +26,9 @@ export function requestedNavigationOrigins(request: string): string[] {
   // A common service name can stand in for a URL when the user directly asks
   // to open that service. Preserve named destinations alongside explicit URLs
   // and preserve both hosts when a request names Google and Gmail.
-  const namesGoogle=/\bgoogle\b|谷歌/i.test(text),namesGmail=/\b(?:gmail|google\s+mail)\b|谷歌邮箱/i.test(text);
+  const serviceNameText = text.replace(urlPattern, ' ');
+  const namesGoogle=/\b(?:open|navigate(?:\s+to)?|go\s+to|visit|load|search(?:\s+for)?|access|log\s+in\s+to|sign\s+in\s+to)\s+(?:the\s+)?google\b|(?:打开|访问|进入|导航到|前往|搜索|登录|登陆)\s*(?:谷歌|google)/i.test(serviceNameText);
+  const namesGmail=/\b(?:open|navigate(?:\s+to)?|go\s+to|visit|load|access|log\s+in\s+to|sign\s+in\s+to)\s+(?:(?:my|the)\s+)?(?:gmail|google\s+mail)\b|(?:打开|访问|进入|导航到|前往|登录|登陆)\s*(?:我的\s*)?(?:gmail|google\s+mail|谷歌邮箱)/i.test(serviceNameText);
   if (namesGoogle) { addOrigin('https://google.com'); addOrigin('https://www.google.com'); }
   if (namesGmail) {
     addOrigin('https://mail.google.com');

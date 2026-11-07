@@ -1652,3 +1652,23 @@ Computer 键盘问题则是另一条漏测：旧检查未把产品 Computer 面�
 固定镜像上的 `npm run test:gmail-handoff-k3d` 也通过：真实 DeepSeek/Pi 从产品 composer 发起 Google 登录交接，无审批卡；用户经产品 noVNC 把原标签导航至 `example.com`、再将第二标签导航至 `example.org`，两者标题都为 `Example Domain`；交还后 Pi Browser User 读到第二标签，10 次模型调用，退出码 0。第一次镜像版整链尝试暴露测试输入时序问题：noVNC 快速输入丢掉 URL 首字符并打开搜索结果；测试现在用 `Ctrl+L` 加停顿和 180ms 按键间隔，先通过 UI-only 输入回归再通过整链。`npm run test:runtime` 140/140、`npx tsc --noEmit` 与 `git diff --check` 通过；结束后 K3D 为原有 13 个 Pod、临时 `grok_mediated_*` schema 为 0，现有用户 Pod/PVC 未变。
 
 镜像仅存在本机 Docker/K3D，尚未部署公网，也未合并 `main`；因此已证明本机固定镜像中的活动标签与 Pi 流程，不代表用户访问的公网版本已修复。公网已登录 Chrome 验收仍是这条功能分支的待完成项。
+
+#### 2026-11-07 已登录公网浏览器接管复核
+
+本轮在已登录 Chrome 的 `https://codex.cokeagent.com/grok-bot/` 中，对 Bot `Public Takeover E2E 20261107` 执行可见操作：打开 Computer screen、Take control、点击远程 Chromium 的新标签按钮，在地址栏键入 `https://example.com/?takeover-newtab-20261107` 并回车；远程页面显示 Example Domain 和对应路径，之后点击 Return to Bot，状态恢复为 `Bot is in control`。这是当前公网会话对接管鼠标/键盘、新标签输入和导航的直接证据；不证明 Pi 在归还后读取了该活动标签，也不覆盖 Gmail 登录交接、审批流程或整体像素验收。此前一次失败复测使用了错误的外层截图坐标，不能作为 noVNC 输入故障证据。
+
+“端到端都通过”的表述曾把不同范围的测试混为一谈：旧用例未打开第二标签，或只用只读 CDP 观察 URL，没有检查 Worker/Pi 归还后的活动标签；后续 K3D 用例才覆盖 noVNC 新建/导航第二标签及 Browser User 读取。当前产品 K3D 用例之前只断言聊天 composer 被设为 `inert`，不能单独证明其视觉上被全屏 Computer layer 遮住；本轮新增的 `elementFromPoint` 遮挡断言确认全屏 Computer layer 覆盖 composer 的输入位置。随后在固定桌面镜像 `coke-grok-desktop:sha-e18f71547116d965c5abc5db9227b74729983588`、`COKE_GROK_DESKTOP_TEST_SOURCE_OVERLAY=0` 下，`npm run build:deployment` 与 `COKE_GROK_TEST_MYSQL_PORT=13317 COKE_GROK_DESKTOP_TEST_IMAGE=coke-grok-desktop:sha-e18f71547116d965c5abc5db9227b74729983588 COKE_GROK_DESKTOP_TEST_SOURCE_OVERLAY=0 npm run test:computer-ui-k3d` 均通过。真实 K3D noVNC 测试打开第二标签并导航，输入期间 7 次产品截图轮询完成，归还给 Agent；结束后 K3D Pod 总数回到 13，临时 `grok_mediated_*` schema 为 0，没有新建 MySQL 容器。公网本轮目视也看到全屏接管层覆盖应用界面且可操作；这仍不等于公网自动化、Pi/DeepSeek 邮件交接或整体像素验收。
+
+同一固定镜像上继续运行 `COKE_GROK_TEST_MYSQL_PORT=13317 COKE_GROK_MODEL_KEY_FILE=<本机受保护的 DeepSeek key 文件> COKE_GROK_DESKTOP_TEST_IMAGE=coke-grok-desktop:sha-e18f71547116d965c5abc5db9227b74729983588 COKE_GROK_DESKTOP_TEST_SOURCE_OVERLAY=0 npm run test:gmail-handoff-k3d`，退出码 0，实际 DeepSeek/Pi 共调用 15 次：从产品 composer 发起 Gmail 登录交接，没有审批卡，Chromium 到达 `accounts.google.com`；用户经产品 noVNC 在第二标签导航到 `example.com`，归还后 Pi Browser User 读取当前页面。没有登录 Google、输入凭据或读取邮箱。结束后 K3D 回到 13 个 Pod，临时 `grok_mediated_*` schema 为 0；复用原有专用测试 MySQL 容器 `13317`，未创建新 MySQL 容器。该结果加强了本机固定镜像的 Pi/DeepSeek/K3D 接管链路证据，仍不替代公网已登录 UI 的同流程验收。
+
+#### 2026-11-07 公网 Gmail 导航审批回归
+
+已登录公网 Chrome 实测的原始提示以 `For this read-only public end-to-end check...` 开头，要求 Browser User 打开精确 URL `https://mail.google.com`，并禁止点击、登录或查看收件箱。该任务仍出现 `Browser: navigate` 审批卡；批准后页面停在 Gmail 产品介绍页，而非登录表单或收件箱，因此该公网任务不能算验收通过。复现原因是 `requestedNavigationOrigins` 的句首匹配仅覆盖 `Use Browser User...` 或 `For this task/test...`，没有覆盖这种带 `read-only public end-to-end check` 前缀的直接导航指令；服务名称识别还会把说明文字中出现的 `Google sign-in page` 错当成额外导航目的地。
+
+已修正识别器：支持该类测试前缀；仅从明确的导航动词加服务名推断命名目的地；带显式 URL 的请求不再因描述性文字扩展授权域名。该提示现在只获得 `https://mail.google.com` 的导航许可，不授权点击、键盘、表单、登录或账户操作。回归覆盖位于 `tests/computer-navigation-policy.test.ts` 和 `tests/computer-bridge.test.ts`。
+
+验证：上述策略/桥接测试 16/16；`npm run test:runtime` 142/142；`COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:runtime-mysql` 18/18；`npm run build:deployment` 成功。新增 `npm run test:gmail-request-k3d` 使用该公网原文在真实 DeepSeek/Pi 和固定 K3D Chromium 上通过：未创建导航审批，达到 `accounts.google.com`，经实际产品 noVNC 接管后新开第二标签、输入并导航，再交还给 Agent；共 5 次模型调用。完整原有 `npm run test:gmail-handoff-k3d` 也通过：中文 Gmail 交接及后续“不需要每步批准”的连续任务均无审批，实际 noVNC 新标签导航及 Pi 归还后读取通过；共 13 次模型调用。
+
+曾将英文精确请求与下一条连续任务放在同一次运行中；首个任务和接管已完成，但第二条任务的重复导航遇到 Worker HTTP 400 `Target page, context or browser has been closed`，状态为 `unknown`。因此精确英文提示的当前全链路证据覆盖单次任务、真实接管与回交，不覆盖这条英文提示后的第二次 Gmail 导航；该失败保留为待查，不以单次通过替代。两次最终通过的运行结束后，K3D 保持 13 个 Pod，临时 `grok_mediated_*` schema 为 0，沿用固定的测试 MySQL 容器 `13317`。
+
+本节源代码与测试改动尚未部署。公网当前 Auth Deployment 仍是固定镜像 `coke-grok-auth:sha-e18f71547116d965c5abc5db9227b74729983588`；因此公网审批现象尚未在线修复。本轮没有改生产数据库、VPS 或其他 Pod。

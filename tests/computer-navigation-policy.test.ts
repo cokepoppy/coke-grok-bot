@@ -33,11 +33,20 @@ test('a direct Google-only request includes only Google Search',()=>{
 });
 
 test('named direct destinations are retained alongside explicit URLs',()=>{
- assert.deepEqual(requestedNavigationOrigins('Please open https://www.google.com/ and then go to Gmail.'),['https://www.google.com','https://google.com','https://mail.google.com']);
+ assert.deepEqual(requestedNavigationOrigins('Please open https://www.google.com/ and then go to Gmail.'),['https://www.google.com','https://mail.google.com']);
 });
 
 test('explicit direct navigation to a URL grants only its exact origin',()=>{
  assert.deepEqual(requestedNavigationOrigins('Please navigate to https://example.com/reports?view=weekly and summarize the page.'),['https://example.com']);
+});
+
+test('browser-user task phrasing still recognizes the exact owner-requested URL',()=>{
+ assert.deepEqual(requestedNavigationOrigins("Use Browser User on this Bot's cloud computer to open https://mail.google.com and stop as soon as the sign-in page is visible. Do not use Desktop User, click anything, enter credentials, or submit a form."),['https://mail.google.com']);
+});
+
+test('a qualified public read-only end-to-end check authorizes only its explicit URL',()=>{
+ const prompt='For this read-only public end-to-end check, use Browser User on this Bot\'s cloud computer to open https://mail.google.com. If a Google sign-in page is visible, stop and report only its page title. If the existing session goes past sign-in, do not inspect messages or account data; stop and say the browser is already signed in. Do not use Desktop User, click page content, enter credentials, submit forms, or inspect the inbox.';
+ assert.deepEqual(requestedNavigationOrigins(prompt),['https://mail.google.com']);
 });
 
 test('quoted web or email instructions and explicit negative requests grant no destination',()=>{

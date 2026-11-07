@@ -47,6 +47,7 @@
     "test:mediated-agent-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts",
     "test:bot-memory-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts --memory-only",
     "test:gmail-handoff-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts --gmail-handoff-only",
+    "test:gmail-request-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts --gmail-handoff-only --single-gmail-handoff-run",
     "test:computer-ui-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts --gmail-handoff-only --computer-ui-only",
     "build:deployment": "VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build && VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true node scripts/mark-web-build.mjs && npm run build:server && npm run build:desktop-broker && npm run build:namespace-bootstrap"
   },
