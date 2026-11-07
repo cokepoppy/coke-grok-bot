@@ -1577,6 +1577,6 @@ GitHub 直连因本机 DNS 无法解析 `github.com` 失败，`127.0.0.1:1080` �
 
 #### 2026-11-07 Gmail E2E 绿测范围复盘
 
-此前的 `tests/run-browser.e2e.ts` 使用模拟身份、假电脑和测试调度器；它不覆盖用户截图中的真实桌面点击。之后的 `npm run test:gmail-handoff-k3d` 使用真实 DeepSeek、隔离 K3D Chromium 和候选 UI/noVNC，监测到任何审批卡就失败；该次 8 次模型调用通过了无审批的 Google 导航及接管输入。但这是单次随机模型工具选择：记录到的执行走了 `computer_browser.navigate` 精确导航路径，没有复现截图里的 `Desktop: click` 审批路径。测试当时没有强制覆盖这条工具路径，也没有从公网已登录 Chrome 运行，因此其绿灯只表示这次候选链路成功，不能作为 Gmail 用户体验或公网验收通过。
+此前的 `tests/run-browser.e2e.ts` 使用模拟身份、假电脑和测试调度器；它不覆盖用户截图中的真实桌面点击。之后的 `npm run test:gmail-handoff-k3d` 使用真实 DeepSeek、隔离 K3D Chromium 和候选 noVNC；测试通过直接 API `submitRun` 创建任务，再用测试浏览器接管电脑，并在监测到审批记录时失败。该次 8 次模型调用通过了无审批的 Google 导航及接管输入。但这是单次随机模型工具选择：记录到的执行走了 `computer_browser.navigate` 精确导航路径，没有复现截图里的 `Desktop: click` 审批路径。测试当时既没有强制覆盖这条工具路径，也没有从公网已登录 Chrome 点击 composer 发起任务，因此其绿灯只表示这次候选 API/K3D 链路成功，不能作为 Gmail 用户体验或公网验收通过。
 
 后续验收应分别覆盖两件事：在隔离集成测试中确定性调用 sign-in handoff 下的 Desktop click，确认控制面按预期拦截且不会创建审批卡；再从公网已登录 Chrome 点击发起同一 Gmail 任务，核对用户看到的审批卡、电脑 owner 和真实浏览器状态。一次模型执行通过不能代替这些分支和公网入口的覆盖。
