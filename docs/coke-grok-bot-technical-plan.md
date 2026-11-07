@@ -1645,4 +1645,10 @@ Computer 键盘问题则是另一条漏测：旧检查未把产品 Computer 面�
 
 最终认证版 `npm run test:computer-ui-k3d` 使用产品 UI Take control、noVNC 新建并导航第二标签；原标签 `example.com` 和新标签 `example.org` 标题都为 `Example Domain`。归还后经产品 Worker guarded inspect 确认 URL 是第二标签。该用例挂载本轮桌面 Worker、启动脚本和扩展源码，故证明真实 Chromium 扩展桥与 Worker 的运行关系，而不是只验证 CDP 观察器。最终认证版 `npm run test:gmail-handoff-k3d` 使用真实 DeepSeek/Pi、K3D Chromium 与 noVNC；从 Google 登录交接开始，用户先把原标签导航到 `example.com`，再把第二标签导航到 `example.org`，两页标题相同。归还后 Pi 的 Browser User 读到第二标签，13 次模型调用、没有审批卡，退出码 0。两次最终 K3D 测试结束后 Pod 数回到 13，临时 `grok_mediated_*` schema 数为 0，未替换现有用户 Pod 或触碰 PVC。最终全套 `npm run test:runtime` 140/140、`npx tsc --noEmit`、`git diff --check` 通过。
 
-这仍是源码覆盖候选验证：尚未构建带扩展的固定版本镜像，未部署到公网，未做公网已登录 Chrome 验收，也未合并到 `main`。因此可以报告本机 K3D 的同标题活动标签回归通过，不能据此说用户公网问题已修复。
+截至上面这次源码覆盖验收，尚未构建带扩展的固定版本镜像。后续镜像级验证如下；公网已登录 Chrome 验收和合并 `main` 仍未完成。
+
+固定镜像补测：从提交 `e6df05e1acf61a5f61452c924be7f7ac28603d2e` 的桌面运行时源码构建 `linux/arm64` 镜像 `coke-grok-desktop:sha-e6df05e1acf61a5f61452c924be7f7ac28603d2e`，镜像 ID 为 `sha256:f07e95a630c1e825e3277d85ff8bec69b2e5ea82a116f51d8a05a9e01bce75bf`，大小 912,952,733 字节；基底固定为 Coke Dots `sha-c4caa5bb8dab2c9f731e4c2f1a71b25266469cfc`。导入本机 K3D 后以 `COKE_GROK_DESKTOP_TEST_SOURCE_OVERLAY=0` 运行，未挂载源码覆盖。`npm run test:computer-ui-k3d` 通过：控制台真实 noVNC 导航原标签与第二标签、完成 7 次截图轮询并交还，Worker guarded inspect 识别第二个活动标签。
+
+固定镜像上的 `npm run test:gmail-handoff-k3d` 也通过：真实 DeepSeek/Pi 从产品 composer 发起 Google 登录交接，无审批卡；用户经产品 noVNC 把原标签导航至 `example.com`、再将第二标签导航至 `example.org`，两者标题都为 `Example Domain`；交还后 Pi Browser User 读到第二标签，10 次模型调用，退出码 0。第一次镜像版整链尝试暴露测试输入时序问题：noVNC 快速输入丢掉 URL 首字符并打开搜索结果；测试现在用 `Ctrl+L` 加停顿和 180ms 按键间隔，先通过 UI-only 输入回归再通过整链。`npm run test:runtime` 140/140、`npx tsc --noEmit` 与 `git diff --check` 通过；结束后 K3D 为原有 13 个 Pod、临时 `grok_mediated_*` schema 为 0，现有用户 Pod/PVC 未变。
+
+镜像仅存在本机 Docker/K3D，尚未部署公网，也未合并 `main`；因此已证明本机固定镜像中的活动标签与 Pi 流程，不代表用户访问的公网版本已修复。公网已登录 Chrome 验收仍是这条功能分支的待完成项。
