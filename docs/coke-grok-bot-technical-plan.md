@@ -1903,3 +1903,9 @@ feature 分支 `codex/grok-bot-persistent-group-chat` 的 `d76b1f559c3eebcf3525d
 K3D 只读检查发现其中一个用户桌面配置 8 个屏幕槽，8 槽都占用，当前 12 个 Chromium 页面分布在 8 个标记 Bot 窗口；持久状态文件为 9 个，其中 4 个归用户控制。Desktop 容器当前约 1695 MiB / 2 GiB。另一个用户桌面为 1 页/1 槽且没有用户接管。Auth 日志只保留了两条 `COMPUTER_SNAPSHOT_FAILED`，Desktop 近 30 分钟日志没有对应安全错误码或 run 关联；因此容量、活动标签映射或渲染失败都还不能被确认成两条失败的根因。没有增加屏幕槽、创建额外容器、清理资源或重启用户 Desktop。
 
 为让后续运行能区分已知故障，当前唯一 feature 分支新增 Worker 固定诊断映射：`BOT_SCREEN_CAPACITY`、`ACTIVE_TAB_UNRESOLVED`、`DOTS_RENDERER_UNRESPONSIVE` 映射为对应的 `COMPUTER_*` 安全码。只读取有限 JSON 中白名单 `code` 或精确匹配的固定错误文字；响应正文、URL 与凭据不转发。Pi cloud-kernel 与 DSH computer plugin 都只暴露这三个固定诊断。定向 Worker 用例通过 7/7，Pi/DSH computer adapter 用例 18/18，`npm run test:runtime` 154/154，`npm run build:deployment` 与 `git diff --check` 通过。该 Auth/adapter 改动此时仍是本机候选，尚未部署或重新做公网群聊验收；更改前数据库确认 queued/running runs 为 0、live pending approvals 为 0。原有 Auth/Agent/Desktop 镜像与用户屏幕保持不变。
+
+#### 2026-11-08 Auth-only 屏幕诊断候选部署
+
+提交 `80391c4e99b9caeacd283394fa78abb0e9bd24ea` 已推送到现有唯一 feature 分支。发布目录 [`releases/candidate-grok-bot-screen-diagnostics-80391c4-2026-11-08/`](../releases/candidate-grok-bot-screen-diagnostics-80391c4-2026-11-08/) 保存匹配源码、`dist` 构建物、ARM64 Auth 候选及准确的 `d76b1f5` 回退镜像、部署/预检/校验/回退脚本和 SHA-256。预检确认 queued/running Agent runs=0、live pending approvals=0。
+
+2026-11-08 09:51:43 UTC 只将 Auth 更新到 `coke-grok-auth:sha-80391c4e99b9caeacd283394fa78abb0e9bd24ea`；Auth 1/1 Ready，VPS 公网入口 HTTP 200。Broker、两个用户 namespace 的 Agent/Desktop、两块 10Gi workspace PVC、MySQL 和 VPS 均未改动。公网 Chrome 重新打开失败，CUA 返回 `Capability is not available: visibility`；没有发起新聊天任务、没有重试旧的只读任务，也没有声称诊断已在真实群聊中生效。旧失败仍待下一次受支持的公网浏览器任务来区分。feature 尚未验收、合并或打 Tag；屏幕已由用户接管的 Desktop 不滚动。
