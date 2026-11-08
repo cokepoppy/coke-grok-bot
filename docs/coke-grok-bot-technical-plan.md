@@ -1836,3 +1836,27 @@ V1 片头连续逐帧审阅范围延长至 2:29.966（4,500 帧），下一段�
 继续审阅 V1 2:50.000–2:54.966：150 个 1920×1080、30 fps 连续源帧和六张 5×5 联系图均已检查。PTS 为 170000–174966、严格递增；manifest 记录每帧 `yuv420p` 像素 SHA-256；完整源 MKV 的 SHA-256 与 manifest 一致，六张联系图 SHA-256 也均匹配。紧凑证据目录为 `research/frames/v1-170-175-compact-audit-20261108/`，约 2.0 MB。
 
 画面仍是 Grok Bot 101 演讲标题页、彩色 Bot 插画和讲者小窗，只有讲者动作变化；没有产品 UI、聊天、Computer 预览或任务流程。片头连续逐帧覆盖至 2:54.966（5,250 帧），下一窗口从 2:55.000 开始。其它 V1 缺口和其它来源继续待审阅；本轮未改应用逻辑或运行服务。
+
+#### 2026-11-08 普通网页导航的桌面动作兜底
+
+用户再次明确：打开/切换到指定网页及只读查看不应逐步等待用户批准；到登录、密码、验证码或二次验证时再交接给用户。定位到此前只让 `computer_browser.navigate` 对精确用户请求 origin 免审批；模型误点地址栏或在桌面中输入网址时仍会进入审批流程。复查后发现，首版兜底把带导航范围的所有桌面点击都视为地址栏操作，可能误拦正文点击；本轮已将识别范围收窄。
+
+已在控制层增加 `COMPUTER_NAVIGATION_USE_BROWSER`：当前运行只要带有用户直接请求的精确导航目标，误点云电脑 Chrome 顶部标签/工具栏区域（y=0–125，覆盖截图里 y=48 的布局）或把该精确 URL 输入桌面时，就拒绝桌面操作且不创建审批记录，并将模型引导回 `computer_browser.navigate`。网页正文点击和普通键盘输入不匹配此兜底，仍按原审批规则处理；没有导航范围时的桌面动作也仍走原审批门。Pi 与 DSH runtime 都映射为明确的“未执行、未请求批准、改用 Browser User”结果。直接导航只覆盖请求中明确给出的 HTTP(S) origin；其他页面点击、表单与外部副作用授权没有因此放宽。
+
+回归明确验证：Chrome 顶部坐标 y=48（用户截图位置）和 y=90 的点击、输入精确请求 URL 都不创建审批，正文区 y=130 的点击仍走原审批规则，Enter 仍走审批规则；Pi 与 DSH 都把桌面导航误用引导回 Browser User。本轮更新后 `npm run test:runtime` 152/152 通过，`npm run build:deployment` 通过。
+
+公网可见浏览器验收尚未完成：本机 Chrome 当前在钉钉文档；打开可见 Chrome 标签的 CUA 请求返回 `Capability is not available: visibility`；检查 Codex Work 设置的 CUA 请求又被安全策略拒绝，无法确认或更改相关设置，不能通过另一条 UI 路径绕过。只读 MySQL 查询显示当前 queued/running 任务和未过期 pending approvals 均为 0；但最近一次桌面所有权记录曾显示四块屏幕归用户控制，本轮未能通过可见 UI 刷新此状态，因此没有滚动或重启共享 Desktop Pods，也没有部署候选。工作区补丁尚未提交；之前 example.com 公网普通导航无审批的记录只证明 Browser User 直接导航路径，不能替代此补丁的公网误用兜底验收。
+
+#### 2026-11-08 K3D 接管输入回归坐标校正
+
+`npm run test:gmail-handoff-k3d` 复用了固定测试 MySQL `13317` 和现有 `coke-grok-desktop:sha-e18...` 镜像，在临时隔离用户空间完成真实 DeepSeek/Pi 调用并进入云电脑接管，但总测试失败于新标签输入网址。保留截图显示 Chrome 地址栏中心约在 `y=90`，而测试按旧比例 `.13` 点击 `y=117`，落在网页区，随后把输入文本当 DuckDuckGo 搜索查询。该结果证明接管输入测试坐标错误，不能据此认定应用地址栏链路已修复。
+
+首次校正后，普通弹窗地址栏实测 y≈90（画布比例 `.1`），Gmail 直达、Pi/DeepSeek、零审批卡和弹窗内真实地址栏输入通过。全屏视口多了 XFCE 标题栏，实测 tab strip y≈75、地址栏 y≈120；测试已拆为普通弹窗地址栏 `.1`、全屏 tab strip `.083` 和全屏地址栏 `.13`。关闭源码覆盖的第三次运行通过弹窗/全屏标签操作，但最后的截图免传导航探测在旧镜像上返回 404；这是覆盖配置不匹配。使用相同固定镜像并启用测试已有的 ConfigMap 源码覆盖后，`npm run test:gmail-handoff-k3d` 全链路通过：真实 DeepSeek Pi 发起 Gmail 任务并导航到 `accounts.google.com`，审批记录和 UI 审批卡均为 0；通过产品 UI 接管 K3D noVNC，在弹窗和全屏模式各真实打开新标签并输入网址，随后交还 Agent，由 Browser User 检查接管后的页面。该轮调用 DeepSeek 9 次。`npm run test:runtime` 152/152、`npm run build:deployment` 通过。测试 namespace 和随机 MySQL schema 已清理；现有两个用户 namespace 未改动。该证据覆盖本机 K3D 全链路；公网已登录 Chrome 的可见点击验收仍受 CUA visibility 能力不可用所阻，未部署、提交或合并本补丁。
+
+#### 2026-11-08 Pi Gmail 交接结果格式与无审批验证
+
+针对真实 Pi 运行落成 `unknown` 的回归，先后两次隔离 K3D 调用都没有产生任何电脑审批卡或 Worker 失败，但适配器收到的最终文字不含结构化结果，安全地拒绝完成：第一次为 4 次 DeepSeek 请求，诊断码 `agent_adapter_failed`，固定诊断为 `Agent did not return a structured result`。只把 JSON 结果约定放在 Pi 的系统提示扩展里没有让真实模型稳定遵守。保留该严格校验，不把普通文字猜成成功；现在把同一结果契约也附加到实际任务提示，并继续放在系统提示里。DSH 同样在 task prompt 与系统插件中带此契约。Pi SDK 的 `DefaultResourceLoader` 官方 SDK 文档说明支持 `appendSystemPromptOverride`，但这轮失败表明实际模型响应仍需由任务级提示明确约束：https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md 。
+
+为确保测试的是当前工作区内的 Agent 适配器而不是旧固定镜像中的旧副本，`test:gmail-handoff-k3d` / `test:gmail-request-k3d` 在临时测试 namespace 用只读 ConfigMap 覆盖 Agent Kernel adapter；不重建镜像、不新建 MySQL 容器、不改动现有用户桌面。修正后运行 `npm run test:gmail-request-k3d` 退出码 0：真实 Pi/DeepSeek 打开 Gmail 到 `accounts.google.com`，审批记录与产品 UI 审批卡均为 0，DeepSeek 共 5 次调用；随后经产品 UI 接管实际 K3D noVNC，在弹窗与网页全屏里打开并导航第二个 Chrome 标签，交还 Agent，受限的免截图导航也通过。没有登录 Google、输入凭据或读取邮箱。运行期间复用固定测试 MySQL 容器 `13317` 和现有桌面镜像；临时隔离 namespace、`grok_mediated_*` schema、端口转发及证书均已清理，结束后只保留原有两个用户 namespace，固定测试 MySQL 仍运行。
+
+源码修正后的 `npm run test:runtime` 为 152/152，`npm run build:deployment` 和 `npx tsc --noEmit` 通过。上述 K3D 交接与接管验收不是公网已登录 Chrome 的验收，也不证明这次补丁已部署；公网可见浏览器控制仍不可用，未在本轮部署、提交或合并。

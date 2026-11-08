@@ -120,6 +120,33 @@ test('DSH direct Gmail navigation consumes an immediate completion without creat
   }
 });
 
+test('DSH routes mistaken desktop navigation to Browser User without showing an approval card', async () => {
+  const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
+  const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
+  const oldFetch = globalThis.fetch;
+  process.env.COKE_GROK_COMPUTER_BRIDGE_URL = 'https://gateway.example.test/v1';
+  process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = bridgeToken;
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const path = new URL(String(url)).pathname;
+    calls.push({ path, method: init.method || 'GET' });
+    if (path.endsWith('/computer/control')) return Response.json({ owner: 'agent' });
+    if (path.endsWith('/computer/actions')) return Response.json({ error: 'computer_request_failed', diagnostic: { code: 'COMPUTER_NAVIGATION_USE_BROWSER' } }, { status: 409 });
+    throw new Error('A rejected navigation action must not be polled or executed');
+  };
+  try {
+    const { tools } = mount(), desktop = tools.get('computer_desktop');
+    await assert.rejects(desktop.execute({ action: 'click', x: 295, y: 90 }, { signal: new AbortController().signal }), /not executed and no approval was requested.*computer_browser\.navigate/i);
+    assert.equal(calls.filter(call => call.path.endsWith('/computer/actions')).length, 1);
+    assert.equal(calls.length, 1, 'receive the navigation directive without polling or executing an approval');
+    assert.match(desktop.description, /desktop input is attempted for navigation.*without creating an approval card/i);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
+    if (oldToken === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN; else process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = oldToken;
+  }
+});
+
 test('DSH computer plugin refuses actions when the user owns the screen and rejects an invalid gateway', async () => {
   const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
   const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;

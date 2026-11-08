@@ -41,8 +41,20 @@ test('only directly requested browser destinations skip computer approval',async
  assert.ok('id'in click);assert.equal(approvalProposals,1);
  const otherDestination=await bridge.propose(scoped,{kind:'browser',action:'navigate',url:'https://example.com/'},signal);
  assert.ok('id'in otherDestination);assert.equal(approvalProposals,2);
- const ordinaryDesktopClick=await bridge.propose(scoped,{kind:'desktop',action:'click',x:100,y:100},signal);
- assert.ok('id'in ordinaryDesktopClick);assert.equal(approvalProposals,3,'ordinary desktop actions remain approval-gated');
+ for(const action of [
+  {kind:'desktop',action:'click',x:295,y:48},
+  {kind:'desktop',action:'click',x:295,y:90},
+  {kind:'desktop',action:'type',text:'https://mail.google.com/'},
+ ] as const){
+  await assert.rejects(bridge.propose(scoped,action,signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_NAVIGATION_USE_BROWSER');
+ }
+ assert.equal(approvalProposals,2,'browser-chrome clicks at both observed toolbar heights and a directly requested URL must not create repetitive approval cards');
+ const pageClick=await bridge.propose(scoped,{kind:'desktop',action:'click',x:100,y:130},signal);
+ assert.ok('id'in pageClick);assert.equal(approvalProposals,3,'a page-content click is not misclassified as address-bar navigation');
+ const enter=await bridge.propose(scoped,{kind:'desktop',action:'press',key:'Enter'},signal);
+ assert.ok('id'in enter);assert.equal(approvalProposals,4,'Enter remains reviewed because it can submit a page form');
+ const ordinaryDesktopClick=await bridge.propose(scope,{kind:'desktop',action:'click',x:100,y:100},signal);
+ assert.ok('id'in ordinaryDesktopClick);assert.equal(approvalProposals,5,'desktop actions without a direct navigation request remain approval-gated');
 });
 test('an explicitly requested navigation does not require an approval screenshot payload',async()=>{
  let imageSnapshots=0,performed=0,approvalProposals=0;

@@ -13,7 +13,7 @@ export function apply(ctx) {
 
   ctx.tools.register({
     name: 'computer_desktop',
-    description: 'View a screenshot and operate this user’s real persistent cloud Linux desktop. Click coordinates use the full 1440 x 900 screenshot, with (0, 0) at its top-left and Chromium/window-manager bars included. Screenshots are sent to the configured model. Every Agent desktop click, typing action, and key press waits for owner approval. For a requested website or URL, use computer_browser navigation instead of clicking the address bar; when the owner wants to sign in, stop at the sign-in page and let them take control. Never enter or request their credentials.',
+    description: 'View a screenshot and operate this user’s real persistent cloud Linux desktop. Click coordinates use the full 1440 x 900 screenshot, with (0, 0) at its top-left and Chromium/window-manager bars included. Screenshots are sent to the configured model. Desktop clicks, typing, and key presses are approval-gated. For a website directly requested by the owner, use computer_browser.navigate; if desktop input is attempted for navigation, the tool returns a Browser User instruction without creating an approval card. When the owner wants to sign in, stop at the sign-in page and let them take control. Never enter or request their credentials.',
     parameters: {
       type: 'object',
       properties: {
@@ -206,9 +206,10 @@ async function readJson(response, message) {
         const text=await response.text();
         if(Buffer.byteLength(text,'utf8')<=4096){
           const value=JSON.parse(text),code=value?.error==='computer_request_failed'?value?.diagnostic?.code:null;
-          if(code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED')throw new Error('This run is a sign-in handoff. Use computer_browser.navigate to the requested site, inspect it read-only, and stop so the user can take control. Do not click, type, or press keys.');
+          if(code==='COMPUTER_NAVIGATION_USE_BROWSER')throw new Error('The user directly requested a website destination. This desktop action was not executed and no approval was requested. Use computer_browser.navigate for one of the exact requested destinations; do not click the address bar or type the URL with computer_desktop.');
+          if(code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED')throw new Error('This run is a sign-in handoff. Use computer_browser.navigate to the requested site, inspect it read-only, and stop so the user can take control. Do not click, type, press keys, or interact with the page.');
         }
-      }catch(error){if(error instanceof Error&&error.message.startsWith('This run is a sign-in handoff.'))throw error;}
+      }catch(error){if(error instanceof Error&&(error.message.startsWith('This run is a sign-in handoff.')||error.message.startsWith('The user directly requested a website destination.')))throw error;}
     }
     throw new Error(message);
   }

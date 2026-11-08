@@ -12,15 +12,20 @@ test('DeepSeekHarness receives the supported SDK launch options', async () => {
   const realCwd = await realpath(cwd);
   const previousBin = process.env.DOTS_DSH_BIN;
   const previousProfile = process.env.DOTS_DSH_PROFILE;
-  let options, patchContent;
+  let options, patchContent, resultPluginContent;
   let closeCalls = 0;
 
   class FakeDeepSeekHarness {
     constructor(value) { options = value; }
     async run(prompt, runOptions) {
-      assert.equal(prompt, 'Return a structured completion.');
+      assert.ok(prompt.startsWith('Return a structured completion.'));
+      assert.match(prompt, /Grok Bot task-result contract/u);
+      assert.match(prompt, /exactly one JSON object/u);
       assert.deepEqual(runOptions, { sessionId: undefined });
       patchContent = await readFile(options.patches[0], 'utf8');
+      const resultPluginName = patchContent.match(/name: "\.\/(coke-grok-task-result-[a-f0-9]+\.mjs)"/u)?.[1];
+      assert.ok(resultPluginName, 'DSH must receive the task-result system prompt plugin');
+      resultPluginContent = await readFile(path.join(options.dshHome, resultPluginName), 'utf8');
       return {
         finalResponse: JSON.stringify({ status: 'done', message: 'DSH adapter test passed' }),
         sessionId: 'fixture-session',
@@ -59,6 +64,9 @@ test('DeepSeekHarness receives the supported SDK launch options', async () => {
     assert.equal(options.env.DEEPSEEK_API_KEY, 'test-only-key');
     assert.equal(options.env.DEEPSEEK_BASE_URL, 'https://models.example/v1');
     assert.equal(options.env.DSH_MODEL, 'deepseek-v4.1-flash');
+    assert.match(resultPluginContent, /Grok Bot task-result contract/u);
+    assert.match(resultPluginContent, /exactly one JSON object/u);
+    assert.match(resultPluginContent, /order: 9000/u);
     assert.equal(closeCalls, 1);
   } finally {
     if (previousBin === undefined) delete process.env.DOTS_DSH_BIN;
@@ -76,7 +84,8 @@ test('DeepSeek Harness receives group identity as a system-prompt section, not a
  class FakeDeepSeekHarness{
   constructor(value){options=value}
   async run(prompt){
-   assert.equal(prompt,'Give one concise project update.');
+   assert.ok(prompt.startsWith('Give one concise project update.'));
+   assert.match(prompt,/Grok Bot task-result contract/u);
    const patch=await readFile(options.patches[0],'utf8');
    const pluginFile=patch.match(/name: "\.\/([^"\\]+\.mjs)"/u)?.[1];assert.ok(pluginFile);
    const plugin=await readFile(path.join(options.dshHome,pluginFile),'utf8');

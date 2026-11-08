@@ -90,6 +90,30 @@ test('Pi reports only the allowlisted computer diagnostic after an approved acti
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });
 
+test('Pi redirects a desktop attempt to open a requested website to Browser User without approval',async()=>{
+ const workspace=await mkdtemp(path.join(os.tmpdir(),'grok-pi-navigation-directive-')),cwd=path.join(workspace,'tasks','navigation');await mkdir(cwd,{recursive:true});
+ const oldFetch=globalThis.fetch,token='x'.repeat(43),requests=[];let options;
+ globalThis.fetch=async(url,init={})=>{
+  const pathname=new URL(String(url)).pathname;requests.push({pathname,method:init.method||'GET'});
+  if(pathname==='/v1/computer/control')return Response.json({owner:'agent'});
+  if(pathname==='/v1/computer/actions')return Response.json({error:'computer_request_failed',diagnostic:{code:'COMPUTER_NAVIGATION_USE_BROWSER'}},{status:409});
+  throw new Error('A rejected navigation must not be polled or executed');
+ };
+ const sdk={
+  AuthStorage:{inMemory:()=>({setRuntimeApiKey(){}})},ModelRegistry:{inMemory:()=>({registerProvider(){},find:()=>({id:'deepseek-v4.1-flash'})})},
+  SessionManager:{list:async()=>[],create:()=>({getSessionId:()=>randomUUID()})},
+  createAgentSession:async value=>{options=value;return{session:{messages:[{role:'assistant',stopReason:'stop',content:[{type:'text',text:'{"status":"done","message":"Adapter ready."}'}]}],async prompt(){},dispose(){}}}},
+ };
+ try{
+  await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:token},prompt:'Open https://example.org/ and report its title.',signal:new AbortController().signal},{piSdk:sdk});
+  const desktop=options.customTools.find(tool=>tool.name==='computer_desktop');assert.ok(desktop);
+  await assert.rejects(()=>desktop.execute('desktop-address-bar-click',{action:'click',x:295,y:90},new AbortController().signal),/not executed and no approval was requested.*computer_browser\.navigate/i);
+  assert.equal(requests.filter(request=>request.pathname==='/v1/computer/actions').length,1);
+  assert.equal(requests.length,2,'no approval status poll or execute call follows the navigation directive');
+  assert.match(desktop.promptGuidelines.join(' '),/no approval card is needed to open the requested site/i);
+ }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
+});
+
 test('Pi does not create another browser or desktop approval after the owner denies it',async()=>{
  const workspace=await mkdtemp(path.join(os.tmpdir(),'grok-pi-denied-computer-action-')),cwd=path.join(workspace,'tasks','denied');await mkdir(cwd,{recursive:true});
  const oldFetch=globalThis.fetch,approvalIds=[],token='x'.repeat(43);let options;
@@ -133,10 +157,15 @@ test('Pi keeps group orchestration context in the system prompt and the user mes
  try{
   const result=await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),prompt:'Give one concise project update.',runtimeContext,signal:new AbortController().signal},{piSdk:sdk});
   assert.equal(result.message,'Chief reply');assert.equal(loaded,true);assert.equal(options.resourceLoader.constructor,FakeResourceLoader);
-  assert.deepEqual(loaderOptions.appendSystemPromptOverride(['base system']),['base system',loaderOptions.appendSystemPromptOverride([])[0]]);
-  assert.match(loaderOptions.appendSystemPromptOverride([])[0],/Current Bot identity.*Chief/);
-  assert.match(loaderOptions.appendSystemPromptOverride([])[0],/Product crew/);
-  assert.equal(userMessage,'Give one concise project update.');
+  const sections=loaderOptions.appendSystemPromptOverride([]);
+  assert.deepEqual(loaderOptions.appendSystemPromptOverride(['base system']),['base system',...sections]);
+  assert.match(sections[0],/Current Bot identity.*Chief/);
+  assert.match(sections[0],/Product crew/);
+  assert.match(sections[1],/Grok Bot task-result contract/);
+  assert.match(sections[1],/exactly one JSON object/);
+  assert.ok(userMessage.startsWith('Give one concise project update.'));
+  assert.match(userMessage,/Grok Bot task-result contract/);
+  assert.match(userMessage,/exactly one JSON object/);
  }finally{await rm(workspace,{recursive:true,force:true})}
 });
 

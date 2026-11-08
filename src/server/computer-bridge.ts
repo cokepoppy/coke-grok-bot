@@ -6,6 +6,22 @@ import { SafeDiagnosticError } from './safe-diagnostics.ts';
 
 export interface RunScope {owner:RunOwner;runId:string;leaseId:string;botId:string;requestedNavigationOrigins?:readonly string[];signInHandoff?:boolean}
 export interface ComputerReadWorker extends GuardedComputerWorker { control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>; inspect(signal:AbortSignal):Promise<unknown>; screenshot(signal:AbortSignal):Promise<Buffer> }
+function isDirectDesktopNavigationAttempt(action:{kind?:unknown;action?:unknown;arguments?:Record<string,unknown>},origins:readonly string[]):boolean{
+ if(action.kind!=='desktop')return false;
+ const args=action.arguments||{};
+ // Chrome tabs and navigation controls can sit at different heights in
+ // windowed and maximized layouts. Redirect clicks in the top browser chrome
+ // to Browser User instead of creating an approval for ordinary navigation.
+ if(action.action==='click'&&typeof args.x==='number'&&typeof args.y==='number'&&args.y>=0&&args.y<=125)return true;
+ if(action.action==='type'&&typeof args.text==='string'){
+  const value=args.text.trim();
+  try{
+   const url=new URL(/^https?:\/\//i.test(value)?value:`https://${value}`);
+   return !url.username&&!url.password&&origins.includes(url.origin);
+  }catch{/* Non-URL typing stays under normal computer review. */}
+ }
+ return false;
+}
 /** Only the authenticated, live run capability may call these methods. */
 export class ComputerBridge {
  constructor(private readonly runs:Pick<RunStore,'hasLiveLease'|'markComputerUsed'>,private readonly approvals:Pick<ApprovalStore,'propose'|'consume'|'status'>,private readonly worker:(scope:RunScope)=>ComputerReadWorker){}
@@ -58,8 +74,9 @@ export class ComputerBridge {
   }
   if(state.owner!=='agent')throw new SafeDiagnosticError('COMPUTER_OWNER_USER');
   let action:string;try{action=canonicalComputerAction(input,state)}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
-  const canonical=JSON.parse(action) as {kind?:unknown;action?:unknown;arguments?:{url?:unknown}};
+  const canonical=JSON.parse(action) as {kind?:unknown;action?:unknown;arguments?:Record<string,unknown>};
   if(disallowedDuringSignInHandoff(scope,canonical))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
+  if(scope.requestedNavigationOrigins?.length&&isDirectDesktopNavigationAttempt(canonical,scope.requestedNavigationOrigins))throw new SafeDiagnosticError('COMPUTER_NAVIGATION_USE_BROWSER');
   if(canonical.kind==='browser'&&canonical.action==='navigate'&&typeof canonical.arguments?.url==='string'){
    let origin='';try{origin=new URL(canonical.arguments.url).origin}catch{/* The canonicalizer already validates the URL. */}
    if(origin&&scope.requestedNavigationOrigins?.includes(origin)){
