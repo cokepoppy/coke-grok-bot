@@ -4802,3 +4802,13 @@ V1 片头连续逐帧覆盖至 16:39.966，共 30,000 帧；下一窗口从 16:4
 PTS 992000 的原尺寸样帧保存在 [`v1-992000-details-routines-keyframe-20261109.png`](frames/v1-992000-details-routines-keyframe-20261109.png)，用于读取静态 UI 文案和布局。画面右栏依次显示四个已开启的 Routine：`Eala NYC ticket watch`（Every Monday at 8:40 AM）、`Keith drops watch`（Weekdays at 9:02 AM）、`NFL fantasy injury brief`（Every day at 8:12 AM）、`Hawaii airfare morning`（Every day at 8:02 AM）；下方 `Meetings · DEV` 卡片显示 “Give your Bot links to join Google Meet or Zoom”。源帧解码像素 SHA-256 为 `5cfa050451e5ff08dba9ddb1325f16b3e2cd3635d8fbe86fad0f423fa8ba47a5`，保存 PNG SHA-256 为 `14c1c5d4285457e06edd77dca08a6a90049751147387903c2ad87f629e7e23dd`。
 
 V1 片头连续逐帧覆盖至 16:44.966，共 30,150 帧；下一窗口从 16:45.000 开始，16:45–21:08 仍待审阅。
+
+### V1 16:45–16:49.966 Computer 预览与 Open 悬停态（PTS 1005000–1009966）
+
+逐帧审阅 `research/frames/v1-1005-1010-compact-audit-20261109/` 的 150 个 1920×1080 源帧和 6 张 5×5 联系图。再次从完整源视频解码后，150 帧的 PTS、`yuv420p` 像素 SHA-256/字节数均与 manifest 一致；源视频 SHA-256 和 6 张联系图 SHA-256 也匹配。
+
+PTS 1005800（16:45.800）右栏仍选中 `Details`，四条 Routine 和 `Meetings · DEV` 文案保持不变。PTS 1005833（16:45.833）切换为 `Computer`，右栏显示缩小的浏览器桌面预览，画面是 Atlanta 附近的酒店搜索和地图，下面标注 `bobo’s screen`。PTS 1006200（16:46.200）鼠标悬停在预览上时出现黑色 `Open` 控件；之后直到 PTS 1009966（16:49.966）预览与悬停控件保持显示，没有观察到点击 `Open` 或进入放大电脑视图。讲者视频小窗变化不算产品交互。
+
+只保留三个用于对照状态的原尺寸帧：[`v1-1005800-details-before-computer-tab-20261109.png`](frames/v1-1005800-details-before-computer-tab-20261109.png)、[`v1-1005833-computer-tab-preview-20261109.png`](frames/v1-1005833-computer-tab-preview-20261109.png) 和 [`v1-1006200-computer-preview-open-hover-20261109.png`](frames/v1-1006200-computer-preview-open-hover-20261109.png)。对应源帧像素 SHA-256 依次为 `c8594a4cbf4937b64df4171ae6dfc6050895fa73a14bf0cdffea020c6bfea7c7`、`7aca091cebf319684b7ce24010ceebf701b3361913bd46c0797bbd0ae8c67789`、`c195e09f08944a17458a97803ff1d8aa847c931e08877a934e2082de1ea47e98`；PNG 文件 SHA-256 依次为 `84a78b24d5c9b379907a7f3de3a1cbf7c776c974ef3dbf1d504c404367f2cac6`、`4d86c894af1803c504c9690d1822d62bb3b082580896fdbb582efb938f3e6b96`、`f97a1065b786054ac722768c63361b6dc7f8f7c79e1c41f0b922a7f1b1d5bd93`。
+
+V1 片头连续逐帧覆盖至 16:49.966，共 30,300 帧；下一窗口从 16:50.000 开始，16:50–21:08 仍待审阅。
