@@ -4363,3 +4363,9 @@ Agenda 页列出 `01 Welcome`、加粗高亮的 `02 Introducing GrokBot`、`03 W
 逐帧审阅完整 150 个源帧及六张 5×5 联系图。`research/frames/v1-270-275-compact-audit-20261108/manifest.json` 记录 PTS 270000–274967、逐帧 `yuv420p` 解码像素 SHA-256 和六张联系图哈希；源视频 SHA-256 为 `270123c76fb7f9a4818f7770d4e5754f3097d06770ad95b817ed0825dbce9231`，联系图哈希全部匹配。画面持续展示 `AI Maturity Curve` 上的四阶段：`Ask (Chatbots)`、`Do a task (Copilots)`、`Delegate outcome (Bot)`、`Staff function (Team of Bots)`，右上方为讲者小窗；尚未出现产品客户端或云电脑操作。紧凑目录约 1.1 MiB，没有保留重复的全分辨率逐帧序列。
 
 V1 片头现连续逐帧覆盖 0:00–4:34.967，共 8,250 帧；下一窗口从 4:35.000 开始。其余视频时段及其它来源仍待逐帧审阅。
+
+### V1 4:35–4:44.967 AI Maturity Curve 延续（PTS 275000–284967）
+
+连续逐帧审阅两个五秒窗口，共 300 个 1920×1080、30 fps 源帧；十二张 5×5 联系图已逐张检查。manifest 分别位于 `research/frames/v1-275-280-compact-audit-20261108/` 和 `v1-280-285-compact-audit-20261108/`，各记录 150 个源 PTS、`yuv420p` 解码像素 SHA-256 与六张联系图 SHA-256；PTS 连续覆盖 275000–284967，联系图哈希均核验匹配。两段原视频 SHA-256 均为 `270123c76fb7f9a4818f7770d4e5754f3097d06770ad95b817ed0825dbce9231`，紧凑证据目录各约 1.1 MiB。
+
+全部 300 帧保持 `AI Maturity Curve` 演示页，列出 `Ask (Chatbots)`、`Do a task (Copilots)`、`Delegate outcome (Bot)` 与 `Staff function (Team of Bots)` 四阶段；讲者小窗在右上，变化仅见讲者姿势/手势，未出现产品客户端或云电脑操作。V1 片头现连续逐帧覆盖 0:00–4:44.967，共 8,550 帧；下一窗口从 4:45.000 开始。
