@@ -4822,3 +4822,11 @@ PTS 1010566（16:50.566）仍处于 Computer 预览，黑色 `Open` 控件可见
 保留 Open 前预览、Connecting 状态和首次桌面画面三张原尺寸帧：[`v1-1010566-computer-preview-open-before-20261109.png`](frames/v1-1010566-computer-preview-open-before-20261109.png)、[`v1-1010600-computer-fullscreen-loading-20261109.png`](frames/v1-1010600-computer-fullscreen-loading-20261109.png)、[`v1-1012233-computer-fullscreen-first-map-frame-20261109.png`](frames/v1-1012233-computer-fullscreen-first-map-frame-20261109.png)。源帧像素 SHA-256 依次为 `00ee508445d904d05f664fe7e9edcd1c1c399d1b10c49f344c5bf4fb5f0a9e06`、`8888cb956c6671a440f282094ef7de0a5f7b6faea23eb75c7f48ec9ce8e8b444`、`4238aa0c0ef511b13e3774828a19feb8e718176275092d49e09e4f3f3b46e0af`；PNG 文件 SHA-256 依次为 `a81a0df2f75cade1d34ad5d68fd7e890456448cd6310bfdfc3b78e86ea063cd5`、`8dd7b65a4ac19aa77da65046ba704c633b7fe1c098f7e6ed6da498f3283bd34e`、`7585926f953ceeaf7d96d0d470054c2971326ddcefdaaf639828b5de8cbc248b`。
 
 V1 片头连续逐帧覆盖至 16:54.967，共 30,450 帧；下一窗口从 16:55.000 开始，16:55–21:08 仍待审阅。
+
+### V1 16:55–16:59.967 全屏电脑桌面保持静态（PTS 1015000–1019966）
+
+逐帧审阅 `research/frames/v1-1015-1020-compact-audit-20261109/` 的 150 个 1920×1080 源帧和 6 张 5×5 联系图。独立重解码核对全部 PTS、`yuv420p` 像素 SHA-256/字节数、源视频 SHA-256 和六张联系图 SHA-256，均与 manifest 一致。
+
+全屏 Computer 视图持续显示 Chromium 中的 Google Hotels 搜索结果：左侧酒店列表、右侧 Atlanta 地图；没有观察到地址栏输入、页面跳转、鼠标触发的产品操作或控制栏变化。演示者小窗只在演讲画面中变化，不属于产品状态，因此不另存原尺寸帧。
+
+V1 片头连续逐帧覆盖延长至 16:59.966，共 30,600 帧；下一窗口从 17:00.000 开始，17:00–21:08 仍待审阅。
