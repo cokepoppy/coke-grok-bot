@@ -2,10 +2,13 @@ import type { Approval,ApprovalStore } from './approval-store.ts';
 import {canonicalComputerAction,type ComputerSnapshot} from './computer-action.ts';
 import {SafeDiagnosticError} from './safe-diagnostics.ts';
 export interface ComputerState extends ComputerSnapshot { owner:'agent'|'user' }
+export interface ComputerNavigationState { owner:'agent'|'user'; url:string }
 /** Worker implementation must check state and ownership atomically with the action. */
 export interface GuardedComputerWorker {
  snapshot(signal:AbortSignal):Promise<ComputerState>;
  snapshotWithImage?(signal:AbortSignal):Promise<{state:ComputerState;image:Buffer}>;
+ navigationState?(signal:AbortSignal):Promise<ComputerNavigationState>;
+ navigateIfUnchanged?(input:unknown,expected:ComputerNavigationState,signal:AbortSignal):Promise<unknown>;
  performIfUnchanged(input:unknown,expected:ComputerState,signal:AbortSignal):Promise<unknown>;
 }
 /**

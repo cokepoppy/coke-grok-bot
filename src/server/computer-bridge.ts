@@ -21,9 +21,28 @@ export class ComputerBridge {
  async screenshot(scope:RunScope,signal:AbortSignal):Promise<Buffer>{const image=await (await this.authorize(scope,signal)).screenshot(signal);await this.markUsed(scope);return image}
  async propose(scope:RunScope,input:unknown,signal:AbortSignal):Promise<{id:string}|{status:'completed';result:unknown}>{
   const worker=await this.authorize(scope,signal);
-  let captured:Awaited<ReturnType<NonNullable<ComputerReadWorker['snapshotWithImage']>>>|null=null;
+  if(worker.navigationState&&worker.navigateIfUnchanged&&input&&typeof input==='object'&&!Array.isArray(input)){
+   const candidate=input as Record<string,unknown>;
+   if(candidate.kind==='browser'&&candidate.action==='navigate'&&typeof candidate.url==='string'){
+    let raw:URL|null=null;try{raw=new URL(candidate.url)}catch{/* Invalid destinations continue through canonical validation below. */}
+    if(raw&&(raw.protocol==='https:'||raw.protocol==='http:')&&!raw.username&&!raw.password&&scope.requestedNavigationOrigins?.includes(raw.origin)){
+     let navigationState;
+     try{navigationState=await worker.navigationState(signal)}catch(error){if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_SNAPSHOT_FAILED')}
+     if(navigationState.owner!=='agent')throw new SafeDiagnosticError('COMPUTER_OWNER_USER');
+     let canonical:string;try{canonical=canonicalComputerAction(input,{url:navigationState.url,screenshotSha256:'0'.repeat(64)})}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
+     const action=JSON.parse(canonical) as {kind?:unknown;action?:unknown;arguments?:{url?:unknown}};
+     if(disallowedDuringSignInHandoff(scope,action))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
+     const exactOrigin=typeof action.arguments?.url==='string'?new URL(action.arguments.url).origin:'';
+     if(exactOrigin&&scope.requestedNavigationOrigins.includes(exactOrigin)){
+      if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
+      try{const result=await worker.navigateIfUnchanged(input,navigationState,signal);await this.markUsed(scope);return {status:'completed',result}}
+      catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
+     }
+    }
+   }
+  }
   let state:ComputerState;
-  try{captured=worker.snapshotWithImage?await worker.snapshotWithImage(signal):null;state=captured?.state??await worker.snapshot(signal)}catch(error){
+  try{state=await worker.snapshot(signal)}catch(error){
    if(error instanceof SafeDiagnosticError)throw error;
    throw new SafeDiagnosticError('COMPUTER_SNAPSHOT_FAILED');
   }
@@ -41,6 +60,18 @@ export class ComputerBridge {
      return {status:'completed',result};
     }catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
    }
+  }
+  let captured:Awaited<ReturnType<NonNullable<ComputerReadWorker['snapshotWithImage']>>>|null=null;
+  if(worker.snapshotWithImage){
+   try{captured=await worker.snapshotWithImage(signal)}catch(error){
+    if(error instanceof SafeDiagnosticError)throw error;
+    throw new SafeDiagnosticError('COMPUTER_SNAPSHOT_FAILED');
+   }
+   state=captured.state;
+   if(state.owner!=='agent')throw new SafeDiagnosticError('COMPUTER_OWNER_USER');
+   try{action=canonicalComputerAction(input,state)}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
+   const currentCanonical=JSON.parse(action) as {kind?:unknown;action?:unknown};
+   if(disallowedDuringSignInHandoff(scope,currentCanonical))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
   }
   let approval:Awaited<ReturnType<ApprovalStore['propose']>>;
   try{approval=await this.approvals.propose(scope.runId,scope.leaseId,action,300,captured?.image)}catch{throw new SafeDiagnosticError('COMPUTER_APPROVAL_STORE_FAILED')}

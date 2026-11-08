@@ -1714,3 +1714,51 @@ Computer 键盘问题则是另一条漏测：旧检查未把产品 Computer 面�
 #### 2026-11-08 公网 Chrome 当前接管视图只读复核
 
 本轮 CUA 的 getState() 超时后，改用原生 Chrome getApp("Google Chrome") 成功读取已登录公网 /grok-bot/ 页面。可见当前打开的是 Gmail Handoff E2E 20261107 的 Computer screen，顶部显示 You are in control、Return to Bot，嵌入云电脑状态为 Connected，远程 Chrome 停在空白 Google Accounts 登录表单。全屏深色接管层覆盖整页，外部聊天 composer 不在可见画面中。这是公网可见覆盖状态的直接证据，不是地址栏键盘输入的新验收。由于该共享电脑当前由用户控制，本轮只读截图，没有点击 Return to Bot、没有向云电脑发送输入、没有输入账号或更改共享电脑状态；候选 K3D 地址栏输入回归与本轮公网视觉观察分别记录。
+
+#### 2026-11-08 Take control 全屏输入回归缺口与复测
+
+用户指出放大云电脑后切换 Chrome 标签并点击地址栏不能正常操作。复盘旧绿测的覆盖范围：`tests/ui.e2e.mjs` 的 Computer 遮罩用模拟截图验证布局、inert 与焦点，不连接真实 VNC；真实 K3D `test:computer-ui-k3d` 之前只在普通 Computer 弹层内测试，没有调用网页 Fullscreen API。旧输入路径还用 `Ctrl+T` 创建标签（Chromium 会自动聚焦地址栏），再以固定 1440×900 画面中的 `.05` / `.09` 高度点击；这两个点落在窗口标题/页面内容附近，不能证明用户真正点击了标签栏与地址栏。测试也会先等待 noVNC `Connected`，没有覆盖“点击 Take control 后仍显示 Connecting”的等待阶段。因此旧绿灯只证明特定弹层状态下的 VNC 输入，不覆盖用户报告的完整点击路径。
+
+本轮在公网已登录 Chrome 的合成 Bot `E2E Test Bot 1029` 中可见点击 `Take control`；页面起初处于连接中，等待状态成为 `Connected` 后，通过远程 Chrome 的标签与地址栏导航。普通放大视图先到 `example.com`；网页全屏视图输入 `example.org/?grokbot-e2e=public-fullscreen-20261108` 后，下一次读取显示目标 URL 与 Example Domain。首次全屏截图仍是旧页，随后复读才确认导航已完成，说明截图显示有延迟。未在该公网操作中输入或提交 Google 凭据；这只是公网手动接管与导航证据，不是从公网聊天触发 Pi/DeepSeek 的全链路。
+
+回归测试现从普通模式进入真正网页全屏，在 1440×900 noVNC 桌面中点击标签栏中心（高度比例 `.083`）和地址栏中心（`.13`），输入唯一 URL 并用只读 CDP 检查真实标签页；另断言输入期间产品截图轮询继续完成、归还后 Pi Worker 仍能解析用户选中的同标题标签。第一次补测误用了回退镜像 `coke-grok-desktop:candidate-focus-screenshot-fix-20261107-r1`，该镜像不带当前 Active Tab bridge，所以虽可见第二标签，Worker 仍读旧页；这不是当前候选验收依据。随后改用已部署且本机已存在的固定候选镜像 `coke-grok-desktop:sha-e18f71547116d965c5abc5db9227b74729983588`，`COKE_GROK_DESKTOP_TEST_SOURCE_OVERLAY=0`，没有重建或导入镜像。
+
+在正确固定镜像上，`npm run test:computer-ui-k3d` 通过，普通模式与全屏模式都完成实际标签切换和地址栏导航；输入期间 15 次产品截图轮询完成，归还后 Pi Worker 读取到第二标签。`npm run test:gmail-handoff-k3d` 也通过：本机隔离产品 UI、真实 DeepSeek 官方 `https://api.deepseek.com` (`deepseek-flash`)、Pi、固定 K3D Chromium 与 noVNC；13 次模型调用、没有审批卡，Pi 到达 Google 登录表单，用户经全屏接管导航到新标签，再交还后 Browser User 读取到第二标签。未输入账号/密码、未提交表单、未读 Gmail。TypeScript 与 `git diff --check` 通过；两条测试结束后临时 namespace 已删除、`grok_mediated_*` schema 为空，复用固定测试 MySQL 容器且没有创建新 MySQL 容器。
+
+测试会等 `Connected` 才发送输入，而这次公网可见操作也确认接管后存在短暂连接阶段；因此“用户若在连接完成前立即点按会不会丢输入”仍未被覆盖，且不能认定这就是用户问题的唯一原因。当前只改了回归测试和技术记录，没有改动或重新部署公网 UI/Auth/Agent/Desktop，也没有完成整条公网 Pi/DeepSeek 验收；唯一 feature 分支仍未提交、推送或合并。
+
+#### 2026-11-08 端到端绿灯覆盖缺口与标签切换复核
+
+用户追问明显的云电脑输入问题为何旧 E2E 全绿。原因是旧测试没有实际走到用户报告的完整路径：截图 UI 测试使用模拟画面；较早的真实 K3D 测试在普通 Computer 弹层测输入，没有进入 Fullscreen API，也没有分别验证 Chrome 标签栏点击与地址栏点击。它验证了 noVNC 某个已连接状态下能传送输入，不能代表“Take control 后放大全屏，再点标签、点地址栏、输入网址”的验收。因此此前绿灯说明测试范围偏窄，不说明用户所走路径已经可靠。
+
+这轮加严回归时也发现测试本身会制造误报：Playwright `browserContext.pages()` 的顺序不是 Chrome 可见标签顺序；用户接管时 `/v1/guarded/inspect` 不可用，需用 noVNC `/v1/guarded/snapshot-image` 对照实际显示 URL；旧标签测试 URL 曾复用目标 marker 前缀，导致真实切换成功仍被判为“未切换”。修正后，在固定 K3D 镜像 `coke-grok-desktop:sha-e18f71547116d965c5abc5db9227b74729983588`（不挂载源码 overlay）上，`npm run test:computer-ui-k3d` 通过：实际 noVNC 完成普通接管与网页全屏下的地址栏输入和标签往返切换，输入期间 15 次截图轮询完成，并确认归还给 Agent。测试同时观测到画面从 `example.org` 标签切换到独立 `example.com` 标签，再通过真实标签栏点击返回目标页。`npx tsc --noEmit` 和 `git diff --check` 通过。
+
+本轮是 UI-only K3D 回归，没有再次调用 DeepSeek/Pi，也没有改动生产 UI、Agent、桌面镜像或公网部署；先前 DeepSeek/Pi 测试结果应按其原有测试版本和时间看待。公网手动接管时也曾观察到全屏导航成功，但尚未通过公网域名重复完整验证 Pi/DeepSeek 到 Computer User 的路径，不能据此断言用户报告的问题已经解决。回归仍等待 noVNC `Connected` 后才输入，所以连接中的立即操作未覆盖。测试收尾删除了本次临时 namespace 和 `grok_mediated_*` 数据库；结束后 Pod 数为 13、使用原有 `coke-grok-test-mysql-cf95778`，未新增 MySQL 容器；未更改共享应用与用户 namespace。
+
+#### 2026-11-08 公网接管后 Pi/DeepSeek Browser User 复核
+
+从已登录的 `https://codex.cokeagent.com/grok-bot/` 页面接管 `E2E Test Bot 1029` 的真实云电脑，在嵌入 Chrome 中切换到第二个标签并用地址栏导航到带唯一测试参数的 `example.org` 页面；屏幕显示 `Connected` 和 `You are in control`。归还控制并关闭电脑视图后，通过公网聊天输入框提交只读任务，要求 Pi 仅用 Browser User 检查当前标签标题和 URL，不导航、不点击、不使用 Desktop User、不输入凭据、不检查 Gmail。页面先短暂显示 `Queued · waiting for your computer`，随后任务完成；执行明细显示 `Pi · deepseek-flash · response received` 和 `Browser User · inspect · succeeded`，助手返回标题 `Example Domain` 与 URL `https://example.org/`。这验证了公网入口、Take control 后的真实桌面输入、归还控制、公网聊天到 Pi/DeepSeek、Browser User 读取当前页的连续链路；未登录 Google、未读 Gmail 数据。
+
+该次云电脑地址栏操作由 Computer User 手动接管完成；本轮没有验证 Bot 自主从公网聊天发起导航、接管连接中立即输入、或整个官方六 Bot 群组示例，因此不把它标为完整产品验收。工作树仍在唯一 feature 分支；本轮只新增验收记录，没有改动产品运行代码或公网部署。GitHub `origin` HEAD 查询再次因本机无法解析 `github.com` 失败，推送和合并仍待网络可达后完成。
+
+#### 2026-11-08 用户追问接管 UI 绿测为何没发现聊天输入框问题
+
+复盘确认，早先的“端到端通过”不能证明用户看到的接管界面正常：`tests/run-browser.e2e.ts` 明确排除 Computer takeover，使用模拟身份/执行器；部分 Agent/K3D 测试直接通过 API 创建任务，也没有验证视觉模态层、后台聊天 composer 是否遮挡或抢焦点。因此用户报告的路径此前没有被完整覆盖，之前把这些结果泛称为端到端通过是不准确的。
+
+当前分支的 `tests/mediated-pi-k3d.e2e.ts` 已有更直接的本机 K3D UI 断言：Take control 后检查聊天 composer 处于 inert、composer 的屏幕中心命中全屏电脑遮罩、焦点留在 Computer dialog；随后用真实 noVNC 操作 K3D Chromium 的标签和地址栏，在普通放大与网页全屏下输入并导航，最后归还 Agent。该回归与真实 DeepSeek/Pi Gmail handoff K3D 测试本轮通过，后者 14 次模型调用、未出现额外审批；临时 namespace/schema 已清理，Pod 回到原有 13 个。它证明本机隔离候选的当前测试路径，不等于公网已部署版本的交互验收。
+
+本轮尝试读取已登录公网 Chrome 标签时，`getTab` 调用超时，未取得新的公网页面截图或输入证据；因此不能把本机绿测外推为公网问题已修复。聊天 composer 在普通聊天布局中用于向 Bot 发任务；进入全屏电脑接管时应被遮罩盖住、不可接收键盘输入。公网当前实际界面与本机候选之间是否存在部署差异，仍需在浏览器控制恢复后对同一条公网接管路径实测。
+
+#### 2026-11-08 普通网页导航与登录交接边界
+
+用户明确要求普通网页打开/导航由 Bot 自行完成，不应每一步要求用户批准；只有到达登录并需要用户输入凭据时才交给用户。当前分支把用户明确指定的 HTTP(S) 目标限制在该任务的精确 origin 内，Browser User 导航走无截图、无审批路径；登录交接模式下如果模型误选桌面点击或其他交互，服务端拒绝该动作并要求 Agent 改用 Browser User 完成导航，到登录页再交还电脑。凭据仍由用户亲自输入，不能由模型处理。
+
+本机隔离 K3D 的 Pi/DeepSeek Gmail handoff 回归曾以无导航审批卡到达 Google 登录页并转交真实云电脑；这是候选版本证据。当前公网 Auth/Agent/Desktop 镜像尚未统一更新，截图中出现的 `Approval requested · Desktop: click` 属于当前可见部署/运行结果，不能据候选代码推断公网问题已解决。公网验收必须确认普通导航期间没有审批卡，并在登录页交还控制权。
+
+#### 2026-11-08 导航免审批候选复验及公网群聊状态
+
+当前唯一功能分支 `codex/grok-bot-persistent-group-chat` 的本轮验证：`npm run test:runtime` 147/147；`npm run test:runtime-mysql` 18/18（包含六 Bot 群聊成员、输入文件、隔离运行及结果文件持久化）；`npm run build:deployment` 通过；`npm run test:gmail-handoff-k3d` 通过，真实 DeepSeek/Pi 共 13 次模型调用，在临时 K3D 电脑无导航审批卡地到达 `accounts.google.com`，通过产品 UI 接管真实 noVNC，在普通和网页全屏模式真实打开新标签并导航，归还后 Browser User 仍能读取页面；精确目标的无截图导航路由也通过。固定测试 MySQL 容器 `13317` 中 `grok_mediated_*` schema 数为 0；临时 K3D 测试 namespace 已清理，现有 Pod 数仍为 13。为该回归恢复了项目既有 loopback 代理桥 `127.0.0.1:17891 → 127.0.0.1:7890`，未改系统代理、VPS 或 Docker/K3D 共享服务。
+
+本轮经已登录公网 Chrome 只读看到最新 `Offsite crew` 六 Bot 任务仍为 4/6：Expense Manager、Talent Scout、Account Manager、Inbox Manager 完成；Sales Outbound 与 Chief 返回 `COMPUTER_SNAPSHOT_FAILED`，Chief 的截图另显示 `Desktop screenshot unavailable`。保留该失败结果，没有重发任务。Auth 最近 24 小时日志的聚合计数为 90 次 `screenshot/COMPUTER_WORKER_FAILED` 和 2 次 `COMPUTER_SNAPSHOT_FAILED`；日志没有 run ID，不能将这些计数归因于该六 Bot 群或推断出截图失败根因。当前 Auth 为 `coke-grok-auth:sha-b30aec1` revision 70，Broker 为 `sha-e18f...` revision 30；已有两套用户 Desktop/Agent 仍分别运行旧镜像。只读检查共享电脑控制状态文件发现其中一套电脑共有 9 个 Bot screen、4 个 owner=`user`，另一套 1 个 screen 且无人接管。因为仍有用户控制的桌面，不滚动或替换现有 Desktop；截图失败的独立原因尚未由该公网旧版本日志确认。
+
+GitHub 直连 DNS 仍失败，但使用单条 Git 命令的 `socks5h://127.0.0.1:7890` 已成功核对 `origin/main=0fab408` 和 feature `80f8ee4`，未修改全局代理。候选工作树尚未提交；公网六 Bot 4/6 且用户仍控制部分 screen，不合并 main、不打 release/tag。下一步是在不夺回用户控制的前提下准备有回退的定向迁移；须先确认队列无运行中任务、用户 screen 已归还，再统一 Auth/Broker/Desktop 候选并重新以已登录公网 UI 逐 Bot 验收。

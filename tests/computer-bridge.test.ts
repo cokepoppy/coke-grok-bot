@@ -44,6 +44,22 @@ test('only directly requested browser destinations skip computer approval',async
  const ordinaryDesktopClick=await bridge.propose(scoped,{kind:'desktop',action:'click',x:100,y:100},signal);
  assert.ok('id'in ordinaryDesktopClick);assert.equal(approvalProposals,3,'ordinary desktop actions remain approval-gated');
 });
+test('an explicitly requested navigation does not require an approval screenshot payload',async()=>{
+ let imageSnapshots=0,performed=0,approvalProposals=0;
+ const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'about:blank',screenshotSha256:'a'.repeat(64)}),snapshotWithImage:async()=>{imageSnapshots++;throw new Error('large screenshot payload')},inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async()=>{performed++;return {url:'https://example.org/'}}};
+ const approvals={propose:async()=>{approvalProposals++;return {id:randomUUID()}},consume:async()=>false,status:async()=>null};
+ const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>true},approvals,()=>worker),signal=new AbortController().signal;
+ const result=await bridge.propose({...scope,requestedNavigationOrigins:['https://example.org']},{kind:'browser',action:'navigate',url:'https://example.org/'},signal);
+ assert.deepEqual(result,{status:'completed',result:{url:'https://example.org/'}});assert.equal(imageSnapshots,0);assert.equal(performed,1);assert.equal(approvalProposals,0);
+});
+test('an explicitly requested navigation uses an atomic URL and owner check without taking any screenshot',async()=>{
+ let stateReads=0,navigations=0,screenReads=0,approvalProposals=0,marked=0;
+ const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>{screenReads++;throw new Error('screenshot should not be needed')},snapshotWithImage:async()=>{screenReads++;throw new Error('screenshot should not be needed')},navigationState:async()=>{stateReads++;return {owner:'agent' as const,url:'about:blank'}},navigateIfUnchanged:async(input:unknown,expected:{owner:'agent'|'user';url:string})=>{navigations++;assert.equal(expected.owner,'agent');assert.equal(expected.url,'about:blank');assert.deepEqual(input,{kind:'browser',action:'navigate',url:'https://example.org/'});return {url:'https://example.org/'}},inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async()=>{throw new Error('legacy navigation path should not be used')}};
+ const approvals={propose:async()=>{approvalProposals++;return {id:randomUUID()}},consume:async()=>false,status:async()=>null};
+ const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>{marked++;return true}},approvals,()=>worker),signal=new AbortController().signal;
+ const result=await bridge.propose({...scope,requestedNavigationOrigins:['https://example.org']},{kind:'browser',action:'navigate',url:'https://example.org/'},signal);
+ assert.deepEqual(result,{status:'completed',result:{url:'https://example.org/'}});assert.equal(stateReads,1);assert.equal(navigations,1);assert.equal(screenReads,0);assert.equal(approvalProposals,0);assert.equal(marked,1);
+});
 test('sign-in handoff rejects desktop and browser interaction proposals instead of creating approval prompts',async()=>{
  let approvalProposals=0,approvalConsumes=0,performed=0;
  const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'https://example.test/',screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async(input?:unknown)=>{performed++;const url=input&&typeof input==='object'?(input as {url?:unknown}).url:undefined;return {ready:true,...(typeof url==='string'?{url}:{})}}};

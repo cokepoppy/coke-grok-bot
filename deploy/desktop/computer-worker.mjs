@@ -585,6 +585,11 @@ http.createServer(async (req, res) => {
     }
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/snapshot') return send(res, 200, await guardedComputer.snapshot());
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/snapshot-image') return send(res, 200, await guardedComputer.snapshotWithImage());
+    if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/navigation-state') return send(res, 200, await guardedComputer.navigationState());
+    if (guardedMode && isControl && req.method === 'POST' && pathname === '/v1/guarded/navigate') {
+      const input = await body(req);
+      return send(res, 200, await guardedComputer.navigateIfUnchanged(input.action, input.expected));
+    }
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/inspect') return await guardedComputer.locked(async () => send(res, 200, await agentBrowserAction({action:'inspect'}, screenId)));
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/screenshot') return await guardedComputer.locked(async () => {
       if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');

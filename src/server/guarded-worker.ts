@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { ComputerState,GuardedComputerWorker } from './computer-broker.ts';
+import type { ComputerNavigationState,ComputerState,GuardedComputerWorker } from './computer-broker.ts';
 import type { RunOwner } from './run-store.ts';
 import {SafeDiagnosticError} from './safe-diagnostics.ts';
 
@@ -51,6 +51,26 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   if(!item || (item.owner!=='agent'&&item.owner!=='user') || typeof item.url!=='string' || item.url.length>4096 || typeof item.screenshotSha256!=='string' || !/^[a-f0-9]{64}$/.test(item.screenshotSha256) || typeof guardFingerprint!=='string' || !/^[a-f0-9]{64}$/.test(guardFingerprint) || typeof item.image!=='string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(item.image))throw new Error('Invalid computer snapshot');
   const image=Buffer.from(item.image,'base64');if(!image.length||image.length>1024*1024||createHash('sha256').update(image).digest('hex')!==item.screenshotSha256)throw new Error('Invalid computer screenshot');
   return {state:{owner:item.owner,url:item.url,screenshotSha256:item.screenshotSha256,guardFingerprint},image};
+ }
+ async navigationState(signal:AbortSignal):Promise<ComputerNavigationState>{
+  const response=await this.request(new URL('/v1/guarded/navigation-state',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
+  if(!response.ok)throw new Error('Computer navigation state unavailable');
+  const value:unknown=await response.json();
+  if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid computer navigation state');
+  const item=value as Partial<ComputerNavigationState>;
+  if((item.owner!=='agent'&&item.owner!=='user')||typeof item.url!=='string'||item.url.length>4096)throw new Error('Invalid computer navigation state');
+  return {owner:item.owner,url:item.url};
+ }
+ async navigateIfUnchanged(input:unknown,expected:ComputerNavigationState,signal:AbortSignal):Promise<unknown>{
+  if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Invalid computer navigation');
+  const action=input as Record<string,unknown>;
+  if('taskId' in action||action.kind!=='browser'||action.action!=='navigate')throw new Error('Invalid computer navigation');
+  let response:Response;
+  try{response=await this.request(new URL('/v1/guarded/navigate',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({action:{...action,taskId:this.taskId},expected:{owner:expected.owner,url:expected.url}}),signal,redirect:'error'})}
+  catch{throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED')}
+  if(!response.ok)throw new SafeDiagnosticError('COMPUTER_WORKER_HTTP_ERROR',response.status);
+  let value:unknown;try{value=await response.json()}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE')}
+  if(!value||typeof value!=='object'||Array.isArray(value))throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE');return value;
  }
  async control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>{
   let response:Response;try{response=await this.request(new URL('/v1/guarded/control',this.endpoint),{headers:this.headers(),signal,redirect:'error'})}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED')}

@@ -1,4 +1,5 @@
 const directNavigationRequest = /^\s*(?:(?:please|can you|could you|help me|i want you to)\s+)*(?:open|navigate(?:\s+to)?|go\s+to|visit|load|read|inspect|check|search|access|log\s+in\s+to|sign\s+in\s+to)\b|^\s*for this (?:(?:read[- ]only|public|end[- ]to[- ]end|e2e|browser|gmail)\s+){0,4}(?:task|test|check)\b[^\n]{0,180}\b(?:open|navigate|visit|load|read|inspect|check|search|access)\b|^\s*(?:please\s+)?use\s+(?:(?:the\s+)?browser(?:\s+user)?|(?:the\s+)?cloud\s+browser|(?:the\s+)?browser\s+on\s+(?:the\s+)?cloud\s+computer)[^\n]{0,180}\b(?:open|navigate(?:\s+to)?|go\s+to|visit|load|read|inspect|check|search|access)\b|^\s*(?:(?:请帮我|麻烦|帮我|请|你)?\s*(?:(?:在|用)(?:云电脑|浏览器)(?:里面|里)?\s*)?(?:直接)?(?:打开|访问|进入|导航到|前往|查看|读取|搜索|登录|登陆))/i;
+const groupAcceptanceNavigationRequest = /^\s*(?:fresh\s+)?(?:(?:public|read[- ]only|end[- ]to[- ]end|e2e|multi[- ]bot|six[- ]bot|group)\s+){1,6}(?:group\s+)?(?:acceptance|test|check)\b[\s\S]{0,800}\bbrowser(?:\s+user)?\s*:?\s*(?:open|navigate(?:\s+to)?|go\s+to|visit|load|read|inspect|check|access)\b/i;
 const deniedNavigationVerbs = /\b(?:do\s+not|don't|never|avoid)\s+(?:open|navigate|visit|load|access)|不要(?:打开|访问|进入|导航)|禁止(?:打开|访问|进入)/i;
 const quotedSourceInstructions = /^\s*(?:(?:please|help me|can you)\s+)?(?:read|inspect|check|open)\s+(?:this|the)\s+(?:email|message|webpage|page|file|document|attachment)\b[^\n]{0,120}\b(?:says|contains|instructions?|写着|内容|要求)/i;
 const openedQuotedSource = /^\s*(?:(?:please|help me|can you)\s+)?(?:read|inspect|check|open)\s+(?:this|the)\s+(?:email|message|webpage|page|file|document|attachment|邮件|消息|网页|页面|文件|文档|附件)\b[^\n]{0,120}[:：“”"']/i;
@@ -11,7 +12,7 @@ const urlPattern = /https?:\/\/[^\s<>"'`()，。；]+/gi;
  */
 export function requestedNavigationOrigins(request: string): string[] {
   const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';
-  if (!text || !directNavigationRequest.test(text) || deniedNavigationVerbs.test(text) || quotedSourceInstructions.test(text) || openedQuotedSource.test(text) || /^\s*(?:打开|查看|读取|检查)(?:这封|这个|该)?(?:邮件|消息|网页|页面|文件|文档|附件)[^\n]{0,120}(?:写着|内容|要求)/i.test(text)) return [];
+  if (!text || !(directNavigationRequest.test(text) || groupAcceptanceNavigationRequest.test(text)) || deniedNavigationVerbs.test(text) || quotedSourceInstructions.test(text) || openedQuotedSource.test(text) || /^\s*(?:打开|查看|读取|检查)(?:这封|这个|该)?(?:邮件|消息|网页|页面|文件|文档|附件)[^\n]{0,120}(?:写着|内容|要求)/i.test(text)) return [];
 
   const origins = new Set<string>(),addOrigin=(origin:string)=>{if(origins.size<4)origins.add(origin)};
   for (const match of text.matchAll(urlPattern)) {

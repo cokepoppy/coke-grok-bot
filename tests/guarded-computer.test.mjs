@@ -35,6 +35,14 @@ test('approved browser navigation tolerates screenshot-only changes but keeps th
  await assert.rejects(worker.execute({kind:'browser',action:'navigate',url:'https://example.com/'},state),/state or ownership changed/);
  assert.equal(effects,1);
 });
+test('explicitly requested navigation uses a locked owner and URL state without taking a screenshot',async()=>{
+ let owner='agent',url='about:blank',screenshots=0,effects=0;
+ const worker=createGuardedComputer({readOwner:()=>owner,readPageUrl:async()=>url,readScreenshot:async()=>{screenshots++;throw new Error('screenshot capture failed')},perform:async input=>{effects++;url=input.url;return {ready:true,url}}});
+ const state=await worker.navigationState();assert.deepEqual(state,{owner:'agent',url:'about:blank'});assert.equal(screenshots,0);
+ assert.deepEqual(await worker.navigateIfUnchanged({kind:'browser',action:'navigate',url:'https://example.org/'},state),{ready:true,url:'https://example.org/'});assert.equal(effects,1);assert.equal(screenshots,0);
+ await assert.rejects(worker.navigateIfUnchanged({kind:'browser',action:'navigate',url:'https://example.net/'},state),/state or ownership changed/);
+ url='about:blank';owner='user';await assert.rejects(worker.navigateIfUnchanged({kind:'browser',action:'navigate',url:'https://example.org/'},state),/state or ownership changed/);assert.equal(effects,1);
+});
 test('approved browser clicks remain bound to the exact screenshot',async()=>{
  let image=Buffer.from('screen-a'),effects=0;
  const worker=createGuardedComputer({readOwner:()=> 'agent',readPageUrl:async()=> 'https://example.test/',readScreenshot:async()=>image,perform:async()=>++effects});
