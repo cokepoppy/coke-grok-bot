@@ -378,3 +378,11 @@ Inbox Manager 在新组任务中保持 `Outcome unknown`，按任务要求没有
 当本机 Mihomo 仅监听 `127.0.0.1:7890`、而 K3D Desktop Pod 不能直接访问 Google 时，可启动固定本机桥：`npm run start:desktop-proxy-bridge`。它仅绑定 `127.0.0.1:17891` 并转发到本机 `127.0.0.1:7890`，不修改 macOS 全局代理，也不应改成监听 `0.0.0.0`。
 
 新建 Desktop 资源时，Broker 可通过 `COKE_GROK_DESKTOP_PROXY_SERVER=http://host.docker.internal:17891` 和 `COKE_GROK_DESKTOP_PROXY_HOST_IP=192.168.65.254` 注入 Chromium 专用代理变量及单 IP/端口 egress 规则；Agent Pod 不使用此出口。现有 Desktop 是 create-only 管理的资源，不能假定配置变更会原地同步。部署前须验证资源归属、空队列和无人接管，并受控迁移 Deployment/NetworkPolicy。公网迁移与登录态 Chrome Gmail 验收完成前，本地隔离 K3D 的成功只代表候选验证。
+
+### 2026-11-08 普通网页导航候选部署复核
+
+候选目录 [`candidate-grok-bot-navigation-handoff-d76b1f5-2026-11-08`](../releases/candidate-grok-bot-navigation-handoff-d76b1f5-2026-11-08/) 已从唯一 feature 分支提交 `d76b1f559c3eebcf3525da6a1efeb0c718935cf2` 构建并部署到本机 K3D。Auth 与已核对的公网 owner Agent 均运行 `sha-d76b1f5...`，共享 Agent 默认镜像已更新且 Broker Ready；Desktop 仍为 `sha-e18f715...`，PVC 保持 Bound，MySQL 和另一个用户 namespace 未变。部署前预检确认没有排队/运行 Agent 任务或未处理审批；公网路由 HTTP 200。
+
+使用固定测试 MySQL `13317` 和候选 Agent 镜像进行隔离 Pi/DeepSeek + K3D Gmail 交接 E2E，退出码 0，共 5 次模型调用：导航到 `accounts.google.com` 登录页，未创建审批卡；在产品云电脑弹窗和全屏模式完成第二 Chrome 标签导航，接管后交还 Agent，再执行免截图普通网页导航。没有输入凭据或读取邮箱。临时 namespace 与随机测试 schema 已清理。
+
+这不是公网已登录 Chrome 的 UI 验收：CUA 可读取当前 Chrome 窗口，但尝试打开公网页面时返回 `Capability is not available: visibility`。没有使用第二条 UI 自动化路径；因此公网点击、视觉对照与刷新持久化验收仍未通过，候选不合并 `main`、不打 tag。

@@ -1872,3 +1872,10 @@ V1 片头连续逐帧审阅范围延长至 2:29.966（4,500 帧），下一段�
 按用户要求，Browser User 的普通 HTTP/HTTPS 导航（包括浏览中发现的普通网页）自动执行，不逐步要求用户批准；云电脑 Chrome 顶部标签/地址栏误用桌面点击时，引导回 Browser User。用户要求登录时，Agent 可无审批地导航到该任务明确请求的登录站点，并在需要登录、人机验证或其他真人步骤时交还云电脑；不得输入凭据或继续操作登录控件。网页正文点击、表单修改、键盘动作及发送、删除、购买等可能改变数据或产生外部影响的动作仍受现有审批边界约束。该实现服从用户的登录交接要求；官方说明也将审批用于敏感或有后果的动作，并要求 CAPTCHA、SSO、Passkey 等真人步骤交接（[Use the computer and apps](https://docs.x.ai/grok-bot/computer-and-apps)，[Approvals, security, and privacy](https://docs.x.ai/grok-bot/approvals-security-and-privacy)）。
 
 验证：`npm run test:runtime` 152/152、`COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:runtime-mysql` 18/18、`npx tsc --noEmit`、`npm run build:deployment` 均通过。固定测试 MySQL `13317` 和已存在的桌面镜像上，`npm run test:computer-ui-k3d` 验证第二 Chrome 标签的弹窗及全屏地址栏输入、标签切换和持续截图更新；真实 Pi/DeepSeek 的 `npm run test:gmail-request-k3d` 共 5 次模型调用，无电脑审批卡地到达 `accounts.google.com`，用户接管后完成新标签导航并把控制权交还 Agent。两项 K3D 测试创建的临时 namespace/schema 均已清理；既存用户 namespace、Pod、MySQL 与 VPS 没有修改。本候选尚未部署公网，也未合并 `main`；公网已登录 Chrome 的验收仍需由可用的可见浏览器控制完成。
+## 2026-11-08 公网普通导航候选当前状态
+
+feature 分支 `codex/grok-bot-persistent-group-chat` 的 `d76b1f559c3eebcf3525da6a1efeb0c718935cf2` 已推送；普通 HTTP/HTTPS 导航走 Browser User 自动执行，Chrome 顶栏/地址栏误用 Desktop User 时不创建审批卡并引导回 Browser User。仅登录验证需要本人时才交接电脑；实际发送、删除、购买等后果操作仍按独立审批边界处理。
+
+候选 [`releases/candidate-grok-bot-navigation-handoff-d76b1f5-2026-11-08/`](../releases/candidate-grok-bot-navigation-handoff-d76b1f5-2026-11-08/) 已部署到本机 K3D 和已核对的公网 owner Agent。Auth、Agent、Broker Ready，公网路由 HTTP 200；固定测试 MySQL 上的真实 Pi/DeepSeek + K3D Gmail 交接 E2E 以 5 次模型调用通过，审批卡为 0，临时 namespace/schema 已清理。Desktop/PVC/MySQL 和另一个用户 namespace 未变。准确回退镜像和脚本见候选 manifest 与 `scripts/rollback.sh`。
+
+公网登录态 Chrome 的点击验收仍未完成：CUA 新开标签返回 `Capability is not available: visibility`。没有以 HTTP 200、Pod Ready 或本地 K3D E2E 替代公网浏览器验收，也没有改走别的浏览器控制方式。当前 feature 不合并、不打 checkpoint tag；等待受支持的可见浏览器控制后继续完成公网对话、审批卡、刷新持久化与视觉核对。
