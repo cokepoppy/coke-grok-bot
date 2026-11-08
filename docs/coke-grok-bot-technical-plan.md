@@ -29,9 +29,11 @@
 
 用户已明确要求的普通网页导航、打开指定站点、切换常规页面及只读浏览，由 Browser User 自动执行，不逐步弹审批。出现 Google 登录、验证码或多因素验证时，Bot 停止身份验证操作并提示用户在 Computer 面板选择 `Take control`；用户完成验证并归还控制后，Bot 再继续原本授权的浏览任务。不收集或保存用户凭据。登录交接不扩大到页面上的发送、提交或其他外部副作用操作。
 
-当前实现通过 ComputerBridge 的 browser.navigate 路径直接导航，并在登录交接期间限制动作；把地址栏/标签栏误当成 Desktop 点击的调用会被引导到 Browser User，不生成普通网页导航审批卡。2026-11-08 定向回归运行 43 项全部通过，覆盖不弹审批导航、错误 Desktop 路由和登录交接约束。2026-11-09 又从已登录的公网 Chrome 可见界面核实：普通 `example.com` 导航显示为 Done；另一次到 Google 登录页的任务也显示为 Done，执行详情为 Pi `deepseek-flash`、Browser User `navigate` 和 `inspect` 均 succeeded。云电脑仍显示 `Bot is in control` 并提供 `Take control`，所以这次没有发生用户接管；旧 Agent 文案声称已交还控制并不准确。两个任务均未见审批卡，也没有输入凭据或操作表单。此为实际公网 UI 证据，但观察的是页面中已有的完成记录，不代表所有历史 Review 任务均已清除或每条旧运行路径都已重新验收。提示修正尚未部署到公网。
+当前实现通过 ComputerBridge 的 browser.navigate 路径直接导航，并在登录交接期间限制动作；把地址栏/标签栏误当成 Desktop 点击的调用会被引导到 Browser User，不生成普通网页导航审批卡。2026-11-08 定向回归运行 43 项全部通过，覆盖不弹审批导航、错误 Desktop 路由和登录交接约束。2026-11-09 又从已登录的公网 Chrome 可见界面核实：普通 `example.com` 导航显示为 Done；另一次到 Google 登录页的任务也显示为 Done，执行详情为 Pi `deepseek-flash`、Browser User `navigate` 和 `inspect` 均 succeeded。云电脑仍显示 `Bot is in control` 并提供 `Take control`，所以这次没有发生用户接管；旧 Agent 文案声称已交还控制并不准确。两个任务均未见审批卡，也没有输入凭据或操作表单。此为实际公网 UI 证据，但观察的是页面中已有的完成记录，不代表所有历史 Review 任务均已清除或每条旧运行路径都已重新验收。
 
-2026-11-09 本轮使用现成的固定测试 MySQL `127.0.0.1:13317` 运行导航、Browser User、Pi、DeepSeek Harness 和 ComputerBridge 定向回归，37/37 通过；Gateway 用例创建并删除随机测试 schema，没有新建容器。它覆盖普通 HTTP(S) 导航不创建审批、登录交接范围内继续操作会被拒绝，以及误用 Desktop 地址栏动作不创建审批。以上是当前分支的代码证据，不是本轮公网 UI 验收；登录页到达后的用户提示仍需在真实公网任务中确认，不能把页面成功打开或 `Bot is in control` 当成交接已发生。
+2026-11-09 本轮使用现成的固定测试 MySQL `127.0.0.1:13317` 运行导航、Browser User、Pi、DeepSeek Harness 和 ComputerBridge 定向回归，37/37 通过；Gateway 用例创建并删除随机测试 schema，没有新建容器。它覆盖普通 HTTP(S) 导航不创建审批、登录交接范围内继续操作会被拒绝，以及误用 Desktop 地址栏动作不创建审批。
+
+2026-11-09 后续复核：本机 K3D 中 `coke-grok-auth:sha-a37d2ad` 为 1/1 Ready；只读检查运行中 Auth bundle，确认含 Desktop 导航误路由拦截和登录交接约束。当前抽查的 Agent Pod 使用 `coke-grok-desktop:sha-d76b1f559c3eebcf3525da6a1efeb0c718935cf2`，其适配器和 DSH 插件包含“普通导航未执行 Desktop 点击、未创建审批，改用 Browser User”的错误恢复指引。本轮导航策略、ComputerBridge、DSH 插件回归 30/30 通过。用户截图中的 `Desktop: click` 坐标 `(295, 48)` 落在当前导航栏误路由拦截范围内；若由已核对的 Auth/Agent 路径处理，ComputerBridge 会在创建审批前拒绝该 Desktop 动作，DSH 再收到改用 `computer_browser.navigate` 的指引。截图所示旧任务具体使用的镜像和审批记录尚未映射，不能据此判定它是旧记录或已由公网重新验收。本轮 Codex 浏览器控制入口再次在 30 秒超时，未完成新的已登录公网可见点击复测；因此目前证据证明的是当前 K3D 代码/镜像与回归行为，不证明截图对应任务已消除或公网新任务已通过。登录页到达后的提示仍须以真实公网任务观察，`Bot is in control` 也不等于已转交用户。
 
 重要架构区别：官方的电脑按**用户**而不是 Bot 归属；同一用户的多个屏幕不是安全隔离边界。Coke Dots 现有云电脑主要按租户工作区隔离，不能不经改造就把两者当成同一个模型。我们会保留租户权限边界，在租户内把个人电脑绑定到具体用户；个人 Bot 共用该用户电脑。团队共享 Bot 另建权限模型，不能默认继承个人浏览器登录态。
 
