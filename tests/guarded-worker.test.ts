@@ -47,6 +47,20 @@ test('guarded computer control records only safe auth and status failure codes',
  const offline=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>{throw new Error('private URL and token must not be logged')});
  await assert.rejects(offline.control(signal),error=>error instanceof Error&&error.message==='COMPUTER_WORKER_TRANSPORT_FAILED');
 });
+test('guarded desktop failures preserve only fixed worker diagnostics and never response text',async()=>{
+ for(const [workerCode,expected] of [['BOT_SCREEN_CAPACITY','COMPUTER_SCREEN_CAPACITY'],['ACTIVE_TAB_UNRESOLVED','COMPUTER_ACTIVE_TAB_UNRESOLVED'],['DOTS_RENDERER_UNRESPONSIVE','COMPUTER_RENDERER_UNRESPONSIVE']] as const){
+  const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>Response.json({code:workerCode,error:`private URL ${url.href} token ${token}`},{status:503}));
+  await assert.rejects(worker.snapshot(signal),error=>{
+   const metadata=safeDiagnosticMetadata(error);
+   return metadata.code===expected&&metadata.status===503&&error instanceof Error&&error.message===expected;
+  });
+ }
+ const unmapped=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>Response.json({error:`private URL ${url.href} token ${token}`},{status:503}));
+ await assert.rejects(unmapped.snapshot(signal),error=>{
+  const metadata=safeDiagnosticMetadata(error);
+  return metadata.code==='COMPUTER_SNAPSHOT_FAILED'&&metadata.status===503&&error instanceof Error&&error.message==='COMPUTER_SNAPSHOT_FAILED'&&!error.message.includes(token);
+ });
+});
 test('guarded action failures preserve only a safe diagnostic code and HTTP status',async()=>{
  const state={owner:'agent' as const,url:'https://example.test/',screenshotSha256:'a'.repeat(64)},action={kind:'browser',action:'navigate',url:'https://example.test/'};
  for(const status of [400,409,503]){

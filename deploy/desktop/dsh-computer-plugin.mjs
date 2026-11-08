@@ -199,6 +199,7 @@ async function request(bridge, route, options = {}) {
 
 async function readJson(response, message) {
   if (!response.ok) {
+    let forwardedDiagnostic;
     const type=response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
     const length=Number(response.headers.get('content-length'));
     if(type==='application/json'&&(!Number.isFinite(length)||length<=4096)){
@@ -206,11 +207,13 @@ async function readJson(response, message) {
         const text=await response.text();
         if(Buffer.byteLength(text,'utf8')<=4096){
           const value=JSON.parse(text),code=value?.error==='computer_request_failed'?value?.diagnostic?.code:null;
-          if(code==='COMPUTER_NAVIGATION_USE_BROWSER')throw new Error('This is ordinary browser navigation. The desktop action was not executed and no approval was requested. Use computer_browser.navigate for the HTTP/HTTPS page; do not click the address bar or type the URL with computer_desktop.');
-          if(code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED')throw new Error('This run ends at a user sign-in handoff. Continue navigation only to the exact requested site with computer_browser.navigate, then stop when sign-in or human verification is visible. Do not enter credentials or interact with authentication controls; tell the user to take control.');
+          if(code==='COMPUTER_NAVIGATION_USE_BROWSER')forwardedDiagnostic='This is ordinary browser navigation. The desktop action was not executed and no approval was requested. Use computer_browser.navigate for the HTTP/HTTPS page; do not click the address bar or type the URL with computer_desktop.';
+          else if(code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED')forwardedDiagnostic='This run ends at a user sign-in handoff. Continue navigation only to the exact requested site with computer_browser.navigate, then stop when sign-in or human verification is visible. Do not enter credentials or interact with authentication controls; tell the user to take control.';
+          else if(['COMPUTER_SCREEN_CAPACITY','COMPUTER_ACTIVE_TAB_UNRESOLVED','COMPUTER_RENDERER_UNRESPONSIVE'].includes(code))forwardedDiagnostic=`Computer action failed: ${code}`;
         }
-      }catch(error){if(error instanceof Error&&(error.message.startsWith('This run ends at a user sign-in handoff.')||error.message.startsWith('This is ordinary browser navigation.')))throw error;}
+      }catch{/* Ignore malformed or oversized diagnostics; never forward response text. */}
     }
+    if(forwardedDiagnostic)throw new Error(forwardedDiagnostic);
     throw new Error(message);
   }
   const length = Number(response.headers.get('content-length'));

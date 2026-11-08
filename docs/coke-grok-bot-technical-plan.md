@@ -1895,3 +1895,11 @@ feature 分支 `codex/grok-bot-persistent-group-chat` 的 `d76b1f559c3eebcf3525d
 此前公网任务曾对 `Browser: navigate` 显示审批卡，测试操作又手动批准后才继续；这不符合上述规则，应判为导航交互验收失败。随后真实 Pi/DeepSeek K3D E2E 的通过记录覆盖的是 Browser User 直达路径，没有强制走截图中的 `Desktop: click` 路径，也没有公网 UI。当前聚焦回归 `COKE_GROK_TEST_MYSQL_PORT=13317 node --import tsx --test tests/computer-bridge.test.ts tests/computer-navigation-policy.test.ts tests/computer-gateway.test.ts tests/cloud-kernel-adapter-pi.test.mjs` 为 28/28 通过，覆盖普通导航零审批、登录交接不生成审批、Chrome 地址栏 Desktop 操作不建审批和实际网关路径。公网已登录 Chrome 仍未完成可见 UI 验收，因此这些结果不能代替公网通过结论。
 
 本轮 CUA `getState()` 再次在 30 秒时限内超时；没有获取已登录公网页面的 DOM/截图或新建 UI 任务。后续仍需在受支持的可见 Chrome 控制恢复后，分别从公网真实 UI 验证普通网页导航无审批，以及到达 Google 登录页后由用户接管；在此之前保留 feature 分支，不合并、不打 checkpoint tag。
+
+#### 2026-11-08 六 Bot 桌面快照错误诊断
+
+已登录公网 Chrome 的新一轮只读群聊验收结果为 3/6 完成：Talent Scout、Expense Manager、Account Manager 各自通过 Browser User 打开独立 example.com URL、返回标题并获取真实 Computer 截图；Sales Outbound 与 Chief 返回 `COMPUTER_SNAPSHOT_FAILED`；Inbox Manager 显示电脑仍由用户控制，故保持暂停且不重试。公网单 Bot 普通导航此前已成功且没有审批卡。该结果将“网页导航审批规则”和“群聊电脑快照失败”分开。
+
+K3D 只读检查发现其中一个用户桌面配置 8 个屏幕槽，8 槽都占用，当前 12 个 Chromium 页面分布在 8 个标记 Bot 窗口；持久状态文件为 9 个，其中 4 个归用户控制。Desktop 容器当前约 1695 MiB / 2 GiB。另一个用户桌面为 1 页/1 槽且没有用户接管。Auth 日志只保留了两条 `COMPUTER_SNAPSHOT_FAILED`，Desktop 近 30 分钟日志没有对应安全错误码或 run 关联；因此容量、活动标签映射或渲染失败都还不能被确认成两条失败的根因。没有增加屏幕槽、创建额外容器、清理资源或重启用户 Desktop。
+
+为让后续运行能区分已知故障，当前唯一 feature 分支新增 Worker 固定诊断映射：`BOT_SCREEN_CAPACITY`、`ACTIVE_TAB_UNRESOLVED`、`DOTS_RENDERER_UNRESPONSIVE` 映射为对应的 `COMPUTER_*` 安全码。只读取有限 JSON 中白名单 `code` 或精确匹配的固定错误文字；响应正文、URL 与凭据不转发。Pi cloud-kernel 与 DSH computer plugin 都只暴露这三个固定诊断。定向 Worker 用例通过 7/7，Pi/DSH computer adapter 用例 18/18，`npm run test:runtime` 154/154，`npm run build:deployment` 与 `git diff --check` 通过。该 Auth/adapter 改动此时仍是本机候选，尚未部署或重新做公网群聊验收；更改前数据库确认 queued/running runs 为 0、live pending approvals 为 0。原有 Auth/Agent/Desktop 镜像与用户屏幕保持不变。

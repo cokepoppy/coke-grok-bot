@@ -4,6 +4,36 @@ import type { RunOwner } from './run-store.ts';
 import {SafeDiagnosticError} from './safe-diagnostics.ts';
 
 export type ComputerViewport={left:number;top:number;width:number;height:number};
+const workerDiagnosticCodes:Record<string,SafeDiagnosticError['diagnosticCode']>={
+ BOT_SCREEN_CAPACITY:'COMPUTER_SCREEN_CAPACITY',
+ ACTIVE_TAB_UNRESOLVED:'COMPUTER_ACTIVE_TAB_UNRESOLVED',
+ DOTS_RENDERER_UNRESPONSIVE:'COMPUTER_RENDERER_UNRESPONSIVE',
+};
+const workerDiagnosticMessages:Record<string,SafeDiagnosticError['diagnosticCode']>={
+ 'This user computer has no free Bot screen slot':'COMPUTER_SCREEN_CAPACITY',
+ 'The active Chrome tab could not be identified safely':'COMPUTER_ACTIVE_TAB_UNRESOLVED',
+};
+async function throwWorkerResponseError(response:Response,fallback:SafeDiagnosticError['diagnosticCode']):Promise<never>{
+ let code:SafeDiagnosticError['diagnosticCode']|undefined;
+ const type=response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
+ const length=Number(response.headers.get('content-length'));
+ if(type==='application/json'&&(!Number.isFinite(length)||length<=4096)){
+  const text=await response.text().catch(()=> '');
+  if(Buffer.byteLength(text,'utf8')<=4096){
+   try{
+    const value:unknown=JSON.parse(text);
+    if(value&&typeof value==='object'&&!Array.isArray(value)){
+     const body=value as {code?:unknown;error?:unknown};
+     if(typeof body.code==='string')code=workerDiagnosticCodes[body.code];
+     if(!code&&typeof body.error==='string')code=workerDiagnosticMessages[body.error];
+    }
+   }catch{/* Only fixed worker codes and exact fixed messages are surfaced. */}
+  }
+ }
+ if(response.status===401)throw new SafeDiagnosticError('COMPUTER_WORKER_AUTH_REJECTED',401);
+ if(response.status===403)throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN',403);
+ throw new SafeDiagnosticError(code??fallback,response.status);
+}
 export function parseComputerViewport(value:unknown):ComputerViewport{
  if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid computer viewport');
  const item=value as Partial<ComputerViewport>;
@@ -27,13 +57,13 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
  vncEndpoint():URL{const endpoint=new URL(this.endpoint);endpoint.port='6080';endpoint.pathname='/';return endpoint}
  async vncViewport(signal:AbortSignal):Promise<ComputerViewport>{
   const response=await this.request(new URL('/v1/guarded/viewport',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
-  if(!response.ok)throw new Error('Computer viewport unavailable');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_FAILED');
   const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>4096)throw new Error('Computer viewport too large');
   return parseComputerViewport(await response.json());
  }
  async snapshot(signal:AbortSignal):Promise<ComputerState>{
   const response=await this.request(new URL('/v1/guarded/snapshot',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
-  if(!response.ok)throw new Error('Computer snapshot unavailable');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_SNAPSHOT_FAILED');
   const state:unknown=await response.json();
   if(!state||typeof state!=='object'||Array.isArray(state))throw new Error('Invalid computer snapshot');
   const item=state as Partial<ComputerState>;
@@ -43,7 +73,7 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
  }
  async snapshotWithImage(signal:AbortSignal):Promise<{state:ComputerState;image:Buffer}>{
   const response=await this.request(new URL('/v1/guarded/snapshot-image',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
-  if(!response.ok)throw new Error('Computer snapshot unavailable');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_SNAPSHOT_FAILED');
   const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>1500000)throw new Error('Computer snapshot too large');
   const text=await response.text();if(text.length>1500000)throw new Error('Computer snapshot too large');
   const item=JSON.parse(text) as Partial<ComputerState>&{image?:unknown};
@@ -55,7 +85,7 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
  async navigationState(signal:AbortSignal):Promise<ComputerNavigationState>{
   const response=await this.request(new URL('/v1/guarded/navigation-state',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
   if(response.status===404)throw new SafeDiagnosticError('COMPUTER_WORKER_HTTP_ERROR',404);
-  if(!response.ok)throw new Error('Computer navigation state unavailable');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_HTTP_ERROR');
   const value:unknown=await response.json();
   if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid computer navigation state');
   const item=value as Partial<ComputerNavigationState>;
@@ -84,20 +114,22 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
  }
  async inspect(signal:AbortSignal):Promise<unknown>{
   const response=await this.request(new URL('/v1/guarded/inspect',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
-  if(!response.ok)throw new Error('Computer inspection unavailable');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_FAILED');
   const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>65536)throw new Error('Computer inspection too large');
   const text=await response.text();if(text.length>65536)throw new Error('Computer inspection too large');
   const value:unknown=JSON.parse(text);if(!value||typeof value!=='object'||Array.isArray(value)||(value as {ready?:unknown}).ready!==true)throw new Error('Invalid computer inspection');return value;
  }
  async screenshot(signal:AbortSignal):Promise<Buffer>{
   const response=await this.request(new URL('/v1/guarded/screenshot',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
-  if(!response.ok||response.headers.get('content-type')?.split(';')[0]!=='image/png')throw new Error('Computer screenshot unavailable');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_FAILED');
+  if(response.headers.get('content-type')?.split(';')[0]!=='image/png')throw new Error('Computer screenshot unavailable');
   const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>1024*1024)throw new Error('Computer screenshot too large');
   const bytes=Buffer.from(await response.arrayBuffer());if(!bytes.length||bytes.length>1024*1024)throw new Error('Computer screenshot too large');return bytes;
  }
  async userScreenshot(signal:AbortSignal):Promise<Buffer>{
   const response=await this.request(new URL('/v1/screenshot',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
-  if(!response.ok||response.headers.get('content-type')?.split(';')[0]!=='image/png')throw new Error('Computer screenshot unavailable');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_FAILED');
+  if(response.headers.get('content-type')?.split(';')[0]!=='image/png')throw new Error('Computer screenshot unavailable');
   const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>1024*1024)throw new Error('Computer screenshot too large');
   const image=Buffer.from(await response.arrayBuffer());if(!image.length||image.length>1024*1024)throw new Error('Computer screenshot too large');return image;
  }
