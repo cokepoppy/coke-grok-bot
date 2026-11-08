@@ -2140,4 +2140,8 @@ Martin Lacsamana 的讲者小窗有姿势/口型变化；紫色 `Introducing Gro
 
 #### 2026-11-09 运行环境与公网浏览器复核
 
-只读检查当前 K3D context `k3d-tp1121-sandbox-dev`：共享 Auth Pod 为 `coke-grok-auth:sha-a37d2ad`，Desktop Broker 为 `coke-grok-desktop-broker:sha-e18f715...`；已映射的目标租户 Agent 为 `coke-grok-desktop:sha-d76b1f5...`，其 Desktop Worker 为 `sha-e18f715...`。Agent 镜像已含把 Chrome 顶栏/地址栏误用引回 Browser User 的诊断适配；本轮未更改或重启任何 Pod、PVC、MySQL 或隧道。桌面可见控制 `cua.getState()` 再次在 30 秒后超时并重置 kernel，所以本轮没有从公网产品 UI 新建任务，也没有验证截图中历史审批卡是否仍挂起。K3D 镜像检查和此前 39 项本地定向回归均不能替代真实公网点击验收；需恢复可见 Chrome 控制后再从已登录公网页面验证。
+只读检查当前 K3D context `k3d-tp1121-sandbox-dev`：共享 Auth Pod 为 `coke-grok-auth:sha-a37d2ad`，Desktop Broker 为 `coke-grok-desktop-broker:sha-e18f715...`；已映射的目标租户 Agent 为 `coke-grok-desktop:sha-d76b1f5...`，其 Desktop Worker 为 `sha-e18f715...`。Agent 镜像已含把 Chrome 顶栏/地址栏误用引回 Browser User 的诊断适配；本轮未更改或重启任何 Pod、PVC、MySQL 或隧道。桌面可见控制的 `cua.getState()` 与直接定位公网标签的 `cua.getTab(..., {browser: "chrome"})` 均在 30 秒后超时并重置 kernel，所以本轮没有从公网产品 UI 新建任务，也没有验证截图中历史审批卡是否仍挂起。K3D 镜像检查和此前 39 项本地定向回归均不能替代真实公网点击验收；需恢复可见 Chrome 控制后再从已登录公网页面验证。
+
+#### 2026-11-09 官方 V1 视频逐帧续审（16:15–16:19.967）
+
+逐帧审阅 PTS 975000–979967 的 150 帧和 6 张联系图；独立重解码核对源哈希、全部 PTS、`yuv420p` 像素哈希、像素字节数和联系图哈希。bobo 的 `Details` 面板、Routine 列表、`Meetings · DEV` 区域和聊天内容保持上一段末态，没有新的产品交互，故不另存原尺寸关键帧。片头连续覆盖至 16:19.966（29,400 帧），16:20–21:08 仍待审阅；详情见 `research/README.md`。
