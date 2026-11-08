@@ -2113,3 +2113,7 @@ Martin Lacsamana 的讲者小窗有姿势/口型变化；紫色 `Introducing Gro
 #### 2026-11-09 官方 V1 视频逐帧续审（15:40–15:44.966）
 
 逐帧审阅 PTS 940000–944966 的 150 帧和 6 张联系图；独立重解码确认源哈希、PTS、`yuv420p` 像素哈希、字节数与联系图哈希均匹配。PTS 940000 仍显示已发送消息、`bobo is working` 与键盘；PTS 940100 手机比例窗口变黑并保持至窗口结束；PTS 942333 可见 QuickTime `Movie Recording` 控件，菜单栏标记 QuickTime Player，因此属于录制界面而非产品 UI。保留黑屏转变与录制控件状态两张原尺寸关键帧，PNG/源像素哈希见 `research/frames/v1-940-945-compact-audit-20261109/keyframes/manifest.json`。未见新的 Bot 回复或交互。片头连续覆盖至 15:44.966（28,350 帧），15:45–21:08 仍待审阅；详情见 `research/README.md`。
+
+#### 2026-11-09 官方 V1 视频逐帧续审（15:45–15:49.967）
+
+逐帧审阅 PTS 945000–949966 的 150 帧和 6 张联系图；独立重解码核实源哈希、PTS、`yuv420p` 像素哈希、字节数及联系图哈希。PTS 946800 显示桌面 Grok Bot 对话完成态：用户消息 `I love my brother but not $3000` 后出现 Bot 的价位跟进回复。PTS 949167 展开右侧 Bot 侧栏并选中 `Computer`，可见 `bobo's screen` 的浏览器房源列表与地图截图；PTS 949967 显示 `Connecting`，据此单独记录为连接中。保留三张对应原尺寸关键帧，PNG/源像素哈希列于 `research/frames/v1-945-950-compact-audit-20261109/keyframes/manifest.json`。片头连续覆盖至 15:49.966（28,500 帧），15:50–21:08 仍待审阅；详细文字与回复见 `research/README.md`。

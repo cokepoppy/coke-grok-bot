@@ -4706,3 +4706,11 @@ V1 片头连续逐帧覆盖延长至 15:39.966，共 28,200 帧；下一窗口�
 PTS 940000（15:40.000）仍能看到已发送的 `I love my brother but not $3000`、`bobo is working` 和打开的键盘。PTS 940100（15:40.100）中央手机比例窗口变为黑屏，并持续至本窗口末尾。PTS 942333（15:42.333）出现带 `Movie Recording` 标题的 QuickTime 录制控件；菜单栏也显示 QuickTime Player，因此把它归为演示录屏界面，而非 Grok Bot 的产品 UI。此后未再看到新的 Bot 回复或产品交互。
 
 V1 片头连续逐帧覆盖延长至 15:44.966，共 28,350 帧；下一窗口从 15:45.000 开始，15:45–21:08 仍待审阅。
+
+### V1 15:45–15:49.967 桌面 Grok 对话与 Computer 侧栏（PTS 945000–949966）
+
+逐帧审阅 `research/frames/v1-945-950-compact-audit-20261109/` 的 150 个 1920×1080 源帧和 6 张 5×5 联系图；独立重解码确认源视频 SHA-256、全部 PTS、`yuv420p` 逐帧像素哈希、字节数和联系图哈希均与 manifest 匹配。保留 PTS 946800、949167、949967 三个原尺寸关键帧，分别记录桌面聊天完成态、Computer 侧栏/屏幕和连接态；文件与哈希见同目录 `keyframes/manifest.json`。
+
+PTS 946800（15:46.800）出现桌面 Grok Bot 聊天工作区：左侧有 Bot 分组和列表，中间是 bobo 会话，底部 composer 常驻。此前的用户消息 `I love my brother but not $3000` 已在右侧气泡中，Bot 回复：“Ha, fair. The $220 Wilson warm-up and the $345 nylon blazer are more brother-gift range. Want me to keep the Kith watch but only flag outerwear under a price cap?” PTS 949133 鼠标位于 bobo 标题处，PTS 949167（15:49.167）右侧面板展开，显示 Bot 图标与名称、`Details` / `Library` / `Computer` 标签，选中的 Computer 面板中可见浏览器房源列表与地图截图，并标注 `bobo's screen`。PTS 949967（15:49.967）同一区域显示 `Connecting` 遮罩；因此将其记录为连接中状态，不视为持续稳定的已连接画面。
+
+V1 片头连续逐帧覆盖延长至 15:49.966，共 28,500 帧；下一窗口从 15:50.000 开始，15:50–21:08 仍待审阅。
