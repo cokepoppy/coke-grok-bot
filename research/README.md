@@ -4856,3 +4856,13 @@ V1 片头连续逐帧覆盖延长至 17:09.967，共 30,900 帧；下一窗口�
 全屏 Computer 中的 Google Hotels `Hyatt Atlanta` 结果列表和 Atlanta 地图保持不变；变化只出现在演讲者小窗，没有新的网页导航、产品交互或任务结果，因此不另存原尺寸关键帧。
 
 V1 片头连续逐帧覆盖至 17:14.967，共 31,050 帧；下一窗口从 17:15.000 开始，17:15–21:08 仍待审阅。
+
+### V1 17:15–17:19.967 从全屏 Computer 返回 Grok Bot 工作区（PTS 1035000–1039966）
+
+逐帧审阅 `research/frames/v1-1035-1040-compact-audit-20261109/` 的 150 个 1920×1080 源帧和 6 张 5×5 联系图；独立重解码核对源视频 SHA-256、所有 PTS、`yuv420p` 像素 SHA-256/字节数及联系图 SHA-256，均与 manifest 一致。
+
+PTS 1036800（17:16.800）仍显示 Google Hotels 的 Atlanta 酒店列表与地图，Chrome 顶部有 `Teach a task`。下一源帧 PTS 1036833（17:16.833）已切回 Grok Bot 工作区：左侧 Bot 列表，中间 bobo 对话，右侧 `Computer` 页签及酒店地图缩略预览；对话可见用户说 `I love my brother but not $3000`，bobo 回复可继续关注 Kith 商品并按价格筛选。指针停在工作区右上方的面板图标上。相邻帧可确认画面转变发生于 33 ms 间隔，但录屏没有提供点击事件，故不推断具体触发原因。
+
+保留全屏电脑末帧与工作区首帧：`keyframes/source-pts-1036800-fullscreen-computer-before-return.png`、`keyframes/source-pts-1036833-workspace-with-computer-preview.png`；源像素和 PNG 哈希见该片段 `keyframes/manifest.json`。之后至 17:19.967，bobo 对话和右侧 Computer 预览保持不变，仅演讲者小窗和指针位置变化。
+
+V1 片头连续逐帧覆盖至 17:19.967，共 31,200 帧；下一窗口从 17:20.000 开始，17:20–21:08 仍待审阅。
