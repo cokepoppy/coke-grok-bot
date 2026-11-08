@@ -1935,3 +1935,11 @@ K3D 只读检查发现其中一个用户桌面配置 8 个屏幕槽，8 槽都�
 #### 2026-11-08 普通导航审批与租户运行版本核对
 
 用户明确普通网页打开/导航不应逐步请求批准，登录、验证码或 MFA 时交还真实云电脑；浏览期间有外部副作用的操作仍单独受授权边界控制。当前分支实现将普通 HTTP(S) 导航交给 Browser User，并在桌面浏览器顶栏点击时返回 Browser User 指令。只读 K3D 检查发现 Auth 为 sha-80391c4...、Broker 为 sha-e18f715...；已验证候选租户的 Agent 为 sha-d76b1f5...，另一个用户 namespace 的 Agent/Desktop 仍为 candidate-focus-screenshot-fix-20261107-r1。部署包明确只更新已验证候选租户。用户截图中的 Bot 尚未能映射到 namespace，不能据其他租户的 Pi/DeepSeek E2E 通过就认定该 Bot 已修复；本轮未重启或更改任何用户 Pod。公网首页 HTTP 200 只是连通性证据，Computer Use 可见浏览器启动超时，本轮没有完成公网页面验收。
+
+#### 2026-11-08 `kaka` 租户映射与导航交接 K3D 复验
+
+本轮以只读 MySQL 元数据查询把截图里的 Bot `kaka` 映射到此前已验证的公网 owner namespace；只保留映射结论，不在本记录写入 tenant/user ID。该 namespace 的 Agent Pod 运行 `coke-grok-desktop:sha-d76b1f559c3eebcf3525da6a1efeb0c718935cf2`，现场检查已加载的 Pi kernel adapter 与 DSH computer plugin 均含 `COMPUTER_NAVIGATION_USE_BROWSER` 安全诊断及回 Browser User 的引导。共享 Auth Pod 运行 `coke-grok-auth:sha-80391c4e99b9caeacd283394fa78abb0e9bd24ea`，现场 `/app/auth.cjs` 含桌面导航审批前拦截与登录交接诊断；Bot 的 Desktop Pod 未改动。MySQL 只读核对 queued/running Agent runs=0、未过期 pending approvals=0。
+
+使用固定测试 MySQL `13317` 和已固定的 `coke-grok-desktop:sha-d76b1f5...` 运行 `npm run test:gmail-handoff-k3d`：真实 DeepSeek/Pi 10 次模型调用，登录交接流程零审批卡，到达 Google Accounts 登录页；从 Grok Bot 的真实 noVNC 产品 UI 接管电脑，在普通窗口和全屏各打开新标签并导航，再把控制权交回 Agent；随后用户请求范围内的免截图导航也通过。没有输入凭据或访问邮箱。测试创建的临时隔离 namespace 与 `grok_mediated_*` schema 均已清理，结束后仅原有两个 Grok 用户 namespace 和固定服务容器仍在。初次误连应用 MySQL 端口 `13316` 时在认证处退出、未创建 schema 或 Pod；随后改用正确固定测试端口 `13317` 完成测试。
+
+这是对当前 Auth/Agent 逻辑的隔离 K3D 与真实模型回归，不是公网已登录 Chrome 验收。再次尝试 CUA `getState` 仍超时并重置会话；本轮未通过别的自动化入口替代公网可见点击，因此不能确认截图中的历史审批卡是否只是旧 run，也不能宣称该 Bot 的当前公网页面已经通过验收。当前没有新建分支或修改目标用户的 Desktop/PVC、应用 MySQL、Broker 或 VPS。
