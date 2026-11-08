@@ -4347,3 +4347,19 @@ Agenda 页列出 `01 Welcome`、加粗高亮的 `02 Introducing GrokBot`、`03 W
 逐帧检查两个连续五秒窗口，共 300 个 1920×1080、30 fps 源帧。`research/frames/v1-240-245-compact-audit-20261108/manifest.json` 与 `v1-245-250-compact-audit-20261108/manifest.json` 各记录 150 个原始 PTS 和逐帧 `yuv420p` 像素 SHA-256；两个窗口的 PTS 连续、单调递增，六张 5×5 联系图均已逐张检查且文件哈希与 manifest 匹配。源视频 SHA-256 均为 `270123c76fb7f9a4818f7770d4e5754f3097d06770ad95b817ed0825dbce9231`。两个紧凑目录各约 1.3 MB，仅保存 manifest 和联系图。
 
 全部 300 帧保持 `Agenda` 白底页，`02 Introducing GrokBot` 加粗高亮，讲者小窗在右上方；可见变化主要是讲者姿势/手势，没有产品客户端、Bot 列表、聊天或 Computer 交互。V1 片头现已连续逐帧覆盖 0:00–4:09.967，共 7,500 帧；下一窗口从 4:10.000 开始。视频剩余时段和其他来源仍待逐帧审阅。
+
+### V1 4:10–4:24.967 议程页延续（PTS 250000–264967）
+
+连续逐帧检查三个五秒窗口，共 450 个 1920×1080、30 fps 源帧；三个窗口的六张 5×5 联系图均已逐张审阅。manifest 分别位于 `research/frames/v1-250-255-compact-audit-20261108/`、`v1-255-260-compact-audit-20261108/` 和 `v1-260-265-compact-audit-20261108/`，各记录 150 个逐帧 PTS、解码像素 SHA-256 和六张联系图哈希。PTS 连续覆盖 250000–264967，源视频 SHA-256 均为 `270123c76fb7f9a4818f7770d4e5754f3097d06770ad95b817ed0825dbce9231`；六张联系图哈希均核验匹配。三个紧凑目录各约 1.2 MiB，只保留 manifest 和联系图。
+
+450 帧持续显示 `Agenda` 白底页，`02 Introducing GrokBot` 加粗高亮，讲者小窗位于右上；可见变化是讲者姿势/手势，没有产品客户端或云电脑操作。
+
+### V1 4:25–4:29.967 议程转入 AI Maturity Curve（PTS 265000–269967）
+
+逐帧审阅完整 150 个源帧与六张 5×5 联系图。`research/frames/v1-265-270-compact-audit-20261108/manifest.json` 记录逐帧 PTS、解码像素 SHA-256 和联系图哈希，PTS 为 265000–269967；源视频 SHA-256 为 `270123c76fb7f9a4818f7770d4e5754f3097d06770ad95b817ed0825dbce9231`，六张联系图 SHA-256 均与文件匹配。4:29.567（PTS 269567）最后仍为 `Agenda`；4:29.600（PTS 269600）首次切换为 `AI Maturity Curve`。转场附近的六张原尺寸帧（PTS 269500–269667）保存在 `research/frames/v1-269.5-269.7-transition-keyframes-20261108/`，逐张检查且 PNG/联系图哈希与 manifest 匹配。紧凑目录约 1.2 MiB，原尺寸转场目录约 1.5 MiB。
+
+### V1 4:30–4:34.967 AI Maturity Curve 延续（PTS 270000–274967）
+
+逐帧审阅完整 150 个源帧及六张 5×5 联系图。`research/frames/v1-270-275-compact-audit-20261108/manifest.json` 记录 PTS 270000–274967、逐帧 `yuv420p` 解码像素 SHA-256 和六张联系图哈希；源视频 SHA-256 为 `270123c76fb7f9a4818f7770d4e5754f3097d06770ad95b817ed0825dbce9231`，联系图哈希全部匹配。画面持续展示 `AI Maturity Curve` 上的四阶段：`Ask (Chatbots)`、`Do a task (Copilots)`、`Delegate outcome (Bot)`、`Staff function (Team of Bots)`，右上方为讲者小窗；尚未出现产品客户端或云电脑操作。紧凑目录约 1.1 MiB，没有保留重复的全分辨率逐帧序列。
+
+V1 片头现连续逐帧覆盖 0:00–4:34.967，共 8,250 帧；下一窗口从 4:35.000 开始。其余视频时段及其它来源仍待逐帧审阅。
