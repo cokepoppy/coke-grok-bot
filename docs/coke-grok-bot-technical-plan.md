@@ -2055,3 +2055,11 @@ Martin Lacsamana 的讲者小窗有姿势/口型变化；紫色 `Introducing Gro
 #### 2026-11-09 官方 V1 视频逐帧续审（13:20–13:49.967）
 
 13:20–13:49.967 连续审阅六个 5 秒窗口，共 900 个源帧和 36 张 5×5 联系图；各窗口独立重解码确认源视频 SHA-256、PTS、`yuv420p` 逐帧像素 SHA-256 与联系图 SHA-256 全部匹配。13:20–13:29.967 的证据详见 `research/README.md`；本次继续补齐 13:30–13:49.967。画面保持紫色 `bobo..` 启动画面，中心白色 Bot 标记持续轻微形变，讲者小窗有姿势和手势变化；未见产品 UI 或 Computer 运行。V1 片头连续逐帧覆盖至 13:49.967，共 24,900 帧；下一段从 13:50.000 开始，13:50–21:08 仍待连续审阅。
+
+#### 2026-11-09 Auth-only 登录交接提示公网验证
+
+在 `k3d-tp1121-sandbox-dev` 做 Auth-only 预检：排队/运行 Agent run 为 0、未过期审批为 0，原 Auth `coke-grok-auth:sha-80391c4e99b9caeacd283394fa78abb0e9bd24ea` 和 Desktop Broker 均为 Ready。构建并导入 linux/arm64 Auth `coke-grok-auth:sha-a37d2ad`，仅滚动 Auth；新 Auth 1/1 Ready，VPS 公网入口返回 HTTP 200。MySQL、PVC、Broker、Agent、Desktop、其他 Pod 与 VPS 隧道未改动；K3D image import 的临时工具节点在导入后已移除。失败回退镜像仍为原 `sha-80391c4...`。
+
+在已登录公网 Chrome 的 `kaka` Bot 中通过可见 UI 提交新的真实 Pi/DeepSeek 任务：Browser User 直接到达 Google 登录页，标题 `Sign in - Google Accounts`，URL `https://accounts.google.com/v3/signin/identifier`；执行卡为 Done，没有审批卡，没有输入凭据或与登录表单交互。回复准确提示“请打开 Computer 屏幕并选择 Take control 接管电脑（当前电脑尚未由你控制）”；右侧实际电脑画面仍显示 `Bot is in control` 和 `Take control` 按钮，未替用户接管。先前同一公网页面的普通 `example.com` Browser User 任务也为 Done 且明确未触发审批。由此验证“普通导航由 Bot 直接完成，登录页才请用户接管”已在当前 Auth candidate 生效；用户接管及实际 Google 登录仍留给用户。
+
+本轮源码与提示修正提交 `a37d2ad` 已推送到唯一 feature 分支 `codex/grok-bot-persistent-group-chat`。当前只验证该 Auth candidate 与此条公网路径；整个 feature 尚未完成，不合并 main、不打 checkpoint tag。
