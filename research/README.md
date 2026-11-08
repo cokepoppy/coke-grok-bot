@@ -4794,3 +4794,11 @@ V1 片头连续逐帧覆盖至 16:34.966，共 29,850 帧；下一窗口从 16:3
 bobo 聊天、Bot 资料、`Details` 页签、Routine 开关及 `Meetings · DEV` 内容保持静止；变化仅在演讲者视频小窗，没有新的产品操作，因此不另存原尺寸关键帧。
 
 V1 片头连续逐帧覆盖至 16:39.966，共 30,000 帧；下一窗口从 16:40.000 开始，16:40–21:08 仍待审阅。
+
+### V1 16:40–16:44.966 Details / Routine 参考画面（PTS 1000000–1004966）
+
+逐帧审阅 `research/frames/v1-1000-1005-compact-audit-20261109/` 的 150 个 1920×1080 源帧和 6 张 5×5 联系图；独立重解码核对源视频 SHA-256、全部 PTS、`yuv420p` 像素哈希/字节数和联系图哈希，均与 manifest 匹配。聊天、资料卡、`Details` 选中态、Routine 开关和 `Meetings · DEV` 面板保持不变，未见新交互。
+
+PTS 992000 的原尺寸样帧保存在 [`v1-992000-details-routines-keyframe-20261109.png`](frames/v1-992000-details-routines-keyframe-20261109.png)，用于读取静态 UI 文案和布局。画面右栏依次显示四个已开启的 Routine：`Eala NYC ticket watch`（Every Monday at 8:40 AM）、`Keith drops watch`（Weekdays at 9:02 AM）、`NFL fantasy injury brief`（Every day at 8:12 AM）、`Hawaii airfare morning`（Every day at 8:02 AM）；下方 `Meetings · DEV` 卡片显示 “Give your Bot links to join Google Meet or Zoom”。源帧解码像素 SHA-256 为 `5cfa050451e5ff08dba9ddb1325f16b3e2cd3635d8fbe86fad0f423fa8ba47a5`，保存 PNG SHA-256 为 `14c1c5d4285457e06edd77dca08a6a90049751147387903c2ad87f629e7e23dd`。
+
+V1 片头连续逐帧覆盖至 16:44.966，共 30,150 帧；下一窗口从 16:45.000 开始，16:45–21:08 仍待审阅。
