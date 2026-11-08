@@ -4714,3 +4714,11 @@ V1 片头连续逐帧覆盖延长至 15:44.966，共 28,350 帧；下一窗口�
 PTS 946800（15:46.800）出现桌面 Grok Bot 聊天工作区：左侧有 Bot 分组和列表，中间是 bobo 会话，底部 composer 常驻。此前的用户消息 `I love my brother but not $3000` 已在右侧气泡中，Bot 回复：“Ha, fair. The $220 Wilson warm-up and the $345 nylon blazer are more brother-gift range. Want me to keep the Kith watch but only flag outerwear under a price cap?” PTS 949133 鼠标位于 bobo 标题处，PTS 949167（15:49.167）右侧面板展开，显示 Bot 图标与名称、`Details` / `Library` / `Computer` 标签，选中的 Computer 面板中可见浏览器房源列表与地图截图，并标注 `bobo's screen`。PTS 949967（15:49.967）同一区域显示 `Connecting` 遮罩；因此将其记录为连接中状态，不视为持续稳定的已连接画面。
 
 V1 片头连续逐帧覆盖延长至 15:49.966，共 28,500 帧；下一窗口从 15:50.000 开始，15:50–21:08 仍待审阅。
+
+### V1 15:50–15:54.967 Details 中的 Routines 与 Meetings（PTS 950000–954966）
+
+逐帧审阅 `research/frames/v1-950-955-compact-audit-20261109/` 的 150 个 1920×1080 源帧和 6 张 5×5 联系图；独立重解码确认源视频 SHA-256、全部 PTS、`yuv420p` 像素哈希、像素字节数和联系图哈希均与 manifest 匹配。保留 PTS 950800 与 954967 的原尺寸关键帧，记录 Details 的 Routine 列表和 Meetings 区域；PNG/源像素哈希见同目录 `keyframes/manifest.json`。
+
+窗口开始时 Computer 面板仍显示 `Connecting`。至 PTS 950800（15:50.800），右侧已切到 `Details` 标签，显示四条开关均开启的 Routine：`Eala NYC ticket watch`（Every Monday at 8:40 AM）、`Kith drops watch`（Weekdays at 9:02 AM）、`NFL fantasy injury brief`（Every day at 8:12 AM）和 `Hawaii airfare morning`（Every day at 8:02 AM）。PTS 954967（15:54.967）同一侧栏还显示 `Meetings · DEV` 和输入提示 `Give your Bot links to join Google Meet or Zoom`。聊天内容未变；指针悬停在 `Kith drops watch` 行，没有观察到开关变化或 Routine 编辑。
+
+V1 片头连续逐帧覆盖延长至 15:54.966，共 28,650 帧；下一窗口从 15:55.000 开始，15:55–21:08 仍待审阅。

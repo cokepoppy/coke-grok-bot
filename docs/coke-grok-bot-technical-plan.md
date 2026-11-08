@@ -2117,3 +2117,7 @@ Martin Lacsamana 的讲者小窗有姿势/口型变化；紫色 `Introducing Gro
 #### 2026-11-09 官方 V1 视频逐帧续审（15:45–15:49.967）
 
 逐帧审阅 PTS 945000–949966 的 150 帧和 6 张联系图；独立重解码核实源哈希、PTS、`yuv420p` 像素哈希、字节数及联系图哈希。PTS 946800 显示桌面 Grok Bot 对话完成态：用户消息 `I love my brother but not $3000` 后出现 Bot 的价位跟进回复。PTS 949167 展开右侧 Bot 侧栏并选中 `Computer`，可见 `bobo's screen` 的浏览器房源列表与地图截图；PTS 949967 显示 `Connecting`，据此单独记录为连接中。保留三张对应原尺寸关键帧，PNG/源像素哈希列于 `research/frames/v1-945-950-compact-audit-20261109/keyframes/manifest.json`。片头连续覆盖至 15:49.966（28,500 帧），15:50–21:08 仍待审阅；详细文字与回复见 `research/README.md`。
+
+#### 2026-11-09 官方 V1 视频逐帧续审（15:50–15:54.967）
+
+逐帧审阅 PTS 950000–954966 的 150 帧和 6 张联系图；独立重解码核对源哈希、PTS、`yuv420p` 像素哈希、字节数和联系图哈希。PTS 950800 起 `Details` 标签展示四条已开启的 Routine 及各自时间；PTS 954967 还能看到 `Meetings · DEV` 和 Google Meet/Zoom 链接输入提示。指针停在 `Kith drops watch` 行，没有观察到开关切换或 Routine 修改；聊天正文保持不变。保留 Details 两个状态的原尺寸关键帧，哈希见 `research/frames/v1-950-955-compact-audit-20261109/keyframes/manifest.json`。片头连续覆盖至 15:54.966（28,650 帧），15:55–21:08 仍待审阅；详情见 `research/README.md`。
