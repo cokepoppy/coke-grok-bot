@@ -1770,3 +1770,9 @@ GitHub 直连 DNS 仍失败，但使用单条 Git 命令的 `socks5h://127.0.0.1
 源码与测试提交 `8822b49`、`6e9523b` 已推送到唯一 feature 分支 `codex/grok-bot-persistent-group-chat`。本地导航策略、旧 Worker 回退和安全错误映射测试 27/27 通过，`npm run build` 及 `VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build:deployment` 通过。只将 Auth 和 `private-secrets` init container 更新为 `coke-grok-auth:sha-6e9523be9b21c230dfb461ca4843309d7069bb33`；Auth rollout 1/1，公网页面返回 200。MySQL/PVC、Broker、Agent、Desktop、其他 Pods 和 VPS 隧道未改动。
 
 随后用已登录 Chrome 的公网 `/grok-bot/` 页面，向 `E2E Test Bot 1029` 发送唯一导航任务，要求 Browser User 打开 `https://example.com/?grok-nav-no-approval-20261108-r3` 并返回标题。可见聊天结果为 `Computer activity · Done` 和 `Navigation succeeded without an approval card. The exact page title is "Example Domain"`；没有批准卡，也没有登录、输入凭据或点击页面内容。这证明这条指定域名的公网普通导航不再要求用户逐步批准；Google 登录页的实际交接仍按登录流程由用户操作，本结果不代表 Gmail 登录已完成。
+
+#### 2026-11-08 官方 V1 视频片头逐帧审阅延伸
+
+按 `research/README.md` 的逐帧台账，继续核对官方 Grok Bot 101 的 1:20.000–1:39.966：四个连续 5 秒窗口、共 600 个 1920×1080、30 fps 源帧；每窗六张 5×5 联系图均逐张检查，manifest 的 PTS、`yuv420p` 逐帧像素哈希和联系图哈希一致。相关证据目录此前已存在于本机忽略路径 `research/frames/v1-{80-85,85-90,90-95,95-100}-compact-audit-20261108/`；本轮验证后直接审阅，没有覆写或增加重复帧文件。
+
+四窗都保持 `Grok Bot 101` 演讲标题页、Bot 插画和讲者小窗，只有讲者姿势/手势变化；没有产品 UI、聊天、Computer 或任务流程，因此不作为 UI 像素基准。V1 片头当前连续逐帧覆盖至 1:39.966（3,000 帧）；接下来从 1:40.000 继续，剩余 1:40–21:08 仍待逐帧审阅。没有改运行代码或服务；本次研究记录与证据台账同步更新。
