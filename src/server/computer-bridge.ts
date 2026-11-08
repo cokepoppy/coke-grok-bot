@@ -6,18 +6,18 @@ import { SafeDiagnosticError } from './safe-diagnostics.ts';
 
 export interface RunScope {owner:RunOwner;runId:string;leaseId:string;botId:string;requestedNavigationOrigins?:readonly string[];signInHandoff?:boolean}
 export interface ComputerReadWorker extends GuardedComputerWorker { control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>; inspect(signal:AbortSignal):Promise<unknown>; screenshot(signal:AbortSignal):Promise<Buffer> }
-function isDirectDesktopNavigationAttempt(action:{kind?:unknown;action?:unknown;arguments?:Record<string,unknown>},origins:readonly string[]):boolean{
+function isDesktopBrowserNavigationAttempt(action:{kind?:unknown;action?:unknown;arguments?:Record<string,unknown>}):boolean{
  if(action.kind!=='desktop')return false;
  const args=action.arguments||{};
- // Chrome tabs and navigation controls can sit at different heights in
- // windowed and maximized layouts. Redirect clicks in the top browser chrome
- // to Browser User instead of creating an approval for ordinary navigation.
+ // Browser chrome can sit at different heights in windowed and maximized
+ // layouts. Redirect address/tab-bar actions to Browser User rather than
+ // creating an approval card for routine navigation.
  if(action.action==='click'&&typeof args.x==='number'&&typeof args.y==='number'&&args.y>=0&&args.y<=125)return true;
  if(action.action==='type'&&typeof args.text==='string'){
   const value=args.text.trim();
   try{
    const url=new URL(/^https?:\/\//i.test(value)?value:`https://${value}`);
-   return !url.username&&!url.password&&origins.includes(url.origin);
+   return ['http:','https:'].includes(url.protocol)&&!url.username&&!url.password;
   }catch{/* Non-URL typing stays under normal computer review. */}
  }
  return false;
@@ -41,12 +41,12 @@ export class ComputerBridge {
    const candidate=input as Record<string,unknown>;
    if(candidate.kind==='browser'&&candidate.action==='navigate'&&typeof candidate.url==='string'){
     let raw:URL|null=null;try{raw=new URL(candidate.url)}catch{/* Invalid destinations continue through canonical validation below. */}
-    if(raw&&(raw.protocol==='https:'||raw.protocol==='http:')&&!raw.username&&!raw.password&&scope.requestedNavigationOrigins?.includes(raw.origin)){
+    if(raw&&(raw.protocol==='https:'||raw.protocol==='http:')&&!raw.username&&!raw.password){
      let navigationState;
      try{navigationState=await worker.navigationState(signal)}catch(error){
       // Older, already-running Desktop images do not expose the screenshot-free
       // navigation endpoints. Fall through to their guarded snapshot/execute
-      // pair so an explicitly requested URL still navigates without approval.
+      // pair so ordinary HTTP(S) navigation still proceeds without approval.
       if(!(error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_WORKER_HTTP_ERROR'&&error.status===404)){
        if(error instanceof SafeDiagnosticError)throw error;
        throw new SafeDiagnosticError('COMPUTER_SNAPSHOT_FAILED');
@@ -57,8 +57,7 @@ export class ComputerBridge {
       let canonical:string;try{canonical=canonicalComputerAction(input,{url:navigationState.url,screenshotSha256:'0'.repeat(64)})}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
       const action=JSON.parse(canonical) as {kind?:unknown;action?:unknown;arguments?:{url?:unknown}};
       if(disallowedDuringSignInHandoff(scope,action))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
-      const exactOrigin=typeof action.arguments?.url==='string'?new URL(action.arguments.url).origin:'';
-      if(exactOrigin&&scope.requestedNavigationOrigins.includes(exactOrigin)){
+      if(action.kind==='browser'&&action.action==='navigate'){
        if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
        try{const result=await worker.navigateIfUnchanged(input,navigationState,signal);await this.markUsed(scope);return {status:'completed',result}}
        catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
@@ -76,17 +75,14 @@ export class ComputerBridge {
   let action:string;try{action=canonicalComputerAction(input,state)}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
   const canonical=JSON.parse(action) as {kind?:unknown;action?:unknown;arguments?:Record<string,unknown>};
   if(disallowedDuringSignInHandoff(scope,canonical))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
-  if(scope.requestedNavigationOrigins?.length&&isDirectDesktopNavigationAttempt(canonical,scope.requestedNavigationOrigins))throw new SafeDiagnosticError('COMPUTER_NAVIGATION_USE_BROWSER');
+  if(isDesktopBrowserNavigationAttempt(canonical))throw new SafeDiagnosticError('COMPUTER_NAVIGATION_USE_BROWSER');
   if(canonical.kind==='browser'&&canonical.action==='navigate'&&typeof canonical.arguments?.url==='string'){
-   let origin='';try{origin=new URL(canonical.arguments.url).origin}catch{/* The canonicalizer already validates the URL. */}
-   if(origin&&scope.requestedNavigationOrigins?.includes(origin)){
-    if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
-    try{
-     const result=await worker.performIfUnchanged(input,state,signal);
-     await this.markUsed(scope);
-     return {status:'completed',result};
-    }catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
-   }
+   if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
+   try{
+    const result=await worker.performIfUnchanged(input,state,signal);
+    await this.markUsed(scope);
+    return {status:'completed',result};
+   }catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
   }
   let captured:Awaited<ReturnType<NonNullable<ComputerReadWorker['snapshotWithImage']>>>|null=null;
   if(worker.snapshotWithImage){
@@ -132,5 +128,9 @@ export class ComputerBridge {
 }
 
 function disallowedDuringSignInHandoff(scope:RunScope,action:{kind?:unknown;action?:unknown}):boolean{
- return scope.signInHandoff===true&&(action.kind!=='browser'||action.action!=='navigate');
+ if(scope.signInHandoff!==true)return false;
+ if(action.kind!=='browser'||action.action!=='navigate')return true;
+ const arguments_=(action as {arguments?:Record<string,unknown>}).arguments||{};
+ if(typeof arguments_.url!=='string')return true;
+ try{return !scope.requestedNavigationOrigins?.includes(new URL(arguments_.url).origin)}catch{return true}
 }

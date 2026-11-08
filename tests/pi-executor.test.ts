@@ -59,9 +59,9 @@ test('Pi sends an explicit Gmail navigation and user sign-in handoff instruction
   const result=await executor.execute(screen,gmailRun,new AbortController().signal,randomUUID());
   assert.equal(result.result,'Gmail is open for sign-in.');
   assert.match(receivedPrompt,/https:\/\/mail\.google\.com/);
-  assert.match(receivedPrompt,/computer_browser\.navigate directly/);
-  assert.match(receivedPrompt,/stop at the sign-in page/i);
-  assert.match(receivedPrompt,/This run is a sign-in handoff/i);
+  assert.match(receivedPrompt,/Use computer_browser\.navigate/);
+  assert.match(receivedPrompt,/stop at the sign-in page|stop there.*take control/i);
+  assert.match(receivedPrompt,/This run ends at a user sign-in handoff/i);
   assert.match(receivedPrompt,/never enter or request their credentials/i);
  }finally{await executor.close();gateway.close()}
 });
@@ -80,7 +80,7 @@ test('Pi carries a recent same-Bot sign-in handoff into an approval follow-up wi
   assert.equal(result.status,'completed');
   assert.match(receivedPrompt,/https:\/\/accounts\.google\.com/);
   assert.match(receivedPrompt,/continues the user's recent sign-in handoff/i);
-  assert.match(receivedPrompt,/desktop clicks, typing, key presses/i);
+  assert.match(receivedPrompt,/Once the sign-in or human-verification page is visible, stop/i);
   assert.match(receivedPrompt,/Do not interpret the request to avoid repeated approvals as permission to enter credentials/i);
  }finally{await executor.close();gateway.close()}
 });

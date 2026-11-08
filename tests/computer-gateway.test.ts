@@ -53,11 +53,20 @@ test('computer gateway binds screen and action to one live user run and approval
    const navigation=await browser.execute({action:'navigate',url:'https://mail.google.com/'},{signal:AbortSignal.timeout(5000)});
    assert.equal(navigation.action,'navigate');assert.deepEqual(JSON.parse(navigation.text),{ready:true,url:'https://mail.google.com/'});
    assert.equal(approvalProposals,approvalsBeforeGmail,'direct Google and Gmail navigation must not create per-action approvals');
-   assert.equal(effects,effectsBeforeGmail+3,'the DSH browser tool must reach the guarded worker for both destinations, including a repeated navigation, through ModelGateway and ComputerBridge');
+   assert.equal(effects,effectsBeforeGmail+3,'the DSH browser tool must navigate to exact requested Google/Gmail destinations, including a repeated navigation, through ModelGateway and ComputerBridge');
    const desktop=tools.get('computer_desktop');assert.ok(desktop);
-   await assert.rejects(desktop.execute({action:'click',x:100,y:100},{signal:AbortSignal.timeout(5000)}),/This run is a sign-in handoff/);
+   await assert.rejects(desktop.execute({action:'click',x:100,y:100},{signal:AbortSignal.timeout(5000)}),/This run ends at a user sign-in handoff/);
    assert.equal(approvalProposals,approvalsBeforeGmail,'an address-bar desktop click must be rejected without queuing approval');
    assert.equal(effects,effectsBeforeGmail+3,'a blocked desktop click must not reach the worker');
+
+   const browseCapability=gateway.issue({ttlMs:30000,calls:1,scope:{runId:run.id,leaseId:claim.leaseId,botId:bot.id,owner:identity}});
+   process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN=browseCapability;
+   const browseTools=new Map<string,any>();applyDshComputer({tools:{register(tool:any){browseTools.set(tool.name,tool)}},get(){return {async saveImage(){return null}}}} as any);
+   const browseResult=await browseTools.get('computer_browser').execute({action:'navigate',url:'https://example.org/'},{signal:AbortSignal.timeout(5000)});
+   assert.deepEqual(JSON.parse(browseResult.text),{ready:true,url:'https://example.org/'});
+   assert.equal(approvalProposals,approvalsBeforeGmail,'ordinary browsing to a page discovered during the task must not require approval');
+   assert.equal(effects,effectsBeforeGmail+4,'the unscoped ordinary HTTP/HTTPS navigation reaches the guarded worker without approval');
+   gateway.revoke(browseCapability);
   }finally{
    globalThis.fetch=previousFetch;
    if(previousBridgeUrl===undefined)delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL;else process.env.COKE_GROK_COMPUTER_BRIDGE_URL=previousBridgeUrl;
@@ -74,7 +83,7 @@ test('computer gateway binds screen and action to one live user run and approval
    await runCloudKernel({engine:'pi',modelConfig:{apiKey:piCapability,baseUrl:'https://gateway.example.test/v1',model:'deepseek-flash'},workspace,cwd:'tasks/gmail',taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:piCapability},prompt:gmailPrompt,signal:new AbortController().signal},{piSdk} as any);
    const browser=piOptions?.customTools.find((tool:any)=>tool.name==='computer_browser');assert.ok(browser);
    assert.ok(browser.promptGuidelines.some((value:string)=>value.includes('navigate directly to that site')&&value.includes('do not use computer_desktop')));
-   assert.ok(browser.promptGuidelines.some((value:string)=>value.includes('without asking for approval')));
+   assert.ok(browser.promptGuidelines.some((value:string)=>value.includes('does not require per-step approval')));
    const googleNavigation=await browser.execute('google-navigation',{action:'navigate',url:'https://www.google.com/'},new AbortController().signal);
    assert.deepEqual(JSON.parse(googleNavigation.content[0].text),{ready:true,url:'https://www.google.com/'});
    const repeatedGoogleNavigation=await browser.execute('repeat-google-navigation',{action:'navigate',url:'https://www.google.com/'},new AbortController().signal);
@@ -82,9 +91,9 @@ test('computer gateway binds screen and action to one live user run and approval
    const navigation=await browser.execute('gmail-navigation',{action:'navigate',url:'https://mail.google.com/'},new AbortController().signal);
    assert.deepEqual(JSON.parse(navigation.content[0].text),{ready:true,url:'https://mail.google.com/'});
    assert.equal(approvalProposals,approvalCountBeforePi,'Pi direct Google and Gmail navigation must not create per-action approvals');
-   assert.equal(effects,effectCountBeforePi+3,'Pi computer_browser must reach the guarded worker for both destinations, including a repeated navigation, through ModelGateway and ComputerBridge');
+   assert.equal(effects,effectCountBeforePi+3,'Pi computer_browser must navigate to exact requested Google/Gmail destinations, including repeated navigation, through ModelGateway and ComputerBridge');
    const desktop=piOptions?.customTools.find((tool:any)=>tool.name==='computer_desktop');assert.ok(desktop);
-   await assert.rejects(desktop.execute('desktop-address-bar-click',{action:'click',x:100,y:100},new AbortController().signal),/This run is a sign-in handoff/);
+   await assert.rejects(desktop.execute('desktop-address-bar-click',{action:'click',x:100,y:100},new AbortController().signal),/This run ends at a user sign-in handoff/);
    assert.equal(approvalProposals,approvalCountBeforePi,'a Pi desktop click must be rejected without queuing approval');
    assert.equal(effects,effectCountBeforePi+3,'a blocked Pi desktop click must not reach the worker');
   }finally{globalThis.fetch=previousFetch;gateway.revoke(piCapability);await rm(workspace,{recursive:true,force:true})}

@@ -57,7 +57,7 @@ test('DSH computer screenshot becomes a durable model image attachment', async (
   }
 });
 
-test('DSH browser mutations use one exact approved action and never retry execute', async () => {
+test('DSH browser control clicks use one exact approval and never retry execute', async () => {
   const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
   const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
   const oldFetch = globalThis.fetch;
@@ -70,18 +70,18 @@ test('DSH browser mutations use one exact approved action and never retry execut
     if (path.endsWith('/computer/control')) return Response.json({ owner: 'agent' });
     if (path.endsWith('/computer/actions')) return Response.json({ id: approvalId });
     if (path.endsWith(`/computer/actions/${approvalId}`)) return Response.json({ status: 'approved' });
-    if (path.endsWith(`/computer/actions/${approvalId}/execute`)) return Response.json({ ready: true, action: 'navigate', url: 'https://example.test/' });
+    if (path.endsWith(`/computer/actions/${approvalId}/execute`)) return Response.json({ ready: true, action: 'click', url: 'https://example.test/' });
     throw new Error('Unexpected computer route');
   };
   try {
     const { tools } = mount();
     const browser = tools.get('computer_browser');
     assert.ok(browser);
-    const value = await browser.execute({ action: 'navigate', url: 'https://example.test/' }, { signal: new AbortController().signal });
-    assert.equal(value.action, 'navigate');
+    const value = await browser.execute({ action: 'click', by: 'role', role: 'link', target: 'Docs' }, { signal: new AbortController().signal });
+    assert.equal(value.action, 'click');
     const executes = calls.filter(call => call.path.endsWith(`/computer/actions/${approvalId}/execute`));
     assert.equal(executes.length, 1);
-    assert.deepEqual(calls.find(call => call.path.endsWith('/computer/actions'))?.body, { action: { kind: 'browser', action: 'navigate', url: 'https://example.test/' } });
+    assert.deepEqual(calls.find(call => call.path.endsWith('/computer/actions'))?.body, { action: { kind: 'browser', action: 'click', by: 'role', role: 'link', target: 'Docs' } });
     assert.ok(calls.some(call => call.method === 'GET' && call.path.endsWith(`/computer/actions/${approvalId}`)));
   } finally {
     globalThis.fetch = oldFetch;
@@ -111,8 +111,8 @@ test('DSH direct Gmail navigation consumes an immediate completion without creat
     assert.deepEqual(JSON.parse(value.text), destination);
     assert.equal(calls.filter(call => call.path.endsWith('/computer/actions')).length, 1);
     assert.equal(calls.length, 2, 'only check control and navigate; do not create, poll, or execute an approval');
-    assert.match(browser.description, /navigation to a destination directly requested by the owner do not require approval/i);
-    assert.match(browser.description, /stop at the sign-in page/i);
+    assert.match(browser.description, /ordinary HTTP\/HTTPS webpage navigation needed for the owner’s request do not require per-step approval/i);
+    assert.match(browser.description, /navigate to the sign-in page, stop, and let the owner take control/i);
   } finally {
     globalThis.fetch = oldFetch;
     if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
@@ -139,7 +139,7 @@ test('DSH routes mistaken desktop navigation to Browser User without showing an 
     await assert.rejects(desktop.execute({ action: 'click', x: 295, y: 90 }, { signal: new AbortController().signal }), /not executed and no approval was requested.*computer_browser\.navigate/i);
     assert.equal(calls.filter(call => call.path.endsWith('/computer/actions')).length, 1);
     assert.equal(calls.length, 1, 'receive the navigation directive without polling or executing an approval');
-    assert.match(desktop.description, /desktop input is attempted for navigation.*without creating an approval card/i);
+    assert.match(desktop.description, /desktop input is attempted for browser navigation.*without creating an approval card/i);
   } finally {
     globalThis.fetch = oldFetch;
     if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;

@@ -157,15 +157,18 @@ try{
   const computerButton=controlPage.getByRole('button',{name:`Open ${bot.name}'s computer`,exact:true});try{await computerButton.waitFor({timeout:10_000})}catch{const uiState=await controlPage.evaluate(()=>({url:location.href,title:document.title,body:document.body?.innerText.slice(0,2000),buttons:Array.from(document.querySelectorAll('button')).slice(0,40).map(button=>({text:button.innerText,ariaLabel:button.getAttribute('aria-label')}))})),screenshotPath=join(tmpdir(),`grok-computer-ui-${randomUUID()}.png`);await controlPage.screenshot({path:screenshotPath});throw new Error(`Grok Bot UI did not render the selected Bot's computer control; ui=${JSON.stringify(uiState)}; console=${JSON.stringify(uiErrors.slice(-10))}; screenshot=${screenshotPath}`)}
   await computerButton.click();await controlPage.getByRole('button',{name:'Open screen'}).click();const takeControlButton=controlPage.getByRole('button',{name:'Take control',exact:true});try{await takeControlButton.waitFor({timeout:15_000})}catch{const uiState=await controlPage.evaluate(()=>({body:document.body?.innerText.slice(-1500),screenStatus:document.querySelector('.computer-screen-status')?.textContent,dialogs:Array.from(document.querySelectorAll('[role="dialog"]')).map(dialog=>dialog.getAttribute('aria-label'))})),screenshotPath=join(tmpdir(),`grok-computer-takeover-${randomUUID()}.png`);await controlPage.screenshot({path:screenshotPath});throw new Error(`Grok Bot computer panel did not expose Take control; ui=${JSON.stringify(uiState)}; console=${JSON.stringify(uiErrors.slice(-10))}; screenshot=${screenshotPath}`)}await takeControlButton.click();await controlPage.getByRole('button',{name:'Return to Bot',exact:true}).waitFor({timeout:10_000});const chatComposer=controlPage.locator('.composer textarea');assert.equal(await chatComposer.evaluate(element=>element.closest('[inert]')!==null),true,'The external chat composer must be inert while the cloud computer takeover dialog is open');const composerRect=await chatComposer.boundingBox();assert.ok(composerRect,'The chat composer should remain laid out behind the takeover view');const composerCenter={x:composerRect.x+composerRect.width/2,y:composerRect.y+composerRect.height/2};assert.equal(await controlPage.evaluate(({x,y})=>Boolean(document.elementFromPoint(x,y)?.closest('.computer-screen-overlay')) ,composerCenter),true,'The full-screen takeover layer must visually cover the external chat composer, not merely disable its input');await chatComposer.evaluate(element=>(element as HTMLTextAreaElement).focus());assert.equal(await controlPage.locator('.computer-screen-dialog').evaluate(dialog=>dialog.contains(document.activeElement)),true,'Focus must stay inside the computer dialog during takeover');const afterHandoff=await workerRequest('/v1/guarded/control'),afterOwner=await afterHandoff.json() as {owner?:string};assert.equal(afterOwner.owner,'user','The product UI Take control button must transfer the real K3D computer to the signed-in owner');
   const remoteFrame=controlPage.frameLocator(`iframe[title="Mediated Bot cloud computer"]`);await remoteFrame.locator('#status[data-state="connected"]').waitFor({timeout:30_000});await remoteFrame.locator('canvas').first().waitFor({timeout:30_000});
-  const addressBarY=(height:number)=>height*.1;const fullScreenTabBarY=(height:number)=>height*.083,fullScreenAddressBarY=(height:number)=>height*.13;const remoteCanvas=remoteFrame.locator('#viewport canvas').first();const canvasBounds=await remoteCanvas.boundingBox();assert.ok(canvasBounds&&canvasBounds.width>=640&&canvasBounds.height>=480,'The embedded noVNC canvas must occupy a usable area');await remoteCanvas.click({position:{x:canvasBounds.width*.5,y:addressBarY(canvasBounds.height)}});await sleep(250);const clickFocusResponse=await workerRequest('/v1/guarded/snapshot-image');assert.equal(clickFocusResponse.status,200);const clickFocusSnapshot=await clickFocusResponse.json() as {image?:string;url?:string};const clickFocusScreenshotPath=join(tmpdir(),`grok-noVNC-click-focus-${randomUUID()}.png`);if(clickFocusSnapshot.image)await writeFile(clickFocusScreenshotPath,Buffer.from(clickFocusSnapshot.image,'base64'));const focusedWindow=(await run('kubectl',['-n',namespace,'exec',desktopPodName,'-c','desktop','--','xdotool','getwindowfocus'])).trim();assert.match(focusedWindow,/^\d+$/);const focusTitle=await run('kubectl',['-n',namespace,'exec',desktopPodName,'-c','desktop','--','xdotool','getwindowname',focusedWindow]);const focusGeometry=await run('kubectl',['-n',namespace,'exec',desktopPodName,'-c','desktop','--','xdotool','getwindowgeometry','--shell',focusedWindow]);const focusWindowInfo=await run('kubectl',['-n',namespace,'exec',desktopPodName,'-c','desktop','--','xwininfo','-id',focusedWindow,'-all']);await remoteFrame.locator('#viewport').evaluate(element=>{const frameWindow=element.ownerDocument.defaultView as (Window&{__cokeKeyEvents?:Array<{key:string;code:string;ctrl:boolean;shift:boolean}>})|null;if(!frameWindow)return;frameWindow.__cokeKeyEvents=[];frameWindow.addEventListener('keydown',event=>frameWindow.__cokeKeyEvents?.push({key:event.key,code:event.code,ctrl:event.ctrlKey,shift:event.shiftKey}),true)});await sleep(500);
+  // Xfce may put a separate window titlebar above Chromium. Check both observed
+  // tab/address rows and accept a click only after the real selected URL or
+  // browser-focus state confirms it landed in Chrome's browser chrome.
+  const addressBarYs=(height:number)=>[height*.1,height*.13];const fullScreenTabBarYs=(height:number)=>[height*.05,height*.083],fullScreenAddressBarYs=(height:number)=>[height*.1,height*.13];const remoteCanvas=remoteFrame.locator('#viewport canvas').first();const canvasBounds=await remoteCanvas.boundingBox();assert.ok(canvasBounds&&canvasBounds.width>=640&&canvasBounds.height>=480,'The embedded noVNC canvas must occupy a usable area');await remoteCanvas.click({position:{x:canvasBounds.width*.5,y:canvasBounds.height*.1}});await sleep(250);const clickFocusResponse=await workerRequest('/v1/guarded/snapshot-image');assert.equal(clickFocusResponse.status,200);const clickFocusSnapshot=await clickFocusResponse.json() as {image?:string;url?:string};const clickFocusScreenshotPath=join(tmpdir(),`grok-noVNC-click-focus-${randomUUID()}.png`);if(clickFocusSnapshot.image)await writeFile(clickFocusScreenshotPath,Buffer.from(clickFocusSnapshot.image,'base64'));const focusedWindow=(await run('kubectl',['-n',namespace,'exec',desktopPodName,'-c','desktop','--','xdotool','getwindowfocus'])).trim();assert.match(focusedWindow,/^\d+$/);const focusTitle=await run('kubectl',['-n',namespace,'exec',desktopPodName,'-c','desktop','--','xdotool','getwindowname',focusedWindow]);const focusGeometry=await run('kubectl',['-n',namespace,'exec',desktopPodName,'-c','desktop','--','xdotool','getwindowgeometry','--shell',focusedWindow]);const focusWindowInfo=await run('kubectl',['-n',namespace,'exec',desktopPodName,'-c','desktop','--','xwininfo','-id',focusedWindow,'-all']);await remoteFrame.locator('#viewport').evaluate(element=>{const frameWindow=element.ownerDocument.defaultView as (Window&{__cokeKeyEvents?:Array<{key:string;code:string;ctrl:boolean;shift:boolean}>})|null;if(!frameWindow)return;frameWindow.__cokeKeyEvents=[];frameWindow.addEventListener('keydown',event=>frameWindow.__cokeKeyEvents?.push({key:event.key,code:event.code,ctrl:event.ctrlKey,shift:event.shiftKey}),true)});await sleep(500);
   const vncViewportResponse=await workerRequest('/v1/guarded/viewport'),vncViewport=await vncViewportResponse.json() as {left:number;top:number;width:number;height:number};assert.equal(vncViewportResponse.status,200);
   const desktopPod=desktopPodName,pointerLocation=await run('kubectl',['-n',namespace,'exec',desktopPod,'-c','desktop','--','xdotool','getmouselocation','--shell']);
    const targetHost='example.org',targetMarker=`grok-computer-tab-e2e=${randomUUID()}`,targetUrl=`https://${targetHost}/?${targetMarker}`;let selectedTabMarker=targetMarker;
    const initialMarker=`grok-computer-tab-initial-e2e=${randomUUID()}`;
    {const initialUrl=`https://example.com/?${initialMarker}`;await remoteCanvas.press('Control+l');await sleep(250);await remoteCanvas.press('Control+a');await sleep(100);await remoteCanvas.type(initialUrl,{delay:180});await sleep(300);await remoteCanvas.press('Enter');let initialNavigation=false;for(let i=0;i<30;i++){if(originalDesktopPage.url().includes(initialMarker)){initialNavigation=true;break}await sleep(500)}assert.equal(initialNavigation,true,`The owner must first navigate the original tab to the same-title fixture; current URL: ${originalDesktopPage.url()}`);}
-   const initialDesktopPages=desktopContext.pages();let userOpenedTab:Page|undefined;await remoteCanvas.press('Control+t');for(let i=0;i<30&&!userOpenedTab;i++){userOpenedTab=desktopContext.pages().find(candidate=>!initialDesktopPages.includes(candidate));if(!userOpenedTab)await sleep(100)}assert.ok(userOpenedTab,'The owner must be able to open a real second tab in cloud Chromium');const createdTab=userOpenedTab;const expectedTabCount=initialDesktopPages.length+1;assert.equal(desktopContext.pages().length,expectedTabCount,'Ctrl+T must create exactly one real tab');const tabBarX=(index:number,width:number)=>width*Math.min(.82,.11+.165*index);assert.ok(desktopContext.pages().includes(createdTab),'The newly created Chrome tab must remain present');await remoteCanvas.click({position:{x:canvasBounds.width*.5,y:addressBarY(canvasBounds.height)}});await remoteCanvas.press('Control+a');typingIntoAddressBar=true;try{await remoteCanvas.type(targetUrl,{delay:180})}finally{typingIntoAddressBar=false}assert.ok(screenshotPollsDuringTyping.length>0,'The integrated screenshot poll must complete while the owner types into the second tab address bar');await remoteCanvas.press('Enter');
-  let userOpenedTabUrl='',selectedTabScreenshotUrl='';for(let i=0;i<60;i++){const matchingPage=desktopContext.pages().find(candidate=>candidate.url().includes(targetMarker));const snapshotResponse=await workerRequest('/v1/guarded/snapshot-image');if(snapshotResponse.status===200){const snapshot=await snapshotResponse.json() as {url?:string};selectedTabScreenshotUrl=snapshot.url||''}if(matchingPage&&matchingPage.url().includes(targetMarker)&&selectedTabScreenshotUrl.includes(targetMarker)){userOpenedTab=matchingPage;userOpenedTabUrl=matchingPage.url();break}await sleep(500)}
-  if(!userOpenedTabUrl){const screenshotPath=join(tmpdir(),`grok-noVNC-input-${randomUUID()}.png`),current=await workerRequest('/v1/guarded/snapshot-image');assert.equal(current.status,200);const currentSnapshot=await current.json() as {image?:string;url?:string};if(currentSnapshot.image)await writeFile(screenshotPath,Buffer.from(currentSnapshot.image,'base64'));const tabs=await Promise.all(desktopContext.pages().map(async candidate=>({url:candidate.url(),title:await candidate.title().catch(()=>''),wasInitiallyOpen:initialDesktopPages.includes(candidate),createdByCtrlT:candidate===createdTab})));throw new Error(`Owner-entered URL did not resolve in the selected Chrome tab; expected=${targetUrl}; workerScreenshotUrl=${selectedTabScreenshotUrl||'unknown'}; finalScreenshotUrl=${currentSnapshot.url||'unknown'}; tabs=${JSON.stringify(tabs)}; screenshot=${currentSnapshot.image?screenshotPath:'unavailable'}`)}
+   const initialDesktopPages=desktopContext.pages();let userOpenedTab:Page|undefined;await remoteCanvas.press('Control+t');for(let i=0;i<30&&!userOpenedTab;i++){userOpenedTab=desktopContext.pages().find(candidate=>!initialDesktopPages.includes(candidate));if(!userOpenedTab)await sleep(100)}assert.ok(userOpenedTab,'The owner must be able to open a real second tab in cloud Chromium');const createdTab=userOpenedTab;const expectedTabCount=initialDesktopPages.length+1;assert.equal(desktopContext.pages().length,expectedTabCount,'Ctrl+T must create exactly one real tab');const tabBarX=(index:number,width:number)=>width*Math.min(.82,.11+.165*index);assert.ok(desktopContext.pages().includes(createdTab),'The newly created Chrome tab must remain present');await remoteCanvas.click({position:{x:canvasBounds.width*.75,y:canvasBounds.height*.8}});assert.equal(await createdTab.evaluate(()=>document.hasFocus()),true,'Clicking the webpage must focus page content before testing the address-bar mouse click');const modalAddressBarAttempts:Array<{ratio:number;pageHasFocus:boolean;pointer:string}>=[];for(const y of addressBarYs(canvasBounds.height)){await remoteCanvas.click({position:{x:canvasBounds.width*.5,y}});await sleep(150);const pageHasFocus=await createdTab.evaluate(()=>document.hasFocus());const pointer=await run('kubectl',['-n',namespace,'exec',desktopPodName,'-c','desktop','--','xdotool','getmouselocation','--shell']);modalAddressBarAttempts.push({ratio:y/canvasBounds.height,pageHasFocus,pointer})}await remoteCanvas.press('Control+a');typingIntoAddressBar=true;try{await remoteCanvas.type(targetUrl,{delay:180})}finally{typingIntoAddressBar=false}assert.ok(screenshotPollsDuringTyping.length>0,'The integrated screenshot poll must complete while the owner types into the second tab address bar');await remoteCanvas.press('Enter');
+  let userOpenedTabUrl='',selectedTabScreenshotUrl='';for(let i=0;i<60;i++){const matchingPage=desktopContext.pages().find(candidate=>candidate===createdTab&&candidate.url().includes(targetMarker));const snapshotResponse=await workerRequest('/v1/guarded/snapshot-image');if(snapshotResponse.status===200){const snapshot=await snapshotResponse.json() as {url?:string};selectedTabScreenshotUrl=snapshot.url||''}if(matchingPage&&matchingPage.url().includes(targetMarker)&&selectedTabScreenshotUrl.includes(targetMarker)){userOpenedTab=matchingPage;userOpenedTabUrl=matchingPage.url();break}await sleep(500)}
+  if(!userOpenedTabUrl){const screenshotPath=join(tmpdir(),`grok-noVNC-input-${randomUUID()}.png`),current=await workerRequest('/v1/guarded/snapshot-image');assert.equal(current.status,200);const currentSnapshot=await current.json() as {image?:string;url?:string};if(currentSnapshot.image)await writeFile(screenshotPath,Buffer.from(currentSnapshot.image,'base64'));const tabs=await Promise.all(desktopContext.pages().map(async candidate=>({url:candidate.url(),title:await candidate.title().catch(()=>''),wasInitiallyOpen:initialDesktopPages.includes(candidate),createdByCtrlT:candidate===createdTab})));throw new Error(`Owner-entered URL did not resolve in the selected Chrome tab; expected=${targetUrl}; workerScreenshotUrl=${selectedTabScreenshotUrl||'unknown'}; finalScreenshotUrl=${currentSnapshot.url||'unknown'}; tabs=${JSON.stringify(tabs)}; addressClicks=${JSON.stringify(modalAddressBarAttempts)}; screenshot=${currentSnapshot.image?screenshotPath:'unavailable'}`)}
   // The noVNC screenshot URL and the CDP page URL identify the visible target tab.
   // Do not infer visible tab order or identity from Playwright's pages() ordering.
   assert.equal(desktopContext.pages().length,expectedTabCount,'The address-bar interaction must not create an unintended extra tab');assert.ok(desktopContext.pages().includes(userOpenedTab),'The visible owner-navigated Chrome tab must remain present');
@@ -186,44 +189,77 @@ try{
   const readVisibleDesktopUrl=async()=>{const response=await workerRequest('/v1/guarded/snapshot-image');if(response.status!==200)return '';const snapshot=await response.json() as {url?:string};return snapshot.url||''};
   const tabSwitchObservations:Array<{index:number;x:number;url:string}>=[];
   let clickedAwayFromTarget=false;
-  for(let index=0;index<fullScreenPages.length;index++){
-   const x=tabBarX(index,fullScreenBounds.width);
-   await fullScreenCanvas.click({position:{x,y:fullScreenTabBarY(fullScreenBounds.height)}});
-   await sleep(700);
-   const visibleUrl=await readVisibleDesktopUrl();
-   tabSwitchObservations.push({index,x,url:visibleUrl});
-   if(visibleUrl&&!visibleUrl.includes(targetMarker)){clickedAwayFromTarget=true;break}
+  for(const y of fullScreenTabBarYs(fullScreenBounds.height)){
+   for(let index=0;index<fullScreenPages.length;index++){
+    const x=tabBarX(index,fullScreenBounds.width);
+    await fullScreenCanvas.click({position:{x,y}});
+    await sleep(700);
+    const visibleUrl=await readVisibleDesktopUrl();
+    tabSwitchObservations.push({index,x,url:visibleUrl});
+    if(visibleUrl&&!visibleUrl.includes(targetMarker)){clickedAwayFromTarget=true;break}
+   }
+   if(clickedAwayFromTarget)break;
   }
   if(!clickedAwayFromTarget){const response=await workerRequest('/v1/guarded/snapshot-image');const snapshot=response.status===200?await response.json() as {url?:string;image?:string}:undefined;const screenshotPath=join(tmpdir(),`grok-noVNC-fullscreen-tab-switch-${randomUUID()}.png`);if(snapshot?.image)await writeFile(screenshotPath,Buffer.from(snapshot.image,'base64'));throw new Error(`A real tab-strip click in full-screen mode did not switch away from the owner-navigated tab; target=${targetMarker}; observations=${JSON.stringify(tabSwitchObservations)}; tabs=${JSON.stringify(await Promise.all(fullScreenPages.map(async page=>({url:page.url(),title:await page.title().catch(()=>''),width:fullScreenBounds.width,height:fullScreenBounds.height}))))}; screenshot=${snapshot?.image?screenshotPath:'unavailable'}`)}
   let clickedBackToTarget=false;
-  for(let index=0;index<fullScreenPages.length;index++){
-   const x=tabBarX(index,fullScreenBounds.width);
-   await fullScreenCanvas.click({position:{x,y:fullScreenTabBarY(fullScreenBounds.height)}});
-   await sleep(700);
-   if((await readVisibleDesktopUrl()).includes(targetMarker)){clickedBackToTarget=true;break}
+  for(const y of fullScreenTabBarYs(fullScreenBounds.height)){
+   for(let index=0;index<fullScreenPages.length;index++){
+    const x=tabBarX(index,fullScreenBounds.width);
+    await fullScreenCanvas.click({position:{x,y}});
+    await sleep(700);
+    if((await readVisibleDesktopUrl()).includes(targetMarker)){clickedBackToTarget=true;break}
+   }
+   if(clickedBackToTarget)break;
   }
   assert.ok(clickedBackToTarget,'A real tab-strip click in full-screen mode must return to the owner-navigated tab');
   await sleep(200);
-  await fullScreenCanvas.click({position:{x:fullScreenBounds.width*.5,y:fullScreenAddressBarY(fullScreenBounds.height)}});
-  await fullScreenCanvas.press('Control+a');
-  typingIntoAddressBar=true;
-  try{await fullScreenCanvas.type(fullScreenUrl,{delay:180})}finally{typingIntoAddressBar=false}
-  await fullScreenCanvas.press('Enter');
-  let fullScreenScreenshotUrl='';
-  for(let i=0;i<60;i++){
-   const matchingPage=desktopContext.pages().find(page=>page.url().includes(fullScreenMarker));
-   const screenshotResponse=await workerRequest('/v1/guarded/snapshot-image');
-   if(screenshotResponse.status===200){const snapshot=await screenshotResponse.json() as {url?:string};fullScreenScreenshotUrl=snapshot.url||''}
-   if(matchingPage&&fullScreenScreenshotUrl.includes(fullScreenMarker)){userOpenedTab=matchingPage;break}
-   await sleep(500);
+  let fullScreenScreenshotUrl='',fullScreenAddressFocused=false,fullScreenNavigated=false;
+  const fullScreenAddressFocusAttempts:Array<{ratio:number;pageHasFocus:boolean}> = [];
+  for(const y of fullScreenAddressBarYs(fullScreenBounds.height)){
+   if(!(await readVisibleDesktopUrl()).includes(targetMarker)){
+    let returnedToTarget=false;
+    for(const tabY of fullScreenTabBarYs(fullScreenBounds.height)){
+     for(let index=0;index<fullScreenPages.length;index++){
+      await fullScreenCanvas.click({position:{x:tabBarX(index,fullScreenBounds.width),y:tabY}});
+      await sleep(300);
+      if((await readVisibleDesktopUrl()).includes(targetMarker)){returnedToTarget=true;break}
+     }
+     if(returnedToTarget)break;
+    }
+    assert.ok(returnedToTarget,'The target tab must be active before testing its full-screen address bar');
+   }
+   await fullScreenCanvas.click({position:{x:fullScreenBounds.width*.75,y:fullScreenBounds.height*.8}});
+   assert.equal(await userOpenedTab.evaluate(()=>document.hasFocus()),true,'Clicking the full-screen webpage must restore page focus before testing its address-bar mouse click');
+   await fullScreenCanvas.click({position:{x:fullScreenBounds.width*.5,y}});
+   await sleep(150);
+   const pageHasFocus=await userOpenedTab.evaluate(()=>document.hasFocus()).catch(()=>true);
+   fullScreenAddressFocusAttempts.push({ratio:y/fullScreenBounds.height,pageHasFocus});
+   // Chromium can keep document.hasFocus() true while the omnibox has focus.
+   // The real navigation below is the authoritative proof that the mouse click
+   // reached the address bar and accepted owner-entered text.
+   fullScreenAddressFocused=true;
+   await fullScreenCanvas.press('Control+a');
+   typingIntoAddressBar=true;
+   try{await fullScreenCanvas.type(fullScreenUrl,{delay:180})}finally{typingIntoAddressBar=false}
+   await fullScreenCanvas.press('Enter');
+   for(let i=0;i<30;i++){
+    const matchingPage=desktopContext.pages().find(page=>page===createdTab&&page.url().includes(fullScreenMarker));
+    const screenshotResponse=await workerRequest('/v1/guarded/snapshot-image');
+    if(screenshotResponse.status===200){const snapshot=await screenshotResponse.json() as {url?:string};fullScreenScreenshotUrl=snapshot.url||''}
+    if(matchingPage&&fullScreenScreenshotUrl.includes(fullScreenMarker)){userOpenedTab=matchingPage;fullScreenNavigated=true;break}
+    await sleep(500);
+   }
+   if(fullScreenNavigated)break;
+   fullScreenAddressFocused=false;
   }
-  if(!userOpenedTab.url().includes(fullScreenMarker)||!fullScreenScreenshotUrl.includes(fullScreenMarker)){
+  assert.ok(fullScreenAddressFocused,`A real address-bar click must take focus from the webpage in full-screen mode; attempts=${JSON.stringify(fullScreenAddressFocusAttempts)}`);
+  if(!fullScreenNavigated||!userOpenedTab.url().includes(fullScreenMarker)||!fullScreenScreenshotUrl.includes(fullScreenMarker)){
    const response=await workerRequest('/v1/guarded/snapshot-image');
    const snapshot=response.status===200?await response.json() as {url?:string;image?:string}:undefined;
    const screenshotPath=join(tmpdir(),`grok-noVNC-fullscreen-failure-${randomUUID()}.png`);
    if(snapshot?.image)await writeFile(screenshotPath,Buffer.from(snapshot.image,'base64'));
    const tabs=await Promise.all(desktopContext.pages().map(async page=>({url:page.url(),title:await page.title().catch(()=>''),selected:page===userOpenedTab,original:page===originalDesktopPage})));
-   throw new Error(`Full-screen noVNC navigation failed; expected=${fullScreenUrl}; workerScreenshotUrl=${fullScreenScreenshotUrl||'unknown'}; finalScreenshotUrl=${snapshot?.url||'unknown'}; tabs=${JSON.stringify(tabs)}; fullScreenCanvas=${JSON.stringify(fullScreenBounds)}; screenshotPolls=${screenshotPollsDuringTyping.length-screenshotPollsBeforeFullScreenTyping}; screenshot=${snapshot?.image?screenshotPath:'unavailable'}`);
+   throw new Error(`Full-screen noVNC navigation failed; expected=${fullScreenUrl}; workerScreenshotUrl=${fullScreenScreenshotUrl||'unknown'}; finalScreenshotUrl=${snapshot?.url||'unknown'}; addressFocus=${JSON.stringify(fullScreenAddressFocusAttempts)}; tabs=${JSON.stringify(tabs)}; fullScreenCanvas=${JSON.stringify(fullScreenBounds)}; screenshotPolls=${screenshotPollsDuringTyping.length-screenshotPollsBeforeFullScreenTyping}; screenshot=${snapshot?.image?screenshotPath:'unavailable'}`);
   }
   assert.ok(screenshotPollsDuringTyping.length>screenshotPollsBeforeFullScreenTyping,'The product screenshot stream must continue updating while the owner types in full-screen mode');
   selectedTabMarker=fullScreenMarker;

@@ -1866,3 +1866,9 @@ V1 片头连续逐帧审阅范围延长至 2:29.966（4,500 帧），下一段�
 代码与回归测试已提交为 `68a59db`（`fix: skip approval for requested browser navigation`），并推送到唯一 feature 分支 `codex/grok-bot-persistent-group-chat`。推送前核对远端 feature 分支为其父提交 `c137f0b`，推送后远端 feature 指向该提交；远端 `main` 仍为 `0fab4081c2f2fbe78e73640a93e17f788b8ce8fb`。未新开分支、未合并、未打 tag。
 
 本机 K3D 测试已通过，但没有部署到公网。现有 Auth-only 发布脚本会在 rollout 前强制指定登录用户 namespace；当前 shell 没有 `COKE_GROK_USER_NAMESPACE`，K3D 中可见两个既存用户 namespace，本轮没有从用户会话或账号资料推断该部署目标，也没有重启任何用户 Agent/Desktop。公网 CUA visibility 仍不可用，因此这次代码推送只是已测 feature 候选，不代表公网已更新或用户最终验收。确定 owner namespace 并把当前 Agent kernel adapter 镜像纳入匹配回退包后，才能安全准备/应用公网候选；默认保留 MySQL、PVC 和现有用户数据。
+
+#### 2026-11-08 普通网页导航与登录交接策略
+
+按用户要求，Browser User 的普通 HTTP/HTTPS 导航（包括浏览中发现的普通网页）自动执行，不逐步要求用户批准；云电脑 Chrome 顶部标签/地址栏误用桌面点击时，引导回 Browser User。用户要求登录时，Agent 可无审批地导航到该任务明确请求的登录站点，并在需要登录、人机验证或其他真人步骤时交还云电脑；不得输入凭据或继续操作登录控件。网页正文点击、表单修改、键盘动作及发送、删除、购买等可能改变数据或产生外部影响的动作仍受现有审批边界约束。该实现服从用户的登录交接要求；官方说明也将审批用于敏感或有后果的动作，并要求 CAPTCHA、SSO、Passkey 等真人步骤交接（[Use the computer and apps](https://docs.x.ai/grok-bot/computer-and-apps)，[Approvals, security, and privacy](https://docs.x.ai/grok-bot/approvals-security-and-privacy)）。
+
+验证：`npm run test:runtime` 152/152、`COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:runtime-mysql` 18/18、`npx tsc --noEmit`、`npm run build:deployment` 均通过。固定测试 MySQL `13317` 和已存在的桌面镜像上，`npm run test:computer-ui-k3d` 验证第二 Chrome 标签的弹窗及全屏地址栏输入、标签切换和持续截图更新；真实 Pi/DeepSeek 的 `npm run test:gmail-request-k3d` 共 5 次模型调用，无电脑审批卡地到达 `accounts.google.com`，用户接管后完成新标签导航并把控制权交还 Agent。两项 K3D 测试创建的临时 namespace/schema 均已清理；既存用户 namespace、Pod、MySQL 与 VPS 没有修改。本候选尚未部署公网，也未合并 `main`；公网已登录 Chrome 的验收仍需由可用的可见浏览器控制完成。

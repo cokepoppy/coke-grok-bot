@@ -18,12 +18,12 @@ test('bridge refuses expired or mismatched run scopes before reading a desktop',
 test('computer action proposal failures expose only fixed diagnostic codes',async()=>{
  const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'about:blank',screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async()=>({ready:true})};
  const makeBridge=(live:boolean,propose:()=>Promise<unknown>)=>new ComputerBridge({hasLiveLease:async()=>live,markComputerUsed:async()=>true},{propose,consume:async()=>false,status:async()=>null} as any,()=>worker);
- const signal=new AbortController().signal,input={kind:'browser',action:'navigate',url:'https://example.com/'};
+ const signal=new AbortController().signal,input={kind:'desktop',action:'click',x:200,y:200};
  for(const [bridge,code] of [[makeBridge(false,async()=>null),'COMPUTER_RUN_LEASE_UNAVAILABLE'],[makeBridge(true,async()=>null),'COMPUTER_APPROVAL_RUN_UNAVAILABLE'],[makeBridge(true,async()=>{throw new Error('private database detail')}),'COMPUTER_APPROVAL_STORE_FAILED']] as const){
   await assert.rejects(bridge.propose(scope,input,signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode===code);
  }
 });
-test('only directly requested browser destinations skip computer approval',async()=>{
+test('ordinary browser navigation skips approval while page interactions remain reviewed',async()=>{
  let approvalProposals=0,performed=0,marked=0;
  const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'about:blank',screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async(input?:unknown)=>{performed++;const url=input&&typeof input==='object'?(input as {url?:unknown}).url:undefined;return {ready:true,...(typeof url==='string'?{url}:{})}}};
  const approvals={propose:async()=>{approvalProposals++;return {id:randomUUID()}},consume:async()=>false,status:async()=>null};
@@ -40,7 +40,7 @@ test('only directly requested browser destinations skip computer approval',async
  const click=await bridge.propose(scoped,{kind:'browser',action:'click',by:'text',target:'Compose'},signal);
  assert.ok('id'in click);assert.equal(approvalProposals,1);
  const otherDestination=await bridge.propose(scoped,{kind:'browser',action:'navigate',url:'https://example.com/'},signal);
- assert.ok('id'in otherDestination);assert.equal(approvalProposals,2);
+ assert.deepEqual(otherDestination,{status:'completed',result:{ready:true,url:'https://example.com/'}});assert.equal(performed,4);assert.equal(marked,4);assert.equal(approvalProposals,1,'ordinary navigation to a page discovered during the task must not create an approval');
  for(const action of [
   {kind:'desktop',action:'click',x:295,y:48},
   {kind:'desktop',action:'click',x:295,y:90},
@@ -48,13 +48,15 @@ test('only directly requested browser destinations skip computer approval',async
  ] as const){
   await assert.rejects(bridge.propose(scoped,action,signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_NAVIGATION_USE_BROWSER');
  }
- assert.equal(approvalProposals,2,'browser-chrome clicks at both observed toolbar heights and a directly requested URL must not create repetitive approval cards');
+ assert.equal(approvalProposals,1,'browser-chrome clicks at both observed toolbar heights and URL entry must not create repetitive approval cards');
  const pageClick=await bridge.propose(scoped,{kind:'desktop',action:'click',x:100,y:130},signal);
- assert.ok('id'in pageClick);assert.equal(approvalProposals,3,'a page-content click is not misclassified as address-bar navigation');
+ assert.ok('id'in pageClick);assert.equal(approvalProposals,2,'a page-content click is not misclassified as address-bar navigation');
  const enter=await bridge.propose(scoped,{kind:'desktop',action:'press',key:'Enter'},signal);
- assert.ok('id'in enter);assert.equal(approvalProposals,4,'Enter remains reviewed because it can submit a page form');
- const ordinaryDesktopClick=await bridge.propose(scope,{kind:'desktop',action:'click',x:100,y:100},signal);
- assert.ok('id'in ordinaryDesktopClick);assert.equal(approvalProposals,5,'desktop actions without a direct navigation request remain approval-gated');
+ assert.ok('id'in enter);assert.equal(approvalProposals,3,'Enter remains reviewed because it can submit a page form');
+ const ordinaryDesktopClick=await bridge.propose(scope,{kind:'desktop',action:'click',x:100,y:200},signal);
+ assert.ok('id'in ordinaryDesktopClick);assert.equal(approvalProposals,4,'a page-content click remains approval-gated even without a direct navigation scope');
+ await assert.rejects(bridge.propose(scope,{kind:'desktop',action:'click',x:100,y:90},signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_NAVIGATION_USE_BROWSER');
+ assert.equal(approvalProposals,4,'browser toolbar clicks are redirected without an approval even when the prompt did not name a URL');
 });
 test('an explicitly requested navigation does not require an approval screenshot payload',async()=>{
  let imageSnapshots=0,performed=0,approvalProposals=0;
@@ -96,6 +98,7 @@ test('sign-in handoff rejects desktop and browser interaction proposals instead 
  }
  const navigation=await bridge.propose(scoped,{kind:'browser',action:'navigate',url:'https://mail.google.com/'},signal);
  assert.deepEqual(navigation,{status:'completed',result:{ready:true,url:'https://mail.google.com/'}});
+ await assert.rejects(bridge.propose(scoped,{kind:'browser',action:'navigate',url:'https://example.test/'},signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_SIGNIN_HANDOFF_REQUIRED');
  await assert.rejects(bridge.execute(scoped,randomUUID(),{kind:'terminal',action:'run',command:'printf unsafe',directory:'task'},signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_SIGNIN_HANDOFF_REQUIRED');
  assert.equal(approvalProposals,0);assert.equal(approvalConsumes,0);assert.equal(performed,1);
 });
