@@ -1762,3 +1762,11 @@ Computer 键盘问题则是另一条漏测：旧检查未把产品 Computer 面�
 本轮经已登录公网 Chrome 只读看到最新 `Offsite crew` 六 Bot 任务仍为 4/6：Expense Manager、Talent Scout、Account Manager、Inbox Manager 完成；Sales Outbound 与 Chief 返回 `COMPUTER_SNAPSHOT_FAILED`，Chief 的截图另显示 `Desktop screenshot unavailable`。保留该失败结果，没有重发任务。Auth 最近 24 小时日志的聚合计数为 90 次 `screenshot/COMPUTER_WORKER_FAILED` 和 2 次 `COMPUTER_SNAPSHOT_FAILED`；日志没有 run ID，不能将这些计数归因于该六 Bot 群或推断出截图失败根因。当前 Auth 为 `coke-grok-auth:sha-b30aec1` revision 70，Broker 为 `sha-e18f...` revision 30；已有两套用户 Desktop/Agent 仍分别运行旧镜像。只读检查共享电脑控制状态文件发现其中一套电脑共有 9 个 Bot screen、4 个 owner=`user`，另一套 1 个 screen 且无人接管。因为仍有用户控制的桌面，不滚动或替换现有 Desktop；截图失败的独立原因尚未由该公网旧版本日志确认。
 
 GitHub 直连 DNS 仍失败，但使用单条 Git 命令的 `socks5h://127.0.0.1:7890` 成功核对远端并推送候选提交 `e89113e` 到唯一 feature 分支；远端 `main=0fab408` 未改变，未修改全局代理。公网六 Bot 4/6 且用户仍控制部分 screen，因此不合并 main、不打 release/tag。下一步是在不夺回用户控制的前提下准备有回退的定向迁移；须先确认队列无运行中任务、用户 screen 已归还，再统一 Auth/Broker/Desktop 候选并重新以已登录公网 UI 逐 Bot 验收。
+
+#### 2026-11-08 公网 Browser User 普通导航无审批回归
+
+用户明确区分了普通网页导航和登录：打开已指定网站、只读查看页面由 Bot 自行执行，不应逐步要求用户批准；到达需要用户身份验证的页面时才将云电脑交给用户，并由用户处理凭据。公网回归先暴露两个独立缺陷：导航策略的任务前缀未识别 `direct-navigation`，以及目标用户的旧 Desktop Worker 不支持 `/v1/guarded/navigation-state`，返回 404。前者以精确 HTTP(S) origin 为边界修正；后者只在该快速接口返回 404 时退回旧 Worker 已支持的 guarded snapshot/execute 流程，不扩大其他动作权限，也没有滚动用户 Agent/Desktop。
+
+源码与测试提交 `8822b49`、`6e9523b` 已推送到唯一 feature 分支 `codex/grok-bot-persistent-group-chat`。本地导航策略、旧 Worker 回退和安全错误映射测试 27/27 通过，`npm run build` 及 `VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build:deployment` 通过。只将 Auth 和 `private-secrets` init container 更新为 `coke-grok-auth:sha-6e9523be9b21c230dfb461ca4843309d7069bb33`；Auth rollout 1/1，公网页面返回 200。MySQL/PVC、Broker、Agent、Desktop、其他 Pods 和 VPS 隧道未改动。
+
+随后用已登录 Chrome 的公网 `/grok-bot/` 页面，向 `E2E Test Bot 1029` 发送唯一导航任务，要求 Browser User 打开 `https://example.com/?grok-nav-no-approval-20261108-r3` 并返回标题。可见聊天结果为 `Computer activity · Done` 和 `Navigation succeeded without an approval card. The exact page title is "Example Domain"`；没有批准卡，也没有登录、输入凭据或点击页面内容。这证明这条指定域名的公网普通导航不再要求用户逐步批准；Google 登录页的实际交接仍按登录流程由用户操作，本结果不代表 Gmail 登录已完成。
