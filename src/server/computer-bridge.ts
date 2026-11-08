@@ -27,16 +27,26 @@ export class ComputerBridge {
     let raw:URL|null=null;try{raw=new URL(candidate.url)}catch{/* Invalid destinations continue through canonical validation below. */}
     if(raw&&(raw.protocol==='https:'||raw.protocol==='http:')&&!raw.username&&!raw.password&&scope.requestedNavigationOrigins?.includes(raw.origin)){
      let navigationState;
-     try{navigationState=await worker.navigationState(signal)}catch(error){if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_SNAPSHOT_FAILED')}
-     if(navigationState.owner!=='agent')throw new SafeDiagnosticError('COMPUTER_OWNER_USER');
-     let canonical:string;try{canonical=canonicalComputerAction(input,{url:navigationState.url,screenshotSha256:'0'.repeat(64)})}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
-     const action=JSON.parse(canonical) as {kind?:unknown;action?:unknown;arguments?:{url?:unknown}};
-     if(disallowedDuringSignInHandoff(scope,action))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
-     const exactOrigin=typeof action.arguments?.url==='string'?new URL(action.arguments.url).origin:'';
-     if(exactOrigin&&scope.requestedNavigationOrigins.includes(exactOrigin)){
-      if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
-      try{const result=await worker.navigateIfUnchanged(input,navigationState,signal);await this.markUsed(scope);return {status:'completed',result}}
-      catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
+     try{navigationState=await worker.navigationState(signal)}catch(error){
+      // Older, already-running Desktop images do not expose the screenshot-free
+      // navigation endpoints. Fall through to their guarded snapshot/execute
+      // pair so an explicitly requested URL still navigates without approval.
+      if(!(error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_WORKER_HTTP_ERROR'&&error.status===404)){
+       if(error instanceof SafeDiagnosticError)throw error;
+       throw new SafeDiagnosticError('COMPUTER_SNAPSHOT_FAILED');
+      }
+     }
+     if(navigationState){
+      if(navigationState.owner!=='agent')throw new SafeDiagnosticError('COMPUTER_OWNER_USER');
+      let canonical:string;try{canonical=canonicalComputerAction(input,{url:navigationState.url,screenshotSha256:'0'.repeat(64)})}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
+      const action=JSON.parse(canonical) as {kind?:unknown;action?:unknown;arguments?:{url?:unknown}};
+      if(disallowedDuringSignInHandoff(scope,action))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
+      const exactOrigin=typeof action.arguments?.url==='string'?new URL(action.arguments.url).origin:'';
+      if(exactOrigin&&scope.requestedNavigationOrigins.includes(exactOrigin)){
+       if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
+       try{const result=await worker.navigateIfUnchanged(input,navigationState,signal);await this.markUsed(scope);return {status:'completed',result}}
+       catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
+      }
      }
     }
    }

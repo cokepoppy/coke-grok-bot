@@ -60,6 +60,14 @@ test('an explicitly requested navigation uses an atomic URL and owner check with
  const result=await bridge.propose({...scope,requestedNavigationOrigins:['https://example.org']},{kind:'browser',action:'navigate',url:'https://example.org/'},signal);
  assert.deepEqual(result,{status:'completed',result:{url:'https://example.org/'}});assert.equal(stateReads,1);assert.equal(navigations,1);assert.equal(screenReads,0);assert.equal(approvalProposals,0);assert.equal(marked,1);
 });
+test('an older guarded desktop still opens an explicitly requested URL without an approval after its fast-path endpoint returns 404',async()=>{
+ let legacySnapshots=0,legacyNavigations=0,approvalProposals=0,marked=0;
+ const worker={control:async()=>({owner:'agent' as const}),navigationState:async()=>{throw new SafeDiagnosticError('COMPUTER_WORKER_HTTP_ERROR',404)},navigateIfUnchanged:async()=>{throw new Error('unsupported endpoint must not be retried')},snapshot:async()=>{legacySnapshots++;return {owner:'agent' as const,url:'about:blank',screenshotSha256:'a'.repeat(64)}},inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async(input:unknown,expected:{owner:'agent'|'user';url:string})=>{legacyNavigations++;assert.deepEqual(input,{kind:'browser',action:'navigate',url:'https://example.org/'});assert.equal(expected.owner,'agent');assert.equal(expected.url,'about:blank');return {ready:true,url:'https://example.org/'}}};
+ const approvals={propose:async()=>{approvalProposals++;return {id:randomUUID()}},consume:async()=>false,status:async()=>null};
+ const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>{marked++;return true}},approvals,()=>worker),signal=new AbortController().signal;
+ const result=await bridge.propose({...scope,requestedNavigationOrigins:['https://example.org']},{kind:'browser',action:'navigate',url:'https://example.org/'},signal);
+ assert.deepEqual(result,{status:'completed',result:{ready:true,url:'https://example.org/'}});assert.equal(legacySnapshots,1);assert.equal(legacyNavigations,1);assert.equal(approvalProposals,0);assert.equal(marked,1);
+});
 test('sign-in handoff rejects desktop and browser interaction proposals instead of creating approval prompts',async()=>{
  let approvalProposals=0,approvalConsumes=0,performed=0;
  const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'https://example.test/',screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async(input?:unknown)=>{performed++;const url=input&&typeof input==='object'?(input as {url?:unknown}).url:undefined;return {ready:true,...(typeof url==='string'?{url}:{})}}};

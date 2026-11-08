@@ -33,6 +33,12 @@ test('guarded worker navigates through a fresh owner and URL state without trans
  const state=await worker.navigationState(signal);assert.deepEqual(state,{owner:'agent',url:'about:blank'});assert.deepEqual(await worker.navigateIfUnchanged({kind:'browser',action:'navigate',url:'https://example.org/'},state,signal),{ready:true,url:'https://example.org/'});assert.equal(calls,2);
  await assert.rejects(worker.navigateIfUnchanged({kind:'desktop',action:'click',x:1,y:1},state,signal),/Invalid computer navigation/);assert.equal(calls,2);
 });
+test('guarded worker identifies an older Desktop image without screenshot-free navigation support',async()=>{
+ const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async(request,init)=>{
+  assert.equal(new URL(String(request)).pathname,'/v1/guarded/navigation-state');assert.equal(new Headers(init?.headers).get('x-coke-grok-screen-id'),screenId);return new Response(null,{status:404});
+ });
+ await assert.rejects(worker.navigationState(signal),error=>error instanceof Error&&error.message==='COMPUTER_WORKER_HTTP_ERROR'&&(error as Error&{status?:number}).status===404);
+});
 test('guarded computer control records only safe auth and status failure codes',async()=>{
  for(const [status,code] of [[401,'COMPUTER_WORKER_AUTH_REJECTED'],[403,'COMPUTER_WORKER_FORBIDDEN'],[503,'COMPUTER_WORKER_HTTP_ERROR']] as const){
   const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>new Response('private upstream detail',{status}));

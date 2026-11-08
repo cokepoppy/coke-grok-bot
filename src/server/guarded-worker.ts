@@ -54,6 +54,7 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
  }
  async navigationState(signal:AbortSignal):Promise<ComputerNavigationState>{
   const response=await this.request(new URL('/v1/guarded/navigation-state',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
+  if(response.status===404)throw new SafeDiagnosticError('COMPUTER_WORKER_HTTP_ERROR',404);
   if(!response.ok)throw new Error('Computer navigation state unavailable');
   const value:unknown=await response.json();
   if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid computer navigation state');
