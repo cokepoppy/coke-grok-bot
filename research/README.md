@@ -4812,3 +4812,13 @@ PTS 1005800（16:45.800）右栏仍选中 `Details`，四条 Routine 和 `Meetin
 只保留三个用于对照状态的原尺寸帧：[`v1-1005800-details-before-computer-tab-20261109.png`](frames/v1-1005800-details-before-computer-tab-20261109.png)、[`v1-1005833-computer-tab-preview-20261109.png`](frames/v1-1005833-computer-tab-preview-20261109.png) 和 [`v1-1006200-computer-preview-open-hover-20261109.png`](frames/v1-1006200-computer-preview-open-hover-20261109.png)。对应源帧像素 SHA-256 依次为 `c8594a4cbf4937b64df4171ae6dfc6050895fa73a14bf0cdffea020c6bfea7c7`、`7aca091cebf319684b7ce24010ceebf701b3361913bd46c0797bbd0ae8c67789`、`c195e09f08944a17458a97803ff1d8aa847c931e08877a934e2082de1ea47e98`；PNG 文件 SHA-256 依次为 `84a78b24d5c9b379907a7f3de3a1cbf7c776c974ef3dbf1d504c404367f2cac6`、`4d86c894af1803c504c9690d1822d62bb3b082580896fdbb582efb938f3e6b96`、`f97a1065b786054ac722768c63361b6dc7f8f7c79e1c41f0b922a7f1b1d5bd93`。
 
 V1 片头连续逐帧覆盖至 16:49.966，共 30,300 帧；下一窗口从 16:50.000 开始，16:50–21:08 仍待审阅。
+
+### V1 16:50–16:54.967 Open 电脑全屏与连接过程（PTS 1010000–1014967）
+
+逐帧审阅 `research/frames/v1-1010-1015-compact-audit-20261109/` 的 150 个 1920×1080 源帧和 6 张 5×5 联系图。独立重解码核对全部 PTS、`yuv420p` 像素 SHA-256/字节数；源视频 SHA-256 和六张联系图 SHA-256 均与 manifest 一致。
+
+PTS 1010566（16:50.566）仍处于 Computer 预览，黑色 `Open` 控件可见，鼠标指针在控件附近。PTS 1010600（16:50.600）开始显示放大的电脑画面：深色背景中的白色桌面视口，中央显示圆形加载标记和 `Connecting`；顶栏出现 `Teach a task` 及展开图标。PTS 1012233（16:52.233）首次显示 Chromium 桌面，距连接状态约 1.63 秒；Google Hotels 页面搜索 `Hyatt Atlanta`，左侧为酒店结果列表，右侧为 Atlanta 地图。该电脑视图保持至 PTS 1014967（16:54.967），没有观察到新的网页操作或控制栏变化。录屏右侧讲者小窗属于演示画面，不作为产品 UI 元素。
+
+保留 Open 前预览、Connecting 状态和首次桌面画面三张原尺寸帧：[`v1-1010566-computer-preview-open-before-20261109.png`](frames/v1-1010566-computer-preview-open-before-20261109.png)、[`v1-1010600-computer-fullscreen-loading-20261109.png`](frames/v1-1010600-computer-fullscreen-loading-20261109.png)、[`v1-1012233-computer-fullscreen-first-map-frame-20261109.png`](frames/v1-1012233-computer-fullscreen-first-map-frame-20261109.png)。源帧像素 SHA-256 依次为 `00ee508445d904d05f664fe7e9edcd1c1c399d1b10c49f344c5bf4fb5f0a9e06`、`8888cb956c6671a440f282094ef7de0a5f7b6faea23eb75c7f48ec9ce8e8b444`、`4238aa0c0ef511b13e3774828a19feb8e718176275092d49e09e4f3f3b46e0af`；PNG 文件 SHA-256 依次为 `a81a0df2f75cade1d34ad5d68fd7e890456448cd6310bfdfc3b78e86ea063cd5`、`8dd7b65a4ac19aa77da65046ba704c633b7fe1c098f7e6ed6da498f3283bd34e`、`7585926f953ceeaf7d96d0d470054c2971326ddcefdaaf639828b5de8cbc248b`。
+
+V1 片头连续逐帧覆盖至 16:54.967，共 30,450 帧；下一窗口从 16:55.000 开始，16:55–21:08 仍待审阅。
