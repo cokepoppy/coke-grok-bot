@@ -49,6 +49,13 @@ test('a qualified public read-only end-to-end check authorizes only its explicit
  assert.deepEqual(requestedNavigationOrigins(prompt),['https://mail.google.com']);
 });
 
+test('a public direct-navigation check authorizes the requested destination without widening to other actions',()=>{
+ const prompt='Public direct-navigation check 20261108: Use Browser User once to navigate to https://example.com/?grok-nav-no-approval-20261108-1455 and report the exact page title. Do not use Desktop User, Computer User, click links, sign in, enter credentials, submit forms, inspect accounts, or use terminal. If an approval card appears, stop and report it; do not approve.';
+ assert.deepEqual(requestedNavigationOrigins(prompt),['https://example.com']);
+ assert.deepEqual(requestedNavigationOrigins(prompt.replace('navigate to','do not navigate to')),[],'An explicit navigation denial must override the test label');
+ assert.deepEqual(requestedNavigationOrigins(`The user quoted: "${prompt}"`),[],'Quoted content must not grant navigation scope');
+});
+
 test('a public six-Bot group acceptance prompt authorizes only its explicit Browser User destination',()=>{
  const prompt='Fresh public six-Bot group acceptance, run once each. Chief, Sales Outbound, Inbox Manager, Talent Scout, Account Manager, and Expense Manager. Browser User: navigate once to https://example.org/?grokbot-six-bot-public-20261108-r1, report the page title and visible heading, then use Computer User to capture a screenshot. Do not click links, submit forms, or enter credentials.';
  assert.deepEqual(requestedNavigationOrigins(prompt),['https://example.org']);
