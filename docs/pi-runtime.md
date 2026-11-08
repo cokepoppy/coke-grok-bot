@@ -386,3 +386,11 @@ Inbox Manager 在新组任务中保持 `Outcome unknown`，按任务要求没有
 使用固定测试 MySQL `13317` 和候选 Agent 镜像进行隔离 Pi/DeepSeek + K3D Gmail 交接 E2E，退出码 0，共 5 次模型调用：导航到 `accounts.google.com` 登录页，未创建审批卡；在产品云电脑弹窗和全屏模式完成第二 Chrome 标签导航，接管后交还 Agent，再执行免截图普通网页导航。没有输入凭据或读取邮箱。临时 namespace 与随机测试 schema 已清理。
 
 这不是公网已登录 Chrome 的 UI 验收：CUA 可读取当前 Chrome 窗口，但尝试打开公网页面时返回 `Capability is not available: visibility`。没有使用第二条 UI 自动化路径；因此公网点击、视觉对照与刷新持久化验收仍未通过，候选不合并 `main`、不打 tag。
+
+### 2026-11-09 公网普通导航与 Google 登录交接复验
+
+通过已登录 Chrome 在 `https://codex.cokeagent.com/grok-bot/` 的可见 UI 操作现有 Bot，没有调用 localhost 或应用 API 替代页面流程。先后对 `E2E Test Bot 1029` 和 `kaka` 提交只读 `Browser User` 任务，分别访问带唯一查询参数的 `https://example.com/`。两项都显示 `Computer · Done`；展开的执行记录均为 `Pi · deepseek-flash · response received`、`Browser User · navigate · succeeded`、`Browser User · inspect · succeeded`。页面标题为 `Example Domain`，该站最终规范化到 `https://example.com/` 并去掉查询参数。未见审批卡，也没有点击网页内容或提交表单。
+
+随后在 `kaka` 中通过相同公网 UI 请求 `Browser User` 打开 `https://accounts.google.com/`，到登录页时停止并交还电脑。执行记录仍只有 Pi/DeepSeek 响应以及 Browser User 的 navigate/inspect 成功；产品回复报告标题 `Sign in - Google Accounts`、最终 URL `https://accounts.google.com/v3/signin/identifier`，并明确电脑已交还用户。右侧 `kaka’s screen` 的实际 K3D 桌面截图确实显示 Google 登录表单，邮箱输入框为空。未输入凭据、未操作表单、未查看 Gmail，也未出现逐步审批卡。
+
+这轮可见公网 E2E 证明当前普通网页导航不需要用户批准，登录页之前的导航也由 Bot 自动完成，只有到登录界面才交接。早先 `kaka` 停在 `about:blank` 的失败任务作为独立历史记录保留；这次在不改代码、不滚动 Pod 的情况下，`kaka` 的普通导航和 Google 登录页导航均复现成功，因此旧失败的具体根因仍未确定，不能声称它被代码修复。此证据也不覆盖 Gmail 凭据登录、六 Bot 并发或完整产品验收；当前 feature 分支仍不合并、不打 checkpoint tag。
