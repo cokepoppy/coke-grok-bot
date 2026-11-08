@@ -1883,3 +1883,11 @@ feature 分支 `codex/grok-bot-persistent-group-chat` 的 `d76b1f559c3eebcf3525d
 #### 2026-11-08 公网 Chrome 验收控制重试
 
 复核期间 CUA 可以枚举 Chrome 扩展并创建一个空白标签；调用浏览器标签的 `goto("https://codex.cokeagent.com/grok-bot/")` 等待 30 秒后超时并重置工具会话，随后重新读取状态和绑定同一标签也各自超时。没有取得公网页面 DOM 或截图，不能判断该次导航是否实际完成，也没有把这次尝试计作 UI/E2E 验收。另以只读方式复核 K3D Auth/Broker 为 Ready、公网路由返回 HTTP 200、远端唯一 feature 分支等于本地 `0eeaa27`，`main` 仍为 `0fab408`。公网浏览器验收仍未完成，继续保留当前 feature 分支，不合并、不打 tag。
+
+#### 2026-11-08 导航审批规则的当前运行态
+
+本机复核确认 Docker、K3D `tp1121-sandbox-dev`、应用 MySQL 和公网路由均在运行。Auth 使用 `coke-grok-auth:sha-d76b1f559c3eebcf3525da6a1efeb0c718935cf2`；一个既存用户 Agent 使用同一 `d76b1f5` 源码镜像，公网 HTML 引用 `index-DaR-4V2E.js`。只读公网 HTTP 响应与镜像检查只是部署状态证据，不代表浏览器点击验收。
+
+`node --import tsx --test tests/computer-bridge.test.ts tests/computer-navigation-policy.test.ts tests/cloud-kernel-adapter-pi.test.mjs tests/dsh-computer-plugin.test.mjs` 为 35/35 通过。用户截图中的 `Desktop: click` 坐标为 `x=295,y=48`；当前代码会把 Chrome 顶栏/地址栏 Desktop 操作拒绝并引导使用 Browser User，不创建逐步审批。截图所对应运行记录的创建时间与来源尚未核实，因此不把该截图解释为当前运行状态，也不把代码用例通过说成公网行为已验收。
+
+本轮 CUA `getState()` 再次在 30 秒时限内超时；没有获取已登录公网页面的 DOM/截图或新建 UI 任务。后续仍需在受支持的可见 Chrome 控制恢复后，分别从公网真实 UI 验证普通网页导航无审批，以及到达 Google 登录页后由用户接管；在此之前保留 feature 分支，不合并、不打 checkpoint tag。
