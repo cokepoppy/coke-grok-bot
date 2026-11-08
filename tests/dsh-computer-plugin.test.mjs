@@ -112,7 +112,9 @@ test('DSH direct Gmail navigation consumes an immediate completion without creat
     assert.equal(calls.filter(call => call.path.endsWith('/computer/actions')).length, 1);
     assert.equal(calls.length, 2, 'only check control and navigate; do not create, poll, or execute an approval');
     assert.match(browser.description, /ordinary HTTP\/HTTPS webpage navigation needed for the owner’s request do not require per-step approval/i);
-    assert.match(browser.description, /navigate to the sign-in page, stop, and let the owner take control/i);
+    assert.match(browser.description, /navigate to the sign-in page, stop, and tell the owner to open the Computer screen and choose Take control/i);
+    assert.match(browser.description, /open the Computer screen and choose Take control/i);
+    assert.match(browser.description, /do not say control has already transferred/i);
   } finally {
     globalThis.fetch = oldFetch;
     if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;

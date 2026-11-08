@@ -61,6 +61,8 @@ test('Pi sends an explicit Gmail navigation and user sign-in handoff instruction
   assert.match(receivedPrompt,/https:\/\/mail\.google\.com/);
   assert.match(receivedPrompt,/Use computer_browser\.navigate/);
   assert.match(receivedPrompt,/stop at the sign-in page|stop there.*take control/i);
+  assert.match(receivedPrompt,/open the Computer screen and choose Take control/i);
+  assert.match(receivedPrompt,/do not claim control has already transferred/i);
   assert.match(receivedPrompt,/This run ends at a user sign-in handoff/i);
   assert.match(receivedPrompt,/never enter or request their credentials/i);
  }finally{await executor.close();gateway.close()}
@@ -80,6 +82,7 @@ test('Pi carries a recent same-Bot sign-in handoff into an approval follow-up wi
   assert.equal(result.status,'completed');
   assert.match(receivedPrompt,/https:\/\/accounts\.google\.com/);
   assert.match(receivedPrompt,/continues the user's recent sign-in handoff/i);
+  assert.match(receivedPrompt,/open the Computer screen and choose Take control/i);
   assert.match(receivedPrompt,/Once the sign-in or human-verification page is visible, stop/i);
   assert.match(receivedPrompt,/Do not interpret the request to avoid repeated approvals as permission to enter credentials/i);
  }finally{await executor.close();gateway.close()}
