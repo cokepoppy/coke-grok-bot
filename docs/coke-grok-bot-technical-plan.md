@@ -2121,3 +2121,7 @@ Martin Lacsamana 的讲者小窗有姿势/口型变化；紫色 `Introducing Gro
 #### 2026-11-09 官方 V1 视频逐帧续审（15:50–15:54.967）
 
 逐帧审阅 PTS 950000–954966 的 150 帧和 6 张联系图；独立重解码核对源哈希、PTS、`yuv420p` 像素哈希、字节数和联系图哈希。PTS 950800 起 `Details` 标签展示四条已开启的 Routine 及各自时间；PTS 954967 还能看到 `Meetings · DEV` 和 Google Meet/Zoom 链接输入提示。指针停在 `Kith drops watch` 行，没有观察到开关切换或 Routine 修改；聊天正文保持不变。保留 Details 两个状态的原尺寸关键帧，哈希见 `research/frames/v1-950-955-compact-audit-20261109/keyframes/manifest.json`。片头连续覆盖至 15:54.966（28,650 帧），15:55–21:08 仍待审阅；详情见 `research/README.md`。
+
+#### 2026-11-09 官方 V1 视频逐帧续审（15:55–15:59.967）
+
+逐帧审阅 PTS 955000–959966 的 150 帧和 6 张联系图；独立重解码核验源哈希、全部 PTS、`yuv420p` 像素哈希、字节数与联系图哈希。bobo 的 `Details` 面板、四条 Routine、`Meetings · DEV` 和聊天对话均保持上一段末态；没有观察到标签/开关变化、消息编辑或新的产品交互，故不增加全分辨率关键帧。片头连续覆盖至 15:59.966（28,800 帧），16:00–21:08 仍待审阅；详情见 `research/README.md`。

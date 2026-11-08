@@ -4722,3 +4722,11 @@ V1 片头连续逐帧覆盖延长至 15:49.966，共 28,500 帧；下一窗口�
 窗口开始时 Computer 面板仍显示 `Connecting`。至 PTS 950800（15:50.800），右侧已切到 `Details` 标签，显示四条开关均开启的 Routine：`Eala NYC ticket watch`（Every Monday at 8:40 AM）、`Kith drops watch`（Weekdays at 9:02 AM）、`NFL fantasy injury brief`（Every day at 8:12 AM）和 `Hawaii airfare morning`（Every day at 8:02 AM）。PTS 954967（15:54.967）同一侧栏还显示 `Meetings · DEV` 和输入提示 `Give your Bot links to join Google Meet or Zoom`。聊天内容未变；指针悬停在 `Kith drops watch` 行，没有观察到开关变化或 Routine 编辑。
 
 V1 片头连续逐帧覆盖延长至 15:54.966，共 28,650 帧；下一窗口从 15:55.000 开始，15:55–21:08 仍待审阅。
+
+### V1 15:55–15:59.967 Details 面板保持静态（PTS 955000–959966）
+
+逐帧审阅 `research/frames/v1-955-960-compact-audit-20261109/` 的 150 个 1920×1080 源帧和 6 张 5×5 联系图；独立重解码确认源视频 SHA-256、全部 PTS、`yuv420p` 像素 SHA-256、字节数和联系图 SHA-256 均与 manifest 匹配。
+
+右侧仍为 bobo 的 `Details` 面板，四条 Routine 与 `Meetings · DEV` 区域保持 15:54.967 的状态；主聊天仍显示相同的 Kith 推荐、用户价位消息和 Bot 回复。整个五秒窗口未观察到标签切换、Routine 开关变化、消息编辑或新产品交互，因此不额外保存原尺寸帧。
+
+V1 片头连续逐帧覆盖延长至 15:59.966，共 28,800 帧；下一窗口从 16:00.000 开始，16:00–21:08 仍待审阅。
