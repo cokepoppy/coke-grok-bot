@@ -1845,13 +1845,13 @@ V1 片头连续逐帧审阅范围延长至 2:29.966（4,500 帧），下一段�
 
 回归明确验证：Chrome 顶部坐标 y=48（用户截图位置）和 y=90 的点击、输入精确请求 URL 都不创建审批，正文区 y=130 的点击仍走原审批规则，Enter 仍走审批规则；Pi 与 DSH 都把桌面导航误用引导回 Browser User。本轮更新后 `npm run test:runtime` 152/152 通过，`npm run build:deployment` 通过。
 
-公网可见浏览器验收尚未完成：本机 Chrome 当前在钉钉文档；打开可见 Chrome 标签的 CUA 请求返回 `Capability is not available: visibility`；检查 Codex Work 设置的 CUA 请求又被安全策略拒绝，无法确认或更改相关设置，不能通过另一条 UI 路径绕过。只读 MySQL 查询显示当前 queued/running 任务和未过期 pending approvals 均为 0；但最近一次桌面所有权记录曾显示四块屏幕归用户控制，本轮未能通过可见 UI 刷新此状态，因此没有滚动或重启共享 Desktop Pods，也没有部署候选。工作区补丁尚未提交；之前 example.com 公网普通导航无审批的记录只证明 Browser User 直接导航路径，不能替代此补丁的公网误用兜底验收。
+公网可见浏览器验收尚未完成：本机 Chrome 当前在钉钉文档；打开可见 Chrome 标签的 CUA 请求返回 `Capability is not available: visibility`；检查 Codex Work 设置的 CUA 请求又被安全策略拒绝，无法确认或更改相关设置，不能通过另一条 UI 路径绕过。只读 MySQL 查询显示当前 queued/running 任务和未过期 pending approvals 均为 0；但最近一次桌面所有权记录曾显示四块屏幕归用户控制，本轮未能通过可见 UI 刷新此状态，因此没有滚动或重启共享 Desktop Pods，也没有部署候选。当时工作区补丁尚未提交；之前 example.com 公网普通导航无审批的记录只证明 Browser User 直接导航路径，不能替代此补丁的公网误用兜底验收。
 
 #### 2026-11-08 K3D 接管输入回归坐标校正
 
 `npm run test:gmail-handoff-k3d` 复用了固定测试 MySQL `13317` 和现有 `coke-grok-desktop:sha-e18...` 镜像，在临时隔离用户空间完成真实 DeepSeek/Pi 调用并进入云电脑接管，但总测试失败于新标签输入网址。保留截图显示 Chrome 地址栏中心约在 `y=90`，而测试按旧比例 `.13` 点击 `y=117`，落在网页区，随后把输入文本当 DuckDuckGo 搜索查询。该结果证明接管输入测试坐标错误，不能据此认定应用地址栏链路已修复。
 
-首次校正后，普通弹窗地址栏实测 y≈90（画布比例 `.1`），Gmail 直达、Pi/DeepSeek、零审批卡和弹窗内真实地址栏输入通过。全屏视口多了 XFCE 标题栏，实测 tab strip y≈75、地址栏 y≈120；测试已拆为普通弹窗地址栏 `.1`、全屏 tab strip `.083` 和全屏地址栏 `.13`。关闭源码覆盖的第三次运行通过弹窗/全屏标签操作，但最后的截图免传导航探测在旧镜像上返回 404；这是覆盖配置不匹配。使用相同固定镜像并启用测试已有的 ConfigMap 源码覆盖后，`npm run test:gmail-handoff-k3d` 全链路通过：真实 DeepSeek Pi 发起 Gmail 任务并导航到 `accounts.google.com`，审批记录和 UI 审批卡均为 0；通过产品 UI 接管 K3D noVNC，在弹窗和全屏模式各真实打开新标签并输入网址，随后交还 Agent，由 Browser User 检查接管后的页面。该轮调用 DeepSeek 9 次。`npm run test:runtime` 152/152、`npm run build:deployment` 通过。测试 namespace 和随机 MySQL schema 已清理；现有两个用户 namespace 未改动。该证据覆盖本机 K3D 全链路；公网已登录 Chrome 的可见点击验收仍受 CUA visibility 能力不可用所阻，未部署、提交或合并本补丁。
+首次校正后，普通弹窗地址栏实测 y≈90（画布比例 `.1`），Gmail 直达、Pi/DeepSeek、零审批卡和弹窗内真实地址栏输入通过。全屏视口多了 XFCE 标题栏，实测 tab strip y≈75、地址栏 y≈120；测试已拆为普通弹窗地址栏 `.1`、全屏 tab strip `.083` 和全屏地址栏 `.13`。关闭源码覆盖的第三次运行通过弹窗/全屏标签操作，但最后的截图免传导航探测在旧镜像上返回 404；这是覆盖配置不匹配。使用相同固定镜像并启用测试已有的 ConfigMap 源码覆盖后，`npm run test:gmail-handoff-k3d` 全链路通过：真实 DeepSeek Pi 发起 Gmail 任务并导航到 `accounts.google.com`，审批记录和 UI 审批卡均为 0；通过产品 UI 接管 K3D noVNC，在弹窗和全屏模式各真实打开新标签并输入网址，随后交还 Agent，由 Browser User 检查接管后的页面。该轮调用 DeepSeek 9 次。`npm run test:runtime` 152/152、`npm run build:deployment` 通过。测试 namespace 和随机 MySQL schema 已清理；现有两个用户 namespace 未改动。该证据覆盖本机 K3D 全链路；该次记录时公网已登录 Chrome 的可见点击验收仍受 CUA visibility 能力不可用所阻，补丁未部署、未提交或合并。
 
 #### 2026-11-08 Pi Gmail 交接结果格式与无审批验证
 
@@ -1859,4 +1859,10 @@ V1 片头连续逐帧审阅范围延长至 2:29.966（4,500 帧），下一段�
 
 为确保测试的是当前工作区内的 Agent 适配器而不是旧固定镜像中的旧副本，`test:gmail-handoff-k3d` / `test:gmail-request-k3d` 在临时测试 namespace 用只读 ConfigMap 覆盖 Agent Kernel adapter；不重建镜像、不新建 MySQL 容器、不改动现有用户桌面。修正后运行 `npm run test:gmail-request-k3d` 退出码 0：真实 Pi/DeepSeek 打开 Gmail 到 `accounts.google.com`，审批记录与产品 UI 审批卡均为 0，DeepSeek 共 5 次调用；随后经产品 UI 接管实际 K3D noVNC，在弹窗与网页全屏里打开并导航第二个 Chrome 标签，交还 Agent，受限的免截图导航也通过。没有登录 Google、输入凭据或读取邮箱。运行期间复用固定测试 MySQL 容器 `13317` 和现有桌面镜像；临时隔离 namespace、`grok_mediated_*` schema、端口转发及证书均已清理，结束后只保留原有两个用户 namespace，固定测试 MySQL 仍运行。
 
-源码修正后的 `npm run test:runtime` 为 152/152，`npm run build:deployment` 和 `npx tsc --noEmit` 通过。上述 K3D 交接与接管验收不是公网已登录 Chrome 的验收，也不证明这次补丁已部署；公网可见浏览器控制仍不可用，未在本轮部署、提交或合并。
+源码修正后的 `npm run test:runtime` 为 152/152，`npm run build:deployment` 和 `npx tsc --noEmit` 通过。上述 K3D 交接与接管验收不是公网已登录 Chrome 的验收，也不证明这次补丁已部署；公网可见浏览器控制仍不可用。
+
+#### 2026-11-08 feature 分支同步与发布门槛
+
+代码与回归测试已提交为 `68a59db`（`fix: skip approval for requested browser navigation`），并推送到唯一 feature 分支 `codex/grok-bot-persistent-group-chat`。推送前核对远端 feature 分支为其父提交 `c137f0b`，推送后远端 feature 指向该提交；远端 `main` 仍为 `0fab4081c2f2fbe78e73640a93e17f788b8ce8fb`。未新开分支、未合并、未打 tag。
+
+本机 K3D 测试已通过，但没有部署到公网。现有 Auth-only 发布脚本会在 rollout 前强制指定登录用户 namespace；当前 shell 没有 `COKE_GROK_USER_NAMESPACE`，K3D 中可见两个既存用户 namespace，本轮没有从用户会话或账号资料推断该部署目标，也没有重启任何用户 Agent/Desktop。公网 CUA visibility 仍不可用，因此这次代码推送只是已测 feature 候选，不代表公网已更新或用户最终验收。确定 owner namespace 并把当前 Agent kernel adapter 镜像纳入匹配回退包后，才能安全准备/应用公网候选；默认保留 MySQL、PVC 和现有用户数据。
