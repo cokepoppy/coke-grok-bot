@@ -4866,3 +4866,11 @@ PTS 1036800（17:16.800）仍显示 Google Hotels 的 Atlanta 酒店列表与地
 保留全屏电脑末帧与工作区首帧：`keyframes/source-pts-1036800-fullscreen-computer-before-return.png`、`keyframes/source-pts-1036833-workspace-with-computer-preview.png`；源像素和 PNG 哈希见该片段 `keyframes/manifest.json`。之后至 17:19.967，bobo 对话和右侧 Computer 预览保持不变，仅演讲者小窗和指针位置变化。
 
 V1 片头连续逐帧覆盖至 17:19.967，共 31,200 帧；下一窗口从 17:20.000 开始，17:20–21:08 仍待审阅。
+
+### V1 17:20–17:24.967 bobo 对话与 Computer 预览保持不变（PTS 1040000–1044966）
+
+逐帧审阅 `research/frames/v1-1040-1045-compact-audit-20261109/` 的 150 个 1920×1080 源帧和 6 张 5×5 联系图。独立重解码核对全部 PTS、`yuv420p` 像素 SHA-256/字节数、源视频 SHA-256 和六张联系图 SHA-256，均与 manifest 匹配。
+
+bobo 的 Kith 对话、左侧 Bot 列表、右侧选中的 `Computer` 页签及 Atlanta 酒店地图缩略预览保持静止；未出现新消息、任务结果或页面切换。只有讲者小窗和光标位置变化，没有需要单独保留的产品关键帧。
+
+V1 片头连续逐帧覆盖至 17:24.966，共 31,350 帧；下一窗口从 17:25.000 开始，17:25–21:08 仍待审阅。
