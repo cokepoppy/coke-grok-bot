@@ -1879,3 +1879,7 @@ feature 分支 `codex/grok-bot-persistent-group-chat` 的 `d76b1f559c3eebcf3525d
 候选 [`releases/candidate-grok-bot-navigation-handoff-d76b1f5-2026-11-08/`](../releases/candidate-grok-bot-navigation-handoff-d76b1f5-2026-11-08/) 已部署到本机 K3D 和已核对的公网 owner Agent。Auth、Agent、Broker Ready，公网路由 HTTP 200；固定测试 MySQL 上的真实 Pi/DeepSeek + K3D Gmail 交接 E2E 以 5 次模型调用通过，审批卡为 0，临时 namespace/schema 已清理。Desktop/PVC/MySQL 和另一个用户 namespace 未变。准确回退镜像和脚本见候选 manifest 与 `scripts/rollback.sh`。
 
 公网登录态 Chrome 的点击验收仍未完成：CUA 新开标签返回 `Capability is not available: visibility`。没有以 HTTP 200、Pod Ready 或本地 K3D E2E 替代公网浏览器验收，也没有改走别的浏览器控制方式。当前 feature 不合并、不打 checkpoint tag；等待受支持的可见浏览器控制后继续完成公网对话、审批卡、刷新持久化与视觉核对。
+
+#### 2026-11-08 公网 Chrome 验收控制重试
+
+复核期间 CUA 可以枚举 Chrome 扩展并创建一个空白标签；调用浏览器标签的 `goto("https://codex.cokeagent.com/grok-bot/")` 等待 30 秒后超时并重置工具会话，随后重新读取状态和绑定同一标签也各自超时。没有取得公网页面 DOM 或截图，不能判断该次导航是否实际完成，也没有把这次尝试计作 UI/E2E 验收。另以只读方式复核 K3D Auth/Broker 为 Ready、公网路由返回 HTTP 200、远端唯一 feature 分支等于本地 `0eeaa27`，`main` 仍为 `0fab408`。公网浏览器验收仍未完成，继续保留当前 feature 分支，不合并、不打 tag。
