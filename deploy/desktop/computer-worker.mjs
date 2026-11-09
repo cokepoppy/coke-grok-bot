@@ -423,6 +423,30 @@ function browserLocator(browserPage, input) {
   throw new Error('A supported browser locator type is required');
 }
 
+async function assertGmailDraftWorkflowAction(browserPage, input, action, locator) {
+  if (!input.workflowPolicy) return;
+  if (input.workflowPolicy !== 'gmail-read-draft' || new URL(browserPage.url()).origin !== 'https://mail.google.com') {
+    throw new Error('The authorized Gmail workflow is outside its allowed page scope');
+  }
+  const by = String(input.by || '');
+  const role = String(input.role || '');
+  const target = typeof input.target === 'string' ? input.target.trim() : '';
+  if (action === 'click' && by === 'role') {
+    if (role === 'link' && /^Inbox\s+\S/i.test(target)) {
+      const href = await locator.getAttribute('href');
+      if (!href) throw new Error('The Gmail inbox row has no safe destination');
+      const destination = new URL(href, browserPage.url());
+      if (destination.protocol !== 'https:' || destination.origin !== 'https://mail.google.com') {
+        throw new Error('The Gmail workflow cannot follow an external link');
+      }
+      return;
+    }
+    if ((role === 'button' || role === 'menuitem') && /^(?:Reply|More|Close|Save & close|Mark as unread)$/i.test(target)) return;
+  }
+  if (action === 'fill' && by === 'role' && role === 'textbox' && /^(?:Message Body|Reply)$/i.test(target)) return;
+  throw new Error('The Gmail workflow action is outside its authorized read-and-draft scope');
+}
+
 async function agentBrowserAction(input, screenId) {
   if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
   const action = String(input.action || '');
@@ -489,6 +513,7 @@ async function agentBrowserAction(input, screenId) {
       const count = await locator.count();
       if (count !== 1) throw new Error(`Browser target matched ${count} controls; inspect the page and choose a unique label or selector`);
       if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
+      await assertGmailDraftWorkflowAction(browserPage, input, action, locator);
       if (action === 'click') await locator.click({ timeout: 10_000 });
       else if (action === 'fill') {
         const value = String(input.value ?? '');

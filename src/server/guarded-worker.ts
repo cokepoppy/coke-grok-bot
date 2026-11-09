@@ -143,12 +143,12 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   if(!response.ok)throw new Error('Computer action was not confirmed');
   const result:unknown=await response.json();if(!result||typeof result!=='object'||(result as {ready?:unknown}).ready!==true)throw new Error('Computer action was not confirmed');
  }
- async performIfUnchanged(input:unknown,expected:ComputerState,signal:AbortSignal):Promise<unknown>{
+ async performIfUnchanged(input:unknown,expected:ComputerState,signal:AbortSignal,workflowPolicy?:'gmail-read-draft'):Promise<unknown>{
   if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Invalid computer action');
   const action=input as Record<string,unknown>;
   if('taskId' in action)throw new Error('Task identity is controlled by the server');
   let response:Response;
-  try{response=await this.request(new URL('/v1/guarded/execute',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({action:{...action,...(action.kind==='browser'?{taskId:this.taskId}:{})},expected}),signal,redirect:'error'})}
+  try{response=await this.request(new URL('/v1/guarded/execute',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({action:{...action,...(action.kind==='browser'?{taskId:this.taskId,...(workflowPolicy?{workflowPolicy}:{})}:{})},expected}),signal,redirect:'error'})}
   catch{throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED')}
   if(!response.ok)throw new SafeDiagnosticError('COMPUTER_WORKER_HTTP_ERROR',response.status);
   let value:unknown;try{value=await response.json()}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE')}

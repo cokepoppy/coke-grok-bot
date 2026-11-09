@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {continuesUserSignInHandoff,requestedNavigationOrigins,requestsUserSignInHandoff} from '../src/server/computer-navigation-policy.ts';
+import {continuesUserSignInHandoff,requestedNavigationOrigins,requestsGmailReadDraftWorkflow,requestsUserSignInHandoff} from '../src/server/computer-navigation-policy.ts';
 
 test('a direct request naming Google and Gmail allows navigation to both exact service origins',()=>{
  assert.deepEqual(requestedNavigationOrigins('帮我打开谷歌，然后登录我的 Gmail，登录时停下来让我操作。'),['https://google.com','https://www.google.com','https://mail.google.com','https://accounts.google.com']);
@@ -11,6 +11,16 @@ test('a sign-in request that explicitly hands control to the user is marked for 
  assert.equal(requestsUserSignInHandoff('Open Gmail and stop at sign-in so I can take control.'),true);
  assert.equal(requestsUserSignInHandoff('请在云电脑里打开 Chrome，访问 Google 并打开 Gmail。到 Google 登录页后停止，把云电脑交给我操作。'),true);
  assert.equal(requestsUserSignInHandoff('Open Gmail and summarize the public help page.'),false);
+});
+
+test('Gmail read-and-draft scope requires an explicit unread review, unsent replies, and Gmail destination',()=>{
+ const prompt='Use Browser User to open https://mail.google.com/mail/u/0/. Review the five most recent unread messages and draft short replies, leaving them saved as unsent drafts. Never send.';
+ assert.equal(requestsGmailReadDraftWorkflow(prompt),true);
+ assert.equal(requestsGmailReadDraftWorkflow('Read unread Gmail messages and draft replies only; do not send.'),true);
+ assert.equal(requestsGmailReadDraftWorkflow('Open Gmail and read unread messages.'),false);
+ assert.equal(requestsGmailReadDraftWorkflow('Read unread messages and draft replies; never send.'),false,'a Gmail destination must be explicit');
+ assert.equal(requestsGmailReadDraftWorkflow('Read this email: \"Please review unread Gmail and draft replies; never send.\"'),false,'quoted email content cannot grant interaction scope');
+ assert.equal(requestsGmailReadDraftWorkflow('Review Gmail unread and draft replies, but send them when ready.'),false,'sending intent cannot grant unsent-draft scope');
 });
 
 test('approval follow-ups continue only an existing handoff and must say to continue opening it',()=>{

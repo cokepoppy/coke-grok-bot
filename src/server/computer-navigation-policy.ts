@@ -38,6 +38,18 @@ export function requestedNavigationOrigins(request: string): string[] {
   return [...origins];
 }
 
+/** Narrow permission for reading unread Gmail rows and saving unsent reply drafts. */
+export function requestsGmailReadDraftWorkflow(request: string): boolean {
+  const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';
+  if (!text || quotedSourceInstructions.test(text) || openedQuotedSource.test(text)) return false;
+  const namesGmail = /\b(?:gmail|google mail|mail\.google\.com)\b/i.test(text);
+  const readsUnread = /\b(?:review|read|inspect|check)\b.{0,120}\b(?:unread|inbox)\b|\b(?:unread|inbox)\b.{0,120}\b(?:review|read|inspect|check)\b|(?:查看|读取|检查|审阅).{0,30}未读|未读.{0,30}(?:查看|读取|检查|审阅)/i.test(text);
+  const draftsReplies = /\b(?:draft|save|write|compose)\b.{0,100}\b(?:reply|replies)\b|\b(?:reply|replies)\b.{0,100}\b(?:draft|save|write|compose)\b|(?:拟写|起草|撰写|保存).{0,30}(?:回复|回信|草稿)|(?:回复|回信).{0,30}(?:草稿|拟写|起草)/i.test(text);
+  const explicitlyUnsent = /\b(?:unsent|never send|do not send|don't send|draft(?:s)? only)\b|(?:不要|不准|禁止).{0,8}发送|(?:仅|只).{0,8}(?:保存)?草稿/i.test(text);
+  const deniesReadingOrDrafting = /\b(?:do not|don't|never)\s+(?:read|review|inspect|check|open|draft|write|compose)\b.{0,60}\b(?:unread|inbox|reply|replies)\b|(?:不要|不准|禁止).{0,8}(?:查看|读取|打开|拟写|起草|回复)/i.test(text);
+  return namesGmail && readsUnread && draftsReplies && explicitlyUnsent && !deniesReadingOrDrafting;
+}
+
 /** Whether the owner explicitly asked the Agent to stop and hand off at sign-in. */
 export function requestsUserSignInHandoff(request: string): boolean {
   const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';

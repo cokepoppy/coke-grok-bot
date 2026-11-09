@@ -58,6 +58,32 @@ test('ordinary browser navigation skips approval while page interactions remain 
  await assert.rejects(bridge.propose(scope,{kind:'desktop',action:'click',x:100,y:90},signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_NAVIGATION_USE_BROWSER');
  assert.equal(approvalProposals,4,'browser toolbar clicks are redirected without an approval even when the prompt did not name a URL');
 });
+
+test('explicit Gmail read-and-draft scope auto-runs only bounded inbox and draft controls',async()=>{
+ let proposals=0,performed=0,marked=0,lastPolicy:unknown,pageUrl='https://mail.google.com/mail/u/0/#inbox';
+ const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:pageUrl,screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async(_input:unknown,_state:unknown,_signal:AbortSignal,policy?:unknown)=>{performed++;lastPolicy=policy;return {ready:true}}};
+ const approvals={propose:async()=>{proposals++;return {id:randomUUID()}},consume:async()=>false,status:async()=>null};
+ const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>{marked++;return true}},approvals,()=>worker),signal=new AbortController().signal;
+ const scoped={...scope,gmailReadDraftWorkflow:true};
+ for(const input of [
+  {kind:'browser',action:'click',by:'role',role:'link',target:'Inbox Quarterly project update'},
+  {kind:'browser',action:'click',by:'role',role:'button',target:'Reply'},
+  {kind:'browser',action:'fill',by:'role',role:'textbox',target:'Message Body',value:'Thanks for the update.'},
+  {kind:'browser',action:'click',by:'role',role:'menuitem',target:'Mark as unread'},
+ ] as const){
+  assert.deepEqual(await bridge.propose(scoped,input,signal),{status:'completed',result:{ready:true}});
+  assert.equal(lastPolicy,'gmail-read-draft');
+ }
+ assert.equal(proposals,0);assert.equal(performed,4);assert.equal(marked,4);
+ for(const [target,role] of [['Send','button'],['Delete','menuitem'],['External document','link']] as const){
+  const approval=await bridge.propose(scoped,{kind:'browser',action:'click',by:'role',role,target},signal);
+  assert.ok('id'in approval,target+' remains approval-gated');
+ }
+ assert.equal(proposals,3);
+ pageUrl='https://example.com/';
+ const otherOrigin=await bridge.propose(scoped,{kind:'browser',action:'click',by:'role',role:'button',target:'Reply'},signal);
+ assert.ok('id'in otherOrigin,'the Gmail scope does not exempt actions on another origin');assert.equal(proposals,4);
+});
 test('an explicitly requested navigation does not require an approval screenshot payload',async()=>{
  let imageSnapshots=0,performed=0,approvalProposals=0;
  const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'about:blank',screenshotSha256:'a'.repeat(64)}),snapshotWithImage:async()=>{imageSnapshots++;throw new Error('large screenshot payload')},inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async()=>{performed++;return {url:'https://example.org/'}}};
