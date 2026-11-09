@@ -2297,3 +2297,9 @@ K3D 仍运行 r3，目标 namespace 仍有两块 `owner=user` 持久屏幕；e72
 用户反馈每次发送消息后聊天区会跳回历史顶部。原实现对末尾占位元素调用 `scrollIntoView({ block: 'nearest' })`，可能同时调整聊天区以外的可滚动祖先。现改为在消息列表提交后只设置 `.message-scroll.scrollTop` 到列表底部，并关闭该列表的浏览器滚动锚定。
 
 本机浏览器 UI 验证：在 `http://127.0.0.1:5173/` 发送合成长消息后，聊天区 `scrollHeight=1932`、`clientHeight=464`、`scrollTop=1468`（底部位置），页面 `window.scrollY=0`。`npm run build` 与 `git diff --check` 通过。此为本机 UI 预览验证，修复尚未部署到公网，公网滚动行为仍待候选部署后复核。
+
+#### 2026-11-09 Auth-only 候选部署状态更新
+
+以上“尚未部署”是构建时状态。随后将 Auth-only 候选 `coke-grok-auth:sha-c09769da45bfa635f88de2d6ffb97110f783019b` 部署到 Mac K3D；Auth 现为 1/1 Ready。通过本机 `127.0.0.1:7890` 出口代理访问公网 `/grok-bot/` 返回 HTTP 200。该 rollout 只更新 Auth，没有重启 Broker、Agent 或 Desktop，也没有改变 MySQL、PVC、其他 namespace 或 VPS；预检确认 Agent 运行队列和审批队列均为 0。
+
+本候选同时加入 `BROKER_REJECTED` 的纯 HTTP 状态码诊断。部署后没有新的 Computer 请求出现在 Auth/Broker 日志中，所以实际 Broker 状态码仍未知。公网 Chrome 的 `getTab` 与后续 `getState` 控制均超时，本轮没有真实公网消息发送或可见 UI 滚动验证；不能据 HTTP 200 声称已完成公网交互验收。运行 Worker 的权限策略 SHA-256 `c6bac9c7bb9fc613c1aac620c801280ff99a0ba31892134c43f7aeda3057775c` 与源码一致，但 Gmail 审批行为仍需在可控的已登录公网 UI 中重现和核实。
