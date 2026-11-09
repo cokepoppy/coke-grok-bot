@@ -2353,4 +2353,12 @@ K3D 仍运行 r3，目标 namespace 仍有两块 `owner=user` 持久屏幕；e72
 
 逐张检查新增联系图时，22:09 段显示新建 Bot 选择器转为空会话；29:28–29:48 段从网页画面切入 Maya 的聊天与 Computer 预览，消息和回复状态继续变化；41:58–42:33 段显示 Dex/Maya 的 Bot/群组聊天和电脑预览；42:38–43:03 段继续呈现群组任务消息，Computer 画面经历空白加载并出现 Google Forms 页面。上述只记录视频可见状态，不用来证明本项目运行时或任务执行成功。
 
-V1 视频帧覆盖现已闭合至全片；本地滚动修复仍等待可见公网 Chrome 验收。浏览器控制接口本轮超时，所以没有发送公网上的测试消息；代码未提交或部署。
+截至该记录时，V1 视频帧覆盖已闭合至全片；本地滚动修复仍等待可见公网 Chrome 验收。浏览器控制接口当时超时，所以未发送公网上的测试消息；代码也尚未提交或部署。当前状态见下方部署更新。
+
+#### 2026-11-09 聊天历史滚动修复部署状态更新
+
+针对“发送消息后聊天区跳回历史顶部”，将本地修复提交 `3f79e8191457098c7f3e3dbdec7e70b9d8baaf08` 推送到当前唯一功能分支。`npm run test:ui`、`npm run build`、`npm run build:deployment` 通过；回归覆盖已有长历史、连续发送、任务卡片异步增高、用户翻阅旧消息时调整窗口，以及页面外层不滚动。会话初开保留当前历史起点；提交新消息后聊天视口跟随最新消息及 Agent 增量。
+
+候选发布目录为 `releases/candidate-grok-bot-chat-scroll-follow-3f79e81-2026-11-09`。部署前确认运行任务和未过期审批均为 0；只更新 Mac K3D 中 `coke-grok-auth` Auth 镜像至 `coke-grok-auth:sha-3f79e8191457098c7f3e3dbdec7e70b9d8baaf08`，就绪 1/1。Agent/Desktop 镜像仍为 `coke-grok-desktop:sha-2670fed3f6830a2344ac7590d5856901e190b00d`，Broker 仍为 `coke-grok-desktop-broker:sha-e18f71547116d965c5abc5db9227b74729983588`；未重启用户云电脑，未改 MySQL、PVC、其他 namespace 或 VPS。精确回退镜像为 `coke-grok-auth:sha-9501699da66338b4ad58b47d53031681147d9f7b`。
+
+公网 `/grok-bot/` 返回 HTTP 200；公网 JS（SHA-256 `16fe44e28336e90ffd609967fde837acdbd3286df0615253df12941d86a84bf4`）和 CSS（`8b4d7a818a8f9035e22260a34b8c155bc0f9d31eff37cc01b7174af4e99cade7`）与候选制品逐字节一致。最初候选校验脚本在 macOS Bash 3 的空数组处理上失败，已修正并重新通过。已登录 Chrome 能枚举到公网标签，但绑定标签的 Computer Use 调用再次超时 30 秒；因此尚无公网可见点击后的滚动位置证据，也未在公网发送测试消息。候选的部署和静态资源验证完成，但聊天滚动的公网交互验收仍待完成，尚未合并 `main` 或建立验收 tag。
