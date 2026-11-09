@@ -83,8 +83,27 @@ test('Pi grants generic Browser User scope for an unregistered app named in the 
   assert.equal(result.status,'completed');
   assert.equal(issuedScope?.browserTask,true,"the user's direct task must produce the generic Browser User capability");
   assert.deepEqual(issuedScope?.requestedNavigationOrigins,[],'an unknown service does not need a site-specific origin entry');
-  assert.match(receivedPrompt,/explicitly requested a browser task in this run/i);
+  assert.match(receivedPrompt,/directly requested a website task in this run/i);
   assert.match(receivedPrompt,/generic, short-lived user-request scope/i);
+ }finally{await executor.close();gateway.close()}
+});
+
+test('Pi recognizes an ordinary Chinese mail request as Browser User work',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const task:AgentRun={...run,prompt:'找一封最近未读的邮件，点击进去详情，然后看看，帮我拟写一个回复呀。'};
+ let issuedScope:{browserTask?:boolean}|undefined,receivedPrompt='';
+ const issue=gateway.issue.bind(gateway);gateway.issue=options=>{issuedScope=options.scope;return issue(options)};
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
+  receivedPrompt=JSON.parse(String(init?.body)).prompt;
+  return Response.json({status:'done',message:'Mail task dispatched.'});
+ });
+ try{
+  const result=await executor.execute(screen,task,new AbortController().signal,randomUUID());
+  assert.equal(result.status,'completed');
+  assert.equal(issuedScope?.browserTask,true,'natural Chinese mail instructions must receive generic task-scoped Browser User permission');
+  assert.match(receivedPrompt,/Natural-language requests to search or read email/i);
+  assert.match(receivedPrompt,/saving drafts.*do not need per-step approval/i);
+  assert.doesNotMatch(receivedPrompt,/Sending, form submission.*still require their existing approval/i);
  }finally{await executor.close();gateway.close()}
 });
 

@@ -2283,3 +2283,11 @@ K3D 仍运行 r3，目标 namespace 仍有两块 `owner=user` 持久屏幕；e72
 当前源码已在 `codex/grok-bot-persistent-group-chat` 的 `464cd70c68ea8c1853a293f6b2f6df72b478cf80` 推送提交中实现该策略，Worker 中 `browserActionRequiresApproval()` 对已授权 Browser User 任务不再按控件要求审批。源码策略文件 SHA-256 为 `c6bac9c7bb9fc613c1aac620c801280ff99a0ba31892134c43f7aeda3057775c`。本轮从该提交构建了 `releases/candidate-grok-bot-browser-task-generic-464cd70-2026-11-09`，包含 linux/arm64 Auth、共享 Agent/Desktop 镜像，dist、源码归档、部署/回退脚本及校验；OCI 包 SHA-256 为 `412d94330f33d866f65eef1fd74b6e9d900b3b278008768894a6cdadc5418b64`。部署构建与归档校验通过；45/45 定向源码回归来自该提交此前的验证记录，本轮没有重跑测试。
 
 运行中的目标用户 Agent/Desktop 仍使用 `candidate-browser-task-r3-20261109`；Worker 策略文件 SHA-256 是 `ce877c66c431fc39e1b09691a736b9b37421de9f0db38d58174b0afdbe6d440e`，与当前源码不一致。目标 namespace 此刻有 9 个持久屏幕，其中 7 个由 Agent 控制、2 个由用户接管。候选发布预检以退出码 21 按设计停止；没有导入镜像、重启服务或改变用户电脑、MySQL、PVC、其他 namespace 和 VPS。因此当前公网仍不能算已采用新策略，`is:unread` 可见 UI 流程也尚未在新候选上验收。待所有屏幕由 Agent 控制且队列空闲，再运行部署预检与公网点击验收。
+
+#### 2026-11-09 修复中文网页请求误走 Desktop 审批
+
+用户在公网 Gmail 中用自然中文要求找一封最近未读邮件并拟写回复时，UI 显示 `Approval requested · Desktop: click`。根因不是 Worker 的 Browser User 控件白名单：该 Worker 对 Browser User 任务已不逐控件审批；而是 `requestsBrowserTask()` 没识别“找一封最近未读的邮件，点击进去详情……”这种未点名 Gmail/浏览器的中文任务。服务端未授予本轮通用 Browser User scope，Agent 因而退回 `computer_desktop` 坐标点击，触发了正常的桌面审批。
+
+修复加入中文在线任务意图识别（邮件、网页、在线应用等动作），仍排除被引用的邮件指令；Pi/DSH 都明确要求自然语言网页任务走 Browser User。另加服务端兜底：当本轮已获 Browser User scope 且当前页面为 HTTP(S) 网页时，意外发出的 Computer User 坐标点击、输入和按键会直接提示改走 Browser User，不创建审批卡也不执行坐标动作。Browser User 仍使用短时任务权限；Worker 登录、密码、一次性验证码、MFA 和 CAPTCHA 交接保持有效。
+
+回归证据：ComputerBridge、意图分类、PiExecutor、Worker 合计 52/52 通过；DSH 插件、Pi/DSH 运行时适配测试合计 18/18 通过；`git diff --check` 通过。测试覆盖用户截图中的中文原句、普通中文在线应用任务、邮件正文引述防护、网页任务中的误选 Desktop click/type/Enter 不再创建审批，以及登录/验证码仍交接。代码已在当前单一 feature 分支修改，公网服务尚未部署这次新修复，也还没有用 Chrome 完成修复后的 Gmail 网页端到端验收。

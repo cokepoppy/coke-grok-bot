@@ -3,9 +3,15 @@ const groupAcceptanceNavigationRequest = /^\s*(?:fresh\s+)?(?:(?:public|read[- ]
 const deniedNavigationVerbs = /\b(?:do\s+not|don't|never|avoid)\s+(?:open|navigate|visit|load|access)|不要(?:打开|访问|进入|导航)|禁止(?:打开|访问|进入)/i;
 const quotedSourceInstructions = /^\s*(?:(?:please|help me|can you)\s+)?(?:read|inspect|check|open)\s+(?:this|the)\s+(?:email|message|webpage|page|file|document|attachment)\b[^\n]{0,120}\b(?:says|contains|instructions?|写着|内容|要求)/i;
 const openedQuotedSource = /^\s*(?:(?:please|help me|can you)\s+)?(?:read|inspect|check|open)\s+(?:this|the)\s+(?:email|message|webpage|page|file|document|attachment|邮件|消息|网页|页面|文件|文档|附件)\b[^\n]{0,120}[:：“”"']/i;
+const quotedChineseSourceInstructions = /^\s*(?:请)?(?:打开|查看|读取|检查)(?:这封|这个|该)?(?:邮件|消息|网页|页面|文件|文档|附件)[^\n]{0,100}(?:里面写着|内容是|要求|指示|说[:：])/iu;
 const urlPattern = /https?:\/\/[^\s<>"'`()，。；]+/gi;
 
 const directBrowserTaskRequest = /(?:\b(?:use|through|via|in)\s+(?:the\s+)?(?:web\s+)?browser\b[\s\S]{0,180}\b(?:open|navigate|visit|search|read|review|inspect|check|browse|click|fill|complete|manage|draft|compose|reply)\b|\b(?:open|navigate(?:\s+to)?|visit|search|read|review|inspect|check|browse|click|fill|complete|manage|draft|compose|reply)\b[\s\S]{0,160}\b(?:website|webpage|web\s+page|browser|site|online|inbox|mailbox|email|e-mail|mail|gmail|calendar|drive|portal|dashboard|application|app|service|system|platform|form|account|page|url)\b|\b(?:website|webpage|web\s+page|browser|site|online|inbox|mailbox|email|e-mail|mail|gmail|calendar|drive|portal|dashboard|application|app|service|system|platform|form|account|page|url)\b[\s\S]{0,160}\b(?:open|navigate|visit|search|read|review|inspect|check|browse|click|fill|complete|manage|draft|compose|reply)\b|(?:使用|通过|在).{0,24}(?:浏览器|网页|网站|云电脑).{0,180}(?:打开|访问|浏览|导航|搜索|查找|阅读|查看|检查|点击|填写|完成|操作|拟写|起草|回复)|(?:打开|访问|浏览|搜索|查找|阅读|查看|检查|操作|拟写|起草|回复).{0,120}(?:网页|网站|浏览器|邮箱|收件箱|邮件|Gmail|谷歌邮箱|在线页面|日历|网盘|门户|后台|系统|平台|应用|工作区|表单)|(?:在|用|通过).{0,24}[\p{L}\p{N}][\p{L}\p{N}._-]{1,60}(?:里|中|上|系统|平台|应用|工作区|网页|网站|邮箱|收件箱)?[\s\S]{0,100}(?:打开|访问|浏览|导航|搜索|查找|阅读|查看|检查|操作|拟写|起草|回复|填写|管理))/iu;
+// Chinese users commonly describe the outcome rather than naming a browser or
+// site (for example, "找一封最近未读的邮件，点击进去看看"). Treat a direct
+// request about online content as Browser User work so the model gets the same
+// short-lived task capability as an English "search Gmail" request.
+const directChineseBrowserTaskRequest = /(?:(?:打开|访问|浏览|导航到|搜索|查找|找|阅读|读取|查看|检查|点击|点开|进入|填写|选择|提交|管理|操作|拟写|起草|撰写|回复|筛选).{0,120}(?:网页|网站|浏览器|邮箱|收件箱|未读邮件|邮件|Gmail|谷歌邮箱|日历|网盘|云盘|门户|后台|系统|平台|应用|工作区|表单|工单|在线页面|页面)|(?:网页|网站|浏览器|邮箱|收件箱|未读邮件|邮件|Gmail|谷歌邮箱|日历|网盘|云盘|门户|后台|系统|平台|应用|工作区|表单|工单|在线页面|页面).{0,120}(?:打开|访问|浏览|导航|搜索|查找|找|阅读|读取|查看|检查|点击|点开|进入|填写|选择|提交|管理|操作|拟写|起草|撰写|回复|筛选))/iu;
 const genericBrowserTaskPatterns = [
   /\b(?:open|go\s+to|navigate(?:\s+to)?|visit|load|access|launch)\s+(?:my\s+|the\s+)?(?<destination>[\p{L}\p{N}][\p{L}\p{N}._-]{1,60})\b/iu,
   /\b(?:search|find|look\s+up|check|review|read|view|inspect|browse|manage)\b[\s\S]{0,80}\b(?:in|on|at|from|using|via)\s+(?:my\s+|the\s+)?(?<destination>[\p{L}\p{N}][\p{L}\p{N}._-]{1,60})\b/iu,
@@ -38,12 +44,12 @@ function namesUnregisteredBrowserDestination(text:string):boolean{
  */
 export function requestsBrowserTask(request: string): boolean {
   const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';
-  if (!text || deniesBrowserTask.test(text) || quotedSourceInstructions.test(text) || openedQuotedSource.test(text)) return false;
+  if (!text || deniesBrowserTask.test(text) || quotedSourceInstructions.test(text) || openedQuotedSource.test(text) || quotedChineseSourceInstructions.test(text)) return false;
   // Explicit destinations (including arbitrary URLs and named services) and
   // plain-language mail/site tasks all use the same per-run browser scope.
   // Gmail's specialized read/draft policy is an additional task instruction,
   // not a prerequisite for using ordinary browser controls.
-  return directBrowserTaskRequest.test(text) || namesUnregisteredBrowserDestination(text) || requestedNavigationOrigins(text).length > 0;
+  return directBrowserTaskRequest.test(text) || directChineseBrowserTaskRequest.test(text) || namesUnregisteredBrowserDestination(text) || requestedNavigationOrigins(text).length > 0;
 }
 
 /**

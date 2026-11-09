@@ -111,7 +111,9 @@ test('DSH direct Gmail navigation consumes an immediate completion without creat
     assert.deepEqual(JSON.parse(value.text), destination);
     assert.equal(calls.filter(call => call.path.endsWith('/computer/actions')).length, 1);
     assert.equal(calls.length, 2, 'only check control and navigate; do not create, poll, or execute an approval');
-    assert.match(browser.description, /navigation and page interactions needed for that exact task on any site without per-step approval/i);
+    assert.match(browser.description, /needed navigation and page controls without per-step approval on any site/i);
+    assert.match(browser.description, /Natural-language requests to search or read email/i);
+    assert.match(browser.description, /page controls without per-step approval/i);
     assert.match(browser.description, /If sign-in or human verification appears, stop and tell the owner to open the Computer screen and choose Take control/i);
     assert.match(browser.description, /open the Computer screen and choose Take control/i);
     assert.match(browser.description, /Do not claim control has transferred/i);
@@ -160,10 +162,11 @@ test('DSH routes mistaken desktop navigation to Browser User without showing an 
   };
   try {
     const { tools } = mount(), desktop = tools.get('computer_desktop');
-    await assert.rejects(desktop.execute({ action: 'click', x: 295, y: 90 }, { signal: new AbortController().signal }), /not executed and no approval was requested.*computer_browser\.navigate/i);
+    await assert.rejects(desktop.execute({ action: 'click', x: 295, y: 90 }, { signal: new AbortController().signal }), /browser action.*no approval was requested.*Use computer_browser for navigation and page interactions/i);
     assert.equal(calls.filter(call => call.path.endsWith('/computer/actions')).length, 1);
     assert.equal(calls.length, 1, 'receive the navigation directive without polling or executing an approval');
-    assert.match(desktop.description, /desktop input is attempted for browser navigation.*without creating an approval card/i);
+    assert.match(desktop.description, /use computer_browser even when the user describes the outcome in natural language/i);
+    assert.match(desktop.description, /Do not use desktop coordinates for web page controls/i);
   } finally {
     globalThis.fetch = oldFetch;
     if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;

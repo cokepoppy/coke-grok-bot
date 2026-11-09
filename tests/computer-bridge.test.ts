@@ -88,6 +88,21 @@ test('explicit browser task scope runs all requested page controls across sites 
  assert.deepEqual(crossSitePageClick,{status:'completed',result:{ready:true}},'the same run-scoped browser permission follows the user task across origins');
  assert.equal(proposals,0,'a direct, run-scoped browser task does not create approval cards for site controls');
 });
+test('a direct browser task never creates a desktop approval for a click inside the active webpage',async()=>{
+ let proposals=0,performed=0;
+ const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'https://mail.google.com/mail/u/0/#inbox',screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async()=>{performed++;return {ready:true}}};
+ const approvals={propose:async()=>{proposals++;return {id:randomUUID()}},consume:async()=>false,status:async()=>null};
+ const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>true},approvals,()=>worker),signal=new AbortController().signal;
+ for(const input of [
+  {kind:'desktop',action:'click',x:682,y:340},
+  {kind:'desktop',action:'type',text:'is:unread'},
+  {kind:'desktop',action:'press',key:'Enter'},
+ ] as const){
+  await assert.rejects(bridge.propose({...scope,browserTask:true},input,signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_NAVIGATION_USE_BROWSER');
+ }
+ assert.equal(proposals,0,'route webpage interactions to Browser User rather than opening an approval card');
+ assert.equal(performed,0,'coordinate based page actions are never executed through Computer User during a browser task');
+});
 
 test('an outdated Worker approval response fails safely instead of producing a per-control approval card',async()=>{
  let proposals=0;

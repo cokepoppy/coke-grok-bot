@@ -22,6 +22,13 @@ function isDesktopBrowserNavigationAttempt(action:{kind?:unknown;action?:unknown
  }
  return false;
 }
+function isDesktopBrowserPageInteraction(scope:RunScope,action:{kind?:unknown;action?:unknown},state:ComputerState):boolean{
+ if(scope.browserTask!==true||action.kind!=='desktop'||!['click','type','press'].includes(String(action.action)))return false;
+ try{
+  const url=new URL(state.url);
+  return url.protocol==='http:'||url.protocol==='https:';
+ }catch{return false}
+}
 /** Only the authenticated, live run capability may call these methods. */
 export class ComputerBridge {
  constructor(private readonly runs:Pick<RunStore,'hasLiveLease'|'markComputerUsed'>,private readonly approvals:Pick<ApprovalStore,'propose'|'consume'|'status'>,private readonly worker:(scope:RunScope)=>ComputerReadWorker){}
@@ -75,7 +82,7 @@ export class ComputerBridge {
   let action:string;try{action=canonicalComputerAction(input,state)}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
   const canonical=JSON.parse(action) as {kind?:unknown;action?:unknown;arguments?:Record<string,unknown>};
   if(disallowedDuringSignInHandoff(scope,canonical))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
-  if(isDesktopBrowserNavigationAttempt(canonical))throw new SafeDiagnosticError('COMPUTER_NAVIGATION_USE_BROWSER');
+  if(isDesktopBrowserNavigationAttempt(canonical)||isDesktopBrowserPageInteraction(scope,canonical,state))throw new SafeDiagnosticError('COMPUTER_NAVIGATION_USE_BROWSER');
   if(canonical.kind==='browser'&&canonical.action==='navigate'&&typeof canonical.arguments?.url==='string'){
    if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
    try{

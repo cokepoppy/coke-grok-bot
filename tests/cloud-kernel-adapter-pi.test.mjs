@@ -107,10 +107,11 @@ test('Pi redirects a desktop attempt to open a requested website to Browser User
  try{
   await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:token},prompt:'Open https://example.org/ and report its title.',signal:new AbortController().signal},{piSdk:sdk});
   const desktop=options.customTools.find(tool=>tool.name==='computer_desktop');assert.ok(desktop);
-  await assert.rejects(()=>desktop.execute('desktop-address-bar-click',{action:'click',x:295,y:90},new AbortController().signal),/not executed and no approval was requested.*computer_browser\.navigate/i);
+  await assert.rejects(()=>desktop.execute('desktop-address-bar-click',{action:'click',x:295,y:90},new AbortController().signal),/browser action.*no approval was requested.*computer_browser for navigation and page interactions/i);
   assert.equal(requests.filter(request=>request.pathname==='/v1/computer/actions').length,1);
   assert.equal(requests.length,2,'no approval status poll or execute call follows the navigation directive');
-  assert.match(desktop.promptGuidelines.join(' '),/do not require per-step approval across websites/i);
+  assert.match(desktop.promptGuidelines.join(' '),/Natural-language requests to search or read email.*count as browser tasks/i);
+  assert.match(desktop.promptGuidelines.join(' '),/never use desktop coordinates for webpage controls during a browser task/i);
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });
 
