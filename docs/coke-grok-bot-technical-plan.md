@@ -35,6 +35,8 @@
 
 2026-11-09 后续复核：本机 K3D 中 `coke-grok-auth:sha-a37d2ad` 为 1/1 Ready；只读检查运行中 Auth bundle，确认含 Desktop 导航误路由拦截和登录交接约束。当前抽查的 Agent Pod 使用 `coke-grok-desktop:sha-d76b1f559c3eebcf3525da6a1efeb0c718935cf2`，其适配器和 DSH 插件包含“普通导航未执行 Desktop 点击、未创建审批，改用 Browser User”的错误恢复指引。本轮导航策略、ComputerBridge、DSH 插件回归 30/30 通过。用户截图中的 `Desktop: click` 坐标 `(295, 48)` 落在当前导航栏误路由拦截范围内；若由已核对的 Auth/Agent 路径处理，ComputerBridge 会在创建审批前拒绝该 Desktop 动作，DSH 再收到改用 `computer_browser.navigate` 的指引。截图所示旧任务具体使用的镜像和审批记录尚未映射，不能据此判定它是旧记录或已由公网重新验收。本轮 Codex 浏览器控制入口再次在 30 秒超时，未完成新的已登录公网可见点击复测；因此目前证据证明的是当前 K3D 代码/镜像与回归行为，不证明截图对应任务已消除或公网新任务已通过。登录页到达后的提示仍须以真实公网任务观察，`Bot is in control` 也不等于已转交用户。
 
+2026-11-09 本轮本机 K3D 验收补充：固定 Desktop 镜像 `coke-grok-desktop:sha-e18f71547116d965c5abc5db9227b74729983588` 的 Computer UI 测试通过；用户在 noVNC 接管界面中切换 Chrome 标签、在地址栏输入 URL，分别覆盖弹窗和全屏模式，期间完成 22 次截图轮询，归还后聊天输入框恢复。真实 DeepSeek Pi + K3D 的 Gmail 登录交接测试也通过（16 次模型调用）：普通网页打开/导航由 Bot 直接执行、无审批卡；到达 Google 身份验证后停止并交给用户，未处理凭据；用户通过嵌入式 noVNC 浏览器接管并导航、归还后，Browser User 检查及快速导航路径均成功。ComputerBridge 与导航策略定向测试 21/21 通过。测试使用临时 K3D 命名空间和随机 MySQL schema，结束后已删除；复用固定测试 MySQL/端口，没有额外建服务容器。测试隔离修正已推送至功能分支提交 `e4ad1f41723ecbcc9c31e2e3fc3c054865ee156a`。这是本机 K3D 运行证据，不是本轮公网可见 Chrome 验收；Codex 浏览器控制入口再次超时，故公网端到端状态仍待可见浏览器复测。
+
 重要架构区别：官方的电脑按**用户**而不是 Bot 归属；同一用户的多个屏幕不是安全隔离边界。Coke Dots 现有云电脑主要按租户工作区隔离，不能不经改造就把两者当成同一个模型。我们会保留租户权限边界，在租户内把个人电脑绑定到具体用户；个人 Bot 共用该用户电脑。团队共享 Bot 另建权限模型，不能默认继承个人浏览器登录态。
 
 ### 证据目录与状态
