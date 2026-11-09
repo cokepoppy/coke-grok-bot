@@ -9,6 +9,7 @@
 !deploy/desktop/dsh-handoff-plugin.mjs
 !deploy/desktop/dsh-routine-plugin.mjs
 !deploy/desktop/computer-worker.mjs
+!deploy/desktop/browser-task-policy.mjs
 !deploy/desktop/bot-screen-pages.mjs
 !deploy/desktop/desktop-screen-layout.mjs
 !deploy/desktop/desktop-input.mjs

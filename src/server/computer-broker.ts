@@ -9,7 +9,7 @@ export interface GuardedComputerWorker {
  snapshotWithImage?(signal:AbortSignal):Promise<{state:ComputerState;image:Buffer}>;
  navigationState?(signal:AbortSignal):Promise<ComputerNavigationState>;
  navigateIfUnchanged?(input:unknown,expected:ComputerNavigationState,signal:AbortSignal):Promise<unknown>;
- performIfUnchanged(input:unknown,expected:ComputerState,signal:AbortSignal,workflowPolicy?:'gmail-read-draft'):Promise<unknown>;
+ performIfUnchanged(input:unknown,expected:ComputerState,signal:AbortSignal,workflowPolicy?:'browser-task'|'gmail-read-draft'):Promise<unknown>;
 }
 /**
  * The server, not the model, builds the approval from the exact operation and

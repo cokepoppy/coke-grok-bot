@@ -13,6 +13,7 @@ import { createDesktopScreenLayout, parseDesktopScreenSlots } from './desktop-sc
 import { captureOwnedDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from './desktop-input.mjs';
 import { ensureSharedComputerRoots } from './shared-computer-root.mjs';
 import { createGuardedComputer } from '/opt/coke-grok/guarded-computer.mjs';
+import { browserActionRequiresApproval, isAuthenticationChallenge, isCredentialEntry } from './browser-task-policy.mjs';
 
 const exec = promisify(execFile);
 const token = String(process.env.LINUX_DESKTOP_WORKER_TOKEN || '');
@@ -423,28 +424,51 @@ function browserLocator(browserPage, input) {
   throw new Error('A supported browser locator type is required');
 }
 
-async function assertGmailDraftWorkflowAction(browserPage, input, action, locator) {
+function browserTaskPolicyError(code) {
+  const error = new Error('Browser action requires a protected decision');
+  error.code = code;
+  return error;
+}
+
+async function assertBrowserTaskAction(browserPage, input, action, locator) {
   if (!input.workflowPolicy) return;
-  if (input.workflowPolicy !== 'gmail-read-draft' || new URL(browserPage.url()).origin !== 'https://mail.google.com') {
-    throw new Error('The authorized Gmail workflow is outside its allowed page scope');
-  }
-  const by = String(input.by || '');
-  const role = String(input.role || '');
-  const target = typeof input.target === 'string' ? input.target.trim() : '';
-  if (action === 'click' && by === 'role') {
-    if (role === 'link' && /^Inbox\s+\S/i.test(target)) {
-      const href = await locator.getAttribute('href');
-      if (!href) throw new Error('The Gmail inbox row has no safe destination');
-      const destination = new URL(href, browserPage.url());
-      if (destination.protocol !== 'https:' || destination.origin !== 'https://mail.google.com') {
-        throw new Error('The Gmail workflow cannot follow an external link');
-      }
-      return;
-    }
-    if ((role === 'button' || role === 'menuitem') && /^(?:Reply|More|Close|Save & close|Mark as unread)$/i.test(target)) return;
-  }
-  if (action === 'fill' && by === 'role' && role === 'textbox' && /^(?:Message Body|Reply)$/i.test(target)) return;
-  throw new Error('The Gmail workflow action is outside its authorized read-and-draft scope');
+  if (input.workflowPolicy !== 'browser-task') throw new Error('Unsupported browser task policy');
+  const pageState = await browserPage.evaluate(() => {
+    const visible = element => {
+      const style = getComputedStyle(element), rect = element.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const controls = Array.from(document.querySelectorAll('input,textarea,select,[role="textbox"],[role="searchbox"]')).filter(visible).slice(0, 80).map(element => {
+      const labels = Array.from(element.labels || []).map(label => label.innerText).filter(Boolean);
+      return {
+        type: element.getAttribute('type') || (element.tagName.toLowerCase() === 'input' ? 'text' : element.tagName.toLowerCase()),
+        name: element.getAttribute('name') || '', autocomplete: element.getAttribute('autocomplete') || '',
+        ariaLabel: element.getAttribute('aria-label') || '', label: labels.join(' ').trim(),
+        placeholder: element.getAttribute('placeholder') || '',
+      };
+    });
+    const humanChallenge = Array.from(document.querySelectorAll('iframe,[title],[aria-label]')).some(element => {
+      if (!visible(element)) return false;
+      const descriptor = `${element.getAttribute('src') || ''} ${element.getAttribute('title') || ''} ${element.getAttribute('aria-label') || ''}`;
+      return /captcha|recaptcha|prove you(?:'|’)re human|human verification/i.test(descriptor);
+    });
+    return { title: document.title.slice(0, 200), text: (document.body?.innerText || '').slice(0, 1200), controls, humanChallenge };
+  });
+  if (isAuthenticationChallenge({ url: browserPage.url(), ...pageState })) throw browserTaskPolicyError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
+  const control = await locator.evaluate(element => {
+    const labels = Array.from(element.labels || []).map(label => label.innerText).filter(Boolean);
+    const tag = element.tagName.toLowerCase();
+    return {
+      type: ['input','button'].includes(tag) ? element.type : tag,
+      role: element.getAttribute('role') || '', name: element.getAttribute('name') || '',
+      autocomplete: element.getAttribute('autocomplete') || '', ariaLabel: element.getAttribute('aria-label') || '',
+      label: labels.join(' ').trim(), placeholder: element.getAttribute('placeholder') || '',
+      title: element.getAttribute('title') || '', text: element.innerText || element.textContent || '',
+      href: element.getAttribute('href') || '',
+    };
+  });
+  if (isCredentialEntry({ input, control })) throw browserTaskPolicyError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
+  if (browserActionRequiresApproval({ action, input, control })) throw browserTaskPolicyError('COMPUTER_ACTION_REQUIRES_APPROVAL');
 }
 
 async function agentBrowserAction(input, screenId) {
@@ -513,7 +537,7 @@ async function agentBrowserAction(input, screenId) {
       const count = await locator.count();
       if (count !== 1) throw new Error(`Browser target matched ${count} controls; inspect the page and choose a unique label or selector`);
       if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
-      await assertGmailDraftWorkflowAction(browserPage, input, action, locator);
+      await assertBrowserTaskAction(browserPage, input, action, locator);
       if (action === 'click') await locator.click({ timeout: 10_000 });
       else if (action === 'fill') {
         const value = String(input.value ?? '');
@@ -673,6 +697,11 @@ http.createServer(async (req, res) => {
     return send(res, 404, { error: 'not found' });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'computer command failed';
+    if (error && typeof error === 'object' && ['COMPUTER_SIGNIN_HANDOFF_REQUIRED','COMPUTER_ACTION_REQUIRES_APPROVAL'].includes(error.code)) {
+      const code = error.code;
+      const safeMessage = code === 'COMPUTER_SIGNIN_HANDOFF_REQUIRED' ? 'Human sign-in or verification is required' : 'This browser control requires owner approval';
+      return send(res, 403, { code, error: safeMessage });
+    }
     const contextUnavailable = error instanceof BrowserContextNotReadyError;
     const rendererUnresponsive = error instanceof RendererUnresponsiveError;
     const screenCapacity = error instanceof BotScreenCapacityError;

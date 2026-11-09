@@ -5,6 +5,21 @@ const quotedSourceInstructions = /^\s*(?:(?:please|help me|can you)\s+)?(?:read|
 const openedQuotedSource = /^\s*(?:(?:please|help me|can you)\s+)?(?:read|inspect|check|open)\s+(?:this|the)\s+(?:email|message|webpage|page|file|document|attachment|邮件|消息|网页|页面|文件|文档|附件)\b[^\n]{0,120}[:：“”"']/i;
 const urlPattern = /https?:\/\/[^\s<>"'`()，。；]+/gi;
 
+const directBrowserTaskRequest = /(?:\b(?:use|through|via|in)\s+(?:the\s+)?(?:web\s+)?browser\b[\s\S]{0,180}\b(?:open|navigate|visit|search|read|review|inspect|check|browse|click|fill|complete|manage)\b|\b(?:open|navigate(?:\s+to)?|visit|search|read|review|inspect|check|browse|click|fill|complete|manage)\b[\s\S]{0,140}\b(?:website|webpage|web\s+page|browser|site|online|inbox|mailbox)\b|(?:使用|通过|在).{0,24}(?:浏览器|网页|网站|云电脑).{0,180}(?:打开|访问|浏览|导航|搜索|查找|阅读|查看|检查|点击|填写|完成|操作)|(?:打开|访问|浏览|搜索|查找|阅读|查看|检查|操作).{0,100}(?:网页|网站|浏览器|邮箱|收件箱|在线页面))/i;
+const deniesBrowserTask = /\b(?:do\s+not|don't|never|avoid)\s+(?:use|open|navigate|browse)\s+(?:the\s+)?(?:web\s+)?browser\b|(?:不要|不准|禁止).{0,5}(?:使用|用|打开|访问|浏览|操作)(?:云电脑(?:里的|中的|上)?|网页)?浏览器/i;
+
+/**
+ * A short-lived permission derived only from the signed-in user's current
+ * request. It authorizes ordinary Browser User interactions on any site;
+ * the desktop Worker still blocks credential entry and routes consequential
+ * controls through the existing approval flow.
+ */
+export function requestsBrowserTask(request: string): boolean {
+  const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';
+  if (!text || deniesBrowserTask.test(text) || quotedSourceInstructions.test(text) || openedQuotedSource.test(text)) return false;
+  return directBrowserTaskRequest.test(text) || requestsGmailReadDraftWorkflow(text);
+}
+
 /**
  * Narrow, run-scoped destinations directly requested by the signed-in user.
  * This is only used to skip a repetitive approval for browser navigation;
@@ -45,8 +60,8 @@ export function requestsGmailReadDraftWorkflow(request: string): boolean {
   const namesGmail = /\b(?:gmail|google mail|mail\.google\.com)\b/i.test(text);
   const readsUnread = /\b(?:review|read|inspect|check)\b.{0,120}\b(?:unread|inbox)\b|\b(?:unread|inbox)\b.{0,120}\b(?:review|read|inspect|check)\b|(?:查看|读取|检查|审阅).{0,30}未读|未读.{0,30}(?:查看|读取|检查|审阅)/i.test(text);
   const draftsReplies = /\b(?:draft|save|write|compose)\b.{0,100}\b(?:reply|replies)\b|\b(?:reply|replies)\b.{0,100}\b(?:draft|save|write|compose)\b|(?:拟写|起草|撰写|保存).{0,30}(?:回复|回信|草稿)|(?:回复|回信).{0,30}(?:草稿|拟写|起草)/i.test(text);
-  const explicitlyUnsent = /\b(?:unsent|never send|do not send|don't send|draft(?:s)? only)\b|(?:不要|不准|禁止).{0,8}发送|(?:仅|只).{0,8}(?:保存)?草稿/i.test(text);
-  const deniesReadingOrDrafting = /\b(?:do not|don't|never)\s+(?:read|review|inspect|check|open|draft|write|compose)\b.{0,60}\b(?:unread|inbox|reply|replies)\b|(?:不要|不准|禁止).{0,8}(?:查看|读取|打开|拟写|起草|回复)/i.test(text);
+  const explicitlyUnsent = /\b(?:unsent|never send|do not send|don't send|draft(?:s)? only)\b|(?:不要|不准|禁止|绝不).{0,8}发送|(?:仅|只).{0,8}(?:保存)?草稿/i.test(text);
+  const deniesReadingOrDrafting = /\b(?:do not|don't|never)\s+(?:read|review|inspect|check|open|draft|write|compose)\b.{0,60}\b(?:unread|inbox|reply|replies)\b|(?:不要|不准|禁止).{0,8}(?:查看|读取|检查|审阅|打开).{0,16}(?:未读|收件箱|所有邮件|全部邮件|任何邮件|gmail|回复|回信)|(?:不要|不准|禁止).{0,8}(?:拟写|起草|撰写|草拟).{0,16}(?:回复|回信|草稿)|(?:不要|不准|禁止).{0,8}(?:回复|回信)(?:任何|所有|全部)?(?:邮件|消息|草稿)?/i.test(text);
   return namesGmail && readsUnread && draftsReplies && explicitlyUnsent && !deniesReadingOrDrafting;
 }
 
@@ -54,7 +69,7 @@ export function requestsGmailReadDraftWorkflow(request: string): boolean {
 export function requestsUserSignInHandoff(request: string): boolean {
   const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';
   if (!text) return false;
-  const chinese = /(?:登录|登陆).{0,60}(?:停下来|暂停|停止|让我(?:去)?(?:操作|登录|接管)|由我(?:操作|登录|接管)|我来(?:操作|登录|接管)|(?:把)?(?:云电脑|电脑|浏览器|控制权).{0,20}(?:交给|留给)我.{0,20}(?:操作|登录|接管)?)|(?:停下来|暂停|停止).{0,40}(?:让我|由我|我来).{0,20}(?:登录|登陆|操作|接管)/i;
+  const chinese = /(?:登录|登陆).{0,60}(?:停下(?:来)?|暂停|停止|让我(?:去)?(?:操作|登录|接管)|由我(?:操作|登录|接管)|我来(?:操作|登录|接管)|(?:把)?(?:云电脑|电脑|浏览器|控制权).{0,20}(?:交给|留给)我.{0,20}(?:操作|登录|接管)?)|(?:停下(?:来)?|暂停|停止).{0,40}(?:让我|由我|我来).{0,20}(?:登录|登陆|操作|接管)/i;
   const english = /(?:\b(?:stop|pause|wait)\b.{0,60}\b(?:until|while|for)\s+(?:i|me|the user)\b.{0,30}\b(?:sign[ -]?in|log[ -]?in|take control)\b|\b(?:let|allow)\s+me\b.{0,40}\b(?:sign[ -]?in|log[ -]?in|take control)\b|\b(?:sign[ -]?in|log[ -]?in)\b.{0,50}\b(?:i(?:'ll| will)|let me|user can|take control)\b)/i;
   return chinese.test(text) || english.test(text);
 }

@@ -8,6 +8,8 @@ const workerDiagnosticCodes:Record<string,SafeDiagnosticError['diagnosticCode']>
  BOT_SCREEN_CAPACITY:'COMPUTER_SCREEN_CAPACITY',
  ACTIVE_TAB_UNRESOLVED:'COMPUTER_ACTIVE_TAB_UNRESOLVED',
  DOTS_RENDERER_UNRESPONSIVE:'COMPUTER_RENDERER_UNRESPONSIVE',
+  COMPUTER_SIGNIN_HANDOFF_REQUIRED:'COMPUTER_SIGNIN_HANDOFF_REQUIRED',
+  COMPUTER_ACTION_REQUIRES_APPROVAL:'COMPUTER_ACTION_REQUIRES_APPROVAL',
 };
 const workerDiagnosticMessages:Record<string,SafeDiagnosticError['diagnosticCode']>={
  'This user computer has no free Bot screen slot':'COMPUTER_SCREEN_CAPACITY',
@@ -31,6 +33,7 @@ async function throwWorkerResponseError(response:Response,fallback:SafeDiagnosti
   }
  }
  if(response.status===401)throw new SafeDiagnosticError('COMPUTER_WORKER_AUTH_REJECTED',401);
+ if(code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED'||code==='COMPUTER_ACTION_REQUIRES_APPROVAL')throw new SafeDiagnosticError(code,response.status);
  if(response.status===403)throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN',403);
  throw new SafeDiagnosticError(code??fallback,response.status);
 }
@@ -143,7 +146,7 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   if(!response.ok)throw new Error('Computer action was not confirmed');
   const result:unknown=await response.json();if(!result||typeof result!=='object'||(result as {ready?:unknown}).ready!==true)throw new Error('Computer action was not confirmed');
  }
- async performIfUnchanged(input:unknown,expected:ComputerState,signal:AbortSignal,workflowPolicy?:'gmail-read-draft'):Promise<unknown>{
+ async performIfUnchanged(input:unknown,expected:ComputerState,signal:AbortSignal,workflowPolicy?:'browser-task'|'gmail-read-draft'):Promise<unknown>{
   if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Invalid computer action');
   const action=input as Record<string,unknown>;
   if('taskId' in action)throw new Error('Task identity is controlled by the server');

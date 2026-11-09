@@ -4,7 +4,7 @@ import { canonicalComputerAction } from './computer-action.ts';
 import type { RunOwner,RunStore } from './run-store.ts';
 import { SafeDiagnosticError } from './safe-diagnostics.ts';
 
-export interface RunScope {owner:RunOwner;runId:string;leaseId:string;botId:string;requestedNavigationOrigins?:readonly string[];signInHandoff?:boolean;gmailReadDraftWorkflow?:boolean}
+export interface RunScope {owner:RunOwner;runId:string;leaseId:string;botId:string;requestedNavigationOrigins?:readonly string[];signInHandoff?:boolean;gmailReadDraftWorkflow?:boolean;browserTask?:boolean}
 export interface ComputerReadWorker extends GuardedComputerWorker { control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>; inspect(signal:AbortSignal):Promise<unknown>; screenshot(signal:AbortSignal):Promise<Buffer> }
 function isDesktopBrowserNavigationAttempt(action:{kind?:unknown;action?:unknown;arguments?:Record<string,unknown>}):boolean{
  if(action.kind!=='desktop')return false;
@@ -84,12 +84,19 @@ export class ComputerBridge {
     return {status:'completed',result};
    }catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
   }
-  if(isAuthorizedGmailDraftInteraction(scope,state.url,canonical)){
+  if(scope.browserTask===true&&canonical.kind==='browser'&&['click','fill','press','select','check','uncheck'].includes(String(canonical.action))){
    if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
    try{
-    const result=await worker.performIfUnchanged(input,state,signal,'gmail-read-draft');
+    const result=await worker.performIfUnchanged(input,state,signal,'browser-task');
     await this.markUsed(scope);return {status:'completed',result};
-   }catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
+   }catch(error){
+    if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
+    if(error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_ACTION_REQUIRES_APPROVAL'){
+     // The Worker inspected the live control and made no change. Fall through
+     // to the normal, screenshot-bound approval proposal for consequential UI.
+    }else if(error instanceof SafeDiagnosticError)throw error;
+    else throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED');
+   }
   }
   let captured:Awaited<ReturnType<NonNullable<ComputerReadWorker['snapshotWithImage']>>>|null=null;
   if(worker.snapshotWithImage){
@@ -136,21 +143,16 @@ export class ComputerBridge {
 
 function disallowedDuringSignInHandoff(scope:RunScope,action:{kind?:unknown;action?:unknown}):boolean{
  if(scope.signInHandoff!==true)return false;
- if(action.kind!=='browser'||action.action!=='navigate')return true;
- const arguments_=(action as {arguments?:Record<string,unknown>}).arguments||{};
- if(typeof arguments_.url!=='string')return true;
- try{return !scope.requestedNavigationOrigins?.includes(new URL(arguments_.url).origin)}catch{return true}
-}
-
-function isAuthorizedGmailDraftInteraction(scope:RunScope,page:string,action:{kind?:unknown;action?:unknown;arguments?:Record<string,unknown>}):boolean{
- if(scope.gmailReadDraftWorkflow!==true||action.kind!=='browser')return false;
- let origin:string;try{origin=new URL(page).origin}catch{return false}
- if(origin!=='https://mail.google.com')return false;
- const args=action.arguments||{},by=args.by,role=args.role,target=typeof args.target==='string'?args.target.trim():'';
- if(action.action==='click'&&by==='role'){
-  if(role==='link')return /^Inbox\s+\S/i.test(target);
-  if((role==='button'||role==='menuitem')&&/^(?:Reply|More|Close|Save & close|Mark as unread)$/i.test(target))return true;
+ // A conditional login inside a directly requested browser task must resume
+ // normally after the owner returns control. The task capability remains
+ // short-lived, Browser User only, and the Worker still guards auth surfaces,
+ // credentials, CAPTCHA and consequential controls.
+ if(scope.browserTask===true)return action.kind!=='browser';
+ if(action.kind!=='browser')return true;
+ if(action.action==='navigate'){
+  const arguments_=(action as {arguments?:Record<string,unknown>}).arguments||{};
+  if(typeof arguments_.url!=='string')return true;
+  try{return !scope.requestedNavigationOrigins?.includes(new URL(arguments_.url).origin)}catch{return true}
  }
- if(action.action==='fill'&&by==='role'&&role==='textbox'&&/^(?:Message Body|Reply)$/i.test(target))return true;
- return false;
+ return true;
 }

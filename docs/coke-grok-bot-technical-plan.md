@@ -2208,6 +2208,24 @@ Martin Lacsamana 的讲者小窗有姿势/口型变化；紫色 `Introducing Gro
 
 逐帧审阅 PTS 1045000–1049966 的 150 帧和 6 张联系图；独立重解码确认源视频 SHA-256、全部 PTS/`yuv420p` 像素哈希/字节数及联系图哈希。PTS 1048466 仍是 bobo 工作区与 Computer 预览；PTS 1048500 首次显示右侧紫色 `bobo..` 画面，之后工作区收窄、紫色画面扩大，PTS 1049966 时已占据演示主体。没有可见触发点击，不推断操作来源或接管状态。相邻首变帧、中间帧和片尾帧原图见 `research/frames/v1-1045-1050-compact-audit-20261109/keyframes/manifest.json`。片头连续覆盖至 17:29.966（31,500 帧），下一窗口从 17:30.000 开始。
 
+#### 2026-11-09 Gmail 无审批只读搜索回归
+
+从公网已登录 Chrome 的 `E2E Test Bot 1029` 真实聊天栏启动了 Gmail 工作流；旧任务先在 UI 中标记“已检查”并恢复队列。云电脑当前显示已登录 Gmail 收件箱，因此本次无需登录接管。第一条新任务在 Gmail `Search mail` 填入精确查询 `is:unread` 时出现产品 `Browser: fill` 审批卡；没有打开邮件，也没有创建或发送草稿。该任务已拒绝并复核为无外部变更，结果仍标记为未知/未完成，不能把这次算作 E2E 通过。
+
+根因是 Gmail 读写能力的双层 allowlist 只覆盖收件箱链接、回复控件和正文输入，遗漏了 Search mail 的只读未读查询。当前单一 feature 分支补充了对精确 `is:unread` 查询的无审批放行；提交 Enter 时 Worker 再校验搜索框实时值，其他查询仍受控。此次本地 `npm run test:runtime` 为 156/156 通过，`npm run build:deployment` 与 `npx tsc --noEmit` 通过。新改动尚未构建镜像、部署或通过公网复测。
+
+下一次候选需要同时更新 Auth/Agent 与固定用户 namespace 中的 Desktop Worker；仅更新 Auth/Agent 会继续被旧 Worker 拒绝。复核得到 Desktop 的 `HOME=/workspace/.desktop-home`，该路径位于仍 Bound 的用户 workspace PVC；Desktop 入口在重建 Pod 时仅清理 Chromium singleton 锁文件，保留持久 profile。部署前仍须通过产品 UI 确认没有活跃任务或用户接管，部署后重用同一 Bot 与 PVC，从公网 Chrome 重新跑全流程，并分别核对无审批卡、收件箱未读状态、草稿保存且未发送。
+
 #### 2026-11-09 导航审批边界与当前运行版本复核
 
 用户再次明确：普通网页打开、导航和只读浏览不应要求逐步操作；仅到登录、验证码或 MFA 等需要本人身份确认时暂停交接。发送、提交等外部副作用仍按其自身授权边界处理。当前源码的 `computer_browser.navigate` 路径直接导航且不创建导航审批；地址栏误走 Desktop 的路径有 `COMPUTER_NAVIGATION_USE_BROWSER` 保护。只读运行检查发现 K3D Auth 当前镜像 tag 为 `coke-grok-auth:sha-a37d2ad`，容器 `/app/auth.cjs` 含导航误路由保护、登录交接保护和免逐步批准指令；Agent 为 `sha-d76b1f5...`，Desktop 为 `sha-e18f715...`。`sha-a37d2ad` 在当前本地 Git 历史和已检查发布清单中无法映射到确切源码提交，故仅记录运行产物中的代码标记，不把它当作已验证的公网行为。公网 HTML 当前引用 `index-DaR-4V2E.js` 与 `index-JFyf985t.css`；已登录 Chrome CUA `getState()` 本轮仍在 30 秒后超时，因此没有重放 `Desktop: click` 历史审批卡，也没有确认公网实际任务。根因及当前审批卡是否为旧运行记录仍未核实；本轮不宣称该用户路径已通过公网验收。
+
+#### 2026-11-09 通用 Browser User 权限复核
+
+用户明确要求 Browser User 权限跨网站通用，不按 Gmail 或其他网站逐站维护控件白名单。能力只在当前用户明确发起的浏览器任务中生效并绑定短期 Run capability：普通导航、搜索、阅读和非敏感页面点击/文本输入不需逐步审批。云电脑 Worker 在执行前识别登录/验证页面、密码和验证码控件及 CAPTCHA，暂停并交给用户通过 Computer 的 `Take control` 操作；不会读取/输入凭据。发送、删除、归档、提交/发布、购买/付款及账号/安全设置仍走现有截图绑定审批，页面内容不得扩大授权。
+
+自动化回归覆盖了任意网站的搜索、普通点击、跨来源操作、登录接管和高影响动作审批。本次 `npm run test:runtime` 160/160 通过；`npm run build:deployment`、Worker/Agent JavaScript 语法检查和 `git diff --check` 通过。通用权限候选 r3 已部署到本机 K3D：Auth `coke-grok-auth:browser-task-r3-20261109`，目标用户的 Agent 与 Desktop 为 `coke-grok-desktop:candidate-browser-task-r3-20261109`，Broker 未变；workspace PVC 仍为同一个 Bound 卷。VPS 仍只提供公网隧道。
+
+在已登录公网 Chrome 中通过可见产品 UI 新建了一条 Gmail 任务。运行在接触收件箱前暂停；云电脑屏幕显示 Google 账号选择页，产品状态显示电脑由用户接管。没有选择账号、输入/查看凭据、执行 `is:unread` 搜索、打开邮件或保存草稿；因此本次公网 Gmail 全链路没有通过。需要用户在 Computer 屏幕完成 Google 登录并点 `Return to Bot` 归还电脑；恢复同一任务后再核对搜索免审批、草稿保存及原邮件未读状态。
+
+后续源代码对通用搜索提交和账号设置页识别做了补正：搜索按钮的原生 `submit` 类型不能误触发审批；`/account/settings` 之类已登录普通设置页面不能被当成登录页。此补正已纳入 160 项回归，源码尚未构建/部署对应镜像；发布候选目录记录 r3 回退点与待验收部署步骤。r3 线上候选与后续源码提交分开记录，避免把旧镜像说成已包含新修正。

@@ -59,30 +59,34 @@ test('ordinary browser navigation skips approval while page interactions remain 
  assert.equal(approvalProposals,4,'browser toolbar clicks are redirected without an approval even when the prompt did not name a URL');
 });
 
-test('explicit Gmail read-and-draft scope auto-runs only bounded inbox and draft controls',async()=>{
+test('explicit browser task scope auto-runs routine controls across sites and routes consequential actions to approval',async()=>{
  let proposals=0,performed=0,marked=0,lastPolicy:unknown,pageUrl='https://mail.google.com/mail/u/0/#inbox';
- const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:pageUrl,screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async(_input:unknown,_state:unknown,_signal:AbortSignal,policy?:unknown)=>{performed++;lastPolicy=policy;return {ready:true}}};
+ const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:pageUrl,screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async(input:unknown,_state:unknown,_signal:AbortSignal,policy?:unknown)=>{performed++;lastPolicy=policy;const target=input&&typeof input==='object'?(input as {target?:unknown}).target:'';if(['Send','Delete','Archive','Publish'].includes(String(target)))throw new SafeDiagnosticError('COMPUTER_ACTION_REQUIRES_APPROVAL');return {ready:true}}};
  const approvals={propose:async()=>{proposals++;return {id:randomUUID()}},consume:async()=>false,status:async()=>null};
  const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>{marked++;return true}},approvals,()=>worker),signal=new AbortController().signal;
- const scoped={...scope,gmailReadDraftWorkflow:true};
+ const scoped={...scope,browserTask:true};
  for(const input of [
+  {kind:'browser',action:'fill',by:'placeholder',target:'Search mail',value:'is:unread'},
+  {kind:'browser',action:'press',by:'placeholder',target:'Search mail',key:'Enter'},
   {kind:'browser',action:'click',by:'role',role:'link',target:'Inbox Quarterly project update'},
   {kind:'browser',action:'click',by:'role',role:'button',target:'Reply'},
   {kind:'browser',action:'fill',by:'role',role:'textbox',target:'Message Body',value:'Thanks for the update.'},
   {kind:'browser',action:'click',by:'role',role:'menuitem',target:'Mark as unread'},
  ] as const){
   assert.deepEqual(await bridge.propose(scoped,input,signal),{status:'completed',result:{ready:true}});
-  assert.equal(lastPolicy,'gmail-read-draft');
+  assert.equal(lastPolicy,'browser-task');
  }
- assert.equal(proposals,0);assert.equal(performed,4);assert.equal(marked,4);
- for(const [target,role] of [['Send','button'],['Delete','menuitem'],['External document','link']] as const){
+ assert.equal(proposals,0);assert.equal(performed,6);assert.equal(marked,6);
+ const genericWebsiteSearch=await bridge.propose({...scoped}, {kind:'browser',action:'fill',by:'placeholder',target:'Search products',value:'wireless headphones'},signal);
+ assert.deepEqual(genericWebsiteSearch,{status:'completed',result:{ready:true}},'search fields work on sites without a site-specific rule');
+ pageUrl='https://shop.example/search';
+ const crossSitePageClick=await bridge.propose(scoped,{kind:'browser',action:'click',by:'role',role:'link',target:'Product details'},signal);
+ assert.deepEqual(crossSitePageClick,{status:'completed',result:{ready:true}},'the same run-scoped browser permission follows the user task across origins');
+ for(const [target,role] of [['Send','button'],['Delete','menuitem'],['Archive','button'],['Publish','button']] as const){
   const approval=await bridge.propose(scoped,{kind:'browser',action:'click',by:'role',role,target},signal);
-  assert.ok('id'in approval,target+' remains approval-gated');
+  assert.ok('id'in approval,target+' remains routed through approval');
  }
- assert.equal(proposals,3);
- pageUrl='https://example.com/';
- const otherOrigin=await bridge.propose(scoped,{kind:'browser',action:'click',by:'role',role:'button',target:'Reply'},signal);
- assert.ok('id'in otherOrigin,'the Gmail scope does not exempt actions on another origin');assert.equal(proposals,4);
+ assert.equal(proposals,4);
 });
 test('an explicitly requested navigation does not require an approval screenshot payload',async()=>{
  let imageSnapshots=0,performed=0,approvalProposals=0;
@@ -127,6 +131,28 @@ test('sign-in handoff rejects desktop and browser interaction proposals instead 
  await assert.rejects(bridge.propose(scoped,{kind:'browser',action:'navigate',url:'https://example.test/'},signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_SIGNIN_HANDOFF_REQUIRED');
  await assert.rejects(bridge.execute(scoped,randomUUID(),{kind:'terminal',action:'run',command:'printf unsafe',directory:'task'},signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_SIGNIN_HANDOFF_REQUIRED');
  assert.equal(approvalProposals,0);assert.equal(approvalConsumes,0);assert.equal(performed,1);
+});
+test('a conditional sign-in handoff resumes generic Browser User work after control returns',async()=>{
+ let proposals=0,performed=0,marked=0,lastPolicy:unknown;
+ const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'https://mail.google.com/mail/u/0/#inbox',screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async(_input:unknown,_state:unknown,_signal:AbortSignal,policy?:unknown)=>{performed++;lastPolicy=policy;return {ready:true}}};
+ const approvals={propose:async()=>{proposals++;return {id:randomUUID()}},consume:async()=>false,status:async()=>null};
+ const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>{marked++;return true}},approvals,()=>worker),signal=new AbortController().signal;
+ const scoped={...scope,requestedNavigationOrigins:['https://mail.google.com'],signInHandoff:true,browserTask:true};
+ for(const input of [
+  {kind:'browser',action:'fill',by:'placeholder',target:'Search mail',value:'is:unread'},
+  {kind:'browser',action:'press',by:'placeholder',target:'Search mail',key:'Enter'},
+  {kind:'browser',action:'click',by:'role',role:'link',target:'Quarterly update'},
+  {kind:'browser',action:'click',by:'role',role:'button',target:'Reply'},
+  {kind:'browser',action:'fill',by:'role',role:'textbox',target:'Message Body',value:'Thanks for the update.'},
+  {kind:'browser',action:'click',by:'role',role:'menuitem',target:'Mark as unread'},
+  {kind:'browser',action:'navigate',url:'https://mail.google.com/mail/u/0/#inbox'},
+  {kind:'browser',action:'navigate',url:'https://www.example.org/'},
+ ] as const){
+  assert.deepEqual(await bridge.propose(scoped,input,signal),{status:'completed',result:{ready:true}});
+  if(input.action!=='navigate')assert.equal(lastPolicy,'browser-task');
+ }
+ await assert.rejects(bridge.propose(scoped,{kind:'desktop',action:'click',x:200,y:200},signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_SIGNIN_HANDOFF_REQUIRED');
+ assert.equal(proposals,0);assert.equal(performed,8);assert.equal(marked,8);
 });
 test('terminal approval is exact, lease-bound, screenshot-bound, and consumed before local execution',async()=>{
  let actionText='',consumed=0,workerActions=0,owner:'agent'|'user'='agent',screenshot='a'.repeat(64);

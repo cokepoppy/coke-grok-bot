@@ -18,6 +18,7 @@ COPY --chmod=0644 deploy/desktop/dsh-memory-plugin.mjs /opt/coke-dots/dsh-memory
 COPY --chmod=0644 deploy/desktop/dsh-handoff-plugin.mjs /opt/coke-dots/dsh-handoff-plugin.mjs
 COPY --chmod=0644 deploy/desktop/dsh-routine-plugin.mjs /opt/coke-dots/dsh-routine-plugin.mjs
 COPY --chmod=0644 deploy/desktop/computer-worker.mjs /opt/coke-dots/grok-computer-worker.mjs
+COPY --chmod=0644 deploy/desktop/browser-task-policy.mjs /opt/coke-dots/browser-task-policy.mjs
 COPY --chmod=0644 deploy/desktop/bot-screen-pages.mjs /opt/coke-dots/bot-screen-pages.mjs
 COPY --chmod=0644 deploy/desktop/active-tab-extension/manifest.json /opt/coke-grok/active-tab-extension/manifest.json
 COPY --chmod=0644 deploy/desktop/active-tab-extension/service-worker.js /opt/coke-grok/active-tab-extension/service-worker.js

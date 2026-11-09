@@ -110,7 +110,7 @@ test('Pi redirects a desktop attempt to open a requested website to Browser User
   await assert.rejects(()=>desktop.execute('desktop-address-bar-click',{action:'click',x:295,y:90},new AbortController().signal),/not executed and no approval was requested.*computer_browser\.navigate/i);
   assert.equal(requests.filter(request=>request.pathname==='/v1/computer/actions').length,1);
   assert.equal(requests.length,2,'no approval status poll or execute call follows the navigation directive');
-  assert.match(desktop.promptGuidelines.join(' '),/no approval card is needed to open the page/i);
+  assert.match(desktop.promptGuidelines.join(' '),/do not require per-step approval across websites/i);
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });
 
