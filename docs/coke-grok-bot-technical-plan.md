@@ -2291,3 +2291,9 @@ K3D 仍运行 r3，目标 namespace 仍有两块 `owner=user` 持久屏幕；e72
 修复加入中文在线任务意图识别（邮件、网页、在线应用等动作），仍排除被引用的邮件指令；Pi/DSH 都明确要求自然语言网页任务走 Browser User。另加服务端兜底：当本轮已获 Browser User scope 且当前页面为 HTTP(S) 网页时，意外发出的 Computer User 坐标点击、输入和按键会直接提示改走 Browser User，不创建审批卡也不执行坐标动作。Browser User 仍使用短时任务权限；Worker 登录、密码、一次性验证码、MFA 和 CAPTCHA 交接保持有效。
 
 回归证据：ComputerBridge、意图分类、PiExecutor、Worker 合计 52/52 通过；DSH 插件、Pi/DSH 运行时适配测试合计 18/18 通过；`git diff --check` 通过。测试覆盖用户截图中的中文原句、普通中文在线应用任务、邮件正文引述防护、网页任务中的误选 Desktop click/type/Enter 不再创建审批，以及登录/验证码仍交接。代码已在当前单一 feature 分支修改，公网服务尚未部署这次新修复，也还没有用 Chrome 完成修复后的 Gmail 网页端到端验收。
+
+#### 2026-11-09 聊天消息自动滚动修正
+
+用户反馈每次发送消息后聊天区会跳回历史顶部。原实现对末尾占位元素调用 `scrollIntoView({ block: 'nearest' })`，可能同时调整聊天区以外的可滚动祖先。现改为在消息列表提交后只设置 `.message-scroll.scrollTop` 到列表底部，并关闭该列表的浏览器滚动锚定。
+
+本机浏览器 UI 验证：在 `http://127.0.0.1:5173/` 发送合成长消息后，聊天区 `scrollHeight=1932`、`clientHeight=464`、`scrollTop=1468`（底部位置），页面 `window.scrollY=0`。`npm run build` 与 `git diff --check` 通过。此为本机 UI 预览验证，修复尚未部署到公网，公网滚动行为仍待候选部署后复核。

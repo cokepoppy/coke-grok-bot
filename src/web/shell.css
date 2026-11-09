@@ -53,7 +53,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .reference-mode:has(.details-panel) .header-actions { display: flex; }
 .workspace { position: absolute; inset: 0; display: flex; padding-top: 0; }
 .conversation { position: relative; flex: 1; min-width: 0; height: 100%; }
-.message-scroll { position: absolute; left: 20px; right: 20px; top: 105px; bottom: 95px; overflow-y: auto; scrollbar-width: thin; }
+.message-scroll { position: absolute; left: 20px; right: 20px; top: 105px; bottom: 95px; overflow-y: auto; overflow-anchor: none; scrollbar-width: thin; }
 .date-line { text-align: center; color: #686868; font-size: 15px; line-height: 20px; margin-bottom: 23px; }
 .message-line { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
 .message-line.user { justify-content: flex-end; }

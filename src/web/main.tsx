@@ -564,7 +564,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [history, setHistory] = useState<{ id: string; status: 'loading' | 'ready' | 'error' }>({ id: '', status: 'loading' });
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
-  const messagesEnd = useRef<HTMLDivElement>(null);
+  const messageScroll = useRef<HTMLDivElement>(null);
   const recipientInput = useRef<HTMLInputElement>(null);
   const savedNames = useRef<Record<string, string>>({});
   const renameQueue = useRef<Record<string, Promise<void>>>({});
@@ -588,6 +588,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const messages = active ? state.messages[active.id] || [] : [];
   const activeRuns=active&&runHistory.id===active.id&&agentFeature==='enabled'?runHistory.runs:[];
   const botTimeline=buildBotTimeline(messages,activeRuns,runApprovals);
+  const visibleConversationLength=activeGroup?(groupChat.id===activeGroup.id?groupChat.view?.messages.length||0:0):botTimeline.length;
   const filtered = state.bots.filter(bot => !(reference && newChat && bot.id === 'new') && `${bot.name} ${bot.label}`.toLowerCase().includes(query.toLowerCase()));
   const visibleBots = filtered.filter(bot=>!bot.hidden).sort((a,b)=>Number(Boolean(b.pinned))-Number(Boolean(a.pinned)));
   const hiddenBots = filtered.filter(bot=>bot.hidden);
@@ -755,7 +756,13 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     };
     window.addEventListener('keydown',onKeyDown);return ()=>window.removeEventListener('keydown',onKeyDown);
   },[reference,remote,agentFeature]);
-  useEffect(() => { if (messages.length > 1) messagesEnd.current?.scrollIntoView({ block: 'nearest' }); }, [messages.length]);
+  useLayoutEffect(() => {
+    const viewport=messageScroll.current;
+    if(!viewport||visibleConversationLength===0)return;
+    // Scroll only the conversation viewport. scrollIntoView() can also move
+    // outer page ancestors, which makes the history appear to jump to its top.
+    viewport.scrollTop=viewport.scrollHeight;
+  },[active?.id,activeGroup?.id,visibleConversationLength]);
 
   function selectBot(id: string) {
     if (sendingRef.current) return;
@@ -1299,7 +1306,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         <div className={`header-actions ${panel ? 'panel-open' : ''}`}><IconButton name="share" label={activeGroup?'Share group':'Share bot'} onClick={() => setNotice(true)} /><IconButton name={account && !panel ? 'screen' : 'panel'} label={panel ? account ? 'Hide computer' : 'Hide bot details' : account ? `Open ${activeGroup?.name||active.name}'s computer` : 'Show bot details'} onClick={toggleProductPanel} /></div>
         <div className={`workspace ${panel ? 'with-panel' : ''}`}>
           <section className="conversation" aria-label={activeGroup?`Group chat ${activeGroup.name}`:`Chat with ${active.name}`} onDragOver={event=>{if(remote&&agentFeature==='enabled'&&Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault()}} onDrop={event=>{if(!remote||agentFeature!=='enabled'||!event.dataTransfer.files.length)return;event.preventDefault();event.stopPropagation();const dropped=Array.from(event.dataTransfer.files);activeGroup?stageGroupFiles(dropped):stageFiles(dropped)}}>
-            <div className="message-scroll">
+            <div className="message-scroll" ref={messageScroll}>
               {activeGroup ? <>
                 {groupChat.id===activeGroup.id&&groupChat.status==='loading'&&<div role="status">Loading group chat…</div>}
                 {groupChat.id===activeGroup.id&&groupChat.status==='error'&&<div role="alert">Could not confirm this group chat. Refresh to check its messages before sending again.</div>}
@@ -1341,7 +1348,6 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
               </div>}
               {!reference && !messages.length && !(agentFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.length) && <div className="empty-chat"><Avatar bot={active} size={52} /><p>Start a conversation with {active.name}.</p>{agentFeature !== 'enabled' && <small>This local preview does not connect to a model.</small>}</div>}
               {notice && <div className="local-feedback" role="status">{remote ? 'No message was sent to an Agent.' : 'This is a local preview. No message was sent to an Agent or external service.'}</div>}
-              <div ref={messagesEnd} />
               </>}
             </div>
             {remote && agentFeature === 'enabled' && <input ref={filePicker} className="file-picker" type="file" multiple aria-label="Choose files to attach" onChange={event=>{const selected=Array.from(event.currentTarget.files||[]);activeGroup?stageGroupFiles(selected):stageFiles(selected);event.currentTarget.value=''}}/>}
