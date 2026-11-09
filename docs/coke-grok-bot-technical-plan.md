@@ -2229,3 +2229,7 @@ Martin Lacsamana 的讲者小窗有姿势/口型变化；紫色 `Introducing Gro
 在已登录公网 Chrome 中通过可见产品 UI 新建了一条 Gmail 任务。运行在接触收件箱前暂停；云电脑屏幕显示 Google 账号选择页，产品状态显示电脑由用户接管。没有选择账号、输入/查看凭据、执行 `is:unread` 搜索、打开邮件或保存草稿；因此本次公网 Gmail 全链路没有通过。需要用户在 Computer 屏幕完成 Google 登录并点 `Return to Bot` 归还电脑；恢复同一任务后再核对搜索免审批、草稿保存及原邮件未读状态。
 
 后续源代码对通用搜索提交和账号设置页识别做了补正：搜索按钮的原生 `submit` 类型不能误触发审批；`/account/settings` 之类已登录普通设置页面不能被当成登录页。此补正已纳入 160 项回归；commit `f426c2b` 对应的 r4 Auth/Agent/Desktop 镜像、构建产物和本地 OCI 回退包已经生成。r4 尚未部署：公网云电脑仍由用户接管并停在登录页，发布 preflight 会拒绝在任一 Bot 屏幕仍由用户控制时重启 Desktop。r3 继续运行，MySQL 和 workspace PVC 未改动。
+
+#### 2026-11-09 公网 Gmail 登录接管状态更新
+
+本轮通过已登录公网 Chrome 的可见窗口确认：E2E Test Bot 1029 的持久云电脑现在显示 Gmail 收件箱，Google 登录已经完成；对应 Gmail 工作流仍显示 `Review`，云电脑所有权为 `user`。没有点击邮件、读取邮件正文、执行未读搜索、创建草稿或更改邮箱数据。发布目录的 `scripts/preflight.sh` 在当前运行态以退出码 21 拒绝部署，原因是持久屏幕仍由用户控制；未滚动重启 Desktop，r3、MySQL 与同一 Bound workspace PVC 保持不变。CUA 公网窗口本轮在 `getTab/getState` 超时后，通过 Chrome 原生应用观察恢复可见性。下一步需等用户在该屏幕点 `Return to Bot`，然后继续现有 Review 任务并验证 `is:unread` 搜索无审批、符合条件邮件只保存未发送草稿且原邮件恢复未读；不要重开新任务或展示邮件内容。
