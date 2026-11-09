@@ -84,6 +84,9 @@ export class ComputerBridge {
     return {status:'completed',result};
    }catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
   }
+  // The user-requested Browser User scope is run-bound and site-generic. The
+  // Worker handles sign-in and consequential controls; ordinary page controls
+  // should execute directly rather than being individually allowlisted here.
   if(scope.browserTask===true&&canonical.kind==='browser'&&['click','fill','press','select','check','uncheck'].includes(String(canonical.action))){
    if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
    try{

@@ -2257,3 +2257,11 @@ Martin Lacsamana 的讲者小窗有姿势/口型变化；紫色 `Introducing Gro
 源码测试为 runtime 161/161、任务识别与 PiExecutor 定向测试 29/29、Worker policy 2/2，`npm run build:deployment` 和 `git diff --check` 通过。候选 `releases/candidate-grok-bot-browser-task-intent-e729d30-2026-11-09` 以 `linux/arm64` 重建，dist、镜像 manifest、checksums 和约 945 MiB 本地 OCI 包校验通过；OCI SHA-256 `41cdc8850b00efa8c50ee093ae3fddec8aac2914c54dfe1f3fbcc5ad73822c41`。本次在原位替换未验收 d3 候选包，避免多保留一个同量级压缩包。
 
 K3D 仍运行 r3，目标 namespace 仍有两块 `owner=user` 持久屏幕；e729d30 候选 preflight 再次返回 21。没有导入镜像或 rollout，MySQL、PVC、其他 namespace 与 VPS 均未改动。公网 Gmail `is:unread` 的可见 UI E2E 尚未通过，功能未合并 `main`，也未打验收 checkpoint tag。
+
+#### 2026-11-09 Browser User 常规交互权限泛化
+
+进一步复核发现，Browser User 已有 run 级通用授权，但 Worker 还把普通非搜索表单提交和非搜索框 `Enter` 当作需要审批的默认情况；这会让各网站的普通筛选/查询流程继续出现逐步审批。现改成按语义标记的高后果控件判断：显式用户任务范围内，跨任意站点的导航、搜索、阅读、填写、选择、普通提交和键盘操作直接执行，不依赖站点或控件白名单。登录/密码、一次性验证码、MFA 与 CAPTCHA 仍触发用户接管；发送、删除、归档、发布、付款和账号/安全设置仍受高后果操作保护。
+
+本轮定向回归覆盖 Gmail `Search mail` 填入 `is:unread`、Enter、普通网站搜索与表单提交、未登记服务、登录交接及高后果操作，48/48 通过；`npm run build:deployment` 与 `git diff --check` 通过。当前运行 Worker `/opt/coke-dots/browser-task-policy.mjs` 的 SHA-256 为 `ce877c66c431fc39e1b09691a736b9b37421de9f0db38d58174b0afdbe6d440e`，与本轮源码 `4a582f501b6900d93ad0db0d4dd1942ad3ace916072b86503ad5f9c6a9a61c75` 不同；运行 Auth/Agent/Desktop 仍是旧 r3 镜像，包含原先的通用 Submit/Enter 审批回退。故已定位到当前服务与仓库源码/候选版本不一致，不能把源代码回归误说成当前公网已修复。
+
+预发布检查仍以退出码 21 拒绝更新，因为目标用户 namespace 的两块持久 Bot 屏幕由用户接管。没有重启 Auth、Agent 或 Desktop，也没有改 MySQL、PVC、其他 namespace 或 VPS。新策略需与通用 Browser User 意图识别一起构建到固定 Auth 和 Agent/Desktop 镜像；待预检通过后，再从已登录公网 UI 重跑同一条 Gmail 搜索并检查无审批卡。登录接管、已读状态和草稿工作流另行核实；本次还不是公网验收。
