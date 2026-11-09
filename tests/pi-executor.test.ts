@@ -120,7 +120,7 @@ test('Pi carries a recent same-Bot sign-in handoff into an approval follow-up wi
   const result=await executor.execute(screen,followup,new AbortController().signal,randomUUID());
   assert.equal(result.status,'completed');
   assert.match(receivedPrompt,/https:\/\/accounts\.google\.com/);
-  assert.match(receivedPrompt,/continuing the immediately preceding browser task/i);
+  assert.match(receivedPrompt,/continuing the same Bot's earlier browser task/i);
   assert.match(receivedPrompt,/verify that the computer is back under Agent control/i);
   assert.match(receivedPrompt,/open the Computer screen and choose Take control/i);
   assert.match(receivedPrompt,/If sign-in or human verification appears again, stop/i);
@@ -131,7 +131,7 @@ test('Pi carries a recent same-Bot sign-in handoff into an approval follow-up wi
 test('Pi resumes the original Gmail task and generic Browser User scope after a short sign-in continuation',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const original='请检查 Gmail 最近的未读邮件并为最新一封拟写回复草稿。登录页出现后请停下来让我接管；我登录并把控制权还给你后继续。不要发送。';
- const followup:AgentRun={...run,prompt:'继续',previousPrompts:[original]};
+ const followup:AgentRun={...run,prompt:'继续',previousPrompts:[original,'已登录并点了 Return to Bot']};
  let receivedPrompt='',issuedScope:{browserTask?:boolean;gmailReadDraftWorkflow?:boolean;signInHandoff?:boolean;requestedNavigationOrigins?:readonly string[]}|undefined;
  const issue=gateway.issue.bind(gateway);gateway.issue=options=>{issuedScope=options.scope;return issue(options)};
  const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
@@ -145,12 +145,33 @@ test('Pi resumes the original Gmail task and generic Browser User scope after a 
   assert.equal(issuedScope?.gmailReadDraftWorkflow,true,'the Gmail unread-and-draft scope resumes');
   assert.equal(issuedScope?.signInHandoff,true,'a second authentication challenge still hands control back');
   assert.ok(issuedScope?.requestedNavigationOrigins?.includes('https://mail.google.com'));
-  assert.match(receivedPrompt,/Prior user task:[\s\S]*请检查 Gmail 最近的未读邮件/);
+  assert.match(receivedPrompt,/Original user task:[\s\S]*请检查 Gmail 最近的未读邮件/);
   assert.match(receivedPrompt,/User's current message:\n继续/);
-  assert.match(receivedPrompt,/resume only the original user-requested task/i);
+  assert.match(receivedPrompt,/complete only the remaining parts of the original task/i);
   assert.match(receivedPrompt,/Do not claim control returned without state proof/i);
   assert.match(receivedPrompt,/If sign-in or human verification appears again, stop/i);
   assert.doesNotMatch(receivedPrompt,/Do not interpret.*permission.*take account actions/i);
+ }finally{await executor.close();gateway.close()}
+});
+
+test('Pi retains generic Browser User scope when a same-Bot user explicitly continues a non-login web task',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const original='Search Slack for the latest project channel and report its name.';
+ const followup:AgentRun={...run,prompt:'继续',previousPrompts:[original]};
+ let receivedPrompt='',issuedScope:{browserTask?:boolean;signInHandoff?:boolean}|undefined;
+ const issue=gateway.issue.bind(gateway);gateway.issue=options=>{issuedScope=options.scope;return issue(options)};
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
+  receivedPrompt=JSON.parse(String(init?.body)).prompt;
+  return Response.json({status:'done',message:'Continued the search.'});
+ });
+ try{
+  const result=await executor.execute(screen,followup,new AbortController().signal,randomUUID());
+  assert.equal(result.status,'completed');
+  assert.equal(issuedScope?.browserTask,true,'an explicit same-Bot continuation preserves Browser User scope');
+  assert.equal(issuedScope?.signInHandoff,false,'a normal web continuation does not invent a sign-in handoff');
+  assert.match(receivedPrompt,/Original user task:\nSearch Slack for the latest project channel/);
+  assert.match(receivedPrompt,/User's current message:\n继续/);
+  assert.match(receivedPrompt,/only the remaining parts of the original task/i);
  }finally{await executor.close();gateway.close()}
 });
 

@@ -564,6 +564,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [history, setHistory] = useState<{ id: string; status: 'loading' | 'ready' | 'error' }>({ id: '', status: 'loading' });
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
+  const [scrollRequest, setScrollRequest] = useState(0);
   const messageScroll = useRef<HTMLDivElement>(null);
   const messageContent = useRef<HTMLDivElement>(null);
   const stickToLatestMessage = useRef(false);
@@ -571,6 +572,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const previousConversationKey = useRef('');
   const previousConversationLength = useRef(0);
   const previousScrollViewport = useRef<HTMLDivElement | null>(null);
+  const previousScrollRequest = useRef(0);
   const recipientInput = useRef<HTMLInputElement>(null);
   const savedNames = useRef<Record<string, string>>({});
   const renameQueue = useRef<Record<string, Promise<void>>>({});
@@ -771,6 +773,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     const conversationChanged=previousConversationKey.current!==activeConversationKey;
     const viewportChanged=previousScrollViewport.current!==viewport;
     const messageCountChanged=previousConversationLength.current!==visibleConversationLength;
+    const scrollRequested=previousScrollRequest.current!==scrollRequest;
+    previousScrollRequest.current=scrollRequest;
     if(conversationChanged||viewportChanged){
       previousConversationKey.current=activeConversationKey;
       previousScrollViewport.current=viewport;
@@ -783,9 +787,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     }
     // Position only within this conversation viewport, including when switching
     // between conversations with the same number of messages.
-    if(visibleConversationLength>0&&(conversationChanged||viewportChanged||messageCountChanged)&&stickToLatestMessage.current)scrollToLatest();
+    if(visibleConversationLength>0&&(conversationChanged||viewportChanged||messageCountChanged||scrollRequested)&&stickToLatestMessage.current)scrollToLatest();
     previousConversationLength.current=visibleConversationLength;
-  },[activeConversationKey,visibleConversationLength,newChat,Boolean(account),reference]);
+  },[activeConversationKey,visibleConversationLength,newChat,Boolean(account),reference,scrollRequest]);
   useLayoutEffect(() => {
     const viewport=messageScroll.current;
     const content=messageContent.current;
@@ -1051,6 +1055,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         if(!view.group||!Array.isArray(view.messages)||view.group.id!==selectedGroupId)throw new Error('invalid group response');
         followMessageGrowth.current=true;
         stickToLatestMessage.current=true;
+        setScrollRequest(value=>value+1);
         setGroupChat({id:selectedGroupId,status:'ready',view});
         setGroups(current=>[view.group,...current.filter(group=>group.id!==view.group.id)]);
         const recipientBotIds=new Set(groupRecipientBotIds(view.group.members.map(member=>member.id),targetBotIds));
@@ -1093,6 +1098,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
           if (!run || typeof run.id !== 'string' || typeof run.prompt !== 'string') throw new Error('invalid run response');
           followMessageGrowth.current=true;
           stickToLatestMessage.current=true;
+          setScrollRequest(value=>value+1);
           setRunHistory(current => ({ id, status: 'ready', runs: [...current.runs.filter(item => item.id !== run.id), run] }));
           setState(current => ({ ...current, bots: current.bots.map(bot => bot.id === id ? { ...bot, preview: clean || 'Attached files', lastActivityAt:new Date().toISOString() } : bot) }));
           setPendingFiles(current => ({...current,[id]:[]}));
@@ -1107,6 +1113,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         const { message } = await response.json() as { message: Message };
         followMessageGrowth.current=true;
         stickToLatestMessage.current=true;
+        setScrollRequest(value=>value+1);
         setState(current => ({ ...current, messages: { ...current.messages, [id]: [...(current.messages[id] || []), message] }, bots: current.bots.map(bot => bot.id === id ? { ...bot, preview: clean, lastActivityAt:new Date().toISOString() } : bot) }));
         botMentionTokensRef.current=[];setBotMentionTokens([]);setBotMentionQuery(null);
         if (activeIdRef.current === id) { setDraft(''); setCustomAnswer(''); setNotice(true); }
@@ -1120,6 +1127,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     }
     followMessageGrowth.current=true;
     stickToLatestMessage.current=true;
+    setScrollRequest(value=>value+1);
     setState(current => ({ ...current, messages: { ...current.messages, [active.id]: [...(current.messages[active.id] || []), { id: crypto.randomUUID(), role: 'user', text: clean }] }, bots: current.bots.map(bot => bot.id === active.id ? { ...bot, preview: clean,lastActivityAt:new Date().toISOString() } : bot), showOnboarding: { ...current.showOnboarding, [active.id]: false } }));
     botMentionTokensRef.current=[];setBotMentionTokens([]);setBotMentionQuery(null);
     setDraft(''); setCustomAnswer(''); setNotice(true);

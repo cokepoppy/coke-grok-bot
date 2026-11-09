@@ -140,11 +140,13 @@ try {
   };
   await assertLatestMessageVisible('initial history load');
   await page.getByLabel('Message Local Research').fill('Scroll follow-up message');
+  await assertLatestMessageVisible('composing a message');
   await page.getByRole('button', { name: 'Save local message' }).click();
   await page.locator('.conversation').getByText('Scroll follow-up message', { exact: true }).waitFor();
   await assertLatestMessageVisible('first new message');
   await page.locator('.message-scroll').evaluate(element => { element.scrollTop = 0; });
   await page.getByLabel('Message Local Research').fill('Second scroll follow-up');
+  assert.ok((await scrollMetrics()).scrollTop<=2,'composing while reading history should preserve the history position');
   await page.getByRole('button', { name: 'Save local message' }).click();
   await page.locator('.conversation').getByText('Second scroll follow-up', { exact: true }).waitFor();
   await assertLatestMessageVisible('next new message');
@@ -508,8 +510,9 @@ try {
   await waitForProductTimelineAtLatest('authenticated initial history load');
   const productComposer=productShellPage.getByRole('textbox',{name:'Message Sales Outbound'});
   await productComposer.fill('Scroll follow-up message');
+  await waitForProductTimelineAtLatest('authenticated task composition');
   await productShellPage.getByRole('button',{name:'Send task'}).click();
-  await productShellPage.getByText('Scroll follow-up message',{exact:true}).waitFor();
+  await productShellPage.locator('.conversation').getByText('Scroll follow-up message',{exact:true}).waitFor();
   await waitForProductTimelineAtLatest('authenticated first task');
   await productShellPage.locator('.message-content > .message-line').last().evaluate(element=>{element.style.minHeight='260px'});
   await waitForProductTimelineAtLatest('authenticated task after content growth');
@@ -519,6 +522,7 @@ try {
   const historyPosition=await productScrollMetrics();
   assert.ok(historyPosition.scrollTop<=2,`resizing while reading history must preserve its position (${JSON.stringify(historyPosition)})`);
   await productComposer.fill('Second scroll follow-up');
+  assert.ok((await productScrollMetrics()).scrollTop<=2,'composing while reading authenticated history should preserve the history position');
   await productShellPage.getByRole('button',{name:'Send task'}).click();
   await productShellPage.locator('.conversation').getByText('Second scroll follow-up',{exact:true}).waitFor();
   await waitForProductTimelineAtLatest('authenticated next task');

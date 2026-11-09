@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {continuesUserSignInHandoff,requestedNavigationOrigins,requestsBrowserTask,requestsGmailReadDraftWorkflow,requestsUserSignInHandoff} from '../src/server/computer-navigation-policy.ts';
+import {continuedBrowserTaskRequest,continuesUserSignInHandoff,requestedNavigationOrigins,requestsBrowserTask,requestsGmailReadDraftWorkflow,requestsUserSignInHandoff} from '../src/server/computer-navigation-policy.ts';
 
 test('a direct request naming Google and Gmail allows navigation to both exact service origins',()=>{
  assert.deepEqual(requestedNavigationOrigins('帮我打开谷歌，然后登录我的 Gmail，登录时停下来让我操作。'),['https://google.com','https://www.google.com','https://mail.google.com','https://accounts.google.com']);
@@ -55,8 +55,19 @@ test('approval follow-ups continue only an existing handoff and must say to cont
  assert.equal(continuesUserSignInHandoff("Don't ask me to approve every step; open it directly."),true);
  assert.equal(continuesUserSignInHandoff('继续'),true,'a short explicit resume after sign-in must continue the prior task');
  assert.equal(continuesUserSignInHandoff('我登录好了，继续吧。'),true,'the owner can confirm sign-in and resume in one message');
+ assert.equal(continuesUserSignInHandoff('已登录并点了 Return to Bot'),true,'the owner can report a completed login and return the computer');
+ assert.equal(continuesUserSignInHandoff('I signed in and clicked Return to Bot'),true,'English sign-in completion is recognized as a continuation');
  assert.equal(continuesUserSignInHandoff('Do not ask for approval for deleting these records.'),false);
  assert.equal(continuesUserSignInHandoff('不要每步都让我批准。'),false);
+});
+
+test('a direct Browser User task keeps scope through an unbroken same-Bot continuation chain',()=>{
+ const task='请检查 Gmail 最近的未读邮件并为最新一封拟写回复草稿。登录页出现后请停下来让我接管；我登录并把控制权还给你后继续。不要发送。';
+ assert.equal(continuedBrowserTaskRequest('继续',[task,'已登录并点了 Return to Bot']),task);
+ assert.equal(continuedBrowserTaskRequest('不需要我的批准呢，你直接去打开它，你不要每步都让我批准。',[task]),task);
+ assert.equal(continuedBrowserTaskRequest('Tell me the weather',[task]),null,'an unrelated message is not a task continuation');
+ assert.equal(continuedBrowserTaskRequest('继续',[task,'Tell me the weather']),null,'an unrelated same-Bot task breaks the authorization chain');
+ assert.equal(continuedBrowserTaskRequest('继续',[]),null,'a continuation cannot create Browser User scope by itself');
 });
 
 test('a direct destination request can include the cloud-computer context before the navigation verb',()=>{

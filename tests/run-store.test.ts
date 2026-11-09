@@ -111,9 +111,15 @@ test('runs are deduplicated, isolated, serialized per computer and never silentl
     const handoffClaim=await runs.claimNext({...sa,botId:handoffBot.id},30);assert.equal(handoffClaim?.run.id,handoffRun.id);
     assert.deepEqual(handoffClaim?.run.previousPrompts,[]);
     assert.equal(await runs.finish(handoffRun.id,handoffClaim!.leaseId,'completed','Stopped at sign-in.'),true);
-    const continuation=await runs.create(sa,handoffBot.id,randomUUID(),'Do not ask me for approval every step; open it directly.');assert.ok(continuation);
+    await pool.execute('UPDATE agent_runs SET created_at=DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 2 HOUR) WHERE id=?',[handoffRun.id]);
+    const loginReturnPrompt='已登录并点了 Return to Bot';
+    const loginReturn=await runs.create(sa,handoffBot.id,randomUUID(),loginReturnPrompt);assert.ok(loginReturn);
+    const loginReturnClaim=await runs.claimNext({...sa,botId:handoffBot.id},30);assert.equal(loginReturnClaim?.run.id,loginReturn.id);
+    assert.deepEqual(loginReturnClaim?.run.previousPrompts,[handoffPrompt],'same-Bot prompt history must survive a sign-in handoff longer than 20 minutes');
+    assert.equal(await runs.finish(loginReturn.id,loginReturnClaim!.leaseId,'completed','Control returned.'),true);
+    const continuation=await runs.create(sa,handoffBot.id,randomUUID(),'继续');assert.ok(continuation);
     const continuationClaim=await runs.claimNext({...sa,botId:handoffBot.id},30);assert.equal(continuationClaim?.run.id,continuation.id);
-    assert.deepEqual(continuationClaim?.run.previousPrompts,[handoffPrompt]);
+    assert.deepEqual(continuationClaim?.run.previousPrompts,[handoffPrompt,loginReturnPrompt],'same-Bot continuations must be returned in chronological order');
     assert.equal(await runs.finish(continuation.id,continuationClaim!.leaseId,'completed','Continued.'),true);
     const unrelated=await runs.create(sa,bot2.id,randomUUID(),'Do not ask me for approval every step; open it directly.');assert.ok(unrelated);
     const unrelatedClaim=await runs.claimNext({...sa,botId:bot2.id},30);assert.equal(unrelatedClaim?.run.id,unrelated.id);

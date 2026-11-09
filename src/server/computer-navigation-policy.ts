@@ -112,17 +112,33 @@ export function requestsUserSignInHandoff(request: string): boolean {
   return chinese.test(text) || english.test(text);
 }
 
-/** A short follow-up that refers to continuing the same handoff rather than authorizing a new task. */
+/** A short owner message that explicitly continues the immediately preceding Browser User task. */
 export function continuesUserSignInHandoff(request: string): boolean {
   const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';
   if (!text) return false;
-  // After the owner has completed sign-in and returned control, a short
-  // continuation is enough to resume the immediately preceding task. The
-  // caller still requires that prior task to be an explicit sign-in handoff.
-  if (/^(?:继续(?:吧|执行|刚才的任务)?|(?:我)?(?:登录|登陆)好了(?:[，,、 ]*继续(?:吧)?)?|我(?:已|已经)?(?:登录|登陆)(?:了)?(?:[，,、 ]*继续(?:吧)?)?|控制权(?:已经|已)?还给你(?:[，,、 ]*继续(?:吧)?)?|continue(?:\s+(?:the\s+)?(?:task|now))?|resume(?:\s+(?:the\s+)?task)?)\s*[。.!！]?$/i.test(text)) return true;
+  // A short continuation can resume the same task after a long sign-in pause.
+  // It never grants scope by itself; the caller must find an unbroken chain to
+  // a direct Browser User request from this same Bot.
+  if (/^(?:继续(?:啊|吧|一下|执行|刚才的任务|这个任务)?|接着(?:来|做|继续)?|(?:我)?(?:已|已经)?(?:登录|登陆)(?:成功|完成|好了|了)?(?:[，,、 ]*(?:并|然后|且)?[，,、 ]*(?:点击|点了|选择)?\s*(?:Return to Bot|归还控制权|把控制权还给你|继续(?:吧)?)?)?|控制权(?:已经|已)?(?:还给你|归还)(?:[，,、 ]*继续(?:吧)?)?|(?:i(?:'ve| have)?\s+)?(?:signed\s+in|logged\s+in)(?:\s+successfully)?(?:\s+and\s+(?:clicked\s+)?(?:return\s+to\s+bot|returned\s+control))?|(?:i\s+)?returned\s+control(?:\s+and\s+continue)?|continue(?:\s+(?:the\s+)?(?:task|now))?|resume(?:\s+(?:the\s+)?task)?)\s*[。.!！]?$/i.test(text)) return true;
   const chineseApproval = /(?:不需要|不用|别|不要).{0,24}(?:批准|审批)|(?:每步|每一步|每次).{0,12}(?:让我|我)?(?:批准|审批)/i.test(text);
   const chineseContinuation = /(?:直接.{0,12}(?:打开|进入|去)|继续.{0,12}(?:打开|进入|操作)?)/i.test(text);
   const englishApproval = /(?:don't|do not|stop asking).{0,48}(?:approve|approval)|(?:every|each)\s+step.{0,20}(?:approve|approval)/i.test(text);
   const englishContinuation = /(?:open|go ahead|continue|proceed).{0,24}(?:it|there|directly|now)?/i.test(text);
   return (chineseApproval && chineseContinuation) || (englishApproval && englishContinuation);
+}
+
+/**
+ * Return the originating direct Browser User request only when the current
+ * user message explicitly continues an unbroken same-Bot follow-up chain.
+ * An unrelated user prompt breaks the chain; webpage text is never included
+ * in this history and cannot grant permission.
+ */
+export function continuedBrowserTaskRequest(request: string, previousPrompts: readonly string[] = []): string | null {
+  if (!continuesUserSignInHandoff(request)) return null;
+  for (const previous of [...previousPrompts].reverse()) {
+    if (requestsBrowserTask(previous)) return previous;
+    if (continuesUserSignInHandoff(previous)) continue;
+    return null;
+  }
+  return null;
 }
