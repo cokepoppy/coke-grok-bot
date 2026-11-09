@@ -101,10 +101,37 @@ test('Pi carries a recent same-Bot sign-in handoff into an approval follow-up wi
   const result=await executor.execute(screen,followup,new AbortController().signal,randomUUID());
   assert.equal(result.status,'completed');
   assert.match(receivedPrompt,/https:\/\/accounts\.google\.com/);
-  assert.match(receivedPrompt,/continues the user's recent sign-in handoff/i);
+  assert.match(receivedPrompt,/continuing the immediately preceding browser task/i);
+  assert.match(receivedPrompt,/verify that the computer is back under Agent control/i);
   assert.match(receivedPrompt,/open the Computer screen and choose Take control/i);
-  assert.match(receivedPrompt,/Once the sign-in or human-verification page is visible, stop/i);
-  assert.match(receivedPrompt,/Do not interpret the request to avoid repeated approvals as permission to enter credentials/i);
+  assert.match(receivedPrompt,/If sign-in or human verification appears again, stop/i);
+  assert.match(receivedPrompt,/never enter or request credentials/i);
+ }finally{await executor.close();gateway.close()}
+});
+
+test('Pi resumes the original Gmail task and generic Browser User scope after a short sign-in continuation',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const original='请检查 Gmail 最近的未读邮件并为最新一封拟写回复草稿。登录页出现后请停下来让我接管；我登录并把控制权还给你后继续。不要发送。';
+ const followup:AgentRun={...run,prompt:'继续',previousPrompts:[original]};
+ let receivedPrompt='',issuedScope:{browserTask?:boolean;gmailReadDraftWorkflow?:boolean;signInHandoff?:boolean;requestedNavigationOrigins?:readonly string[]}|undefined;
+ const issue=gateway.issue.bind(gateway);gateway.issue=options=>{issuedScope=options.scope;return issue(options)};
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
+  receivedPrompt=JSON.parse(String(init?.body)).prompt;
+  return Response.json({status:'done',message:'Unread review and reply draft completed.'});
+ });
+ try{
+  const result=await executor.execute(screen,followup,new AbortController().signal,randomUUID());
+  assert.equal(result.status,'completed');
+  assert.equal(issuedScope?.browserTask,true,'the prior user-authorized browser task remains available after sign-in');
+  assert.equal(issuedScope?.gmailReadDraftWorkflow,true,'the Gmail unread-and-draft scope resumes');
+  assert.equal(issuedScope?.signInHandoff,true,'a second authentication challenge still hands control back');
+  assert.ok(issuedScope?.requestedNavigationOrigins?.includes('https://mail.google.com'));
+  assert.match(receivedPrompt,/Prior user task:[\s\S]*请检查 Gmail 最近的未读邮件/);
+  assert.match(receivedPrompt,/User's current message:\n继续/);
+  assert.match(receivedPrompt,/resume only the original user-requested task/i);
+  assert.match(receivedPrompt,/Do not claim control returned without state proof/i);
+  assert.match(receivedPrompt,/If sign-in or human verification appears again, stop/i);
+  assert.doesNotMatch(receivedPrompt,/Do not interpret.*permission.*take account actions/i);
  }finally{await executor.close();gateway.close()}
 });
 

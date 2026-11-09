@@ -43,6 +43,8 @@
 
 本轮 ComputerBridge、浏览器策略、Pi scope、DSH 插件和提示词定向回归 54/54 通过，`npm run build` 通过。只读检查确认 K3D 当前仍运行旧的 `browser-task-r3-20261109` Auth 和 `candidate-browser-task-r3-20261109` Agent/Desktop 镜像；目标用户 namespace 有 7 个 Agent-owned 屏幕、2 个 user-owned 屏幕。因此没有导入镜像、滚动重启或宣称公网 Gmail 搜索已验收；新策略需等用户把两个屏幕交还 Agent 后部署，再从公网 UI 真实点击验证 `is:unread` 搜索及身份验证交接。
 
+**2026-11-09 登录交接续跑补齐**：在同一 Bot 的最近一条明确浏览任务要求登录时交接后，用户回复“继续”或“我登录好了，继续”，Pi 会带回原始任务、通用 Browser User 权限、请求站点和 Gmail 未读/草稿限制；先看当前页面并从未完成部分续跑，不重复已完成操作。若中间插入其他任务，不继承旧授权。浏览器仍只在密码、OTP/MFA、CAPTCHA 等身份验证处停止并交给用户接管；普通网页操作不会逐步创建审批卡。Computer User 坐标操作保留原有独立路径。ComputerBridge、浏览器策略、Pi、DSH 和 Worker 定向回归 45/45 通过，`npm run build:deployment` 通过。公网候选尚未部署：只读检查当前用户 namespace 为 7 个 Agent-owned、2 个 user-owned 屏幕；不重启其 Desktop，故不能声称公网 Gmail `is:unread` 已验收。
+
 重要架构区别：官方的电脑按**用户**而不是 Bot 归属；同一用户的多个屏幕不是安全隔离边界。Coke Dots 现有云电脑主要按租户工作区隔离，不能不经改造就把两者当成同一个模型。我们会保留租户权限边界，在租户内把个人电脑绑定到具体用户；个人 Bot 共用该用户电脑。团队共享 Bot 另建权限模型，不能默认继承个人浏览器登录态。
 
 ### 证据目录与状态

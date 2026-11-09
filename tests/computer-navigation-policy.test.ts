@@ -50,6 +50,8 @@ test('browser task scope is generic across sites and only comes from direct user
 test('approval follow-ups continue only an existing handoff and must say to continue opening it',()=>{
  assert.equal(continuesUserSignInHandoff('不需要我的批准呢，你直接去打开它，你不要每步都让我批准。'),true);
  assert.equal(continuesUserSignInHandoff("Don't ask me to approve every step; open it directly."),true);
+ assert.equal(continuesUserSignInHandoff('继续'),true,'a short explicit resume after sign-in must continue the prior task');
+ assert.equal(continuesUserSignInHandoff('我登录好了，继续吧。'),true,'the owner can confirm sign-in and resume in one message');
  assert.equal(continuesUserSignInHandoff('Do not ask for approval for deleting these records.'),false);
  assert.equal(continuesUserSignInHandoff('不要每步都让我批准。'),false);
 });
