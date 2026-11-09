@@ -84,15 +84,29 @@ export class RunStore {
         for(const id of mentionBotIds){const target=byId.get(id);if(!target)throw new Error('Invalid Bot mention targets');mentionedTargets.push({id,name:String(target.name),label:String(target.label||'')})}
       }
       const inputs = await this.inputFiles(connection,session,botId,fileIds);
-      const [existing] = await connection.execute<RowDataPacket[]>('SELECT id, bot_id AS botId, prompt, status, result, recovery_state AS recoveryState, replacement_run_id AS replacementRunId, attachment_hash AS attachmentHash, computer_used AS computerUsed FROM agent_runs WHERE bot_id=? AND request_id=?', [botId,requestId]);
+      const [existing] = await connection.execute<RowDataPacket[]>(`SELECT id,bot_id AS botId,prompt,status,result,recovery_state AS recoveryState,replacement_run_id AS replacementRunId,
+        attachment_hash AS attachmentHash,computer_used AS computerUsed,
+        DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt,DATE_FORMAT(updated_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS updatedAt
+        FROM agent_runs WHERE bot_id=? AND request_id=?`, [botId,requestId]);
       if (existing.length) {
         const storedHash=String(existing[0].attachmentHash||'');
         if (existing[0].prompt !== clean || (storedHash ? storedHash !== attachmentHash : fileIds.length > 0)) throw new RunRequestConflict('Request ID already used with different content');
         return { ...existing[0], files:await this.filesForRun(connection,String(existing[0].id)) } as AgentRun;
       }
       const runtimeContext:AgentRuntimeContext|null=mentionedTargets.length?{kind:'bot-mentions',targets:mentionedTargets}:null;
-      const run: AgentRun = { id:randomUUID(), botId, prompt:clean, status:'queued', result:null, recoveryState:'none', replacementRunId:null, files:inputs, computerUsed:false, createdAt:new Date().toISOString(),runtimeContext };
+      const run: AgentRun = { id:randomUUID(), botId, prompt:clean, status:'queued', result:null, recoveryState:'none', replacementRunId:null, files:inputs, computerUsed:false,runtimeContext };
       await connection.execute('INSERT INTO agent_runs (id,bot_id,request_id,prompt,status,recovery_state,attachment_hash,runtime_context) VALUES (?,?,?,?,?,?,?,?)',[run.id,botId,requestId,clean,run.status,run.recoveryState,attachmentHash,runtimeContext?JSON.stringify(runtimeContext):null]);
+      // Return the database's canonical timestamps. Using the Node clock here
+      // can place a new prompt before existing DB-backed history until the next
+      // poll replaces it with created_at from MySQL (whose session timezone may
+      // differ from the application process timezone).
+      const [timestamps]=await connection.execute<RowDataPacket[]>(`SELECT
+        DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt,
+        DATE_FORMAT(updated_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS updatedAt
+        FROM agent_runs WHERE id=?`,[run.id]);
+      if(!timestamps.length)throw new Error('Created run timestamp is unavailable');
+      run.createdAt=String(timestamps[0].createdAt);
+      run.updatedAt=String(timestamps[0].updatedAt);
       for (const fileId of fileIds) await connection.execute("INSERT INTO agent_run_files (run_id,file_id,kind) VALUES (?,?,'input')",[run.id,fileId]);
       await connection.execute('INSERT INTO agent_run_events (run_id,status) VALUES (?,?)',[run.id,run.status]);
       return run;

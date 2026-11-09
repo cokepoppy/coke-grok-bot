@@ -275,7 +275,8 @@ try {
     }
     if (path === '/api/bots/sales-outbound/runs' && route.request().method() === 'POST') {
       postedMentionBody = route.request().postDataJSON();
-      const createdAt = new Date().toISOString();
+      const previousActivity = Math.max(0, ...demoMessages.map(message => Date.parse(message.createdAt) || 0), ...demoRuns.flatMap(run => [Date.parse(run.createdAt) || 0, Date.parse(run.updatedAt) || 0]));
+      const createdAt = new Date(Math.max(Date.now(), previousActivity + 1)).toISOString();
       const run = { id:`submitted-run-${demoRuns.length + 1}`, prompt:postedMentionBody.prompt, status:'queued', result:null, recoveryState:'none', replacementRunId:null, computerUsed:false, createdAt, updatedAt:createdAt, files:[] };
       demoRuns.push(run);
       delayNextRunHistoryRead = true;
