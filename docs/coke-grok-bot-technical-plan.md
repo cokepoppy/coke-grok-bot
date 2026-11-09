@@ -2344,6 +2344,14 @@ UI E2E 长历史场景补充了“底部编辑草稿不移位”“历史位置�
 
 同一轮修复审批续跑上下文：用户的 `已登录并点了 Return to Bot` 现在被识别为明确续跑；run claim 会在同一 Bot 上最多读取 24 小时内最近 8 条前序用户消息，并以插入的非续跑消息截断授权链。Pi 仅在当前消息是明确续跑且能沿连续消息链回溯到用户直接授权的 Browser User 任务时恢复任务 scope；续跑上下文带原始任务、当前页面检查及不重复已完成动作要求。意图与 PiExecutor 定向测试 33/33 通过；使用固定本机测试 MySQL 13317 的 RunStore 测试 2/2 通过，包含超过 20 分钟的登录交接与消息顺序。该审批修正尚未部署，也未在公网复验；本机与公网 Chrome 用户界面控制仍受 `Debugger unattached` 阻塞。
 
+#### 2026-11-09 显式滚动与续跑修复候选部署
+
+提交 `add8487de30f961822acc8a2dc03a9c878f1de70` 已推送到当前唯一 feature 分支。长历史聊天 UI 回归、草稿时保持当前位置、发送后贴底、Agent 内容增长、32 条历史消息场景，`npm run test:ui` 通过；Browser policy/PiExecutor 33/33、RunStore 2/2、`npm run build`、`npm run build:deployment` 和 `git diff --check` 通过。候选包 `releases/candidate-grok-bot-browser-continuation-scroll-add8487-2026-11-09` 为 86 MiB，清单及包内校验通过。
+
+部署预检读到运行/排队任务 0、待审批 0；只把现有 `coke-grok-auth` Auth Deployment 一对一滚动到 `coke-grok-auth:sha-add8487de30f961822acc8a2dc03a9c878f1de70` 并就绪 1/1。Agent/Desktop、Broker、MySQL、PVC、其他 namespace 与 VPS 均未更新或重启。公网 HTML 已引用 `index-C9RzutXM.js`；公网 JS SHA-256 `f46265933dc5ed578e25c72b76fe9ea4aaacacfedf9565fe6bed011a76fbc325` 和 CSS SHA-256 `8b4d7a818a8f9035e22260a34b8c155bc0f9d31eff37cc01b7174af4e99cade7` 与本地制品逐字节一致，公网路由返回 HTTP 200。
+
+这证明候选部署与静态资产已更新，不证明登录后的聊天交互已公网点击验收。Chrome CUA 返回 `Debugger unattached`，新标签调用亦无法建立控制，因此本轮没有在用户 Chrome 中输入消息或核对真实滚动位置。feature 尚未合并 `main`、尚未打 acceptance tag；待受支持的公网可见交互可用后再完成这一项验收。
+
 #### 2026-11-09 聊天滚动状态分离修正（公网交互待验收）
 
 用户再次反馈发送消息后聊天视口跳回历史顶部。复查发现定位和用户滚动监听共用一个依赖消息数的 layout effect；每次消息数变化都会拆装监听并重置“跟随最新消息”状态。本轮 `npm run test:ui` 捕获登录态工作区缺陷：Auth 初次渲染时聊天 DOM 尚未挂载，独立的尺寸观察器提前退出，账号和消息加载后没有重新连接，所以任务时间线高度变化仍停在旧滚动高度。修正为聊天内容非空后连接观察器；初开会话保留历史起点，用户发送时切换到贴底并跟随 Agent 增量，用户翻历史或电脑面板改变列宽时保持视口。回归覆盖已通过；公网可见 Chrome 调用超时，尚未重新验证线上交互，故本候选未部署或提交。
