@@ -7,7 +7,7 @@ The Desktop Worker pauses for login or human verification and does not enter cre
 ## Current state
 
 - Candidate r3 is deployed in the Mac-local K3D cluster; the VPS remains a tunnel only.
-- Source refinements for search submit controls and ordinary account settings are prepared for a commit-specific r4 image. The deployment script refuses to roll Desktop while any Bot screen is user-owned.
+- Source refinements for search submit controls and ordinary account settings are built as commit-specific r4 Auth/Agent/Desktop images with matching `dist`, manifest, checksums, and a local OCI archive. r4 is not deployed. The deployment script refuses to roll Desktop while any Bot screen is user-owned.
 - Public Chrome Gmail E2E was started through the product UI. The current cloud computer is user-controlled and shows Google's account chooser. No account was selected and no credentials or inbox content were accessed. Public Gmail acceptance is pending the user's sign-in handoff and task resumption.
 - MySQL and the bound workspace PVC are preserved. No other namespace is targeted.
 
