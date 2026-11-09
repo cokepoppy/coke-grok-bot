@@ -5,25 +5,31 @@ const quotedSourceInstructions = /^\s*(?:(?:please|help me|can you)\s+)?(?:read|
 const openedQuotedSource = /^\s*(?:(?:please|help me|can you)\s+)?(?:read|inspect|check|open)\s+(?:this|the)\s+(?:email|message|webpage|page|file|document|attachment|邮件|消息|网页|页面|文件|文档|附件)\b[^\n]{0,120}[:：“”"']/i;
 const urlPattern = /https?:\/\/[^\s<>"'`()，。；]+/gi;
 
-const directBrowserTaskRequest = /(?:\b(?:use|through|via|in)\s+(?:the\s+)?(?:web\s+)?browser\b[\s\S]{0,180}\b(?:open|navigate|visit|search|read|review|inspect|check|browse|click|fill|complete|manage)\b|\b(?:open|navigate(?:\s+to)?|visit|search|read|review|inspect|check|browse|click|fill|complete|manage)\b[\s\S]{0,140}\b(?:website|webpage|web\s+page|browser|site|online|inbox|mailbox)\b|(?:使用|通过|在).{0,24}(?:浏览器|网页|网站|云电脑).{0,180}(?:打开|访问|浏览|导航|搜索|查找|阅读|查看|检查|点击|填写|完成|操作)|(?:打开|访问|浏览|搜索|查找|阅读|查看|检查|操作).{0,100}(?:网页|网站|浏览器|邮箱|收件箱|在线页面))/i;
+const directBrowserTaskRequest = /(?:\b(?:use|through|via|in)\s+(?:the\s+)?(?:web\s+)?browser\b[\s\S]{0,180}\b(?:open|navigate|visit|search|read|review|inspect|check|browse|click|fill|complete|manage|draft|compose|reply)\b|\b(?:open|navigate(?:\s+to)?|visit|search|read|review|inspect|check|browse|click|fill|complete|manage|draft|compose|reply)\b[\s\S]{0,160}\b(?:website|webpage|web\s+page|browser|site|online|inbox|mailbox|email|e-mail|mail|gmail|calendar|drive|portal|dashboard|application|app|service|system|platform|form|account|page|url)\b|\b(?:website|webpage|web\s+page|browser|site|online|inbox|mailbox|email|e-mail|mail|gmail|calendar|drive|portal|dashboard|application|app|service|system|platform|form|account|page|url)\b[\s\S]{0,160}\b(?:open|navigate|visit|search|read|review|inspect|check|browse|click|fill|complete|manage|draft|compose|reply)\b|(?:使用|通过|在).{0,24}(?:浏览器|网页|网站|云电脑).{0,180}(?:打开|访问|浏览|导航|搜索|查找|阅读|查看|检查|点击|填写|完成|操作|拟写|起草|回复)|(?:打开|访问|浏览|搜索|查找|阅读|查看|检查|操作|拟写|起草|回复).{0,120}(?:网页|网站|浏览器|邮箱|收件箱|邮件|Gmail|谷歌邮箱|在线页面|日历|网盘|门户|后台|系统|平台|应用|工作区|表单)|(?:在|用|通过).{0,24}[\p{L}\p{N}][\p{L}\p{N}._-]{1,60}(?:里|中|上|系统|平台|应用|工作区|网页|网站|邮箱|收件箱)?[\s\S]{0,100}(?:打开|访问|浏览|导航|搜索|查找|阅读|查看|检查|操作|拟写|起草|回复|填写|管理))/iu;
 const deniesBrowserTask = /\b(?:do\s+not|don't|never|avoid)\s+(?:use|open|navigate|browse)\s+(?:the\s+)?(?:web\s+)?browser\b|(?:不要|不准|禁止).{0,5}(?:使用|用|打开|访问|浏览|操作)(?:云电脑(?:里的|中的|上)?|网页)?浏览器/i;
 
 /**
  * A short-lived permission derived only from the signed-in user's current
- * request. It authorizes ordinary Browser User interactions on any site;
+ * request. It recognizes direct site/app tasks even when the user doesn't
+ * explicitly say "browser" and authorizes ordinary Browser User interactions on any site;
  * the desktop Worker still blocks credential entry and routes consequential
  * controls through the existing approval flow.
  */
 export function requestsBrowserTask(request: string): boolean {
   const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';
   if (!text || deniesBrowserTask.test(text) || quotedSourceInstructions.test(text) || openedQuotedSource.test(text)) return false;
-  return directBrowserTaskRequest.test(text) || requestsGmailReadDraftWorkflow(text);
+  // Explicit destinations (including arbitrary URLs and named services) and
+  // plain-language mail/site tasks all use the same per-run browser scope.
+  // Gmail's specialized read/draft policy is an additional task instruction,
+  // not a prerequisite for using ordinary browser controls.
+  return directBrowserTaskRequest.test(text) || requestedNavigationOrigins(text).length > 0;
 }
 
 /**
  * Narrow, run-scoped destinations directly requested by the signed-in user.
- * This is only used to skip a repetitive approval for browser navigation;
- * clicks, form input, and other computer actions remain reviewed separately.
+ * This origin scope controls where the run may navigate. The broader,
+ * run-scoped Browser User permission for routine page controls is represented
+ * separately by requestsBrowserTask and is not restricted to these origins.
  */
 export function requestedNavigationOrigins(request: string): string[] {
   const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';
@@ -53,16 +59,21 @@ export function requestedNavigationOrigins(request: string): string[] {
   return [...origins];
 }
 
-/** Narrow permission for reading unread Gmail rows and saving unsent reply drafts. */
+/** Extra task guidance for Gmail unread review and reply drafting. Browser access itself is site-generic. */
 export function requestsGmailReadDraftWorkflow(request: string): boolean {
   const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';
   if (!text || quotedSourceInstructions.test(text) || openedQuotedSource.test(text)) return false;
   const namesGmail = /\b(?:gmail|google mail|mail\.google\.com)\b/i.test(text);
   const readsUnread = /\b(?:review|read|inspect|check)\b.{0,120}\b(?:unread|inbox)\b|\b(?:unread|inbox)\b.{0,120}\b(?:review|read|inspect|check)\b|(?:查看|读取|检查|审阅).{0,30}未读|未读.{0,30}(?:查看|读取|检查|审阅)/i.test(text);
   const draftsReplies = /\b(?:draft|save|write|compose)\b.{0,100}\b(?:reply|replies)\b|\b(?:reply|replies)\b.{0,100}\b(?:draft|save|write|compose)\b|(?:拟写|起草|撰写|保存).{0,30}(?:回复|回信|草稿)|(?:回复|回信).{0,30}(?:草稿|拟写|起草)/i.test(text);
-  const explicitlyUnsent = /\b(?:unsent|never send|do not send|don't send|draft(?:s)? only)\b|(?:不要|不准|禁止|绝不).{0,8}发送|(?:仅|只).{0,8}(?:保存)?草稿/i.test(text);
+  const sendIntentText = text
+    .replace(/\b(?:never|do not|don't|draft(?:s)? only)\b[\s\S]{0,32}\b(?:send|forward)\b(?:\s*(?:,|or|and)\s*\b(?:send|forward)\b)*/gi, ' ')
+    .replace(/(?:不要|不准|禁止|绝不|别|仅|只).{0,8}(?:发送|转发)/g, ' ');
+  const explicitlySending = /\b(?:send|forward)\b|(?:发送|转发)/i.test(sendIntentText);
   const deniesReadingOrDrafting = /\b(?:do not|don't|never)\s+(?:read|review|inspect|check|open|draft|write|compose)\b.{0,60}\b(?:unread|inbox|reply|replies)\b|(?:不要|不准|禁止).{0,8}(?:查看|读取|检查|审阅|打开).{0,16}(?:未读|收件箱|所有邮件|全部邮件|任何邮件|gmail|回复|回信)|(?:不要|不准|禁止).{0,8}(?:拟写|起草|撰写|草拟).{0,16}(?:回复|回信|草稿)|(?:不要|不准|禁止).{0,8}(?:回复|回信)(?:任何|所有|全部)?(?:邮件|消息|草稿)?/i.test(text);
-  return namesGmail && readsUnread && draftsReplies && explicitlyUnsent && !deniesReadingOrDrafting;
+  // A user request to draft a reply means save it as a draft; it does not
+  // require an extra "do not send" phrase. Sending stays independently gated.
+  return namesGmail && readsUnread && draftsReplies && !explicitlySending && !deniesReadingOrDrafting;
 }
 
 /** Whether the owner explicitly asked the Agent to stop and hand off at sign-in. */

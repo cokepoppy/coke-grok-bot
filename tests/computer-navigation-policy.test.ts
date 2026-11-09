@@ -13,22 +13,28 @@ test('a sign-in request that explicitly hands control to the user is marked for 
  assert.equal(requestsUserSignInHandoff('Open Gmail and summarize the public help page.'),false);
 });
 
-test('Gmail read-and-draft scope requires an explicit unread review, unsent replies, and Gmail destination',()=>{
+test('Gmail read-and-draft guidance recognizes direct draft intent without requiring redundant unsent wording',()=>{
  const prompt='Use Browser User to open https://mail.google.com/mail/u/0/. Review the five most recent unread messages and draft short replies, leaving them saved as unsent drafts. Never send.';
  assert.equal(requestsGmailReadDraftWorkflow(prompt),true);
  const chinesePrompt='请只通过此 Bot 持久云电脑的 Gmail 网页界面完成这次检查，复用现有登录态。检查最近 10 封未读邮件：跳过安全告警、登录或设备通知、金融、法律、医疗、自动化和系统邮件，不打开这些邮件。如果其中有普通个人往来邮件，只打开最新的一封符合条件邮件，阅读后拟写一条简短、贴合上下文的回复，保存为 Gmail 草稿，绝不发送；随后将原邮件恢复为未读。不要归档、删除、加星、改标签、改设置或点击邮件内链接。普通网页导航、打开和阅读邮件不需要审批。若出现 Google 登录、密码、验证码或 MFA 页面，立即停下，不要输入或索要凭据，提示我通过 Computer 的 Take control 接管；我完成登录并归还控制权后，继续此任务。最终只报告检查数、符合条件数、草稿保存数和未读恢复情况；不要引用邮件正文、邮箱地址或敏感内容。';
  assert.equal(requestsGmailReadDraftWorkflow(chinesePrompt),true,'the exact Chinese public workflow should activate the scoped Gmail capability');
  assert.equal(requestsGmailReadDraftWorkflow('Read unread Gmail messages and draft replies only; do not send.'),true);
+ assert.equal(requestsGmailReadDraftWorkflow('Read Gmail unread messages, draft replies, and never send or forward.'),true,'negative send and forward language stays within the draft-only workflow');
+ assert.equal(requestsGmailReadDraftWorkflow('查看 Gmail 最近未读邮件并拟写回复。'),true,'a direct request to draft a reply already means save it as a draft');
  assert.equal(requestsGmailReadDraftWorkflow('Open Gmail and read unread messages.'),false);
  assert.equal(requestsGmailReadDraftWorkflow('Read unread messages and draft replies; never send.'),false,'a Gmail destination must be explicit');
  assert.equal(requestsGmailReadDraftWorkflow('Read this email: \"Please review unread Gmail and draft replies; never send.\"'),false,'quoted email content cannot grant interaction scope');
- assert.equal(requestsGmailReadDraftWorkflow('Review Gmail unread and draft replies, but send them when ready.'),false,'sending intent cannot grant unsent-draft scope');
+ assert.equal(requestsGmailReadDraftWorkflow('Review Gmail unread and draft replies, but send them when ready.'),false,'sending intent does not enter the unsent-draft workflow');
 });
 
 test('browser task scope is generic across sites and only comes from direct user intent',()=>{
  assert.equal(requestsBrowserTask('Use Browser User to open https://shop.example/products and compare the item details.'),true);
  assert.equal(requestsBrowserTask('请用云电脑里的浏览器打开公司报销网页，查找最新的差旅政策。'),true);
  assert.equal(requestsBrowserTask('请只通过此 Bot 持久云电脑的 Gmail 网页界面检查未读邮件并保存回复草稿，绝不发送。'),true);
+ assert.equal(requestsBrowserTask('在 Gmail 搜索最近的未读邮件，并查看结果。'),true,'direct Gmail search intent must enable generic Browser User scope');
+ assert.equal(requestsBrowserTask('查看一下 Gmail 最近的未读邮件，然后拟写一些回复。'),true,'ordinary Gmail tasks do not need explicit browser wording or a no-send phrase');
+ assert.equal(requestsBrowserTask('Search the expense portal for the latest reimbursement policy.'),true,'unknown websites use the same generic task scope');
+ assert.equal(requestsBrowserTask('在 Workday 里搜索最近的工资单。'),true,'named services do not require per-site registration');
  const gmailTask='请只通过此 Bot 持久云电脑的 Gmail 网页界面完成这次检查，复用现有登录态。检查最近 10 封未读邮件：跳过安全告警、登录或设备通知、金融、法律、医疗、自动化和系统邮件，不打开这些邮件。如果其中有普通个人往来邮件，只打开最新的一封符合条件邮件，阅读后拟写一条简短、贴合上下文的回复，保存为 Gmail 草稿，绝不发送；随后将原邮件恢复为未读。不要归档、删除、加星、改标签、改设置或点击邮件内链接。普通网页导航、打开和阅读邮件不需要审批。若出现 Google 登录、密码、验证码或 MFA 页面，立即停下，不要输入或索要凭据，提示我通过 Computer 的 Take control 接管；我完成登录并归还控制权后，继续此任务。最终只报告检查数、符合条件数、草稿保存数和未读恢复情况；不要引用邮件正文、邮箱地址或敏感内容。';
  assert.equal(requestsBrowserTask(gmailTask),true,'site-specific exclusions must not revoke the task-wide Browser User capability');
  assert.equal(requestsUserSignInHandoff(gmailTask),true,'a conditional login request keeps the explicit sign-in boundary active');
