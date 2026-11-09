@@ -14,13 +14,14 @@ import {createDesktopProvisioningBroker} from '../src/server/desktop-provisionin
 import {createNamespaceBootstrapService} from '../src/server/namespace-bootstrap-service.ts';
 import {NamespaceBootstrapClient} from '../src/server/namespace-bootstrap-client.ts';
 import {desktopOwnerHash} from '../src/server/desktop-resources.ts';
+import {SafeDiagnosticError,safeDiagnosticMetadata} from '../src/server/safe-diagnostics.ts';
 
 test('broker accepts only authenticated owner identities and verifies the returned desktop',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'grok-broker-test-')),keyPath=join(dir,'key.pem'),certPath=join(dir,'cert.pem');
  await promisify(execFile)('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',keyPath,'-out',certPath,'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1']);
  const key=await readFile(keyPath),cert=await readFile(certPath),capability=randomBytes(32).toString('base64url'),agentToken=randomBytes(32).toString('base64url');let calls=0;
- const owner={tenantId:randomUUID(),userId:randomUUID()};
- const server=createDesktopProvisioningBroker({key,cert},capability,{connect:async selected=>{calls++;assert.deepEqual(selected,owner);const hash=createHash('sha256').update(`${selected.tenantId}:${selected.userId}`).digest('hex').slice(0,32);return {agentUrl:new URL(`http://agent.grok-user-${hash}.svc.cluster.local:8083/`),agentToken}}});server.listen(0,'127.0.0.1');await once(server,'listening');const port=(server.address() as AddressInfo).port,base=`https://127.0.0.1:${port}/`;
+ const owner={tenantId:randomUUID(),userId:randomUUID()},rejectedOwner={...owner,userId:randomUUID()};
+ const server=createDesktopProvisioningBroker({key,cert},capability,{connect:async selected=>{if(selected.userId===rejectedOwner.userId)throw new SafeDiagnosticError('RESOURCE_MISMATCH');calls++;assert.deepEqual(selected,owner);const hash=createHash('sha256').update(`${selected.tenantId}:${selected.userId}`).digest('hex').slice(0,32);return {agentUrl:new URL(`http://agent.grok-user-${hash}.svc.cluster.local:8083/`),agentToken}}});server.listen(0,'127.0.0.1');await once(server,'listening');const port=(server.address() as AddressInfo).port,base=`https://127.0.0.1:${port}/`;
  async function call(path:string,body:unknown,token=capability){return new Promise<number>((resolve,reject)=>{const data=JSON.stringify(body);const req=request(new URL(path,base),{method:'POST',ca:cert,headers:{authorization:`Bearer ${token}`,'content-type':'application/json','content-length':Buffer.byteLength(data)}},res=>{res.resume();res.on('end',()=>resolve(res.statusCode||0))});req.on('error',reject);req.end(data)})}
  try{
   assert.equal(await call('/v1/personal-computer',owner,randomBytes(32).toString('base64url')),401);
@@ -30,6 +31,7 @@ test('broker accepts only authenticated owner identities and verifies the return
   assert.equal(calls,0);
   const client=new DesktopBrokerClient(base,cert,capability),result=await client.connect(owner,new AbortController().signal);
   assert.equal(result.agentToken,agentToken);assert.match(result.agentUrl.hostname,/^agent\.grok-user-[a-f0-9]{32}\.svc\.cluster\.local$/);assert.equal(calls,1);
+  await assert.rejects(client.connect(rejectedOwner,new AbortController().signal),error=>{const diagnostic=safeDiagnosticMetadata(error);return diagnostic.code==='BROKER_REJECTED'&&diagnostic.status===503});
   await assert.rejects(new DesktopBrokerClient(base,cert,randomBytes(32).toString('base64url')).connect(owner,new AbortController().signal));
   assert.throws(()=>new DesktopBrokerClient('http://localhost/',cert,capability));
  }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(dir,{recursive:true,force:true})}
