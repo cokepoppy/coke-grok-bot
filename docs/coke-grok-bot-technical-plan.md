@@ -2249,3 +2249,11 @@ Martin Lacsamana 的讲者小窗有姿势/口型变化；紫色 `Introducing Gro
 从已推送源码提交 `d3f1e699760138816d8aea67c409466f08f5fce8` 构建了固定版本 Auth 和共享 Agent/Desktop `linux/arm64` 镜像，并在 `releases/candidate-grok-bot-browser-task-intent-d3f1e69-2026-11-09` 生成对应 dist、manifest、部署/回退脚本、校验清单与本地 OCI 包。OCI 包约 945 MiB，SHA-256 为 `6aa5df226b645119fa120203b31740adc6bee71c2c1a5163797da410c5487386`；完整校验清单与 gzip 完整性检查通过。构建后 Data 卷可用空间约 18 GiB。
 
 只读复核确认 K3D 仍运行 `browser-task-r3-20261109` Auth 与 `candidate-browser-task-r3-20261109` Agent/Desktop。目标公网用户 namespace 有两块持久 Bot screen 的 owner 为 `user`；候选 preflight 按设计再次返回退出码 21。未导入镜像或滚动部署，未改 Auth/Broker/Agent/Desktop、MySQL、PVC、其他 namespace 或 VPS。该候选尚未公网复测 `is:unread`，仍不能算该功能的公网验收或发布；待目标 namespace 所有屏幕归还 Agent 后才能运行部署预检和可见公网 Gmail 流程。
+
+#### 2026-11-09 未登记服务名的 Browser User 识别补强
+
+后续覆盖审计发现仅识别通用网页类别仍会漏掉普通英文请求 `Search Slack ...`、`Go to Jira ...` 这类未登记服务名。`e729d30` 在同一 feature 分支加入面向通用应用名与 URL 的短期 Browser User 意图识别，并补充本地文件/Downloads 搜索不授予网页能力的负例；PiExecutor 回归确认“Search Slack ...”会下发 `browserTask=true`，无需 site-specific origin 列表。Worker 的登录/验证码/CAPTCHA 交接和发送/删除/付款等高影响审批边界保持不变。
+
+源码测试为 runtime 161/161、任务识别与 PiExecutor 定向测试 29/29、Worker policy 2/2，`npm run build:deployment` 和 `git diff --check` 通过。候选 `releases/candidate-grok-bot-browser-task-intent-e729d30-2026-11-09` 以 `linux/arm64` 重建，dist、镜像 manifest、checksums 和约 945 MiB 本地 OCI 包校验通过；OCI SHA-256 `41cdc8850b00efa8c50ee093ae3fddec8aac2914c54dfe1f3fbcc5ad73822c41`。本次在原位替换未验收 d3 候选包，避免多保留一个同量级压缩包。
+
+K3D 仍运行 r3，目标 namespace 仍有两块 `owner=user` 持久屏幕；e729d30 候选 preflight 再次返回 21。没有导入镜像或 rollout，MySQL、PVC、其他 namespace 与 VPS 均未改动。公网 Gmail `is:unread` 的可见 UI E2E 尚未通过，功能未合并 `main`，也未打验收 checkpoint tag。
