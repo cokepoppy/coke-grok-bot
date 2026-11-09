@@ -138,7 +138,7 @@ try {
     assert.ok(metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop <= 2, `${label}: chat should be scrolled to its latest message (${JSON.stringify(metrics)})`);
     assert.equal(metrics.windowScrollY, 0, `${label}: sending must not scroll the outer page`);
   };
-  assert.ok((await scrollMetrics()).scrollTop<=2, 'opening a saved conversation should preserve its history starting position');
+  await assertLatestMessageVisible('initial history load');
   await page.getByLabel('Message Local Research').fill('Scroll follow-up message');
   await page.getByRole('button', { name: 'Save local message' }).click();
   await page.locator('.conversation').getByText('Scroll follow-up message', { exact: true }).waitFor();
@@ -346,6 +346,7 @@ try {
   assert.equal(await productShellPage.locator('.app.product-shell').evaluate(element => element.classList.contains('sidebar-collapsed')), true, 'Opening Computer should show the compact Bot icon rail');
   await mkdir('artifacts/ui', { recursive: true });
   await productShellPage.getByRole('button', { name: 'Overnight outbound, Sundays at 11:00 PM' }).waitFor();
+  await productShellPage.locator('.message-scroll').evaluate(element=>{element.scrollTop=0;element.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,bubbles:true}))});
   const referenceMessageGeometry = await productShellPage.evaluate(() => {
     const box = (selector, index = 0) => { const rect = document.querySelectorAll(selector)[index]?.getBoundingClientRect(); return rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height }; };
     return { welcome: box('.message-line.bot .message-bubble', 0), prompt: box('.message-line.user .message-bubble'), response: box('.message-line.bot .message-bubble', 1), computer: box('.computer-activity-card'), screen: box('.computer-preview-button') };
@@ -504,7 +505,7 @@ try {
     await productShellPage.waitForTimeout(180);
     await assertProductTimelineAtLatest(label);
   };
-  assert.ok((await productScrollMetrics()).scrollTop<=2, 'opening the authenticated conversation should preserve its history starting position');
+  await waitForProductTimelineAtLatest('authenticated initial history load');
   const productComposer=productShellPage.getByRole('textbox',{name:'Message Sales Outbound'});
   await productComposer.fill('Scroll follow-up message');
   await productShellPage.getByRole('button',{name:'Send task'}).click();

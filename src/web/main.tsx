@@ -775,15 +775,17 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       previousConversationKey.current=activeConversationKey;
       previousScrollViewport.current=viewport;
       previousConversationLength.current=0;
-      stickToLatestMessage.current=false;
-      followMessageGrowth.current=false;
+      // A newly opened conversation starts at its latest message. The user can
+      // still scroll up to history, which disables following until they return
+      // to the bottom.
+      stickToLatestMessage.current=!reference;
+      followMessageGrowth.current=!reference;
     }
-    // Open existing conversations at their beginning. A send explicitly opts
-    // into following the newest item; background updates then follow only as
-    // long as the user has not moved back into history.
-    if(visibleConversationLength>0&&messageCountChanged&&stickToLatestMessage.current)scrollToLatest();
+    // Position only within this conversation viewport, including when switching
+    // between conversations with the same number of messages.
+    if(visibleConversationLength>0&&(conversationChanged||viewportChanged||messageCountChanged)&&stickToLatestMessage.current)scrollToLatest();
     previousConversationLength.current=visibleConversationLength;
-  },[activeConversationKey,visibleConversationLength,newChat,Boolean(account)]);
+  },[activeConversationKey,visibleConversationLength,newChat,Boolean(account),reference]);
   useLayoutEffect(() => {
     const viewport=messageScroll.current;
     const content=messageContent.current;
