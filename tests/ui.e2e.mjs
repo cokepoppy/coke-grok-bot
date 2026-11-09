@@ -138,7 +138,7 @@ try {
     assert.ok(metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop <= 2, `${label}: chat should be scrolled to its latest message (${JSON.stringify(metrics)})`);
     assert.equal(metrics.windowScrollY, 0, `${label}: sending must not scroll the outer page`);
   };
-  await assertLatestMessageVisible('initial history load');
+  assert.ok((await scrollMetrics()).scrollTop<=2, 'opening a saved conversation should preserve its history starting position');
   await page.getByLabel('Message Local Research').fill('Scroll follow-up message');
   await page.getByRole('button', { name: 'Save local message' }).click();
   await page.locator('.conversation').getByText('Scroll follow-up message', { exact: true }).waitFor();
@@ -504,6 +504,7 @@ try {
     await productShellPage.waitForTimeout(180);
     await assertProductTimelineAtLatest(label);
   };
+  assert.ok((await productScrollMetrics()).scrollTop<=2, 'opening the authenticated conversation should preserve its history starting position');
   const productComposer=productShellPage.getByRole('textbox',{name:'Message Sales Outbound'});
   await productComposer.fill('Scroll follow-up message');
   await productShellPage.getByRole('button',{name:'Send task'}).click();
@@ -512,6 +513,10 @@ try {
   await productShellPage.locator('.message-content > .message-line').last().evaluate(element=>{element.style.minHeight='260px'});
   await waitForProductTimelineAtLatest('authenticated task after content growth');
   await productShellPage.locator('.message-scroll').evaluate(element=>{element.scrollTop=0;element.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,bubbles:true}))});
+  await productShellPage.setViewportSize({width:1035,height:675});
+  await productShellPage.waitForTimeout(180);
+  const historyPosition=await productScrollMetrics();
+  assert.ok(historyPosition.scrollTop<=2,`resizing while reading history must preserve its position (${JSON.stringify(historyPosition)})`);
   await productComposer.fill('Second scroll follow-up');
   await productShellPage.getByRole('button',{name:'Send task'}).click();
   await productShellPage.locator('.conversation').getByText('Second scroll follow-up',{exact:true}).waitFor();

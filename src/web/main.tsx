@@ -566,8 +566,11 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const sendingRef = useRef(false);
   const messageScroll = useRef<HTMLDivElement>(null);
   const messageContent = useRef<HTMLDivElement>(null);
-  const stickToLatestMessage = useRef(true);
+  const stickToLatestMessage = useRef(false);
   const followMessageGrowth = useRef(false);
+  const previousConversationKey = useRef('');
+  const previousConversationLength = useRef(0);
+  const previousScrollViewport = useRef<HTMLDivElement | null>(null);
   const recipientInput = useRef<HTMLInputElement>(null);
   const savedNames = useRef<Record<string, string>>({});
   const renameQueue = useRef<Record<string, Promise<void>>>({});
@@ -763,12 +766,31 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   useLayoutEffect(() => {
     const viewport=messageScroll.current;
     const content=messageContent.current;
-    if(!viewport||!content||visibleConversationLength===0)return;
+    if(!viewport||!content)return;
+    const scrollToLatest=()=>{viewport.scrollTop=viewport.scrollHeight;};
+    const conversationChanged=previousConversationKey.current!==activeConversationKey;
+    const viewportChanged=previousScrollViewport.current!==viewport;
+    const messageCountChanged=previousConversationLength.current!==visibleConversationLength;
+    if(conversationChanged||viewportChanged){
+      previousConversationKey.current=activeConversationKey;
+      previousScrollViewport.current=viewport;
+      previousConversationLength.current=0;
+      stickToLatestMessage.current=false;
+      followMessageGrowth.current=false;
+    }
+    // Open existing conversations at their beginning. A send explicitly opts
+    // into following the newest item; background updates then follow only as
+    // long as the user has not moved back into history.
+    if(visibleConversationLength>0&&messageCountChanged&&stickToLatestMessage.current)scrollToLatest();
+    previousConversationLength.current=visibleConversationLength;
+  },[activeConversationKey,visibleConversationLength,newChat,Boolean(account)]);
+  useLayoutEffect(() => {
+    const viewport=messageScroll.current;
+    const content=messageContent.current;
+    if(!viewport||!content)return;
     const scrollToLatest=()=>{viewport.scrollTop=viewport.scrollHeight;};
     // Scroll only the conversation viewport. scrollIntoView() can also move
     // outer page ancestors, which makes the history appear to jump to its top.
-    stickToLatestMessage.current=true;
-    scrollToLatest();
     let previousViewportWidth=viewport.clientWidth;
     const resizeObserver=typeof ResizeObserver==='undefined'?null:new ResizeObserver(()=>{
       const currentViewportWidth=viewport.clientWidth;
@@ -777,6 +799,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         return;
       }
       previousViewportWidth=currentViewportWidth;
+      // Content growth follows the latest item only when the user was already
+      // following it; a panel-width reflow must not steal history position.
       if(followMessageGrowth.current&&stickToLatestMessage.current)scrollToLatest();
     });
     resizeObserver?.observe(content);
@@ -813,7 +837,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       viewport.removeEventListener('scroll',onScroll);
       resizeObserver?.disconnect();
     };
-  },[activeConversationKey,active?.id,activeGroup?.id,visibleConversationLength]);
+  },[activeConversationKey,newChat,Boolean(account),visibleConversationLength>0]);
 
   function selectBot(id: string) {
     if (sendingRef.current) return;
