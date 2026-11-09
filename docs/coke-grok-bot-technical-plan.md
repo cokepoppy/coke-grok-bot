@@ -45,6 +45,8 @@
 
 **2026-11-09 登录交接续跑补齐**：在同一 Bot 的最近一条明确浏览任务要求登录时交接后，用户回复“继续”或“我登录好了，继续”，Pi 会带回原始任务、通用 Browser User 权限、请求站点和 Gmail 未读/草稿限制；先看当前页面并从未完成部分续跑，不重复已完成操作。若中间插入其他任务，不继承旧授权。浏览器仍只在密码、OTP/MFA、CAPTCHA 等身份验证处停止并交给用户接管；普通网页操作不会逐步创建审批卡。Computer User 坐标操作保留原有独立路径。ComputerBridge、浏览器策略、Pi、DSH 和 Worker 定向回归 45/45 通过，`npm run build:deployment` 通过。公网候选尚未部署：只读检查当前用户 namespace 为 7 个 Agent-owned、2 个 user-owned 屏幕；不重启其 Desktop，故不能声称公网 Gmail `is:unread` 已验收。
 
+**2026-11-09 公网通用 Browser User 候选部署**：用户明确授权重启两块 user-owned 云电脑。候选 `464cd70c68ea8c1853a293f6b2f6df72b478cf80` 已部署至本机 K3D；Auth、Agent、Desktop 固定镜像切换到 `sha-464cd70...`，Broker 用原镜像滚动重启。Worker 的 `browser-task-policy.mjs` 运行时 SHA-256 与源码一致；公网路由返回 200。Chromium profile 位于 `/workspace/.desktop-home/.config/chromium`，挂载原 workspace PVC；重启后 PVC UID/volume 未变，未改 MySQL、其他租户或 VPS。之后在已登录公网 Chrome 的 Coke Grok Bot UI 真实提交了 Gmail `is:unread` 搜索任务；云电脑显示 Google 账号选择页，Bot 界面显示 `Queued · waiting for your computer`，电脑当前由用户接管。测试尚未执行到搜索：等待用户本人完成 Google 登录并点 `Return to Bot`，然后验证 Browser User 导航、Search mail 填写及 Enter 是否全程无逐步审批。未查看、抄录或输入任何凭据。
+
 重要架构区别：官方的电脑按**用户**而不是 Bot 归属；同一用户的多个屏幕不是安全隔离边界。Coke Dots 现有云电脑主要按租户工作区隔离，不能不经改造就把两者当成同一个模型。我们会保留租户权限边界，在租户内把个人电脑绑定到具体用户；个人 Bot 共用该用户电脑。团队共享 Bot 另建权限模型，不能默认继承个人浏览器登录态。
 
 ### 证据目录与状态
