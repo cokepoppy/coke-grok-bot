@@ -2400,3 +2400,9 @@ UI E2E 长历史场景补充了“底部编辑草稿不移位”“历史位置�
 UI E2E 现对登录态长历史将任务历史 GET 人为延迟 650ms，并等待实际用户消息气泡（不再把输入框草稿误认成已发送消息），断言刷新期间和连续发送后仍留在最新消息；`npm run test:ui` 通过。`npm run build:deployment` 与 `git diff --check` 通过。此次执行中 CUA `getState` 再次超时约 30 秒，尚未在公网页面通过可见点击发送消息核验，也尚未部署本修正；当前公网运行版本仍为 `2e7073219a0300cd41f5b74d1caa484452ce39d1`。修正仅触及 Auth 前端，不涉及 Agent/Desktop、Broker、MySQL/PVC 或 VPS。
 
 **2026-11-10 部署更新**：提交 `c40590b84151b2be2d6ffdf6f0ac052ad267ad94` 已推送到原有唯一 feature 分支。候选包位于 [`releases/candidate-grok-bot-chat-scroll-refresh-c40590b-2026-11-10/`](../releases/candidate-grok-bot-chat-scroll-refresh-c40590b-2026-11-10/)；镜像、源码包、JS/CSS、部署清单、操作与精确回退脚本均已生成并通过 SHA256 校验。预检确认 Agent 任务与审批队列均为空后，只将 Mac K3D 的 Auth Deployment 一对一滚动到 `coke-grok-auth:sha-c40590b84151b2be2d6ffdf6f0ac052ad267ad94`，现为 1/1 Ready。公网 HTML/JS/CSS 返回 HTTP 200，JS `index-cN65uVgy.js` SHA-256 `a0a99c0a0cf45da95fe11bcc875d73b751a339c8f1aa82ab937235ee2b43f2be`、CSS `index-BVhbTNy-.css` SHA-256 `8b4d7a818a8f9035e22260a34b8c155bc0f9d31eff37cc01b7174af4e99cade7` 均与候选逐字节匹配。回退镜像为 `coke-grok-auth:sha-2e7073219a0300cd41f5b74d1`；Agent/Desktop、Broker、MySQL/PVC、其他 namespace 和 VPS 均未更改或重启。CUA 本轮仍超时，没有通过公网页面可见点击发送测试消息；故记为已部署且静态资源核对通过，公网页面真实交互滚动验收未完成。功能分支仍未合并 `main`，也未创建验收 tag。
+
+#### 2026-11-10 用户再次报告发送消息后跳回历史顶部
+
+用户再次观察到每次输入并提交消息后聊天区跳回最早历史。复核当前 Auth 前端仍只在消息提交后把 `.message-scroll` 置于底部；本机已有 UI 场景通过，但它没有覆盖完成后超过两秒的周期性 Agent 历史轮询。为强化明确的发送意图，现令 `scrollRequest` 在布局提交后无条件触发聊天内滚底，并在下一次动画帧再次校正；若用户此后主动向上滚动，动画帧校正会尊重该操作。UI 回归现额外等待 2.8 秒，检查历史轮询后新消息仍为最新项且视口在底部。
+
+`npm run test:ui` 通过，覆盖本机登录态长历史、发送、延迟任务历史刷新、两秒轮询、最新用户消息顺序及底部定位；`npm run build:deployment`、`git diff --check` 通过。该改动尚待提交和部署。当前公网仍提供前一个候选 `c40590b` 的静态资源。已登录 Chrome 的 Computer Use `getState` 和按公网 URL 的 `getBrowser` 均超时 30 秒，本轮未发送公网消息或观察用户现有标签；本机 E2E 与静态资源状态不构成公网交互验收。

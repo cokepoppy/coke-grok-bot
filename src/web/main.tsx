@@ -785,10 +785,26 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       stickToLatestMessage.current=!reference;
       followMessageGrowth.current=!reference;
     }
+    // A submitted message is an explicit request to see the new item even if
+    // the reader had been browsing history. Do not let a stale scroll-follow
+    // flag cancel that request during the same React commit.
+    if(scrollRequested){
+      stickToLatestMessage.current=true;
+      followMessageGrowth.current=true;
+    }
     // Position only within this conversation viewport, including when switching
-    // between conversations with the same number of messages.
-    if(visibleConversationLength>0&&(conversationChanged||viewportChanged||messageCountChanged||scrollRequested)&&stickToLatestMessage.current)scrollToLatest();
+    // between conversations with the same number of messages. Reapply a send
+    // scroll after the browser's next layout frame: task cards and history
+    // refreshes can otherwise restore the previous scroll anchor after commit.
+    let settleFrame:number|undefined;
+    if(visibleConversationLength>0&&(conversationChanged||viewportChanged||messageCountChanged||scrollRequested)&&(scrollRequested||stickToLatestMessage.current)){
+      scrollToLatest();
+      if(scrollRequested)settleFrame=requestAnimationFrame(()=>{
+        if(messageScroll.current===viewport&&previousScrollRequest.current===scrollRequest&&stickToLatestMessage.current)scrollToLatest();
+      });
+    }
     previousConversationLength.current=visibleConversationLength;
+    return()=>{if(settleFrame!==undefined)cancelAnimationFrame(settleFrame)};
   },[activeConversationKey,visibleConversationLength,newChat,Boolean(account),reference,scrollRequest]);
   useLayoutEffect(() => {
     const viewport=messageScroll.current;

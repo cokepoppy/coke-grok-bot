@@ -524,6 +524,9 @@ try {
   await productShellPage.locator('.message-line.user .message-bubble').filter({hasText:'Scroll follow-up message'}).waitFor();
   assert.equal(await productShellPage.locator('.message-line.user .message-bubble').last().innerText(),'Scroll follow-up message','the newest authenticated Agent task should follow the existing timeline');
   await waitForProductTimelineAtLatest('authenticated first task');
+  await productShellPage.waitForTimeout(2800);
+  assert.equal(await productShellPage.locator('.message-line.user .message-bubble').last().innerText(),'Scroll follow-up message','a later run-history poll must keep the submitted task as the newest chat item');
+  await assertProductTimelineAtLatest('authenticated task after run-history polling');
   await productShellPage.locator('.message-content > .message-line').last().evaluate(element=>{element.style.minHeight='260px'});
   await waitForProductTimelineAtLatest('authenticated task after content growth');
   await productShellPage.locator('.message-scroll').evaluate(element=>{element.scrollTop=0;element.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,bubbles:true}))});
