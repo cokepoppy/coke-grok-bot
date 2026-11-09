@@ -33,9 +33,8 @@ function namesUnregisteredBrowserDestination(text:string):boolean{
 /**
  * A short-lived permission derived only from the signed-in user's current
  * request. It recognizes direct site/app tasks even when the user doesn't
- * explicitly say "browser" and authorizes ordinary Browser User interactions on any site;
- * the desktop Worker still blocks credential entry and routes consequential
- * controls through the existing approval flow.
+ * explicitly say "browser" and authorizes task-needed Browser User interactions
+ * on any site; the desktop Worker stops at authentication and credential entry.
  */
 export function requestsBrowserTask(request: string): boolean {
   const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';

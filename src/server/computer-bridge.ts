@@ -85,8 +85,8 @@ export class ComputerBridge {
    }catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
   }
   // The user-requested Browser User scope is run-bound and site-generic. The
-  // Worker handles sign-in and consequential controls; ordinary page controls
-  // should execute directly rather than being individually allowlisted here.
+  // Worker hands authentication to the owner; page controls are not individually
+  // approved or allowlisted for this explicit task scope.
   if(scope.browserTask===true&&canonical.kind==='browser'&&['click','fill','press','select','check','uncheck'].includes(String(canonical.action))){
    if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
    try{
@@ -95,8 +95,9 @@ export class ComputerBridge {
    }catch(error){
     if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
     if(error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_ACTION_REQUIRES_APPROVAL'){
-     // The Worker inspected the live control and made no change. Fall through
-     // to the normal, screenshot-bound approval proposal for consequential UI.
+     // A Worker that still requires per-control approvals is out of policy.
+     // Do not turn that stale rule into the approval card the user asked to remove.
+     throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN',error.status);
     }else if(error instanceof SafeDiagnosticError)throw error;
     else throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED');
    }
@@ -149,7 +150,7 @@ function disallowedDuringSignInHandoff(scope:RunScope,action:{kind?:unknown;acti
  // A conditional login inside a directly requested browser task must resume
  // normally after the owner returns control. The task capability remains
  // short-lived, Browser User only, and the Worker still guards auth surfaces,
- // credentials, CAPTCHA and consequential controls.
+ // credentials, CAPTCHA and sign-in controls.
  if(scope.browserTask===true)return action.kind!=='browser';
  if(action.kind!=='browser')return true;
  if(action.action==='navigate'){

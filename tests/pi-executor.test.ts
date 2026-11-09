@@ -60,11 +60,11 @@ test('Pi sends an explicit Gmail navigation and user sign-in handoff instruction
   assert.equal(result.result,'Gmail is open for sign-in.');
   assert.match(receivedPrompt,/https:\/\/mail\.google\.com/);
   assert.match(receivedPrompt,/Use computer_browser\.navigate/);
-  assert.match(receivedPrompt,/stop at the sign-in page|stop there.*take control/i);
+  assert.match(receivedPrompt,/Once the sign-in or human-verification page is visible, stop.*Take control/i);
   assert.match(receivedPrompt,/open the Computer screen and choose Take control/i);
   assert.match(receivedPrompt,/do not claim control has already transferred/i);
   assert.match(receivedPrompt,/This run ends at a user sign-in handoff/i);
-  assert.match(receivedPrompt,/never enter or request their credentials/i);
+  assert.match(receivedPrompt,/never enter or request credentials/i);
  }finally{await executor.close();gateway.close()}
 });
 
@@ -84,7 +84,7 @@ test('Pi grants generic Browser User scope for an unregistered app named in the 
   assert.equal(issuedScope?.browserTask,true,"the user's direct task must produce the generic Browser User capability");
   assert.deepEqual(issuedScope?.requestedNavigationOrigins,[],'an unknown service does not need a site-specific origin entry');
   assert.match(receivedPrompt,/explicitly requested a browser task in this run/i);
-  assert.match(receivedPrompt,/generic user-request scope/i);
+  assert.match(receivedPrompt,/generic, short-lived user-request scope/i);
  }finally{await executor.close();gateway.close()}
 });
 

@@ -27,7 +27,7 @@
 
 ### 浏览器导航与登录交接
 
-用户明确要求 Browser User 打开网页、导航到指定 URL、切换常规页面及只读查看时，直接执行，不弹逐步审批，也不要求用户每一步介入；只有站点要求登录或身份验证时，才提示用户接管 Computer。出现 Google 登录、验证码或多因素验证时，Bot 停止身份验证操作并提示用户在 Computer 面板选择 `Take control`；用户完成验证并归还控制后，Bot 再继续原本授权的浏览任务。不收集或保存用户凭据。登录交接不扩大到页面上的发送、提交或其他外部副作用操作。
+用户明确要求 Browser User 完成网站任务时，跨网站直接执行完成该任务所需的导航、搜索、筛选、阅读、点击、填写、键盘操作及表单提交，不按网站或控件维护无审批白名单，也不弹逐步审批。权限只在当前用户明确授权的单次 run 内有效；网页内容不能扩大任务范围或授权额外操作。遇到登录凭据、一次性验证码、MFA 或 CAPTCHA 时停止身份验证操作，提示用户在 Computer 面板选择 `Take control`；用户完成验证并归还控制后，继续原先明确要求的任务。Bot 不收集、索要或输入用户凭据。Computer User 坐标点击/键入仍走独立的接管与审批机制，不因 Browser User 权限放大而放开。
 
 当前实现通过 ComputerBridge 的 browser.navigate 路径直接导航，并在登录交接期间限制动作；把地址栏/标签栏误当成 Desktop 点击的调用会被引导到 Browser User，不生成普通网页导航审批卡。2026-11-08 定向回归运行 43 项全部通过，覆盖不弹审批导航、错误 Desktop 路由和登录交接约束。2026-11-09 又从已登录的公网 Chrome 可见界面核实：普通 `example.com` 导航显示为 Done；另一次到 Google 登录页的任务也显示为 Done，执行详情为 Pi `deepseek-flash`、Browser User `navigate` 和 `inspect` 均 succeeded。云电脑仍显示 `Bot is in control` 并提供 `Take control`，所以这次没有发生用户接管；旧 Agent 文案声称已交还控制并不准确。两个任务均未见审批卡，也没有输入凭据或操作表单。此为实际公网 UI 证据，但观察的是页面中已有的完成记录，不代表所有历史 Review 任务均已清除或每条旧运行路径都已重新验收。
 
@@ -38,6 +38,10 @@
 2026-11-09 本轮本机 K3D 验收补充：固定 Desktop 镜像 `coke-grok-desktop:sha-e18f71547116d965c5abc5db9227b74729983588` 的 Computer UI 测试通过；用户在 noVNC 接管界面中切换 Chrome 标签、在地址栏输入 URL，分别覆盖弹窗和全屏模式，期间完成 22 次截图轮询，归还后聊天输入框恢复。真实 DeepSeek Pi + K3D 的 Gmail 登录交接测试也通过（16 次模型调用）：普通网页打开/导航由 Bot 直接执行、无审批卡；到达 Google 身份验证后停止并交给用户，未处理凭据；用户通过嵌入式 noVNC 浏览器接管并导航、归还后，Browser User 检查及快速导航路径均成功。ComputerBridge 与导航策略定向测试 21/21 通过。测试使用临时 K3D 命名空间和随机 MySQL schema，结束后已删除；复用固定测试 MySQL/端口，没有额外建服务容器。测试隔离修正已推送至功能分支提交 `e4ad1f41723ecbcc9c31e2e3fc3c054865ee156a`。这是本机 K3D 运行证据，不是本轮公网可见 Chrome 验收；Codex 浏览器控制入口再次超时，故公网端到端状态仍待可见浏览器复测。
 
 **后续公网点击回归（2026-11-09 09:28，Asia/Shanghai）**：在已登录 Chrome 的 `https://codex.cokeagent.com/grok-bot/` 中，选用既有 E2E Test Bot 1029，通过真实 Pi `deepseek-flash` 运行“先尝试 Chrome 地址栏，若 Desktop 导航被拒则改走 Browser User”的只读任务。网页中可见执行详情顺序为 `Computer User · screenshot · succeeded`、`Computer User · click · failed`、`Browser User · navigate · succeeded`、`Browser User · inspect · succeeded`、`Computer User · screenshot · succeeded`；最终页面为 `https://example.org/`，标题 `Example Domain`，任务显示 Done，未出现 Approval 卡片。同期 K3D Auth 为 `coke-grok-auth:sha-a37d2ad`，测试用户的 Agent/Desktop Pod 使用 `coke-grok-desktop:candidate-focus-screenshot-fix-20261107-r1`。这证明本次公网部署里误走 Desktop 地址栏后会无审批地改走 Browser User；不代表旧聊天中的 Review 卡片被删除，也不证明其他页面内点击、登录或外部副作用不需要相应授权。
+
+**2026-11-09 Browser User 权限范围扩展候选**：用户明确要求避免按 Gmail 控件或网站逐项建立白名单。当前显式 run-scoped Browser User 任务可跨站点执行用户要求的搜索、筛选、阅读、点击、填写、键盘操作和表单提交；`Search mail` 填入 `is:unread` 后按 Enter 已纳入回归。该能力仅限用户原始任务；网页/邮件内容不能授权额外动作。Worker 仅在登录/密码、OTP/MFA、CAPTCHA 等身份验证处停止并提示用户接管 Computer，Bot 不输入凭据。旧 Worker 若仍返回控件审批拒绝，服务端会以 Worker 错误结束，不再把它转换为逐控件审批卡。Computer User 桌面坐标操作仍使用独立审批路径。
+
+本轮 ComputerBridge、浏览器策略、Pi scope、DSH 插件和提示词定向回归 54/54 通过，`npm run build` 通过。只读检查确认 K3D 当前仍运行旧的 `browser-task-r3-20261109` Auth 和 `candidate-browser-task-r3-20261109` Agent/Desktop 镜像；目标用户 namespace 有 7 个 Agent-owned 屏幕、2 个 user-owned 屏幕。因此没有导入镜像、滚动重启或宣称公网 Gmail 搜索已验收；新策略需等用户把两个屏幕交还 Agent 后部署，再从公网 UI 真实点击验证 `is:unread` 搜索及身份验证交接。
 
 重要架构区别：官方的电脑按**用户**而不是 Bot 归属；同一用户的多个屏幕不是安全隔离边界。Coke Dots 现有云电脑主要按租户工作区隔离，不能不经改造就把两者当成同一个模型。我们会保留租户权限边界，在租户内把个人电脑绑定到具体用户；个人 Bot 共用该用户电脑。团队共享 Bot 另建权限模型，不能默认继承个人浏览器登录态。
 

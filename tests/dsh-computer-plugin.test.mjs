@@ -111,7 +111,7 @@ test('DSH direct Gmail navigation consumes an immediate completion without creat
     assert.deepEqual(JSON.parse(value.text), destination);
     assert.equal(calls.filter(call => call.path.endsWith('/computer/actions')).length, 1);
     assert.equal(calls.length, 2, 'only check control and navigate; do not create, poll, or execute an approval');
-    assert.match(browser.description, /ordinary navigation, search, reading, and non-sensitive page interactions on any site.*do not need per-step approval/i);
+    assert.match(browser.description, /navigation and page interactions needed for that exact task on any site without per-step approval/i);
     assert.match(browser.description, /If sign-in or human verification appears, stop and tell the owner to open the Computer screen and choose Take control/i);
     assert.match(browser.description, /open the Computer screen and choose Take control/i);
     assert.match(browser.description, /Do not claim control has transferred/i);

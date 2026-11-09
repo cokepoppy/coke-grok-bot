@@ -59,9 +59,9 @@ test('ordinary browser navigation skips approval while page interactions remain 
  assert.equal(approvalProposals,4,'browser toolbar clicks are redirected without an approval even when the prompt did not name a URL');
 });
 
-test('explicit browser task scope auto-runs routine controls across sites and routes consequential actions to approval',async()=>{
+test('explicit browser task scope runs all requested page controls across sites without per-control approvals',async()=>{
  let proposals=0,performed=0,marked=0,lastPolicy:unknown,pageUrl='https://mail.google.com/mail/u/0/#inbox';
- const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:pageUrl,screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async(input:unknown,_state:unknown,_signal:AbortSignal,policy?:unknown)=>{performed++;lastPolicy=policy;const target=input&&typeof input==='object'?(input as {target?:unknown}).target:'';if(['Send','Delete','Archive','Publish'].includes(String(target)))throw new SafeDiagnosticError('COMPUTER_ACTION_REQUIRES_APPROVAL');return {ready:true}}};
+ const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:pageUrl,screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async(_input:unknown,_state:unknown,_signal:AbortSignal,policy?:unknown)=>{performed++;lastPolicy=policy;return {ready:true}}};
  const approvals={propose:async()=>{proposals++;return {id:randomUUID()}},consume:async()=>false,status:async()=>null};
  const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>{marked++;return true}},approvals,()=>worker),signal=new AbortController().signal;
  const scoped={...scope,browserTask:true};
@@ -72,21 +72,30 @@ test('explicit browser task scope auto-runs routine controls across sites and ro
   {kind:'browser',action:'click',by:'role',role:'button',target:'Reply'},
   {kind:'browser',action:'fill',by:'role',role:'textbox',target:'Message Body',value:'Thanks for the update.'},
   {kind:'browser',action:'click',by:'role',role:'menuitem',target:'Mark as unread'},
+  {kind:'browser',action:'click',by:'role',role:'button',target:'Send'},
+  {kind:'browser',action:'click',by:'role',role:'button',target:'Delete'},
+  {kind:'browser',action:'click',by:'role',role:'button',target:'Archive'},
+  {kind:'browser',action:'click',by:'role',role:'button',target:'Publish'},
  ] as const){
   assert.deepEqual(await bridge.propose(scoped,input,signal),{status:'completed',result:{ready:true}});
   assert.equal(lastPolicy,'browser-task');
  }
- assert.equal(proposals,0);assert.equal(performed,6);assert.equal(marked,6);
+ assert.equal(proposals,0);assert.equal(performed,10);assert.equal(marked,10);
  const genericWebsiteSearch=await bridge.propose({...scoped}, {kind:'browser',action:'fill',by:'placeholder',target:'Search products',value:'wireless headphones'},signal);
  assert.deepEqual(genericWebsiteSearch,{status:'completed',result:{ready:true}},'search fields work on sites without a site-specific rule');
  pageUrl='https://shop.example/search';
  const crossSitePageClick=await bridge.propose(scoped,{kind:'browser',action:'click',by:'role',role:'link',target:'Product details'},signal);
  assert.deepEqual(crossSitePageClick,{status:'completed',result:{ready:true}},'the same run-scoped browser permission follows the user task across origins');
- for(const [target,role] of [['Send','button'],['Delete','menuitem'],['Archive','button'],['Publish','button']] as const){
-  const approval=await bridge.propose(scoped,{kind:'browser',action:'click',by:'role',role,target},signal);
-  assert.ok('id'in approval,target+' remains routed through approval');
- }
- assert.equal(proposals,4);
+ assert.equal(proposals,0,'a direct, run-scoped browser task does not create approval cards for site controls');
+});
+
+test('an outdated Worker approval response fails safely instead of producing a per-control approval card',async()=>{
+ let proposals=0;
+ const worker={control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'https://mail.google.com/mail/u/0/#inbox',screenshotSha256:'a'.repeat(64)}),inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async()=>{throw new SafeDiagnosticError('COMPUTER_ACTION_REQUIRES_APPROVAL')}};
+ const approvals={propose:async()=>{proposals++;return{id:randomUUID()}},consume:async()=>false,status:async()=>null};
+ const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>true},approvals,()=>worker),signal=new AbortController().signal;
+ await assert.rejects(bridge.propose({...scope,browserTask:true},{kind:'browser',action:'fill',by:'placeholder',target:'Search mail',value:'is:unread'},signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_WORKER_FORBIDDEN');
+ assert.equal(proposals,0,'an older restrictive Worker must never recreate the approval loop');
 });
 test('an explicitly requested navigation does not require an approval screenshot payload',async()=>{
  let imageSnapshots=0,performed=0,approvalProposals=0;
