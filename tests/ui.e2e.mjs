@@ -270,7 +270,8 @@ try {
     }
     if (path === '/api/bots/sales-outbound/runs' && route.request().method() === 'POST') {
       postedMentionBody = route.request().postDataJSON();
-      const run = { id:'mentioned-bot-run', prompt:postedMentionBody.prompt, status:'queued', result:null, recoveryState:'none', replacementRunId:null, computerUsed:false, files:[] };
+      const createdAt = new Date().toISOString();
+      const run = { id:`submitted-run-${demoRuns.length + 1}`, prompt:postedMentionBody.prompt, status:'queued', result:null, recoveryState:'none', replacementRunId:null, computerUsed:false, createdAt, updatedAt:createdAt, files:[] };
       demoRuns.push(run);
       return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({run}) });
     }
@@ -311,7 +312,7 @@ try {
   const completedActivityCard=productShellPage.getByRole('region',{name:'Computer activity · Done'});
   await completedActivityCard.waitFor();
   await productShellPage.getByText('Renamed to Sales Outbound', { exact: true }).waitFor();
-  const visibleTimelineOrder = await productShellPage.locator('.message-scroll > .message-line, .message-scroll > .system-event-line, .message-scroll > .computer-activity-line').evaluateAll(elements => elements.map(element => element.textContent || ''));
+  const visibleTimelineOrder = await productShellPage.locator('.message-content > .message-line, .message-content > .system-event-line, .message-content > .computer-activity-line').evaluateAll(elements => elements.map(element => element.textContent || ''));
   const timelinePosition = (text) => visibleTimelineOrder.findIndex(item => item.includes(text));
   assert.ok(timelinePosition('Overnight pipeline generation and outbound.') < timelinePosition('Renamed to Sales Outbound') && timelinePosition('Renamed to Sales Outbound') < timelinePosition("Checking what's connected."), 'User tasks, persisted rename events, and Agent results should follow their event times');
   assert.equal(await completedActivityCard.locator('.computer-activity-prompt').innerText(), 'Sign in to Salesforce so I can see the accounts you own.');
@@ -350,7 +351,7 @@ try {
     return { welcome: box('.message-line.bot .message-bubble', 0), prompt: box('.message-line.user .message-bubble'), response: box('.message-line.bot .message-bubble', 1), computer: box('.computer-activity-card'), screen: box('.computer-preview-button') };
   });
   assert.ok(referenceMessageGeometry.welcome && Math.abs(referenceMessageGeometry.welcome.x - 110.5) <= 3 && Math.abs(referenceMessageGeometry.welcome.width - 531) <= 8, 'The welcome message should align to the official panel-open chat geometry');
-  assert.ok(referenceMessageGeometry.welcome && Math.abs(referenceMessageGeometry.welcome.y - 54) <= 2, 'The welcome message should start at the official header baseline');
+  assert.ok(referenceMessageGeometry.welcome && Math.abs(referenceMessageGeometry.welcome.y - 54) <= 2, `The welcome message should start at the official header baseline: ${JSON.stringify(referenceMessageGeometry)}`);
   assert.ok(referenceMessageGeometry.prompt && Math.abs(referenceMessageGeometry.prompt.x - 267.5) <= 4 && Math.abs(referenceMessageGeometry.prompt.width - 420) <= 5, 'The user prompt should match the official message width and right alignment');
   assert.ok(referenceMessageGeometry.prompt && Math.abs(referenceMessageGeometry.prompt.y - 121.5) <= 3, `The first task should start at the official vertical position: ${JSON.stringify(referenceMessageGeometry.prompt)}`);
   assert.ok(referenceMessageGeometry.response && Math.abs(referenceMessageGeometry.response.x - 110.5) <= 3 && Math.abs(referenceMessageGeometry.response.width - 531) <= 8, 'The Agent response should match the official Bot bubble geometry');
@@ -484,6 +485,37 @@ try {
   await productShellPage.getByRole('button',{name:'Send task'}).click();
   await productShellPage.getByText('Please ask @Chief to check the schedule.',{exact:true}).waitFor();
   assert.deepEqual(postedMentionBody,{requestId:postedMentionBody.requestId,prompt:'Please ask @Chief to check the schedule.',files:[],mentionBotIds:['chief']});
+  demoMessages.unshift(...Array.from({length:32},(_,index)=>({
+    id:`product-scroll-history-${index}`,
+    role:index%2?'bot':'user',
+    text:`Older product conversation ${index+1}. ${'Long history used to exercise the authenticated workspace scroll. '.repeat(4)}`,
+    createdAt:new Date(Date.now()-(33-index)*60_000).toISOString(),
+  })));
+  await productShellPage.reload({waitUntil:'networkidle'});
+  await productShellPage.getByText('Older product conversation 32.',{exact:false}).waitFor();
+  const productScrollMetrics=()=>productShellPage.locator('.message-scroll').evaluate(element=>({scrollTop:element.scrollTop,clientHeight:element.clientHeight,scrollHeight:element.scrollHeight,windowScrollY:window.scrollY}));
+  const assertProductTimelineAtLatest=async label=>{
+    const metrics=await productScrollMetrics();
+    assert.ok(metrics.scrollHeight>metrics.clientHeight,`${label}: authenticated conversation history must overflow its viewport`);
+    assert.ok(metrics.scrollHeight-metrics.clientHeight-metrics.scrollTop<=2,`${label}: authenticated conversation should stay at its latest item (${JSON.stringify(metrics)})`);
+    assert.equal(metrics.windowScrollY,0,`${label}: chat scrolling must not move the outer page`);
+  };
+  const waitForProductTimelineAtLatest=async label=>{
+    await productShellPage.waitForTimeout(180);
+    await assertProductTimelineAtLatest(label);
+  };
+  const productComposer=productShellPage.getByRole('textbox',{name:'Message Sales Outbound'});
+  await productComposer.fill('Scroll follow-up message');
+  await productShellPage.getByRole('button',{name:'Send task'}).click();
+  await productShellPage.getByText('Scroll follow-up message',{exact:true}).waitFor();
+  await waitForProductTimelineAtLatest('authenticated first task');
+  await productShellPage.locator('.message-content > .message-line').last().evaluate(element=>{element.style.minHeight='260px'});
+  await waitForProductTimelineAtLatest('authenticated task after content growth');
+  await productShellPage.locator('.message-scroll').evaluate(element=>{element.scrollTop=0;element.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,bubbles:true}))});
+  await productComposer.fill('Second scroll follow-up');
+  await productShellPage.getByRole('button',{name:'Send task'}).click();
+  await productShellPage.locator('.conversation').getByText('Second scroll follow-up',{exact:true}).waitFor();
+  await waitForProductTimelineAtLatest('authenticated next task');
   await productShellContext.close();
   authChild.kill('SIGTERM');
   authChild = undefined;

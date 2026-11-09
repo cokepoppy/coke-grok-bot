@@ -565,6 +565,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const messageScroll = useRef<HTMLDivElement>(null);
+  const messageContent = useRef<HTMLDivElement>(null);
+  const stickToLatestMessage = useRef(true);
+  const followMessageGrowth = useRef(false);
   const recipientInput = useRef<HTMLInputElement>(null);
   const savedNames = useRef<Record<string, string>>({});
   const renameQueue = useRef<Record<string, Promise<void>>>({});
@@ -589,6 +592,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const activeRuns=active&&runHistory.id===active.id&&agentFeature==='enabled'?runHistory.runs:[];
   const botTimeline=buildBotTimeline(messages,activeRuns,runApprovals);
   const visibleConversationLength=activeGroup?(groupChat.id===activeGroup.id?groupChat.view?.messages.length||0:0):botTimeline.length;
+  const activeConversationKey=activeGroup?`group:${activeGroup.id}`:`bot:${active?.id||''}`;
   const filtered = state.bots.filter(bot => !(reference && newChat && bot.id === 'new') && `${bot.name} ${bot.label}`.toLowerCase().includes(query.toLowerCase()));
   const visibleBots = filtered.filter(bot=>!bot.hidden).sort((a,b)=>Number(Boolean(b.pinned))-Number(Boolean(a.pinned)));
   const hiddenBots = filtered.filter(bot=>bot.hidden);
@@ -758,14 +762,62 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   },[reference,remote,agentFeature]);
   useLayoutEffect(() => {
     const viewport=messageScroll.current;
-    if(!viewport||visibleConversationLength===0)return;
+    const content=messageContent.current;
+    if(!viewport||!content||visibleConversationLength===0)return;
+    const scrollToLatest=()=>{viewport.scrollTop=viewport.scrollHeight;};
     // Scroll only the conversation viewport. scrollIntoView() can also move
     // outer page ancestors, which makes the history appear to jump to its top.
-    viewport.scrollTop=viewport.scrollHeight;
-  },[active?.id,activeGroup?.id,visibleConversationLength]);
+    stickToLatestMessage.current=true;
+    scrollToLatest();
+    let previousViewportWidth=viewport.clientWidth;
+    const resizeObserver=typeof ResizeObserver==='undefined'?null:new ResizeObserver(()=>{
+      const currentViewportWidth=viewport.clientWidth;
+      if(Math.abs(currentViewportWidth-previousViewportWidth)>24){
+        previousViewportWidth=currentViewportWidth;
+        return;
+      }
+      previousViewportWidth=currentViewportWidth;
+      if(followMessageGrowth.current&&stickToLatestMessage.current)scrollToLatest();
+    });
+    resizeObserver?.observe(content);
+    const distanceFromLatest=()=>viewport.scrollHeight-viewport.clientHeight-viewport.scrollTop;
+    let touchScrolling=false,scrollbarDragging=false;
+    const onWheel=(event:WheelEvent)=>{
+      if(event.deltaY<0)stickToLatestMessage.current=false;
+      else if(event.deltaY>0)requestAnimationFrame(()=>{stickToLatestMessage.current=distanceFromLatest()<=48;});
+    };
+    const onTouchStart=()=>{touchScrolling=true;};
+    const onTouchEnd=()=>{touchScrolling=false;stickToLatestMessage.current=distanceFromLatest()<=48;};
+    const onPointerDown=(event:PointerEvent)=>{
+      const rect=viewport.getBoundingClientRect(),scrollbarWidth=viewport.offsetWidth-viewport.clientWidth;
+      if(scrollbarWidth>0&&event.clientX>=rect.right-scrollbarWidth){scrollbarDragging=true;}
+    };
+    const onPointerUp=()=>{if(scrollbarDragging){scrollbarDragging=false;stickToLatestMessage.current=distanceFromLatest()<=48;}};
+    const onScroll=()=>{if(touchScrolling||scrollbarDragging)stickToLatestMessage.current=distanceFromLatest()<=48;};
+    viewport.addEventListener('wheel',onWheel,{passive:true});
+    viewport.addEventListener('touchstart',onTouchStart,{passive:true});
+    viewport.addEventListener('touchend',onTouchEnd,{passive:true});
+    viewport.addEventListener('touchcancel',onTouchEnd,{passive:true});
+    viewport.addEventListener('pointerdown',onPointerDown,{passive:true});
+    viewport.addEventListener('pointerup',onPointerUp,{passive:true});
+    viewport.addEventListener('pointercancel',onPointerUp,{passive:true});
+    viewport.addEventListener('scroll',onScroll,{passive:true});
+    return()=>{
+      viewport.removeEventListener('wheel',onWheel);
+      viewport.removeEventListener('touchstart',onTouchStart);
+      viewport.removeEventListener('touchend',onTouchEnd);
+      viewport.removeEventListener('touchcancel',onTouchEnd);
+      viewport.removeEventListener('pointerdown',onPointerDown);
+      viewport.removeEventListener('pointerup',onPointerUp);
+      viewport.removeEventListener('pointercancel',onPointerUp);
+      viewport.removeEventListener('scroll',onScroll);
+      resizeObserver?.disconnect();
+    };
+  },[activeConversationKey,active?.id,activeGroup?.id,visibleConversationLength]);
 
   function selectBot(id: string) {
     if (sendingRef.current) return;
+    followMessageGrowth.current=false;
     setSelectedGroupId('');
     try{localStorage.removeItem(`${storageKey}:selected-group`)}catch{/* Selection persistence is optional. */}
     setState(current => ({ ...current, activeId: id }));
@@ -775,6 +827,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   }
   function selectGroup(id:string){
     if(sendingRef.current||groupSendingRef.current)return;
+    followMessageGrowth.current=false;
     setSelectedGroupId(id);setNewChat(false);setRecipientQuery('');setPanel(false);setGroupComputerBotId('');
     try{localStorage.setItem(`${storageKey}:selected-group`,id)}catch{/* Selection persistence is optional. */}
   }
@@ -970,6 +1023,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         if(!response.ok){if(response.status<500){setGroupError('The message was rejected. Review it and try again.');return}throw new Error('group message submission failed');}
         const view=await response.json() as GroupChatView;
         if(!view.group||!Array.isArray(view.messages)||view.group.id!==selectedGroupId)throw new Error('invalid group response');
+        followMessageGrowth.current=true;
+        stickToLatestMessage.current=true;
         setGroupChat({id:selectedGroupId,status:'ready',view});
         setGroups(current=>[view.group,...current.filter(group=>group.id!==view.group.id)]);
         const recipientBotIds=new Set(groupRecipientBotIds(view.group.members.map(member=>member.id),targetBotIds));
@@ -1010,6 +1065,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
           if (!response.ok) throw new Error('run submission failed');
           const { run } = await response.json() as { run: AgentRun };
           if (!run || typeof run.id !== 'string' || typeof run.prompt !== 'string') throw new Error('invalid run response');
+          followMessageGrowth.current=true;
+          stickToLatestMessage.current=true;
           setRunHistory(current => ({ id, status: 'ready', runs: [...current.runs.filter(item => item.id !== run.id), run] }));
           setState(current => ({ ...current, bots: current.bots.map(bot => bot.id === id ? { ...bot, preview: clean || 'Attached files', lastActivityAt:new Date().toISOString() } : bot) }));
           setPendingFiles(current => ({...current,[id]:[]}));
@@ -1022,6 +1079,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${id}/messages`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: clean }) });
         if (!response.ok) throw new Error('save failed');
         const { message } = await response.json() as { message: Message };
+        followMessageGrowth.current=true;
+        stickToLatestMessage.current=true;
         setState(current => ({ ...current, messages: { ...current.messages, [id]: [...(current.messages[id] || []), message] }, bots: current.bots.map(bot => bot.id === id ? { ...bot, preview: clean, lastActivityAt:new Date().toISOString() } : bot) }));
         botMentionTokensRef.current=[];setBotMentionTokens([]);setBotMentionQuery(null);
         if (activeIdRef.current === id) { setDraft(''); setCustomAnswer(''); setNotice(true); }
@@ -1033,6 +1092,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       } finally { sendingRef.current = false; setSending(false); }
       return;
     }
+    followMessageGrowth.current=true;
+    stickToLatestMessage.current=true;
     setState(current => ({ ...current, messages: { ...current.messages, [active.id]: [...(current.messages[active.id] || []), { id: crypto.randomUUID(), role: 'user', text: clean }] }, bots: current.bots.map(bot => bot.id === active.id ? { ...bot, preview: clean,lastActivityAt:new Date().toISOString() } : bot), showOnboarding: { ...current.showOnboarding, [active.id]: false } }));
     botMentionTokensRef.current=[];setBotMentionTokens([]);setBotMentionQuery(null);
     setDraft(''); setCustomAnswer(''); setNotice(true);
@@ -1307,6 +1368,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         <div className={`workspace ${panel ? 'with-panel' : ''}`}>
           <section className="conversation" aria-label={activeGroup?`Group chat ${activeGroup.name}`:`Chat with ${active.name}`} onDragOver={event=>{if(remote&&agentFeature==='enabled'&&Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault()}} onDrop={event=>{if(!remote||agentFeature!=='enabled'||!event.dataTransfer.files.length)return;event.preventDefault();event.stopPropagation();const dropped=Array.from(event.dataTransfer.files);activeGroup?stageGroupFiles(dropped):stageFiles(dropped)}}>
             <div className="message-scroll" ref={messageScroll}>
+              <div className="message-content" ref={messageContent}>
               {activeGroup ? <>
                 {groupChat.id===activeGroup.id&&groupChat.status==='loading'&&<div role="status">Loading group chat…</div>}
                 {groupChat.id===activeGroup.id&&groupChat.status==='error'&&<div role="alert">Could not confirm this group chat. Refresh to check its messages before sending again.</div>}
@@ -1349,6 +1411,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
               {!reference && !messages.length && !(agentFeature === 'enabled' && runHistory.id === active.id && runHistory.runs.length) && <div className="empty-chat"><Avatar bot={active} size={52} /><p>Start a conversation with {active.name}.</p>{agentFeature !== 'enabled' && <small>This local preview does not connect to a model.</small>}</div>}
               {notice && <div className="local-feedback" role="status">{remote ? 'No message was sent to an Agent.' : 'This is a local preview. No message was sent to an Agent or external service.'}</div>}
               </>}
+              </div>
             </div>
             {remote && agentFeature === 'enabled' && <input ref={filePicker} className="file-picker" type="file" multiple aria-label="Choose files to attach" onChange={event=>{const selected=Array.from(event.currentTarget.files||[]);activeGroup?stageGroupFiles(selected):stageFiles(selected);event.currentTarget.value=''}}/>}
             {activeGroup&&remote&&agentFeature==='enabled'&&(pendingGroupFiles[activeGroup.id]||[]).length>0&&<div className="pending-files" aria-label="Files to attach">{(pendingGroupFiles[activeGroup.id]||[]).map(item=><span className="pending-file" key={item.key}><span>{item.file.name}{item.uploadedId?' · Ready':''}</span><button type="button" aria-label={`Remove ${item.file.name}`} disabled={groupSending} onClick={()=>setPendingGroupFiles(current=>({...current,[activeGroup.id]:(current[activeGroup.id]||[]).filter(file=>file.key!==item.key)}))}>×</button></span>)}</div>}
