@@ -143,12 +143,14 @@ try {
   await assertLatestMessageVisible('composing a message');
   await page.getByRole('button', { name: 'Save local message' }).click();
   await page.locator('.conversation').getByText('Scroll follow-up message', { exact: true }).waitFor();
+  assert.equal(await page.locator('.message-line.user .message-bubble').last().innerText(), 'Scroll follow-up message', 'the newly sent local message should be the final chronological item');
   await assertLatestMessageVisible('first new message');
   await page.locator('.message-scroll').evaluate(element => { element.scrollTop = 0; });
   await page.getByLabel('Message Local Research').fill('Second scroll follow-up');
   assert.ok((await scrollMetrics()).scrollTop<=2,'composing while reading history should preserve the history position');
   await page.getByRole('button', { name: 'Save local message' }).click();
   await page.locator('.conversation').getByText('Second scroll follow-up', { exact: true }).waitFor();
+  assert.equal(await page.locator('.message-line.user .message-bubble').last().innerText(), 'Second scroll follow-up', 'the second local message should follow existing history');
   await assertLatestMessageVisible('next new message');
   await page.getByLabel('Message Local Research').fill('Local-only test message');
   await page.getByRole('button', { name: 'Save local message' }).click();

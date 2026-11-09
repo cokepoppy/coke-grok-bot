@@ -1128,7 +1128,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     followMessageGrowth.current=true;
     stickToLatestMessage.current=true;
     setScrollRequest(value=>value+1);
-    setState(current => ({ ...current, messages: { ...current.messages, [active.id]: [...(current.messages[active.id] || []), { id: crypto.randomUUID(), role: 'user', text: clean }] }, bots: current.bots.map(bot => bot.id === active.id ? { ...bot, preview: clean,lastActivityAt:new Date().toISOString() } : bot), showOnboarding: { ...current.showOnboarding, [active.id]: false } }));
+    const createdAt=new Date().toISOString();
+    setState(current => ({ ...current, messages: { ...current.messages, [active.id]: [...(current.messages[active.id] || []), { id: crypto.randomUUID(), role: 'user', text: clean, createdAt }] }, bots: current.bots.map(bot => bot.id === active.id ? { ...bot, preview: clean,lastActivityAt:createdAt } : bot), showOnboarding: { ...current.showOnboarding, [active.id]: false } }));
     botMentionTokensRef.current=[];setBotMentionTokens([]);setBotMentionQuery(null);
     setDraft(''); setCustomAnswer(''); setNotice(true);
   }
