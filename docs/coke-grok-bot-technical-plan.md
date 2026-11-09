@@ -2271,3 +2271,13 @@ K3D 仍运行 r3，目标 namespace 仍有两块 `owner=user` 持久屏幕；e72
 本轮定向回归覆盖 Gmail `Search mail` 填入 `is:unread`、Enter、普通网站搜索与表单提交、未登记服务、登录交接及高后果操作，48/48 通过；`npm run build:deployment` 与 `git diff --check` 通过。当前运行 Worker `/opt/coke-dots/browser-task-policy.mjs` 的 SHA-256 为 `ce877c66c431fc39e1b09691a736b9b37421de9f0db38d58174b0afdbe6d440e`，与本轮源码 `4a582f501b6900d93ad0db0d4dd1942ad3ace916072b86503ad5f9c6a9a61c75` 不同；运行 Auth/Agent/Desktop 仍是旧 r3 镜像，包含原先的通用 Submit/Enter 审批回退。故已定位到当前服务与仓库源码/候选版本不一致，不能把源代码回归误说成当前公网已修复。
 
 新策略已与通用 Browser User 意图识别一起构建为本地候选目录 `releases/candidate-grok-bot-browser-task-no-step-approval-581c721-2026-11-09`：Auth 镜像 `sha256:e21573ff2f6c316ea34c5ad0911aba17b77f91149f34c19b2f1818709b998224`，共享 Agent/Desktop 镜像 `sha256:d17265a643dbe1ff5343f0542999c9132b6cc4067c631bdc6b9ffbf0a0521965`，固定架构 `linux/arm64`。945 MiB OCI 包 SHA-256 为 `f4cd6e8b428567004feec784c516ec6ec894060866c3d2b0a92ea466d2ca998c`，包内校验通过。预发布检查仍以退出码 21 拒绝更新，因为目标用户 namespace 的两块持久 Bot 屏幕由用户接管。没有导入镜像或重启 Auth、Agent、Desktop，也没有改 MySQL、PVC、其他 namespace 或 VPS。待预检通过后，再从已登录公网 UI 重跑同一条 Gmail 搜索并检查无审批卡。登录接管、已读状态和草稿工作流另行核实；本次还不是公网验收。
+
+#### 2026-11-09 用户确认通用网页权限的交接边界
+
+用户确认 Browser User 不应按网站或控件维护无审批白名单。当前 feature 分支的有效策略是：用户在本轮任务中明确要求的网页导航、搜索、筛选、阅读、点击、输入、普通表单提交与键盘操作，都由一个短期、任务绑定的权限覆盖；`Search mail` 输入 `is:unread` 并按 Enter 属于普通搜索流程。网页或邮件正文不能扩大任务范围；发送、删除等写操作仅在用户的本轮请求明确要求时才执行，不再要求用户逐个点击控件批准。Computer User 的桌面坐标输入仍走独立路径。
+
+云电脑 Worker 在登录页、密码/一次性验证码、MFA 或 CAPTCHA 等身份验证步骤停止，并提示用户接管；Bot 不索取、不读取、不输入凭据。恢复控制权后，只续跑原始请求的剩余部分。
+
+当前源码已在 `codex/grok-bot-persistent-group-chat` 的 `464cd70c68ea8c1853a293f6b2f6df72b478cf80` 推送提交中实现该策略，Worker 中 `browserActionRequiresApproval()` 对已授权 Browser User 任务不再按控件要求审批。源码策略文件 SHA-256 为 `c6bac9c7bb9fc613c1aac620c801280ff99a0ba31892134c43f7aeda3057775c`。本轮从该提交构建了 `releases/candidate-grok-bot-browser-task-generic-464cd70-2026-11-09`，包含 linux/arm64 Auth、共享 Agent/Desktop 镜像，dist、源码归档、部署/回退脚本及校验；OCI 包 SHA-256 为 `412d94330f33d866f65eef1fd74b6e9d900b3b278008768894a6cdadc5418b64`。部署构建与归档校验通过；45/45 定向源码回归来自该提交此前的验证记录，本轮没有重跑测试。
+
+运行中的目标用户 Agent/Desktop 仍使用 `candidate-browser-task-r3-20261109`；Worker 策略文件 SHA-256 是 `ce877c66c431fc39e1b09691a736b9b37421de9f0db38d58174b0afdbe6d440e`，与当前源码不一致。目标 namespace 此刻有 9 个持久屏幕，其中 7 个由 Agent 控制、2 个由用户接管。候选发布预检以退出码 21 按设计停止；没有导入镜像、重启服务或改变用户电脑、MySQL、PVC、其他 namespace 和 VPS。因此当前公网仍不能算已采用新策略，`is:unread` 可见 UI 流程也尚未在新候选上验收。待所有屏幕由 Agent 控制且队列空闲，再运行部署预检与公网点击验收。
