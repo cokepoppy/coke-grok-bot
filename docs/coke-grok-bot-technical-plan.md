@@ -2362,3 +2362,9 @@ K3D 仍运行 r3，目标 namespace 仍有两块 `owner=user` 持久屏幕；e72
 候选发布目录为 `releases/candidate-grok-bot-chat-scroll-follow-3f79e81-2026-11-09`。部署前确认运行任务和未过期审批均为 0；只更新 Mac K3D 中 `coke-grok-auth` Auth 镜像至 `coke-grok-auth:sha-3f79e8191457098c7f3e3dbdec7e70b9d8baaf08`，就绪 1/1。Agent/Desktop 镜像仍为 `coke-grok-desktop:sha-2670fed3f6830a2344ac7590d5856901e190b00d`，Broker 仍为 `coke-grok-desktop-broker:sha-e18f71547116d965c5abc5db9227b74729983588`；未重启用户云电脑，未改 MySQL、PVC、其他 namespace 或 VPS。精确回退镜像为 `coke-grok-auth:sha-9501699da66338b4ad58b47d53031681147d9f7b`。
 
 公网 `/grok-bot/` 返回 HTTP 200；公网 JS（SHA-256 `16fe44e28336e90ffd609967fde837acdbd3286df0615253df12941d86a84bf4`）和 CSS（`8b4d7a818a8f9035e22260a34b8c155bc0f9d31eff37cc01b7174af4e99cade7`）与候选制品逐字节一致。最初候选校验脚本在 macOS Bash 3 的空数组处理上失败，已修正并重新通过。已登录 Chrome 能枚举到公网标签，但绑定标签的 Computer Use 调用再次超时 30 秒；因此尚无公网可见点击后的滚动位置证据，也未在公网发送测试消息。候选的部署和静态资源验证完成，但聊天滚动的公网交互验收仍待完成，尚未合并 `main` 或建立验收 tag。
+
+#### 2026-11-09 聊天历史默认定位修正及公网验收
+
+用户反馈发送消息后聊天区域会跳到历史最上方。核对公网旧版后确认会话加载时确实落在历史顶部；根因是把初次打开长对话定位在历史起点。现将普通聊天会话初始位置改为最新消息，并保持滚动范围只限 `.message-scroll`；用户主动向上翻阅时不抢回位置，发送新消息和 Agent 增量内容则继续跟随到底部。固定参考截图路线保持其原有顶部定位，避免改变视觉比对基准。
+
+本地 `npm run test:ui` 与 `npm run build` 通过，覆盖登录工作区与预览态初始贴底、连续发送、任务卡片延迟增高、用户阅读历史及窗口变化期间保留位置、页面外层不滚动。Auth-only 候选 `cf683081717fb80384a943c22dc32c8bbde0c5f6` 已部署到 Mac K3D，Auth 1/1 Ready。公网 `/grok-bot/` 返回 HTTP 200；当前 HTML 引用的 JS/CSS 均与候选构建逐字节一致。已登录 Chrome 刷新公网页面后，长会话可见最新消息且输入框仍在视口底部，完成公网可见验收。Agent、Desktop、Broker、MySQL、PVC、其他 namespace 与 VPS 未变。发布记录和可校验回退制品位于 `releases/candidate-grok-bot-chat-scroll-latest-cf68308-2026-11-09`；Auth 回退镜像为 `coke-grok-auth:sha-3f79e8191457098c7f3e3dbdec7e70b9d8baaf08`。

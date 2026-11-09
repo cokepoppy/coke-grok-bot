@@ -1,0 +1,10 @@
+{
+  "name": "candidate-grok-bot-chat-scroll-latest-cf68308-2026-11-09",
+  "status": "deployed_public_ui_verified",
+  "preparedAt": "2026-11-09T13:32:26Z",
+  "source": {"branch":"codex/grok-bot-persistent-group-chat","commit":"cf683081717fb80384a943c22dc32c8bbde0c5f6","trackedWorktreeClean":true},
+  "runtime": {"context":"k3d-tp1121-sandbox-dev","cluster":"tp1121-sandbox-dev","applicationNamespace":"coke-grok-bot","publicUrl":"https://codex.cokeagent.com/grok-bot/","rolloutScope":"Auth only; Broker, Agent, Desktop, MySQL, PVCs, other namespaces and VPS unchanged"},
+  "images": {"auth":{"candidate":"coke-grok-auth:sha-cf683081717fb80384a943c22dc32c8bbde0c5f6","candidateImageId":"sha256:75eff50c6b4cbf4bf4d12ba98224bd532838dd103586fca3cbb4b50dc3d63920","platform":"linux/arm64","rollback":"coke-grok-auth:sha-3f79e8191457098c7f3e3dbdec7e70b9d8baaf08"},"agent":{"unchanged":"coke-grok-desktop:sha-2670fed3f6830a2344ac7590d5856901e190b00d"},"desktop":{"unchanged":"coke-grok-desktop:sha-2670fed3f6830a2344ac7590d5856901e190b00d"},"broker":{"unchanged":"coke-grok-desktop-broker:sha-e18f71547116d965c5abc5db9227b74729983588"}},
+  "deployment": {"completedAt":"2026-11-09T13:37:35Z","context":"k3d-tp1121-sandbox-dev","authReplicas":"1/1 Ready","publicRoute":"HTTP 200","publicAssets":"JS and CSS byte-for-byte match artifacts/dist"},
+  "checks": {"build":"passed","uiE2e":"passed: initial latest-message position, consecutive sends, asynchronous message growth, preserve history reading, and window scroll remains zero","publicChatScroll":"verified in signed-in Chrome after refresh: existing long conversation opens at the latest messages with the composer visible","publicAssetIntegrity":"passed: public JavaScript and CSS SHA-256 match the candidate build","runtimeScope":"Auth only; Agent, Desktop, Broker, MySQL, PVCs, other namespaces and VPS unchanged"}
+}
