@@ -2406,3 +2406,7 @@ UI E2E 现对登录态长历史将任务历史 GET 人为延迟 650ms，并等�
 用户再次观察到每次输入并提交消息后聊天区跳回最早历史。复核当前 Auth 前端仍只在消息提交后把 `.message-scroll` 置于底部；本机已有 UI 场景通过，但它没有覆盖完成后超过两秒的周期性 Agent 历史轮询。为强化明确的发送意图，现令 `scrollRequest` 在布局提交后无条件触发聊天内滚底，并在下一次动画帧再次校正；若用户此后主动向上滚动，动画帧校正会尊重该操作。UI 回归现额外等待 2.8 秒，检查历史轮询后新消息仍为最新项且视口在底部。
 
 `npm run test:ui` 通过，覆盖本机登录态长历史、发送、延迟任务历史刷新、两秒轮询、最新用户消息顺序及底部定位；`npm run build:deployment`、`git diff --check` 通过。该改动尚待提交和部署。当前公网仍提供前一个候选 `c40590b` 的静态资源。已登录 Chrome 的 Computer Use `getState` 和按公网 URL 的 `getBrowser` 均超时 30 秒，本轮未发送公网消息或观察用户现有标签；本机 E2E 与静态资源状态不构成公网交互验收。
+
+**2026-11-10 部署更新**：修正提交 `c6cbce90c188e999b6afce1b898da39fe6070282` 已推送到同一功能分支。候选目录 [`releases/candidate-grok-bot-chat-scroll-follow-c6cbce9-2026-11-10/`](../releases/candidate-grok-bot-chat-scroll-follow-c6cbce9-2026-11-10/) 保存了匹配源码、Auth 镜像、部署文件、校验清单、操作与精确回退脚本。部署前任务/审批队列均为空；只将 K3D `coke-grok-bot` namespace 中既有 Auth Deployment 一对一更新到 `coke-grok-auth:sha-c6cbce90c188e999b6afce1b898da39fe6070282`，Auth 1/1 Ready。公网 HTML 返回 HTTP 200；JS `index-BENavOAV.js` SHA-256 `e48d67df965ec7876a5a134595302cd288597e100925dec306771d43f595b51a` 与候选匹配，CSS `index-BVhbTNy-.css` SHA-256 `8b4d7a818a8f9035e22260a34b8c155bc0f9d31eff37cc01b7174af4e99cade7` 与候选匹配。精确 Auth 回退镜像为 `coke-grok-auth:sha-ebfec47f7e3e89d11e135c5c64e1ccb862af0223`。Agent、Desktop、Broker、MySQL/PVC、其他 namespace 与 VPS 均未更新或重启。
+
+Chrome Computer Use 的 `getState` 与目标公网 URL 的 `getBrowser` 均超时 30 秒，所以没有公网页面可见点击、发送消息或真实滚动位置证据；候选部署和本机回归不等于公网交互验收。打开中的旧标签需要加载新资源后才会呈现本候选；功能分支仍未合并 `main`，未创建验收 tag。
