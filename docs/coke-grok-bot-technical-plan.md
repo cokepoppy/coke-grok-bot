@@ -2384,3 +2384,11 @@ UI E2E 长历史场景补充了“底部编辑草稿不移位”“历史位置�
 用户反馈发送消息后聊天区域会跳到历史最上方。核对公网旧版后确认会话加载时确实落在历史顶部；根因是把初次打开长对话定位在历史起点。现将普通聊天会话初始位置改为最新消息，并保持滚动范围只限 `.message-scroll`；用户主动向上翻阅时不抢回位置，发送新消息和 Agent 增量内容则继续跟随到底部。固定参考截图路线保持其原有顶部定位，避免改变视觉比对基准。
 
 本地 `npm run test:ui` 与 `npm run build` 通过，覆盖登录工作区与预览态初始贴底、连续发送、任务卡片延迟增高、用户阅读历史及窗口变化期间保留位置、页面外层不滚动。Auth-only 候选 `cf683081717fb80384a943c22dc32c8bbde0c5f6` 已部署到 Mac K3D，Auth 1/1 Ready。公网 `/grok-bot/` 返回 HTTP 200；当前 HTML 引用的 JS/CSS 均与候选构建逐字节一致。已登录 Chrome 刷新公网页面后，长会话可见最新消息且输入框仍在视口底部，完成公网可见验收。Agent、Desktop、Broker、MySQL、PVC、其他 namespace 与 VPS 未变。发布记录和可校验回退制品位于 `releases/candidate-grok-bot-chat-scroll-latest-cf68308-2026-11-09`；Auth 回退镜像为 `coke-grok-auth:sha-3f79e8191457098c7f3e3dbdec7e70b9d8baaf08`。
+
+#### 2026-11-09 本地预览聊天顺序修正与 Auth 候选更新
+
+继续追查“发送后停在历史消息”的路径时，发现本地预览的 `addMessage` 为新消息省略了 `createdAt`。`buildBotTimeline` 将缺失时间解析为 0，因此把这条最新消息排在已有历史前面；滚动到底部后看到的仍是旧历史。现为本地用户消息和 Bot `lastActivityAt` 使用同一个当前时间戳。UI E2E 新增断言，检查连续发送后最后一条用户消息内容确实为新发送文本，而不仅检查滚动条位置；`npm run test:ui`、`npm run build`、`npm run build:deployment`、`git diff --check` 通过。提交 `2e7073219a0300cd41f5b74d1caa484452ce39d1` 已推送到当前唯一功能分支。
+
+候选目录为 `releases/candidate-grok-bot-local-chat-order-2e70732-2026-11-09`。首次 Auth-only 切换后公网资源短暂返回 HTTP 504，发布脚本按回退保护恢复 `coke-grok-auth:sha-add8487de30f961822acc8a2dc03a9c878f1de70`；验证脚本随后加入切换等待和有限重试，再预检任务队列/待审批均为 0 后重试成功。当前 Auth 镜像为 `coke-grok-auth:sha-2e7073219a0300cd41f5b74d1caa484452ce39d1`、1/1 Ready；公网 HTML、JS `index-DxFw4Xhn.js`（SHA-256 `5610a956f40587c87f4e17522f9ff95c905b12cd903d3a8c9edf379e990abaa0`）、CSS `index-BVhbTNy-.css`（SHA-256 `8b4d7a818a8f9035e22260a34b8c155bc0f9d31eff37cc01b7174af4e99cade7`）均已与候选逐字节核对，路由 HTTP 200。Agent/Desktop、Broker、MySQL、PVC、其他 namespace 与 VPS 未更新或重启。
+
+此修正确认并覆盖本地预览的缺失时间戳路径；它不能单独证明真实 Agent/Group 运行路径的滚动反馈已解决。当前 Chrome CUA 的 `getState` 与公网标签 `getTab` 均超时约 30 秒，本轮没有发送公网测试消息或观察真实滚动。功能分支尚未合并 main、未打验收 tag；公网可见交互验收仍待完成。
