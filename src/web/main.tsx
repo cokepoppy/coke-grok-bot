@@ -158,7 +158,7 @@ function timelineTime(value?:string|null):number {
   const timestamp=Date.parse(value);
   return Number.isFinite(timestamp)?timestamp:0;
 }
-function buildBotTimeline(messages:Message[],runs:AgentRun[],runApprovals:Record<string,Approval[]>):BotTimelineEntry[] {
+function buildBotTimeline(messages:Message[],runs:AgentRun[],runApprovals:Record<string,Approval[]>,latestSubmittedRunId?:string):BotTimelineEntry[] {
   const entries:BotTimelineEntry[]=[];
   messages.forEach((message,index)=>entries.push({key:`message:${message.id}`,at:timelineTime(message.createdAt),priority:1,order:index,kind:'message',message}));
   runs.forEach((run,index)=>{
@@ -173,7 +173,13 @@ function buildBotTimeline(messages:Message[],runs:AgentRun[],runApprovals:Record
     else entries.push({key:`prompt:${run.id}`,at:createdAt,priority:0,order:index,kind:'run-prompt',run});
     if(showFollowup)entries.push({key:`result:${run.id}`,at:updatedAt,priority:2,order:index,kind:'run-result',run});
   });
-  return entries.sort((a,b)=>a.at-b.at||a.priority-b.priority||a.order-b.order);
+  return entries.sort((a,b)=>{
+    const aLatest='run' in a&&a.run.id===latestSubmittedRunId;
+    const bLatest='run' in b&&b.run.id===latestSubmittedRunId;
+    if(aLatest!==bLatest)return aLatest?1:-1;
+    if(aLatest&&bLatest)return a.priority-b.priority||a.order-b.order;
+    return a.at-b.at||a.priority-b.priority||a.order-b.order;
+  });
 }
 
 function groupRunStatusLabel(message: GroupMessage): string {
@@ -565,6 +571,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [scrollRequest, setScrollRequest] = useState(0);
+  const latestSubmittedRunByBot = useRef<Record<string,string>>({});
   const messageScroll = useRef<HTMLDivElement>(null);
   const messageContent = useRef<HTMLDivElement>(null);
   const stickToLatestMessage = useRef(false);
@@ -595,7 +602,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const activeIdRef = useRef(active?.id); activeIdRef.current = active?.id;
   const messages = active ? state.messages[active.id] || [] : [];
   const activeRuns=active&&runHistory.id===active.id&&agentFeature==='enabled'?runHistory.runs:[];
-  const botTimeline=buildBotTimeline(messages,activeRuns,runApprovals);
+  const botTimeline=buildBotTimeline(messages,activeRuns,runApprovals,active?latestSubmittedRunByBot.current[active.id]:undefined);
   const visibleConversationLength=activeGroup?(groupChat.id===activeGroup.id?groupChat.view?.messages.length||0:0):botTimeline.length;
   const activeConversationKey=activeGroup?`group:${activeGroup.id}`:`bot:${active?.id||''}`;
   const filtered = state.bots.filter(bot => !(reference && newChat && bot.id === 'new') && `${bot.name} ${bot.label}`.toLowerCase().includes(query.toLowerCase()));
@@ -1112,6 +1119,11 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
           if (!response.ok) throw new Error('run submission failed');
           const { run } = await response.json() as { run: AgentRun };
           if (!run || typeof run.id !== 'string' || typeof run.prompt !== 'string') throw new Error('invalid run response');
+          // A newly submitted instruction must remain the last chat item even
+          // if a subsequent history poll returns a differently normalized DB
+          // timestamp. Otherwise mixed message/run sorting can move it above
+          // older history while the scroll viewport correctly stays at bottom.
+          latestSubmittedRunByBot.current[id]=run.id;
           followMessageGrowth.current=true;
           stickToLatestMessage.current=true;
           setScrollRequest(value=>value+1);
@@ -1210,6 +1222,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         const saved = await response.json() as { ok?: boolean; event?: Message };
         if (saved.ok !== true) throw new Error('rename was not confirmed');
         savedNames.current[id] = name;
+        if(saved.event)delete latestSubmittedRunByBot.current[id];
         setState(current => ({
           ...current,
           messages: saved.event ? { ...current.messages, [id]: [...(current.messages[id] || []).filter(message => message.id !== saved.event!.id), saved.event] } : current.messages,

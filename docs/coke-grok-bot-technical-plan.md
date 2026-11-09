@@ -2414,3 +2414,9 @@ Chrome Computer Use 的 `getState` 与目标公网 URL 的 `getBrowser` 均超�
 #### 2026-11-10 官方 Grok Bot 201 片头逐帧续审（0:05–0:09.960）
 
 继续检查本机原始视频 `research/videos/grok-201-rOVomdnWhjQ.mkv`。本窗口从源 PTS 5000 到 9960 ms，共 125 帧、25 fps；五张 5×5 联系图已逐张查看。画面全程为 `Safe Harbor Statement` 幻灯片，标题和正文位置保持稳定，只有讲者画中画出现轻微动作；未见产品客户端或 Computer 操作。`research/frames/grok-201-0005-0010-compact-audit-20261110/manifest.json` 保存源视频 SHA-256、各帧 PTS、解码像素 SHA-256/字节数及五张联系图的 SHA-256。结合刚完成的 0:00–0:04.960 窗口，V2 片头连续逐帧覆盖扩展到 0:00–0:09.960，共 250 帧。这里只记视频可见内容，不作为产品 UI 像素测量或真实运行验收；后续仍按未审时间区间继续检查。
+
+#### 2026-11-10 提交新任务后历史时间线重新排序
+
+用户反馈每次发送消息后聊天区显示最早的历史消息。复核发现一个可复现路径：聊天把 Bot 消息和 Agent run 按时间戳合并排序；如果 `POST /runs` 返回的时间与之后 history poll 的时间不同，同一条新任务可能从时间线末尾移到旧消息前面。即使滚动条保持在视口底部，底部显示的也会是旧历史。此前只修滚动位置不足以保护这个排序路径。本轮公网 Auth 镜像仍为 `coke-grok-auth:sha-c6cbce90c188e999b6afce1b898da39fe6070282`，公网 HTML 使用 JS `index-BENavOAV.js`；受支持的 Chrome 页面绑定返回 `Debugger unattached`，因此这次没有读到用户标签的实时滚动状态，不能把该路径说成已在公网复现。
+
+前端现在按 Bot 记录最近提交的 run ID，在该任务仍是本地最近提交项时，把它的 prompt/computer/result 条目保持在对话时间线末尾；Bot 改名生成新的系统消息时清除此临时排序锚点。UI E2E 将 POST run 时间故意设为比 canonical history poll 早八小时，并覆盖长历史、连续发送、即时显示及后续两秒轮询；断言新提交仍是最新用户消息且 `.message-scroll` 保持在底部。代码尚未推送或部署；仍需在受支持的公网可见浏览器中实际发送消息，确认真实界面与轮询后的滚动/排序，再决定合并和验收 tag。

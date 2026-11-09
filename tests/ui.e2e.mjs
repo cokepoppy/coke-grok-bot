@@ -280,7 +280,11 @@ try {
       const run = { id:`submitted-run-${demoRuns.length + 1}`, prompt:postedMentionBody.prompt, status:'queued', result:null, recoveryState:'none', replacementRunId:null, computerUsed:false, createdAt, updatedAt:createdAt, files:[] };
       demoRuns.push(run);
       delayNextRunHistoryRead = true;
-      return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({run}) });
+      // Model a POST response whose clock differs from the canonical history
+      // poll. The prompt must not move above old messages between those reads.
+      const postTimestamp = new Date(Date.parse(createdAt)-8*60*60*1000).toISOString();
+      const postRun = { ...run, createdAt:postTimestamp, updatedAt:postTimestamp };
+      return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({run:postRun}) });
     }
     if (path.endsWith('/api/bots/sales-outbound/computer/screenshot')) return route.fulfill({ status: 200, contentType: 'image/png', body: demoScreenBytes });
     if (path.endsWith('/api/bots/sales-outbound/computer')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ owner: 'agent' }) });
