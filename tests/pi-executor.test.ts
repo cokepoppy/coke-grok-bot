@@ -68,6 +68,26 @@ test('Pi sends an explicit Gmail navigation and user sign-in handoff instruction
  }finally{await executor.close();gateway.close()}
 });
 
+test('Pi grants generic Browser User scope for an unregistered app named in the user task',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const task:AgentRun={...run,prompt:'Search Slack for the latest project channel.'};
+ let issuedScope:{browserTask?:boolean;requestedNavigationOrigins?:readonly string[]}|undefined,receivedPrompt='';
+ const issue=gateway.issue.bind(gateway);
+ gateway.issue=options=>{issuedScope=options.scope;return issue(options)};
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
+  receivedPrompt=JSON.parse(String(init?.body)).prompt;
+  return Response.json({status:'done',message:'Search task dispatched.'});
+ });
+ try{
+  const result=await executor.execute(screen,task,new AbortController().signal,randomUUID());
+  assert.equal(result.status,'completed');
+  assert.equal(issuedScope?.browserTask,true,"the user's direct task must produce the generic Browser User capability");
+  assert.deepEqual(issuedScope?.requestedNavigationOrigins,[],'an unknown service does not need a site-specific origin entry');
+  assert.match(receivedPrompt,/explicitly requested a browser task in this run/i);
+  assert.match(receivedPrompt,/generic user-request scope/i);
+ }finally{await executor.close();gateway.close()}
+});
+
 test('Pi carries a recent same-Bot sign-in handoff into an approval follow-up without expanding its scope',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const original='帮我打开谷歌，然后登录我的 Gmail，然后你在登录的时候停下来，让我去操作。在云电脑里面打开 Chrome 浏览器。';

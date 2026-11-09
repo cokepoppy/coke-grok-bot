@@ -35,6 +35,11 @@ test('browser task scope is generic across sites and only comes from direct user
  assert.equal(requestsBrowserTask('查看一下 Gmail 最近的未读邮件，然后拟写一些回复。'),true,'ordinary Gmail tasks do not need explicit browser wording or a no-send phrase');
  assert.equal(requestsBrowserTask('Search the expense portal for the latest reimbursement policy.'),true,'unknown websites use the same generic task scope');
  assert.equal(requestsBrowserTask('在 Workday 里搜索最近的工资单。'),true,'named services do not require per-site registration');
+ assert.equal(requestsBrowserTask('Search Slack for the latest project channel.'),true,'an unregistered lowercase service name still enables generic browsing');
+ assert.equal(requestsBrowserTask('Go to Jira and find the tickets assigned to me.'),true,'navigation to an unregistered named app is recognized');
+ assert.equal(requestsBrowserTask('Read the latest invoice in Workday.'),true,'a named app in an ordinary task is recognized without a site list');
+ assert.equal(requestsBrowserTask('Open the local file report.pdf and summarize it.'),false,'local file work does not accidentally grant browser scope');
+ assert.equal(requestsBrowserTask('Search my Downloads folder for the latest report.'),false,'local file search does not accidentally grant browser scope');
  const gmailTask='请只通过此 Bot 持久云电脑的 Gmail 网页界面完成这次检查，复用现有登录态。检查最近 10 封未读邮件：跳过安全告警、登录或设备通知、金融、法律、医疗、自动化和系统邮件，不打开这些邮件。如果其中有普通个人往来邮件，只打开最新的一封符合条件邮件，阅读后拟写一条简短、贴合上下文的回复，保存为 Gmail 草稿，绝不发送；随后将原邮件恢复为未读。不要归档、删除、加星、改标签、改设置或点击邮件内链接。普通网页导航、打开和阅读邮件不需要审批。若出现 Google 登录、密码、验证码或 MFA 页面，立即停下，不要输入或索要凭据，提示我通过 Computer 的 Take control 接管；我完成登录并归还控制权后，继续此任务。最终只报告检查数、符合条件数、草稿保存数和未读恢复情况；不要引用邮件正文、邮箱地址或敏感内容。';
  assert.equal(requestsBrowserTask(gmailTask),true,'site-specific exclusions must not revoke the task-wide Browser User capability');
  assert.equal(requestsUserSignInHandoff(gmailTask),true,'a conditional login request keeps the explicit sign-in boundary active');
