@@ -232,6 +232,7 @@ try {
     { id: 'outbound-run', prompt: 'Overnight pipeline generation and outbound.\n\nPick eligible prospects from this Google Sheet, research them on the web, grab context on contacts and accounts from Hex, Sumble, and Salesforce. Draft email and LinkedIn sequences in my voice.', status: 'completed', result: "Checking what's connected. Hex, Gmail, and LinkedIn are already signed in. Salesforce isn't.", recoveryState: 'none', replacementRunId: null, computerUsed: false, createdAt: new Date(referenceActivity.getTime() - 15000).toISOString(), updatedAt: new Date(referenceActivity.getTime() + 1000).toISOString(), files: [] },
     { id: 'live-computer-run', prompt: 'Sign in to Salesforce so I can see the accounts you own.', status: 'completed', result: 'Done.', recoveryState: 'none', replacementRunId: null, computerUsed: true, createdAt: new Date(referenceActivity.getTime() + 2000).toISOString(), updatedAt: new Date(referenceActivity.getTime() + 3000).toISOString(), files: [] },
   ];
+  let delayNextRunHistoryRead = false;
   let postedMentionBody = null;
   const demoMessages = [
     { id: 'welcome-message', role: 'bot', text: 'Hey Armand, good to meet you. What do you want me around for? Anything concrete, or more of a general sidekick?', createdAt: new Date(referenceActivity.getTime() - 60000).toISOString() },
@@ -277,6 +278,7 @@ try {
       const createdAt = new Date().toISOString();
       const run = { id:`submitted-run-${demoRuns.length + 1}`, prompt:postedMentionBody.prompt, status:'queued', result:null, recoveryState:'none', replacementRunId:null, computerUsed:false, createdAt, updatedAt:createdAt, files:[] };
       demoRuns.push(run);
+      delayNextRunHistoryRead = true;
       return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({run}) });
     }
     if (path.endsWith('/api/bots/sales-outbound/computer/screenshot')) return route.fulfill({ status: 200, contentType: 'image/png', body: demoScreenBytes });
@@ -286,9 +288,13 @@ try {
         : path.endsWith('/api/groups') ? { groups: demoGroups }
         : path.endsWith('/api/bots') ? { bots: demoBots }
           : path.endsWith('/api/bots/sales-outbound/messages') ? { messages: demoMessages }
-            : path.endsWith('/api/bots/sales-outbound/runs') ? { runs: demoRuns }
+          : path.endsWith('/api/bots/sales-outbound/runs') ? { runs: demoRuns }
               : path.includes('/approvals') ? { approvals: [] }
                 : {};
+    if (path === '/api/bots/sales-outbound/runs' && route.request().method() === 'GET' && delayNextRunHistoryRead) {
+      delayNextRunHistoryRead = false;
+      await new Promise(resolve => setTimeout(resolve, 650));
+    }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
   });
   await productShellPage.addInitScript(({ storageKey, state }) => localStorage.setItem(storageKey, JSON.stringify(state)), {
@@ -514,7 +520,8 @@ try {
   await productComposer.fill('Scroll follow-up message');
   await waitForProductTimelineAtLatest('authenticated task composition');
   await productShellPage.getByRole('button',{name:'Send task'}).click();
-  await productShellPage.locator('.conversation').getByText('Scroll follow-up message',{exact:true}).waitFor();
+  await productShellPage.locator('.message-line.user .message-bubble').filter({hasText:'Scroll follow-up message'}).waitFor();
+  assert.equal(await productShellPage.locator('.message-line.user .message-bubble').last().innerText(),'Scroll follow-up message','the newest authenticated Agent task should follow the existing timeline');
   await waitForProductTimelineAtLatest('authenticated first task');
   await productShellPage.locator('.message-content > .message-line').last().evaluate(element=>{element.style.minHeight='260px'});
   await waitForProductTimelineAtLatest('authenticated task after content growth');
@@ -526,7 +533,8 @@ try {
   await productComposer.fill('Second scroll follow-up');
   assert.ok((await productScrollMetrics()).scrollTop<=2,'composing while reading authenticated history should preserve the history position');
   await productShellPage.getByRole('button',{name:'Send task'}).click();
-  await productShellPage.locator('.conversation').getByText('Second scroll follow-up',{exact:true}).waitFor();
+  await productShellPage.locator('.message-line.user .message-bubble').filter({hasText:'Second scroll follow-up'}).waitFor();
+  assert.equal(await productShellPage.locator('.message-line.user .message-bubble').last().innerText(),'Second scroll follow-up','the second authenticated Agent task should follow existing history');
   await waitForProductTimelineAtLatest('authenticated next task');
   await productShellContext.close();
   authChild.kill('SIGTERM');

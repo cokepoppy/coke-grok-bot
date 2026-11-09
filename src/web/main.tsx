@@ -700,7 +700,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     if (!remote || agentFeature !== 'enabled' || botStatus !== 'ready' || !active?.id || activeGroup) return;
     const id = active.id, controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    setRunHistory({ id, status: 'loading', runs: [] });
+    setRunHistory(current => ({ id, status: 'loading', runs: current.id === id ? current.runs : [] }));
     const load = async () => {
       if (uncertainMutation.current) return;
       try {

@@ -2392,3 +2392,9 @@ UI E2E 长历史场景补充了“底部编辑草稿不移位”“历史位置�
 候选目录为 `releases/candidate-grok-bot-local-chat-order-2e70732-2026-11-09`。首次 Auth-only 切换后公网资源短暂返回 HTTP 504，发布脚本按回退保护恢复 `coke-grok-auth:sha-add8487de30f961822acc8a2dc03a9c878f1de70`；验证脚本随后加入切换等待和有限重试，再预检任务队列/待审批均为 0 后重试成功。当前 Auth 镜像为 `coke-grok-auth:sha-2e7073219a0300cd41f5b74d1caa484452ce39d1`、1/1 Ready；公网 HTML、JS `index-DxFw4Xhn.js`（SHA-256 `5610a956f40587c87f4e17522f9ff95c905b12cd903d3a8c9edf379e990abaa0`）、CSS `index-BVhbTNy-.css`（SHA-256 `8b4d7a818a8f9035e22260a34b8c155bc0f9d31eff37cc01b7174af4e99cade7`）均已与候选逐字节核对，路由 HTTP 200。Agent/Desktop、Broker、MySQL、PVC、其他 namespace 与 VPS 未更新或重启。
 
 此修正确认并覆盖本地预览的缺失时间戳路径；它不能单独证明真实 Agent/Group 运行路径的滚动反馈已解决。当前 Chrome CUA 的 `getState` 与公网标签 `getTab` 均超时约 30 秒，本轮没有发送公网测试消息或观察真实滚动。功能分支尚未合并 main、未打验收 tag；公网可见交互验收仍待完成。
+
+#### 2026-11-09 Agent 聊天刷新期间滚动跳顶回归
+
+继续复核“每发送一条消息，聊天跳到历史顶部”时，找到另一条真实 Agent 聊天路径：发送成功先把新任务追加到本地时间线，再触发任务历史刷新；刷新 effect 将同一 Bot 的 `runHistory` 暂时设成空数组。时间线瞬间被卸载、滚动视口高度塌缩后，浏览器把 `scrollTop` 夹回顶部；接口返回后再显示历史并不能恢复用户原本位置。现改为同一 Bot 刷新时保留已有 runs，仅将状态标为 loading；切换到别的 Bot 时仍清空旧 Bot 的数据。
+
+UI E2E 现对登录态长历史将任务历史 GET 人为延迟 650ms，并等待实际用户消息气泡（不再把输入框草稿误认成已发送消息），断言刷新期间和连续发送后仍留在最新消息；`npm run test:ui` 通过。`npm run build:deployment` 与 `git diff --check` 通过。此次执行中 CUA `getState` 再次超时约 30 秒，尚未在公网页面通过可见点击发送消息核验，也尚未部署本修正；当前公网运行版本仍为 `2e7073219a0300cd41f5b74d1caa484452ce39d1`。修正仅触及 Auth 前端，不涉及 Agent/Desktop、Broker、MySQL/PVC 或 VPS。
