@@ -2243,3 +2243,9 @@ Martin Lacsamana 的讲者小窗有姿势/口型变化；紫色 `Introducing Gro
 上述变更仅在源码与本地构建产物中，尚未重新构建 Auth/Agent/Desktop 固定版本镜像、部署或做公网 Gmail `is:unread` 复验。当前可见 Chrome 显示的是 2026-11-07 的 Gmail 登录交接历史，未通过本轮公网产品 UI 新建搜索任务；不能据此宣称线上审批问题已修复。部署前仍须产品界面确认共享电脑无人接管且无活跃任务，避免重启用户正在操作的持久 Desktop。
 
 随后一次可见公网 Chrome 复核进入现有 `E2E Test Bot 1029`，发现 Gmail 查询任务仍标为 `Review`，任务原文已包含 `Search mail` 与 `is:unread`。只查看了任务状态，没有打开邮件、改动邮箱或批准/拒绝任务。发布目录预检实际退出 21；其脚本定义该代码为任一持久 Bot screen 仍由 `user` 控制。故本轮未滚动部署，不把旧 Review 记录当作修复验证；需要在用户归还控制且所有 screen 为 Agent 所有后，更新 Auth 和 Desktop Worker，并从已登录公网 UI 重跑同一搜索流程。
+
+#### 2026-11-09 通用 Browser User 候选镜像构建
+
+从已推送源码提交 `d3f1e699760138816d8aea67c409466f08f5fce8` 构建了固定版本 Auth 和共享 Agent/Desktop `linux/arm64` 镜像，并在 `releases/candidate-grok-bot-browser-task-intent-d3f1e69-2026-11-09` 生成对应 dist、manifest、部署/回退脚本、校验清单与本地 OCI 包。OCI 包约 945 MiB，SHA-256 为 `6aa5df226b645119fa120203b31740adc6bee71c2c1a5163797da410c5487386`；完整校验清单与 gzip 完整性检查通过。构建后 Data 卷可用空间约 18 GiB。
+
+只读复核确认 K3D 仍运行 `browser-task-r3-20261109` Auth 与 `candidate-browser-task-r3-20261109` Agent/Desktop。目标公网用户 namespace 有两块持久 Bot screen 的 owner 为 `user`；候选 preflight 按设计再次返回退出码 21。未导入镜像或滚动部署，未改 Auth/Broker/Agent/Desktop、MySQL、PVC、其他 namespace 或 VPS。该候选尚未公网复测 `is:unread`，仍不能算该功能的公网验收或发布；待目标 namespace 所有屏幕归还 Agent 后才能运行部署预检和可见公网 Gmail 流程。
