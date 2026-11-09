@@ -2410,3 +2410,7 @@ UI E2E 现对登录态长历史将任务历史 GET 人为延迟 650ms，并等�
 **2026-11-10 部署更新**：修正提交 `c6cbce90c188e999b6afce1b898da39fe6070282` 已推送到同一功能分支。候选目录 [`releases/candidate-grok-bot-chat-scroll-follow-c6cbce9-2026-11-10/`](../releases/candidate-grok-bot-chat-scroll-follow-c6cbce9-2026-11-10/) 保存了匹配源码、Auth 镜像、部署文件、校验清单、操作与精确回退脚本。部署前任务/审批队列均为空；只将 K3D `coke-grok-bot` namespace 中既有 Auth Deployment 一对一更新到 `coke-grok-auth:sha-c6cbce90c188e999b6afce1b898da39fe6070282`，Auth 1/1 Ready。公网 HTML 返回 HTTP 200；JS `index-BENavOAV.js` SHA-256 `e48d67df965ec7876a5a134595302cd288597e100925dec306771d43f595b51a` 与候选匹配，CSS `index-BVhbTNy-.css` SHA-256 `8b4d7a818a8f9035e22260a34b8c155bc0f9d31eff37cc01b7174af4e99cade7` 与候选匹配。精确 Auth 回退镜像为 `coke-grok-auth:sha-ebfec47f7e3e89d11e135c5c64e1ccb862af0223`。Agent、Desktop、Broker、MySQL/PVC、其他 namespace 与 VPS 均未更新或重启。
 
 Chrome Computer Use 的 `getState` 与目标公网 URL 的 `getBrowser` 均超时 30 秒，所以没有公网页面可见点击、发送消息或真实滚动位置证据；候选部署和本机回归不等于公网交互验收。打开中的旧标签需要加载新资源后才会呈现本候选；功能分支仍未合并 `main`，未创建验收 tag。
+
+#### 2026-11-10 官方 Grok Bot 201 片头逐帧续审（0:05–0:09.960）
+
+继续检查本机原始视频 `research/videos/grok-201-rOVomdnWhjQ.mkv`。本窗口从源 PTS 5000 到 9960 ms，共 125 帧、25 fps；五张 5×5 联系图已逐张查看。画面全程为 `Safe Harbor Statement` 幻灯片，标题和正文位置保持稳定，只有讲者画中画出现轻微动作；未见产品客户端或 Computer 操作。`research/frames/grok-201-0005-0010-compact-audit-20261110/manifest.json` 保存源视频 SHA-256、各帧 PTS、解码像素 SHA-256/字节数及五张联系图的 SHA-256。结合刚完成的 0:00–0:04.960 窗口，V2 片头连续逐帧覆盖扩展到 0:00–0:09.960，共 250 帧。这里只记视频可见内容，不作为产品 UI 像素测量或真实运行验收；后续仍按未审时间区间继续检查。
