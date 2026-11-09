@@ -109,6 +109,45 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Change Bot picture' }).evaluate(element => element === document.activeElement), true);
   assert.equal(await page.locator('.bot-row.selected .avatar path').first().getAttribute('fill'), '#1cc3b0');
   await page.getByRole('button', { name: 'Hide bot details' }).click();
+  await page.evaluate(() => {
+    const key = 'coke-grok-bot:desktop-preview:v1';
+    const state = JSON.parse(localStorage.getItem(key) || '{}');
+    const botId = state.activeId;
+    state.messages = {
+      ...(state.messages || {}),
+      [botId]: Array.from({ length: 32 }, (_, index) => ({
+        id: `scroll-history-${index}`,
+        role: index % 2 ? 'bot' : 'user',
+        text: `Historical message ${index + 1}. ${'Conversation content for scroll regression. '.repeat(5)}`,
+        createdAt: new Date(Date.now() - (32 - index) * 60_000).toISOString(),
+      })),
+    };
+    localStorage.setItem(key, JSON.stringify(state));
+  });
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByText('Historical message 32.', { exact: false }).waitFor();
+  const scrollMetrics = () => page.locator('.message-scroll').evaluate(element => ({
+    scrollTop: element.scrollTop,
+    clientHeight: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    windowScrollY: window.scrollY,
+  }));
+  const assertLatestMessageVisible = async label => {
+    const metrics = await scrollMetrics();
+    assert.ok(metrics.scrollHeight > metrics.clientHeight, `${label}: test history must overflow the chat viewport`);
+    assert.ok(metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop <= 2, `${label}: chat should be scrolled to its latest message (${JSON.stringify(metrics)})`);
+    assert.equal(metrics.windowScrollY, 0, `${label}: sending must not scroll the outer page`);
+  };
+  await assertLatestMessageVisible('initial history load');
+  await page.getByLabel('Message Local Research').fill('Scroll follow-up message');
+  await page.getByRole('button', { name: 'Save local message' }).click();
+  await page.locator('.conversation').getByText('Scroll follow-up message', { exact: true }).waitFor();
+  await assertLatestMessageVisible('first new message');
+  await page.locator('.message-scroll').evaluate(element => { element.scrollTop = 0; });
+  await page.getByLabel('Message Local Research').fill('Second scroll follow-up');
+  await page.getByRole('button', { name: 'Save local message' }).click();
+  await page.locator('.conversation').getByText('Second scroll follow-up', { exact: true }).waitFor();
+  await assertLatestMessageVisible('next new message');
   await page.getByLabel('Message Local Research').fill('Local-only test message');
   await page.getByRole('button', { name: 'Save local message' }).click();
   await page.getByText('No message was sent to an Agent', { exact: false }).waitFor();

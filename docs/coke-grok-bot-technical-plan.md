@@ -2303,3 +2303,7 @@ K3D 仍运行 r3，目标 namespace 仍有两块 `owner=user` 持久屏幕；e72
 以上“尚未部署”是构建时状态。随后将 Auth-only 候选 `coke-grok-auth:sha-c09769da45bfa635f88de2d6ffb97110f783019b` 部署到 Mac K3D；Auth 现为 1/1 Ready。通过本机 `127.0.0.1:7890` 出口代理访问公网 `/grok-bot/` 返回 HTTP 200。该 rollout 只更新 Auth，没有重启 Broker、Agent 或 Desktop，也没有改变 MySQL、PVC、其他 namespace 或 VPS；预检确认 Agent 运行队列和审批队列均为 0。
 
 本候选同时加入 `BROKER_REJECTED` 的纯 HTTP 状态码诊断。部署后没有新的 Computer 请求出现在 Auth/Broker 日志中，所以实际 Broker 状态码仍未知。公网 Chrome 的 `getTab` 与后续 `getState` 控制均超时，本轮没有真实公网消息发送或可见 UI 滚动验证；不能据 HTTP 200 声称已完成公网交互验收。运行 Worker 的权限策略 SHA-256 `c6bac9c7bb9fc613c1aac620c801280ff99a0ba31892134c43f7aeda3057775c` 与源码一致，但 Gmail 审批行为仍需在可控的已登录公网 UI 中重现和核实。
+
+#### 2026-11-09 聊天自动滚动回归复核
+
+复核确认当前源码已含 `ebed763` 的滚动修正；本次 `npm run build:deployment` 成功，公网 HTML 引用的 JS/CSS 文件名与本地构建一致，JS SHA-256 为 `f66a8fd2dfbdfb31789b5d7a7b2ef6419c747b90dc11b35e41037a1bc6e5fbfc`。新增隔离 UI 回归场景：加载 32 条长历史后位于底部，连续发送两条消息后仍显示最新消息，外层页面 `window.scrollY` 保持 0；`npm run test:ui` 全部通过。当前 Chrome 公网标签的控制调用超时，因此没有刷新用户标签、发送公网消息或验证该标签当前实际滚动位置；若标签在修正部署前已打开，仍可能保留旧的页面脚本。
