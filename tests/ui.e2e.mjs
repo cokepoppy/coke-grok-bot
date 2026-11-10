@@ -560,6 +560,47 @@ try {
   assert.equal(await productShellPage.locator('.message-line.user .message-bubble').last().innerText(),'Second scroll follow-up','the second authenticated Agent task should follow existing history');
   assert.equal(await productShellPage.locator('.approval-card').count(),2,'both pending approvals should remain attached to their separate tasks');
   await waitForProductTimelineAtLatest('authenticated next task with two pending approval cards');
+
+  // A stored chat message can carry a timestamp older than mixed historical
+  // rows. The newly submitted item must still be rendered last and stay in
+  // view instead of leaving the reader at an old history entry.
+  const skewContext = await browser.newContext({ viewport: { width: 995, height: 675 }, deviceScaleFactor: 1 });
+  const skewPage = await skewContext.newPage();
+  skewPage.on('pageerror', error => errors.push(error.message));
+  const skewHistory = Array.from({length:32},(_,index)=>({
+    id:`clock-skew-history-${index}`,
+    role:index%2?'bot':'user',
+    text:`Clock skew history ${index+1}`,
+    createdAt:new Date(Date.now()-(32-index)*60_000).toISOString(),
+  }));
+  await skewPage.route('**/api/**',async route=>{
+    const path=new URL(route.request().url()).pathname;
+    let data={};
+    if(path.endsWith('/api/auth/me'))data=demoAccount;
+    else if(path.endsWith('/api/auth/features'))data={agent:false,engine:null};
+    else if(path.endsWith('/api/bots'))data={bots:[demoBot]};
+    else if(path.endsWith('/api/bots/sales-outbound/messages')){
+      if(route.request().method()==='POST'){
+        const message={id:'clock-skew-submitted-message',role:'user',text:route.request().postDataJSON().text,createdAt:'2000-01-01T00:00:00.000Z'};
+        return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({message})});
+      }
+      data={messages:skewHistory};
+    }
+    return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
+  });
+  await skewPage.addInitScript(({storageKey,state})=>localStorage.setItem(storageKey,JSON.stringify(state)),{
+    storageKey:'coke-grok-bot:desktop-preview:v1:visual-tenant:visual-user:server-chat-v1',
+    state:{bots:[demoBot],activeId:demoBot.id,messages:{},showOnboarding:{}},
+  });
+  await skewPage.goto(authBase,{waitUntil:'networkidle'});
+  await skewPage.getByText('Clock skew history 32',{exact:true}).waitFor();
+  await skewPage.getByRole('textbox',{name:'Message Sales Outbound'}).fill('Timestamp-stale server message');
+  await skewPage.getByRole('button',{name:'Send task'}).click();
+  await skewPage.locator('.conversation').getByText('Timestamp-stale server message',{exact:true}).waitFor();
+  assert.equal(await skewPage.locator('.message-line.user .message-bubble').last().innerText(),'Timestamp-stale server message','a newly submitted server message should remain after older history even when its timestamp is stale');
+  const skewScroll=await skewPage.locator('.message-scroll').evaluate(element=>({scrollTop:element.scrollTop,clientHeight:element.clientHeight,scrollHeight:element.scrollHeight}));
+  assert.ok(skewScroll.scrollHeight-skewScroll.clientHeight-skewScroll.scrollTop<=2,`a newly submitted server message with a stale timestamp should stay visible (${JSON.stringify(skewScroll)})`);
+  await skewContext.close();
   await productShellContext.close();
   authChild.kill('SIGTERM');
   authChild = undefined;

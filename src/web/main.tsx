@@ -158,7 +158,7 @@ function timelineTime(value?:string|null):number {
   const timestamp=Date.parse(value);
   return Number.isFinite(timestamp)?timestamp:0;
 }
-function buildBotTimeline(messages:Message[],runs:AgentRun[],runApprovals:Record<string,Approval[]>,latestSubmittedRunId?:string):BotTimelineEntry[] {
+function buildBotTimeline(messages:Message[],runs:AgentRun[],runApprovals:Record<string,Approval[]>,latestSubmittedItemId?:string):BotTimelineEntry[] {
   const entries:BotTimelineEntry[]=[];
   messages.forEach((message,index)=>entries.push({key:`message:${message.id}`,at:timelineTime(message.createdAt),priority:1,order:index,kind:'message',message}));
   runs.forEach((run,index)=>{
@@ -174,8 +174,8 @@ function buildBotTimeline(messages:Message[],runs:AgentRun[],runApprovals:Record
     if(showFollowup)entries.push({key:`result:${run.id}`,at:updatedAt,priority:2,order:index,kind:'run-result',run});
   });
   return entries.sort((a,b)=>{
-    const aLatest='run' in a&&a.run.id===latestSubmittedRunId;
-    const bLatest='run' in b&&b.run.id===latestSubmittedRunId;
+    const aLatest=(a.kind==='message'?a.message.id:a.run.id)===latestSubmittedItemId;
+    const bLatest=(b.kind==='message'?b.message.id:b.run.id)===latestSubmittedItemId;
     if(aLatest!==bLatest)return aLatest?1:-1;
     if(aLatest&&bLatest)return a.priority-b.priority||a.order-b.order;
     return a.at-b.at||a.priority-b.priority||a.order-b.order;
@@ -571,13 +571,14 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [scrollRequest, setScrollRequest] = useState(0);
-  const latestSubmittedRunByBot = useRef<Record<string,string>>({});
+  const latestSubmittedTimelineItemByBot = useRef<Record<string,string>>({});
   const messageScroll = useRef<HTMLDivElement>(null);
   const messageContent = useRef<HTMLDivElement>(null);
   const stickToLatestMessage = useRef(false);
   const followMessageGrowth = useRef(false);
   const previousConversationKey = useRef('');
   const previousConversationLength = useRef(0);
+  const previousConversationTailKey = useRef('');
   const previousScrollViewport = useRef<HTMLDivElement | null>(null);
   const previousScrollRequest = useRef(0);
   const recipientInput = useRef<HTMLInputElement>(null);
@@ -602,9 +603,10 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const activeIdRef = useRef(active?.id); activeIdRef.current = active?.id;
   const messages = active ? state.messages[active.id] || [] : [];
   const activeRuns=active&&runHistory.id===active.id&&agentFeature==='enabled'?runHistory.runs:[];
-  const botTimeline=buildBotTimeline(messages,activeRuns,runApprovals,active?latestSubmittedRunByBot.current[active.id]:undefined);
+  const botTimeline=buildBotTimeline(messages,activeRuns,runApprovals,active?latestSubmittedTimelineItemByBot.current[active.id]:undefined);
   const visibleConversationLength=activeGroup?(groupChat.id===activeGroup.id?groupChat.view?.messages.length||0:0):botTimeline.length;
   const activeConversationKey=activeGroup?`group:${activeGroup.id}`:`bot:${active?.id||''}`;
+  const visibleConversationTailKey=activeGroup?(groupChat.id===activeGroup.id?groupChat.view?.messages.at(-1)?.id||'':''):botTimeline.at(-1)?.key||'';
   const filtered = state.bots.filter(bot => !(reference && newChat && bot.id === 'new') && `${bot.name} ${bot.label}`.toLowerCase().includes(query.toLowerCase()));
   const visibleBots = filtered.filter(bot=>!bot.hidden).sort((a,b)=>Number(Boolean(b.pinned))-Number(Boolean(a.pinned)));
   const hiddenBots = filtered.filter(bot=>bot.hidden);
@@ -780,12 +782,14 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     const conversationChanged=previousConversationKey.current!==activeConversationKey;
     const viewportChanged=previousScrollViewport.current!==viewport;
     const messageCountChanged=previousConversationLength.current!==visibleConversationLength;
+    const conversationTailChanged=previousConversationTailKey.current!==visibleConversationTailKey;
     const scrollRequested=previousScrollRequest.current!==scrollRequest;
     previousScrollRequest.current=scrollRequest;
     if(conversationChanged||viewportChanged){
       previousConversationKey.current=activeConversationKey;
       previousScrollViewport.current=viewport;
       previousConversationLength.current=0;
+      previousConversationTailKey.current='';
       // A newly opened conversation starts at its latest message. The user can
       // still scroll up to history, which disables following until they return
       // to the bottom.
@@ -804,15 +808,16 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     // scroll after the browser's next layout frame: task cards and history
     // refreshes can otherwise restore the previous scroll anchor after commit.
     let settleFrame:number|undefined;
-    if(visibleConversationLength>0&&(conversationChanged||viewportChanged||messageCountChanged||scrollRequested)&&(scrollRequested||stickToLatestMessage.current)){
+    if(visibleConversationLength>0&&(conversationChanged||viewportChanged||messageCountChanged||conversationTailChanged||scrollRequested)&&(scrollRequested||stickToLatestMessage.current)){
       scrollToLatest();
       if(scrollRequested)settleFrame=requestAnimationFrame(()=>{
         if(messageScroll.current===viewport&&previousScrollRequest.current===scrollRequest&&stickToLatestMessage.current)scrollToLatest();
       });
     }
     previousConversationLength.current=visibleConversationLength;
+    previousConversationTailKey.current=visibleConversationTailKey;
     return()=>{if(settleFrame!==undefined)cancelAnimationFrame(settleFrame)};
-  },[activeConversationKey,visibleConversationLength,newChat,Boolean(account),reference,scrollRequest]);
+  },[activeConversationKey,visibleConversationLength,visibleConversationTailKey,newChat,Boolean(account),reference,scrollRequest]);
   useLayoutEffect(() => {
     const viewport=messageScroll.current;
     const content=messageContent.current;
@@ -1123,7 +1128,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
           // if a subsequent history poll returns a differently normalized DB
           // timestamp. Otherwise mixed message/run sorting can move it above
           // older history while the scroll viewport correctly stays at bottom.
-          latestSubmittedRunByBot.current[id]=run.id;
+          latestSubmittedTimelineItemByBot.current[id]=run.id;
           followMessageGrowth.current=true;
           stickToLatestMessage.current=true;
           setScrollRequest(value=>value+1);
@@ -1139,6 +1144,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${id}/messages`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: clean }) });
         if (!response.ok) throw new Error('save failed');
         const { message } = await response.json() as { message: Message };
+        if(!message||typeof message.id!=='string')throw new Error('invalid message response');
+        latestSubmittedTimelineItemByBot.current[id]=message.id;
         followMessageGrowth.current=true;
         stickToLatestMessage.current=true;
         setScrollRequest(value=>value+1);
@@ -1157,7 +1164,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     stickToLatestMessage.current=true;
     setScrollRequest(value=>value+1);
     const createdAt=new Date().toISOString();
-    setState(current => ({ ...current, messages: { ...current.messages, [active.id]: [...(current.messages[active.id] || []), { id: crypto.randomUUID(), role: 'user', text: clean, createdAt }] }, bots: current.bots.map(bot => bot.id === active.id ? { ...bot, preview: clean,lastActivityAt:createdAt } : bot), showOnboarding: { ...current.showOnboarding, [active.id]: false } }));
+    const messageId=crypto.randomUUID();
+    latestSubmittedTimelineItemByBot.current[active.id]=messageId;
+    setState(current => ({ ...current, messages: { ...current.messages, [active.id]: [...(current.messages[active.id] || []), { id: messageId, role: 'user', text: clean, createdAt }] }, bots: current.bots.map(bot => bot.id === active.id ? { ...bot, preview: clean,lastActivityAt:createdAt } : bot), showOnboarding: { ...current.showOnboarding, [active.id]: false } }));
     botMentionTokensRef.current=[];setBotMentionTokens([]);setBotMentionQuery(null);
     setDraft(''); setCustomAnswer(''); setNotice(true);
   }
@@ -1222,7 +1231,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         const saved = await response.json() as { ok?: boolean; event?: Message };
         if (saved.ok !== true) throw new Error('rename was not confirmed');
         savedNames.current[id] = name;
-        if(saved.event)delete latestSubmittedRunByBot.current[id];
+        if(saved.event)latestSubmittedTimelineItemByBot.current[id]=saved.event.id;
         setState(current => ({
           ...current,
           messages: saved.event ? { ...current.messages, [id]: [...(current.messages[id] || []).filter(message => message.id !== saved.event!.id), saved.event] } : current.messages,
