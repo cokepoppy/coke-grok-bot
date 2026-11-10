@@ -2453,6 +2453,10 @@ Chrome Computer Use 的 `getState` 与目标公网 URL 的 `getBrowser` 均超�
 
 修正后，前端按 Bot 暂存已成功提交的 Agent run；轮询只有在同一 run ID 已出现在服务端历史时才移除该暂存项。旧快照即使晚到，也不能卸载新任务，之后的 canonical poll 再接管状态。新增的竞态回归先以锁住的旧快照运行并确认失败，再验证修复后新消息始终处于末尾、视口在底部，下一次 canonical poll 也保持顺序。`npm run test:ui`、`npm run build` 与 `npm run build:deployment` 均通过。本轮支持的 Chrome Computer Use `getState()` 仍 30 秒超时；没有公网可见点击验收，不以本地回归替代它。
 
+**2026-11-10 Auth-only 候选部署**：修复提交 `e520bc03686775bd436a1229ea90dd7ffee8a44c` 已推送到唯一功能分支。候选发布包保存在 [`releases/candidate-grok-bot-chat-scroll-poll-race-e520bc0-2026-11-10/`](../releases/candidate-grok-bot-chat-scroll-poll-race-e520bc0-2026-11-10/)，包含源码归档、dist、ARM64 Auth 镜像、K3D 配置、SHA256、预检/部署/验证/回退脚本及操作记录，总计约 86 MiB。零运行任务/零未过期审批预检通过后，只把既有 K3D Auth Deployment 一对一更新到 `coke-grok-auth:sha-e520bc03686775bd436a1229ea90dd7ffee8a44c`，现为 1/1 Ready；精确回退镜像为 `coke-grok-auth:sha-cf76a4ab67f4b160abd52f90a779dd5a01bc6121`。公网路由和静态资源验证通过：JS `/grok-bot/assets/index-C-9y-Vx7.js` SHA-256 `c10b2d704dc0de9ce6aed103b05ae52fa248e98254fdf543b4db9214273348df`，CSS `/grok-bot/assets/index-BVhbTNy-.css` SHA-256 `8b4d7a818a8f9035e22260a34b8c155bc0f9d31eff37cc01b7174af4e99cade7`，均与候选文件逐字节匹配。Agent/Desktop、Broker、MySQL/PVC、其他 namespace 和 VPS 未改动或重启。
+
+部署后再次尝试受支持的可见 Chrome 控制，`cua.getState()` 仍在 30 秒超时；没有从公网浏览器实际发消息。该候选已上线并通过本地竞态 E2E、构建、健康和静态哈希验证，但公网页面上的滚动交互仍未取得可见验收证据，尚未合并 `main` 或创建验收 tag。
+
 #### 2026-11-10 普通消息与任务刷新后的聊天尾项修正
 
 用户再次报告提交消息后会看到历史消息。复核后把最近提交项锚点从“仅 Agent run”扩展到 Bot 时间线中的普通消息、run 和改名系统消息；这样服务器返回的消息时间戳落在历史时间之前时，新消息也仍显示在时间线末尾。滚动布局同时比较最后一项的身份，避免条目数相同但尾项被异步刷新替换时漏掉重新定位。
