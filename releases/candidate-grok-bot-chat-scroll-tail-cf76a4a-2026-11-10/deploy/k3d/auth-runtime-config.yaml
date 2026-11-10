@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-runtime-config
+data:
+  COKE_GROK_PI_ENABLED: "1"
+  COKE_GROK_AGENT_ENGINE: pi
+  COKE_GROK_CONTROL_NAMESPACE: coke-grok-bot
+  COKE_GROK_DESKTOP_IMAGE: coke-grok-desktop:sha-528fc179cfa7d602f3ff9861e66f2e1ba437f99a
+  COKE_GROK_AGENT_IMAGE: coke-grok-desktop:sha-528fc179cfa7d602f3ff9861e66f2e1ba437f99a
+  COKE_GROK_DESKTOP_PROXY_SERVER: http://host.docker.internal:17891
+  COKE_GROK_DESKTOP_PROXY_HOST_IP: 192.168.65.254
+  COKE_GROK_MODEL_BASE_URL: https://api.deepseek.com
+  COKE_GROK_MODEL_ID: deepseek-flash

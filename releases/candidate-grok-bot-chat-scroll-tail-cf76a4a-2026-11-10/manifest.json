@@ -1,0 +1,45 @@
+{
+  "name": "candidate-grok-bot-chat-scroll-tail-cf76a4a-2026-11-10",
+  "status": "deployed_candidate_public_interaction_pending",
+  "preparedAt": "2026-11-10T00:19:29Z",
+  "source": {
+    "branch": "codex/grok-bot-persistent-group-chat",
+    "commit": "cf76a4ab67f4b160abd52f90a779dd5a01bc6121",
+    "trackedWorktreeClean": true
+  },
+  "runtime": {
+    "context": "k3d-tp1121-sandbox-dev",
+    "cluster": "tp1121-sandbox-dev",
+    "applicationNamespace": "coke-grok-bot",
+    "publicUrl": "https://codex.cokeagent.com/grok-bot/",
+    "rolloutScope": "Auth only; Broker, Agent, Desktop, MySQL, PVCs, other namespaces and VPS unchanged"
+  },
+  "images": {
+    "auth": {
+      "candidate": "coke-grok-auth:sha-cf76a4ab67f4b160abd52f90a779dd5a01bc6121",
+      "candidateImageId": "sha256:5c68d40b5356022c35f3e82151edfeae111169c403f39e6f3a4874f4e3be3258",
+      "platform": "linux/arm64",
+      "rollback": "coke-grok-auth:sha-aa5c3a24c242e126536a4523f6d820f872c9a8ee"
+    },
+    "agent": {
+      "unchanged": "coke-grok-desktop:sha-2670fed3f6830a2344ac7590d5856901e190b00d"
+    },
+    "desktop": {
+      "unchanged": "coke-grok-desktop:sha-2670fed3f6830a2344ac7590d5856901e190b00d"
+    },
+    "broker": {
+      "unchanged": "coke-grok-desktop-broker:sha-e18f71547116d965c5abc5db9227b74729983588"
+    }
+  },
+  "checks": {
+    "uiE2e": "passed: authenticated long history, delayed and periodic run-history refresh, newest submitted task remains visible",
+    "deploymentBuild": "passed",
+    "publicVisibleInteraction": "pending: supported Chrome Computer Use calls timed out; no public message was sent"
+  },
+  "deployment": {
+    "completedAt": "2026-11-10T00:20:25.388Z",
+    "authReplicas": "1/1 Ready",
+    "publicRoute": "HTTP 200",
+    "rolloutScope": "Auth only"
+  }
+}

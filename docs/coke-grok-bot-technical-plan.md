@@ -2451,4 +2451,6 @@ Chrome Computer Use 的 `getState` 与目标公网 URL 的 `getBrowser` 均超�
 
 用户再次报告提交消息后会看到历史消息。复核后把最近提交项锚点从“仅 Agent run”扩展到 Bot 时间线中的普通消息、run 和改名系统消息；这样服务器返回的消息时间戳落在历史时间之前时，新消息也仍显示在时间线末尾。滚动布局同时比较最后一项的身份，避免条目数相同但尾项被异步刷新替换时漏掉重新定位。
 
-`tests/ui.e2e.mjs` 新增远端非 Agent 消息路径：32 条历史消息后，模拟服务器以明显过旧的时间戳返回新消息，核对新消息仍为最后一条且视口停在底部。`npm run test:ui` 与 `npm run build` 通过；修复尚未部署。Mac K3D Auth 仍为 `coke-grok-auth:sha-aa5c3a24c242e126536a4523f6d820f872c9a8ee`，公网仍提供匹配 `aa5c3a2` 的静态资源。受支持 Chrome Computer Use `getState` 超时 30 秒，本轮没有通过公网可见点击复现或验收，故不能宣称公网交互问题已解决。
+`tests/ui.e2e.mjs` 新增远端非 Agent 消息路径：32 条历史消息后，模拟服务器以明显过旧的时间戳返回新消息，核对新消息仍为最后一条且视口停在底部。`npm run test:ui`、`npm run build` 和 `npm run build:deployment` 通过。修复提交 `cf76a4ab67f4b160abd52f90a779dd5a01bc6121` 已推送到当前唯一功能分支；发布包位于 [`releases/candidate-grok-bot-chat-scroll-tail-cf76a4a-2026-11-10/`](../releases/candidate-grok-bot-chat-scroll-tail-cf76a4a-2026-11-10/)。零任务/零审批预检通过后，只将 Mac K3D Auth 一对一更新至 `coke-grok-auth:sha-cf76a4ab67f4b160abd52f90a779dd5a01bc6121`，现为 1/1 Ready；精确回退镜像为 `coke-grok-auth:sha-aa5c3a24c242e126536a4523f6d820f872c9a8ee`。公网路由 HTTP 200，JS `index-8QtkXIbl.js` SHA-256 `a20578b55c5f3d1500e69a4f152fd95d1b3afb0d29cc16a63f746d5a12d502e9`、CSS `index-BVhbTNy-.css` SHA-256 `8b4d7a818a8f9035e22260a34b8c155bc0f9d31eff37cc01b7174af4e99cade7` 与候选制品匹配。Agent/Desktop、Broker、MySQL/PVC、其他 namespace 与 VPS 未改动或重启。
+
+受支持 Chrome Computer Use `getState` 在更新后仍超时 30 秒，未能从已登录公网页面执行可见点击；因此本机 UI E2E、Auth 部署和静态资源核验都不等于公网聊天滚动交互验收，不能据此宣称用户问题已在其浏览器中确认解决。尚未合并 `main` 或创建验收 tag。
