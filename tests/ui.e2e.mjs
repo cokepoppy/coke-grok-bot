@@ -601,6 +601,77 @@ try {
   const skewScroll=await skewPage.locator('.message-scroll').evaluate(element=>({scrollTop:element.scrollTop,clientHeight:element.clientHeight,scrollHeight:element.scrollHeight}));
   assert.ok(skewScroll.scrollHeight-skewScroll.clientHeight-skewScroll.scrollTop<=2,`a newly submitted server message with a stale timestamp should stay visible (${JSON.stringify(skewScroll)})`);
   await skewContext.close();
+
+  // A run-history request can already be in flight when a new run is accepted.
+  // Its temporarily stale response must not remove the just-submitted task from
+  // the chat or make the viewport land on the previous conversation tail.
+  const optimisticContext=await browser.newContext({viewport:{width:995,height:675},deviceScaleFactor:1});
+  const optimisticPage=await optimisticContext.newPage();
+  optimisticPage.on('pageerror',error=>errors.push(error.message));
+  const optimisticHistory=Array.from({length:32},(_,index)=>({
+    id:`optimistic-history-${index}`,
+    role:index%2?'bot':'user',
+    text:`Optimistic history ${index+1}`,
+    createdAt:new Date(Date.now()-(32-index)*60_000).toISOString(),
+  }));
+  let optimisticRun;
+  let staleOptimisticPolls=0;
+  let optimisticRunReads=0;
+  let resolveStaleOptimisticPoll;
+  const staleOptimisticPollObserved=new Promise(resolve=>{resolveStaleOptimisticPoll=resolve;});
+  let releaseStaleOptimisticPoll;
+  const staleOptimisticPollReleased=new Promise(resolve=>{releaseStaleOptimisticPoll=resolve;});
+  let resolveStaleOptimisticPollResponse;
+  const staleOptimisticPollResponseSent=new Promise(resolve=>{resolveStaleOptimisticPollResponse=resolve;});
+  await optimisticPage.route('**/api/**',async route=>{
+    const path=new URL(route.request().url()).pathname;
+    let data={};
+    if(path.endsWith('/api/auth/me'))data=demoAccount;
+    else if(path.endsWith('/api/auth/features'))data={agent:true,engine:'dsh'};
+    else if(path.endsWith('/api/bots'))data={bots:[demoBot]};
+    else if(path.endsWith('/api/groups'))data={groups:[]};
+    else if(path.endsWith('/api/bots/sales-outbound/messages'))data={messages:optimisticHistory};
+    else if(path.endsWith('/api/bots/sales-outbound/runs')&&route.request().method()==='POST'){
+      const body=route.request().postDataJSON();
+      const now=new Date().toISOString();
+      optimisticRun={id:'optimistic-submitted-run',prompt:body.prompt,status:'queued',result:null,recoveryState:'none',replacementRunId:null,computerUsed:false,createdAt:now,updatedAt:now,files:[]};
+      staleOptimisticPolls=1;
+      return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({run:optimisticRun})});
+    }else if(path.endsWith('/api/bots/sales-outbound/runs')&&route.request().method()==='GET'){
+      optimisticRunReads+=1;
+      if(staleOptimisticPolls>0){
+        staleOptimisticPolls-=1;
+        resolveStaleOptimisticPoll();
+        await staleOptimisticPollReleased;
+        await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({runs:[]})});
+        resolveStaleOptimisticPollResponse();
+        return;
+      }
+      data={runs:optimisticRun?[optimisticRun]:[]};
+    }
+    return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
+  });
+  await optimisticPage.addInitScript(({storageKey,state})=>localStorage.setItem(storageKey,JSON.stringify(state)),{
+    storageKey:'coke-grok-bot:desktop-preview:v1:visual-tenant:visual-user:server-chat-v1',
+    state:{bots:[demoBot],activeId:demoBot.id,messages:{},showOnboarding:{}},
+  });
+  await optimisticPage.goto(authBase,{waitUntil:'networkidle'});
+  await optimisticPage.getByText('Optimistic history 32',{exact:true}).waitFor();
+  const optimisticComposer=optimisticPage.getByRole('textbox',{name:'Message Sales Outbound'});
+  await optimisticComposer.fill('Keep the new task visible');
+  await optimisticPage.getByRole('button',{name:'Send task'}).click();
+  await optimisticPage.locator('.message-line.user .message-bubble').filter({hasText:'Keep the new task visible'}).waitFor();
+  await staleOptimisticPollObserved;
+  releaseStaleOptimisticPoll();
+  await staleOptimisticPollResponseSent;
+  await optimisticPage.waitForTimeout(100);
+  assert.equal(await optimisticPage.locator('.message-line.user .message-bubble').last().innerText(),'Keep the new task visible','a stale immediate run-history poll must not replace the newly submitted task with old history');
+  const optimisticScroll=await optimisticPage.locator('.message-scroll').evaluate(element=>({scrollTop:element.scrollTop,clientHeight:element.clientHeight,scrollHeight:element.scrollHeight}));
+  assert.ok(optimisticRunReads>=2,'the scenario must include an immediate post-submit run-history poll');
+  assert.ok(optimisticScroll.scrollHeight-optimisticScroll.clientHeight-optimisticScroll.scrollTop<=2,`the chat should stay at the submitted task after a stale poll (${JSON.stringify(optimisticScroll)})`);
+  await optimisticPage.waitForTimeout(2200);
+  assert.equal(await optimisticPage.locator('.message-line.user .message-bubble').last().innerText(),'Keep the new task visible','the next canonical history poll should retain the same latest task');
+  await optimisticContext.close();
   await productShellContext.close();
   authChild.kill('SIGTERM');
   authChild = undefined;

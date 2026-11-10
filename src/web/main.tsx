@@ -572,6 +572,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const sendingRef = useRef(false);
   const [scrollRequest, setScrollRequest] = useState(0);
   const latestSubmittedTimelineItemByBot = useRef<Record<string,string>>({});
+  const submittedRunsByBot = useRef<Record<string,Record<string,AgentRun>>>({});
   const messageScroll = useRef<HTMLDivElement>(null);
   const messageContent = useRef<HTMLDivElement>(null);
   const stickToLatestMessage = useRef(false);
@@ -725,9 +726,19 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
           return [run.id, data.approvals] as const;
         }));
         if (controller.signal.aborted || uncertainMutation.current) return;
+        // A history poll can have started before a successful POST /runs and
+        // return a snapshot that does not contain the accepted task. Keep each
+        // submitted run until the canonical history confirms its ID so the new
+        // prompt cannot disappear and send the conversation back to old items.
+        const submitted=submittedRunsByBot.current[id]||{};
+        const confirmedRunIds=new Set(value.runs.map(run=>run.id));
+        for(const runId of confirmedRunIds)delete submitted[runId];
+        const confirmedRuns=Object.values(submitted).filter(run=>!confirmedRunIds.has(run.id));
+        if(Object.keys(submitted).length===0)delete submittedRunsByBot.current[id];
+        const runs=[...value.runs,...confirmedRuns];
         setRunApprovals(Object.fromEntries(pending));
-        setRunHistory({ id, status: 'ready', runs: value.runs });
-        const latest=value.runs.at(-1);
+        setRunHistory({ id, status: 'ready', runs });
+        const latest=runs.at(-1);
         if(latest)setState(current=>({...current,bots:current.bots.map(bot=>bot.id===id?{...bot,preview:runPreview(latest),lastActivityAt:latest.updatedAt||bot.lastActivityAt}:bot)}));
         timer = setTimeout(() => void load(), 2000);
       } catch (error) {
@@ -1129,6 +1140,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
           // timestamp. Otherwise mixed message/run sorting can move it above
           // older history while the scroll viewport correctly stays at bottom.
           latestSubmittedTimelineItemByBot.current[id]=run.id;
+          (submittedRunsByBot.current[id]||=Object.create(null))[run.id]=run;
           followMessageGrowth.current=true;
           stickToLatestMessage.current=true;
           setScrollRequest(value=>value+1);
