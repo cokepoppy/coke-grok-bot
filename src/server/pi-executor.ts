@@ -155,14 +155,15 @@ export class DesktopAgentExecutor implements RunExecutor {
       // A pause may have interrupted an operation after a side effect. Reconciliation is required.
       if (result.pausedForControl===true) throw new RunDiagnosticError(result.controlOwner==='user'?'agent_paused_for_control':'computer_control_state_unknown',executionAudit);
       if (result.status==='waiting') throw new RunDiagnosticError(result.controlOwner==='unknown'?'computer_control_state_unknown':'agent_result_status_unconfirmed',executionAudit);
-      if (!['done','failed','delegating'].includes(String(result.status))) throw new RunDiagnosticError('agent_result_status_unconfirmed',executionAudit);
+      if (!['done','failed','scheduled','delegating'].includes(String(result.status))) throw new RunDiagnosticError('agent_result_status_unconfirmed',executionAudit);
       if (typeof result.message!=='string' || !result.message.trim()) throw new RunDiagnosticError('agent_result_message_missing',executionAudit);
       let safe=result.message.split(capability).join('[redacted]').split(desktop.agentToken).join('[redacted]').slice(0,20000);
       if(explicitMemorySave==='saved') safe+=/\p{Script=Han}/u.test(run.prompt)?'\n\n已保存到此 Bot 的记忆中。':'\n\nSaved to this Bot’s memory.';
       else if(explicitMemorySave==='blocked') safe+=/\p{Script=Han}/u.test(run.prompt)?'\n\n这条记忆未保存；密码、密钥和联系方式应存放在 Vault 中。':'\n\nThis memory was not saved; keep passwords, keys, and contact details in the Vault.';
       else if(explicitMemorySave==='unavailable') safe+=/\p{Script=Han}/u.test(run.prompt)?'\n\n我无法确认这条记忆已保存，请稍后重试。':'\n\nI could not confirm that this memory was saved. Please try again later.';
       safe=safe.slice(0,20000);
-      return {status:result.status==='failed'?'failed':'completed',result:safe,...(result.status==='done'&&Array.isArray(result.files)?{artifacts:result.files}:{}),...(executionAudit?{executionAudit}:{})};
+      const successfulResult=result.status==='done'||result.status==='scheduled';
+      return {status:result.status==='failed'?'failed':'completed',result:safe,...(successfulResult&&Array.isArray(result.files)?{artifacts:result.files}:{}),...(executionAudit?{executionAudit}:{})};
     } finally { this.gateway.revoke(capability); }
   }
 }

@@ -289,6 +289,14 @@ test('Pi reports a confirmed failure as failed rather than completed',async()=>{
  try{assert.deepEqual(await executor.execute(screen,run,new AbortController().signal,randomUUID()),{status:'failed',result:'Could not access the requested page.'})}finally{gateway.close()}
 });
 
+test('Pi treats a confirmed scheduled routine as a completed task',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const scheduledAudit={engine:'pi',model:'model',modelCompleted:true,calls:[{tool:'bot_routines',action:null,outcome:'succeeded'}],truncated:false};
+ const artifact={name:'routine-summary.txt',mimeType:'text/plain',size:7,sha256:'c'.repeat(64),storageKey:`tasks/${run.id}/artifacts/routine-summary.txt`};
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>Response.json({status:'scheduled',message:'The routine was confirmed and scheduled.',files:[artifact],executionAudit:scheduledAudit}));
+ try{assert.deepEqual(await executor.execute(screen,run,new AbortController().signal,randomUUID()),{status:'completed',result:'The routine was confirmed and scheduled.',artifacts:[artifact],executionAudit:scheduledAudit})}finally{gateway.close()}
+});
+
 test('Pi forwards tenant attachment metadata and returns only Agent-reported artifact descriptors',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const attached={...run,files:[{id:randomUUID(),name:'notes.txt',mimeType:'text/plain',size:12,sha256:'a'.repeat(64),storageKey:`shared/uploads/${randomUUID()}.txt`,kind:'input' as const}]};
