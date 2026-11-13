@@ -69,6 +69,8 @@
 
 2026-11-13 继续逐帧审阅 Grok Bot 201 的 4:30.000–4:44.960，共 375 帧/15 张联系图；独立校验源视频、PTS、像素和联系图哈希均通过。约 4:41.720 从 `What we will learn` 切换到 `Grok Bot 101 Recap`，列出 Dex（Designer）、Maya（Community）、Penny（Sourcing）；仍为演讲材料而非工作区画面。V2 连续覆盖至 4:44.960（7,125 帧），下一窗口为 4:45.000。
 
+2026-11-13 官方 Grok Bot 201 连续逐帧审阅新增 6:30.000–6:44.960：375 个源帧、15 张联系图全部审阅并独立核验源 SHA-256、PTS、像素哈希/字节数及联系图哈希。PTS 398560（6:38.560）从 `Sticker shop` 切到 `Meet the team`，展示 Dex（Designer）、Lew（Fullstack）、Sam（UI/UX）；这是演讲幻灯片，不是产品客户端或实际运行时证据。转场六帧留存于 `research/frames/grok-201-0638-transition-keyframes-20261113/`。V2 连续覆盖现延长至 6:44.960（10,125 帧），下一窗口 6:45.000；详细证据见 `research/README.md`。
+
 ## 3. Coke Dots 复用方案
 
 本次只读核对了 `/Users/shangguan/Documents/home2026/coke-dots`。该主工作区存在未提交修改；其本地 `origin/main` 与远端 `main` 核对为 `4213e769e49da7a479ab2ad186584c77b721fa69`。实现时从新确认的 Coke Dots `origin/main` 提取明确范围，不复制未提交内容、配置或用户数据。

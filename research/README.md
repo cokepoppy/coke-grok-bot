@@ -5360,3 +5360,9 @@ V1 连续逐帧覆盖现推进至 20:29.967（36,900 帧）；下一窗口从 20
 连续审阅三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧和 15 张 5×5 联系图；联系图均逐张检查。独立 FFmpeg 重解码核验完整 MKV SHA-256、全部源帧 PTS、`yuv420p` 像素字节数/SHA-256 及联系图 SHA-256，全部与 manifest 匹配。源 MKV SHA-256：`2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。证据目录：`research/frames/grok-201-0615-0620-compact-audit-20261113/`、`research/frames/grok-201-0620-0625-compact-audit-20261113/`、`research/frames/grok-201-0625-0630-compact-audit-20261113/`。
 
 逐帧观察到两次硬切：源 PTS 375080（6:15.080）从六款贴纸展示幻灯片切到紫底白色水滴形 Grok 标记及标题 `What should we do in 201?`；画面保持至 PTS 379440（6:19.440）。PTS 379480（6:19.480）切到 `Sticker shop` 标题和白色云朵形标记，此后持续到 6:29.960。两个切点前后各保留六张全分辨率 PNG；再次从完整 MKV 独立提取后，源 PTS、PNG SHA-256 与各自联系图哈希均匹配 manifest，目录分别为 `research/frames/grok-201-0615-transition-keyframes-20261113/` 和 `research/frames/grok-201-0619-transition-keyframes-20261113/`。这些画面是演讲幻灯片，没有现场 Bot 客户端、云电脑操作或任务结果；不作为产品 UI/运行时验收证据。V2 连续逐帧覆盖延长至 6:29.960（9,750 帧），下一窗口从 6:30.000 开始。
+
+### Grok Bot 201 逐帧续审：6:30.000–6:44.960（2026-11-13）
+
+连续审阅三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧与 15 张 5×5 联系图；联系图均逐张检查。完整源 MKV SHA-256、全部源帧 PTS、`yuv420p` 像素字节数/SHA-256 与联系图 SHA-256 均经独立 FFmpeg 重解码复核，并与 manifest 一致。源 MKV SHA-256：`2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。窗口目录：`research/frames/grok-201-0630-0635-compact-audit-20261113/`、`research/frames/grok-201-0635-0640-compact-audit-20261113/`、`research/frames/grok-201-0640-0645-compact-audit-20261113/`。
+
+6:30.000–6:38.520 持续显示紫色 `Sticker shop` 演讲页及白色云朵标记。源 PTS 398560（6:38.560）首次切换至 `Meet the team` 幻灯片，列出 Dex（Designer，橙色水滴）、Lew（Fullstack，粉色胶囊）、Sam（UI/UX，蓝色圆形）；画面保持至 6:44.960。转场前后保留 398.480–398.680 秒的六张全分辨率 PNG；完整源视频独立重提后 PTS、PNG SHA-256 和联系图哈希均匹配 manifest，目录为 `research/frames/grok-201-0638-transition-keyframes-20261113/`。此前误标为转场的 6:44 关键帧目录已删除，因为其六帧全部处于稳定的 `Meet the team` 页面。两页均为演讲幻灯片，没有现场客户端或实际 Bot/Computer 工作流。V2 连续逐帧覆盖延长至 6:44.960（10,125 帧），下一窗口从 6:45.000 开始；本段不作为产品 UI/运行时验收证据。
