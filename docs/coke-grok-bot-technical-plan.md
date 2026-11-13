@@ -2710,3 +2710,11 @@ BSE 多 Bot 全链路仍未通过最终验收：仍须在可用的签名态公�
 该 Bot 聊天中有一条已完成的 Browser User 记录，`Computer activity` 显示 `Done`；任务结果报告其云电脑 Chrome 实际检查了 `https://c-m-ai-copilot.github.io/coke-bse-trading-demo/`，页面标题为 `北证证券终端 · DEMO · 920999 N星澜`，H1 为 `N星澜`，并读到 `3.6.5(2)(3)` 与日期 `2026-10-26`。该记录是之前已完成的 Bot 任务，不是本轮新发起的执行。本轮打开电脑面板时显示 `BSE 运维发布’s screen`、`Bot is in control`。所以这次确认了既有 Ops 云电脑页面检查结果；没有声称检查了该任务之外的页面链接，也没有据此判定多 Bot 全流程通过。
 
 本轮没有使用截图或重放任务。Tester 私聊仍有一条独立的 `Outcome unknown` 只读 GitHub 盘点记录，尚未确认副作用；它与 Ops 已完成的 Pages 页面检查不同，本轮未重试。源码分支 `codex/grok-bot-persistent-group-chat` 的 runtime 单测 189/189 通过，`npm run build:deployment` 通过。未运行 MySQL 集成套件：本机只发现应用 MySQL 映射在 13316，没有发现约定的隔离测试 MySQL 13317；不把集成套件指向应用数据。
+
+#### 2026-11-13 重启后再次核对 Browser Use、BSE 页面与电脑状态
+
+ChatGPT 重启后重新读取 Chrome 扩展清单，扩展能枚举公网 Grok Bot 与 BSE Pages 标签，但把 Pages 标签 `841112094` 绑定为 Browser Use 标签再次在 30 秒后超时并重置 CUA。随后原生 Computer Use `getApp("Google Chrome")` 正常返回 Chrome 无障碍树；全程未截图。故当前证据仍区分为：Browser Use 扩展到标签页的绑定未恢复，Computer Use 原生 Chrome 可操作，根因没有确认。
+
+通过已登录本机 Chrome 的语义控件检查实际 GitHub Pages：标题 `北证证券终端 · DEMO · 920999 N星澜`，页面标注 `纯前端演示`、`网络 0 请求`，3.6.5(2)(3) 边界校验显示 5/5 PASS。随后执行一笔纯模拟限价买入 9.95 × 10,000 股，页面生成 `D20261112-0001`，挂单冻结现金 ¥99,500；撤单后显示 `已撤`、释放冻结资金，可用现金回到 ¥5,000,000、冻结为 ¥0。该交互只验证公开静态演示页的前端模拟状态，不能证明 Grok Bot Agent、K3D Browser User 或交易系统链路。
+
+再次检查公网 Grok Bot 项目组，群成员是 Chief、BSE 产品调研、BSE 前端开发、BSE 端到端测试、BSE 运维发布，共 5 个。群组 Computer 面板显示 `Computer not connected` / `Chief's screen · Waiting for computer`；切到 BSE 运维发布个人电脑则加载出其真实屏幕并显示 `Bot is in control`。这是按 Bot 屏幕区分的可见状态，不足以认定全局云电脑断连，因此本轮没有重启 Pod 或 Worker。历史群聊仍有多个 `Outcome unknown` 以及 Chief queued 状态；不将它们标为成功，不点 `I checked · continue` 或重试，也不据此宣称北交所多 Bot 全链路已验收。下一步需先用同一原始 run 的持久化证据消解未知结果，再通过公网产品 UI 顺序完成真实调研→开发→测试→运维与 Pages 云电脑打开。
