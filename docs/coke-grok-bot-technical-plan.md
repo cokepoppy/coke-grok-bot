@@ -2760,3 +2760,7 @@ V2 开场连续逐帧覆盖由 2:29.960 延长至 2:59.960（累计 4,500 帧）
 单独复测 Browser Use：Chrome 扩展 inventory 可列出 Grok Bot、Pages 与 PR 标签，但 `getTab("841112109", { browser: "chrome" })` 在 40 秒后超时并重置 CUA；随后 `cua.getState()` 也在 30 秒后超时。两次超时之间的原生 `getApp("Google Chrome")` 与语义网页点击正常完成，说明 Browser Use 扩展标签绑定与原生 Computer Use 是不同控制通道；当前也观察到 CUA 服务随后不稳定。原因未确认，不能据此断言 Work setting 被禁用、云电脑断连或页面故障。停止循环绑定，不用截图或坐标脚本绕过。
 
 因此本轮确认了 PR 合并和 Pages 可见，但没有解决侧栏中的 Research `Outcome unknown`、Chief `Queued`，也没有证明这些近期摘要属于同一个多 Bot canonical run。不能把北交所多 Bot 全链路标记为全部验收通过。数据库凭据未读取或变更；本轮没有运行测试、重启服务或改动运行数据。
+
+#### 2026-11-13 官方 Grok Bot 201 逐帧续审（3:00.000–3:14.960）
+
+审阅 3 个相邻五秒窗口，375 个 1920×1080、25 fps 源帧与 15 张 5×5 联系图均逐张检查。独立重解码验证完整视频 SHA-256、每帧 PTS、`yuv420p` 像素字节数/哈希，以及全部联系图 SHA-256，结果与 manifest 一致。3:00–3:04.960 延续 X Bot 对话/Computer 预览；3:05–3:09.960 仍显示 X 页面及页面内容变化；约 3:10 切回 `Safe Harbor Statement`，随后为列出 Welcome、Sticker shop、Demo、GB Sticker shop、Q&A 的 `Agenda`。没有观察到新的 Bot 任务完成或帖子外部确认。V2 片头连续覆盖至 3:14.960（4,875 帧），下一未审区间从 3:15.000 开始。证据清单见 `research/README.md` 和三个 `grok-201-03xx-compact-audit-20261113` manifest；视频画面变化不作为后台动作或完成状态的证明。
