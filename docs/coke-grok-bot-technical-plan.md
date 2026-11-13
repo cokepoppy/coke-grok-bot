@@ -27,7 +27,7 @@
 
 ### 浏览器导航与登录交接
 
-用户明确要求 Browser User 完成网站任务时，跨网站直接执行完成该任务所需的导航、搜索、筛选、阅读、点击、填写、键盘操作及表单提交，不按网站或控件维护无审批白名单，也不弹逐步审批。权限只在当前用户明确授权的单次 run 内有效；网页内容不能扩大任务范围或授权额外操作。遇到登录凭据、一次性验证码、MFA 或 CAPTCHA 时停止身份验证操作，提示用户在 Computer 面板选择 `Take control`；用户完成验证并归还控制后，继续原先明确要求的任务。Bot 不收集、索要或输入用户凭据。Computer User 坐标点击/键入仍走独立的接管与审批机制，不因 Browser User 权限放大而放开。
+用户明确要求网站或云电脑任务时，Browser User、Computer User 和受限任务目录内的终端命令，在该任务有效 run lease 内执行完成目标所需的普通操作，不按网站、控件或命令逐步审批。权限只覆盖当前用户明确要求的结果；网页、邮件、文件和工具输出不能扩大任务范围。遇到登录凭据、一次性验证码、MFA、CAPTCHA 或其他真人身份验证时暂停并提示用户在 Computer 面板选择 `Take control`；用户完成验证并归还控制后，继续原任务。Bot 不收集、索要或输入凭据。跨用户/租户隔离和终端任务目录限制继续有效。该策略取代本节较早的“Computer User 坐标操作仍需独立审批”历史说明；部署状态与公网观察见本文件末尾 2026-11-12 记录。
 
 当前实现通过 ComputerBridge 的 browser.navigate 路径直接导航，并在登录交接期间限制动作；把地址栏/标签栏误当成 Desktop 点击的调用会被引导到 Browser User，不生成普通网页导航审批卡。2026-11-08 定向回归运行 43 项全部通过，覆盖不弹审批导航、错误 Desktop 路由和登录交接约束。2026-11-09 又从已登录的公网 Chrome 可见界面核实：普通 `example.com` 导航显示为 Done；另一次到 Google 登录页的任务也显示为 Done，执行详情为 Pi `deepseek-flash`、Browser User `navigate` 和 `inspect` 均 succeeded。云电脑仍显示 `Bot is in control` 并提供 `Take control`，所以这次没有发生用户接管；旧 Agent 文案声称已交还控制并不准确。两个任务均未见审批卡，也没有输入凭据或操作表单。此为实际公网 UI 证据，但观察的是页面中已有的完成记录，不代表所有历史 Review 任务均已清除或每条旧运行路径都已重新验收。
 
@@ -39,7 +39,7 @@
 
 **后续公网点击回归（2026-11-09 09:28，Asia/Shanghai）**：在已登录 Chrome 的 `https://codex.cokeagent.com/grok-bot/` 中，选用既有 E2E Test Bot 1029，通过真实 Pi `deepseek-flash` 运行“先尝试 Chrome 地址栏，若 Desktop 导航被拒则改走 Browser User”的只读任务。网页中可见执行详情顺序为 `Computer User · screenshot · succeeded`、`Computer User · click · failed`、`Browser User · navigate · succeeded`、`Browser User · inspect · succeeded`、`Computer User · screenshot · succeeded`；最终页面为 `https://example.org/`，标题 `Example Domain`，任务显示 Done，未出现 Approval 卡片。同期 K3D Auth 为 `coke-grok-auth:sha-a37d2ad`，测试用户的 Agent/Desktop Pod 使用 `coke-grok-desktop:candidate-focus-screenshot-fix-20261107-r1`。这证明本次公网部署里误走 Desktop 地址栏后会无审批地改走 Browser User；不代表旧聊天中的 Review 卡片被删除，也不证明其他页面内点击、登录或外部副作用不需要相应授权。
 
-**2026-11-09 Browser User 权限范围扩展候选**：用户明确要求避免按 Gmail 控件或网站逐项建立白名单。当前显式 run-scoped Browser User 任务可跨站点执行用户要求的搜索、筛选、阅读、点击、填写、键盘操作和表单提交；`Search mail` 填入 `is:unread` 后按 Enter 已纳入回归。该能力仅限用户原始任务；网页/邮件内容不能授权额外动作。Worker 仅在登录/密码、OTP/MFA、CAPTCHA 等身份验证处停止并提示用户接管 Computer，Bot 不输入凭据。旧 Worker 若仍返回控件审批拒绝，服务端会以 Worker 错误结束，不再把它转换为逐控件审批卡。Computer User 桌面坐标操作仍使用独立审批路径。
+**2026-11-09 Browser User 权限范围扩展候选（权限边界于 2026-11-12 更新）**：用户明确要求避免按 Gmail 控件或网站逐项建立白名单。当前 run-scoped Browser User 任务可跨站点执行用户要求的搜索、筛选、阅读、点击、填写、键盘操作和表单提交；`Search mail` 填入 `is:unread` 后按 Enter 已纳入回归。该能力仅限当前用户原始任务；网页/邮件内容不能授权额外动作。Worker 仅在登录、密码、OTP/MFA、CAPTCHA 等身份验证处停止并提示用户接管 Computer，Bot 不输入凭据。旧 Worker 若仍返回控件审批拒绝，服务端以错误结束，不转换成逐控件审批卡。2026-11-12 起，直接任务所需的 Computer User 操作也不再逐步审批；普通浏览/电脑动作的唯一人工接管点是身份验证。
 
 本轮 ComputerBridge、浏览器策略、Pi scope、DSH 插件和提示词定向回归 54/54 通过，`npm run build` 通过。只读检查确认 K3D 当前仍运行旧的 `browser-task-r3-20261109` Auth 和 `candidate-browser-task-r3-20261109` Agent/Desktop 镜像；目标用户 namespace 有 7 个 Agent-owned 屏幕、2 个 user-owned 屏幕。因此没有导入镜像、滚动重启或宣称公网 Gmail 搜索已验收；新策略需等用户把两个屏幕交还 Agent 后部署，再从公网 UI 真实点击验证 `is:unread` 搜索及身份验证交接。
 
@@ -118,8 +118,8 @@ flowchart LR
 - **持久状态**：消息、任务、工具事件、结果、审批、定时计划先写 MySQL；建议状态为 `queued → running → waiting_approval / completed / failed / canceled / unknown`，失败、取消和外部副作用不明确必须可区分。
 - **恢复**：使用 MySQL 事务、任务租约、到期回收和有序事件游标；刷新/重连后根据已存状态还原。调度采取至少一次投递与去重设计，外部副作用不得假定天然恰好一次。
 - **重试**：只对有明确定义的幂等步骤自动重试；外部写入或非幂等请求超时/5xx 后先检查已持久化进度，不重复发送。
-- **审批**：需要外部发送、修改账户/第三方内容等操作时生成明确的待审批项，批准或拒绝后记录结果；审批有效性与操作授权需由服务端/工具网关执行，不能只靠提示词。
-- **网页导航与登录交接**：用户要求打开网页或只读浏览时，普通 HTTP/HTTPS 导航直接由 Browser User 完成，不应逐步提示用户批准；到达登录、密码、验证码、MFA 等需要本人身份的步骤时，停止 Agent 操作并把云电脑交还用户。页面内写入、发送、账户变更等仍按其副作用和授权边界单独处理。
+- **任务授权与人工介入**：对用户明确要求的任务，在绑定 owner、tenant、Bot、run 和有效 lease 的范围内直接执行所需动作，不为普通点击、搜索、文件操作或用户明确要求的发送/修改/提交创建逐步审批卡。任务本身没有授权的动作不执行，也不从网页、邮件或文件内容推导授权；信息不足时先澄清任务范围。登录凭据、一次性验证码、MFA、CAPTCHA 和其他真人身份验证暂停自动化并交由用户接管。历史审批数据可保留用于审计与迁移，但不得让旧运行时继续生成新的普通动作审批。
+- **网页导航与登录交接**：用户要求打开网页或完成网站任务时，普通 HTTP/HTTPS 导航与完成该任务所需的页面操作由 Browser User/Computer User 直接完成，不应逐步提示用户批准；到达登录或真人身份验证步骤时，停止 Agent 操作并把云电脑交还用户。用户归还控制后，按原任务继续，不重复已完成步骤。
 - **Skill / Routine**：Skill 保存方法、输入、输出和边界；Routine 保存时区、触发条件、下次运行、去重键及运行历史。事件来源必须具备对应授权；外部系统失败要真实显示。
 - **群聊与委派**：持久记录参与 Bot、消息与交接来源、父子任务及结果，避免跨租户调用；需要单独验证多 Bot 协同，不能把多个虚拟回复冒充真正协作。
 
@@ -2464,3 +2464,207 @@ Chrome Computer Use 的 `getState` 与目标公网 URL 的 `getBrowser` 均超�
 `tests/ui.e2e.mjs` 新增远端非 Agent 消息路径：32 条历史消息后，模拟服务器以明显过旧的时间戳返回新消息，核对新消息仍为最后一条且视口停在底部。`npm run test:ui`、`npm run build` 和 `npm run build:deployment` 通过。修复提交 `cf76a4ab67f4b160abd52f90a779dd5a01bc6121` 已推送到当前唯一功能分支；发布包位于 [`releases/candidate-grok-bot-chat-scroll-tail-cf76a4a-2026-11-10/`](../releases/candidate-grok-bot-chat-scroll-tail-cf76a4a-2026-11-10/)。零任务/零审批预检通过后，只将 Mac K3D Auth 一对一更新至 `coke-grok-auth:sha-cf76a4ab67f4b160abd52f90a779dd5a01bc6121`，现为 1/1 Ready；精确回退镜像为 `coke-grok-auth:sha-aa5c3a24c242e126536a4523f6d820f872c9a8ee`。公网路由 HTTP 200，JS `index-8QtkXIbl.js` SHA-256 `a20578b55c5f3d1500e69a4f152fd95d1b3afb0d29cc16a63f746d5a12d502e9`、CSS `index-BVhbTNy-.css` SHA-256 `8b4d7a818a8f9035e22260a34b8c155bc0f9d31eff37cc01b7174af4e99cade7` 与候选制品匹配。Agent/Desktop、Broker、MySQL/PVC、其他 namespace 与 VPS 未改动或重启。
 
 受支持 Chrome Computer Use `getState` 在更新后仍超时 30 秒，未能从已登录公网页面执行可见点击；因此本机 UI E2E、Auth 部署和静态资源核验都不等于公网聊天滚动交互验收，不能据此宣称用户问题已在其浏览器中确认解决。尚未合并 `main` 或创建验收 tag。
+
+#### 2026-11-10 Gmail 登录后页面连续性复核
+
+公网可见任务中确认过两种不同结果：同一用户云电脑当前选中的标签页可见已登录 Gmail 收件箱；另一次带显式 `/mail/u/0/#inbox` 路径的导航却显示 Google 账号选择页。证据说明登录态并非已证明丢失；模型再次导航/账号路径选择是更可能的触发因素，但仍需候选版本公网复验才能确定。此前 Browser User 也有回到 `example.com` 的截图；源码确认 `deploy/desktop/start-desktop.sh` 把 `https://example.com` 设为新云电脑默认首页。
+
+本地修正把新云电脑默认首页改为 `about:blank`，并更新 Pi/DSH Browser User 指引：先检查当前选中标签；目标网站已打开且登录时复用原标签和会话，不刷新、不新开标签、不猜测 `/u/0` 等账号路径；用户接管后在同一云电脑当前页面恢复。新增默认首页打包断言及会话连续性描述断言。相关 13 项定向测试、完整 `npm run test:runtime`（167 项）和 `npm run build:deployment` 均通过。该修正尚未构建/部署到 K3D，也未完成公网 Gmail 拟稿验收；最近一次真实 `is:unread` 可见任务检查最新 10 封后没有可安全拟稿的普通个人往来，因此 0 草稿、0 邮件发送，不能称作回复流程通过。下一步只在既有唯一功能分支上准备可回退候选，保留当前已登录云电脑和 PVC，再从公网可见界面验证同页复用、未读搜索、合适邮件拟稿且不发送。
+
+#### 2026-11-10 Computer panel 503 复发与镜像漂移修复
+
+这次公网 Computer 面板显示 `Computer status request: HTTP 503 · upstream 503`，打开屏幕为 `Computer not connected`。Auth 安全诊断记录 `BROKER_REJECTED`（503），Desktop Broker 记录 `RESOURCE_MISMATCH`（422）。Broker 的运行配置要求 Agent 和 Desktop 都为 `coke-grok-desktop:sha-2670fed3f6830a2344ac7590d5856901e190b00d`；仅 Agent Deployment 被换成 `candidate-gmail-continuity-843c20dd`。Broker 的 DesktopProvisioner 会验证用户 namespace 中完整的 Agent/Desktop 资源规格，因此 Agent 镜像漂移让个人电脑 broker 请求拒绝，最终被 UI 统一显示成断连。
+
+已将该用户 Agent Deployment 单独恢复为 Broker 固定镜像。Desktop Pod UID `3b16424a-1e77-4e3a-a47a-c30ec81219de`、workspace PVC UID `636987df-fa44-45f8-be00-bd8e88282b89` 均保持不变，Desktop Ready 且 0 次重启；回退后最新 Broker `RESOURCE_MISMATCH` 和 Auth 电脑控制失败日志均停在 2026-11-10 10:40:43（Asia/Shanghai），未观察到更晚记录。公网 UI 复核未完成：现有 Grok Chrome 标签绑定和只读浏览器状态调用各超时 30 秒。原 Gmail 任务仍为 outcome unknown，没有重试；未确认拟稿或登录态已恢复。以后不得只替换租户 Agent 镜像而不协调 Broker 固定配置；验收仍需重新打开公网 Computer 确认连通，再检查同一 Chrome 登录态。
+
+追加只读检查发现另一个已有用户 namespace 的 Agent 和 Desktop 都使用 `candidate-focus-screenshot-fix-20261107-r1`，而共享 Broker 仍固定 `sha-2670fed…`。按当前 `DesktopProvisioner` 的精确资源规格比较，该 namespace 在触发电脑 provisioning/status 校验时也会与全局 pin 不匹配。没有改动该电脑、Pod 或 PVC。该证据表明候选部署不能只改某个用户 Agent，也不能只改共享 Broker pin；下一步需要先定义可核验的租户镜像版本映射，或在确认所有用户任务与接管状态后做完整协调迁移，再进行公网电脑验收。
+
+#### 2026-11-10 租户级云电脑镜像 pin 修正候选
+
+本轮复验补充：`npm run test:desktop-resources` 与 provisioner/resources 定向用例 12/12 通过；`npm run test:runtime` 171/171 通过；`npm run build:deployment` 通过。`npm run test:provisioner-k3d` 使用现有 `sha-2670fed…` 镜像在随机临时 namespace 完成真实 K3D 创建、Deployment 就绪和重复连接读取 pin；测试 namespace 随后完整删除，没有改动既有租户、PVC、MySQL 或固定服务容器。候选 Broker 自部署后最近 20 分钟未见 `RESOURCE_MISMATCH`，Auth 同窗口未见 `BROKER_REJECTED`/`desktop_connect_failed`；另有一次 `COMPUTER_ACTION_INVALID` 与一次 Worker HTTP 400，属于另一条电脑动作失败路径，不能据此归因于 Broker pin 或 Computer 状态连接。已登录 Chrome 标签虽可枚举，但绑定该标签与随后重新读取浏览器状态均超时，本轮仍无公网可见 Computer 确认。改动留在现有唯一 feature 分支，尚未提交/合并；公网交互验收未完成。
+
+#### 2026-11-10 官方 Grok Bot 201 开场逐帧续审（0:45–0:59.960）
+
+连续检查 `research/frames/grok-201-0045-0050-compact-audit-20261110/`、`grok-201-0050-0055-compact-audit-20261110/` 与 `grok-201-0055-0060-compact-audit-20261110/` 的 375 个源帧和 15 张联系图；联系图逐张检查。独立 FFmpeg 重解码核对源视频 SHA-256、全部 PTS、`yuv420p` 像素哈希/字节数和联系图哈希，375/375 帧及 15/15 联系图匹配。0:45–0:55 仍为免责声明幻灯片；0:56.360 已出现 x.com 的 Joseph Yang 主页与免责声明并列，0:57.360 主画面可见活动邀约帖及 Grok Bot 201 海报；0:58.440 起显示 macOS Spaces/Chrome 窗口变化，0:59.040 切到 xAI 团队照片。七张全分辨率转场 JPEG、源帧 PTS/像素哈希和文件哈希见 `research/frames/grok-201-0055-0060-keyframes-20261110/manifest.json`。此段不是产品工作区或真实 Agent/Computer 验收；V2 片头连续审阅推进至 0:59.960（1,500 帧）。
+
+#### 2026-11-10 官方 Grok Bot 201 开场逐帧续审（1:00–1:04.960）
+
+连续审阅 `research/frames/grok-201-0060-0065-compact-audit-20261110/` 的 125 帧与 5 张联系图，并逐张查看；独立 FFmpeg 重解码验证源文件、全部 PTS、`yuv420p` 像素哈希/字节数及联系图哈希，125/125 帧、5/5 联系图匹配。共保留 14 张全分辨率关键帧，约 4.1 MiB；PTS 与源帧像素哈希映射见 `research/frames/grok-201-0060-0065-keyframes-20261110/manifest.json`。1:00–1:02.800 是团队现场画面与 macOS 采集控制条；1:02.840 首次露出 Grok Bot 桌面窗口，随后至 1:04.960 能看到左侧 `201 core` 多 Bot 会话列表、中央消息区、右侧所选 Bot `roy` 的 Details/Library/Computer 标签和 Routines 区、底部 Connect apps 与消息输入栏。该段用于桌面端多 Bot/群会话和三栏外壳参考，未见可证明 Bot 实际执行后端任务的证据。片头逐帧连续审阅现至 1:04.960（1,625 帧）；下一段从 1:05.000 起。
+
+#### 2026-11-10 官方 Grok Bot 201 开场逐帧续审（1:05–1:09.960）
+
+对 `research/frames/grok-201-0065-0070-compact-audit-20261110/` 连续 125 帧和五张联系图逐张检查；独立解码核验源视频 SHA-256、全部 PTS、`yuv420p` 像素哈希/字节数和联系图哈希，125/125 与 5/5 匹配。该窗持续显示 `roy` 的 201 对话界面：左侧 Bot/会话列表，中间是向 X Bot 发帖的讨论，右侧为 Details 与 routine 面板；没有发现新的 Bot、会话或消息状态变化，也没有可确认的鼠标点击/键入。此处继续用于桌面 UI 外壳参考，不是后端执行验收。连续片头逐帧审阅现至 1:09.960（1,750 帧）；下一窗从 1:10.000 起。
+
+#### 2026-11-10 官方 Grok Bot 201 开场逐帧续审（1:10–1:14.960）
+
+逐张审阅 `research/frames/grok-201-0070-0075-compact-audit-20261110/` 的 125 个连续 25 fps 源帧与五张联系图；独立重解码核验视频 SHA-256、全部 PTS、`yuv420p` 像素哈希/字节数和联系图 SHA-256，125/125 帧及 5/5 联系图匹配。另保留 14 张全分辨率关键帧（1:10.960–1:11.440 转场及 1:14.960 末帧），JPEG 字节数和 SHA-256 逐项验证，共 2,928,686 字节；清单位于 `research/frames/grok-201-0070-0075-keyframes-20261110/manifest.json`。
+
+1:10.000–1:10.960 仍是 `roy` 的 201 对话和右侧 Details 面板（Bot 名称、Details/Library/Computer 标签、`Daily sticker PMF round` routine）。约 1:11.000 开始 Details 面板向画面右侧滑出/收起，中央对话区扩展；至约 1:11.240 后，截取画面中已看不到该面板。没有清晰可辨的触发按钮或点击反馈，无法据此判定关闭动作由谁触发。随后至 1:14.960，Bot 列表和 X Bot 对话保持不变，没有新的消息或任务状态变化；底部深色浮层是 macOS 屏幕共享控制条，不属于 Grok Bot 产品 UI。连续片头逐帧审阅现至 1:14.960（1,875 帧），下一窗从 1:15.000 开始；这一视频证据不代表后端 Agent/Computer 执行验收。
+
+#### 2026-11-10 官方 Grok Bot 201 开场逐帧续审（1:15–1:19.960）
+
+逐张查看 `research/frames/grok-201-0075-0080-compact-audit-20261110/` 的 125 帧与五张联系图；独立 FFmpeg 重解码核验源视频 SHA-256、全部 PTS、`yuv420p` 像素哈希/字节数及联系图 SHA-256，125/125 帧、5/5 图匹配。为辨认头像悬浮提示的精确起点，另保留 12 张全分辨率关键帧 JPEG（PTS 75.000、76.000、76.040、76.080、76.120、76.160、76.200、76.400、76.800、77.000、78.000、79.960 秒）；其 PTS、源像素哈希与 JPEG SHA-256 见 `research/frames/grok-201-0075-0080-keyframes-20261110/manifest.json`，共 2,546,210 字节。
+
+本窗右侧 Details 面板保持不可见，左侧 Bot 列表与 `roy` 的 X Bot 对话内容没有变化。76.000–76.080 指针移到 `roy` 卡片右下方橙色星标并显示手形；76.120 起卡片旁显示白色悬浮预览，标注 `roy` 并展示被截断的最近消息预览，内容为请 X Bot 原样发布 “we are live on grok bot 201”。该提示持续至窗口末尾。未见明确按下反馈，故将其记录为悬停预览；不能据此推断打开了会话、触发了新任务或任务已完成。连续片头逐帧审阅现至 1:19.960（2,000 帧），下一窗从 1:20.000 开始。
+
+#### 2026-11-10 官方 Grok Bot 201 开场逐帧续审（1:20–1:24.960）
+
+逐张查看 `research/frames/grok-201-0080-0085-compact-audit-20261110/` 的 125 帧和五张 5×5 联系图；独立 FFmpeg 重解码核验官方源视频 SHA-256、全部 PTS、`yuv420p` 像素 SHA-256/字节数与联系图 SHA-256，125/125 帧和 5/5 图匹配。此窗延续 1:16 后的桌面 UI 状态：右侧 Details 面板仍未显示，鼠标位于 `roy` 头像卡片附近时白色最近消息预览持续可见；左侧 Bot 列表及中央 X Bot 对话没有新增消息、会话切换或任务状态变化。连续片头逐帧审阅现至 1:24.960（2,125 帧），下一窗从 1:25.000 开始；以上只记录可见画面状态。
+
+#### 2026-11-10 官方 Grok Bot 201 开场逐帧续审（1:25–1:29.960）
+
+逐张审阅 `research/frames/grok-201-0085-0090-compact-audit-20261110/` 的 125 个连续源帧和五张 5×5 联系图；独立 FFmpeg 仅解码视频流，核对原视频 SHA-256、全部 PTS、`yuv420p` 像素字节数/哈希及联系图 SHA-256，125/125 帧和 5/5 图匹配。9 张全分辨率关键帧的 PTS、源像素哈希及 JPEG 字节数/哈希见 `research/frames/grok-201-0085-0090-keyframes-20261110/manifest.json`，共 1,804,124 字节。
+
+1:25.000–1:29.800，左侧 Bot 列表和 `roy` 的 X Bot 对话保持不变，悬浮预览仍可见；输入栏维持普通 `Message roy` 状态。1:29.840 首次切换为 `Listening…`，显示 `0:00`、停止方块、音量/波形指示和发送箭头；录音态保持至 1:29.960 末帧。没有出现语音识别文本、发送动作或任务结果，因此只记录语音输入录制态，不推断音频内容或任务完成。片头连续逐帧审阅现至 1:29.960（2,250 帧），下一窗从 1:30.000 开始；该段是 UI 证据，不是后端 Agent/Computer 执行验收。
+
+#### 2026-11-10 官方 Grok Bot 201 开场逐帧续审（1:30–1:34.960）
+
+逐张审阅 `research/frames/grok-201-0090-0095-compact-audit-20261110/` 的 125 个连续源帧和五张 5×5 联系图；独立 FFmpeg 仅解码视频流，核对原视频 SHA-256、全部 PTS、`yuv420p` 像素字节数/哈希及联系图 SHA-256，125/125 帧和 5/5 图匹配。另保留 6 张全分辨率 PNG 关键帧，PTS、源像素哈希及 PNG 字节数/哈希见 `research/frames/grok-201-0090-0095-keyframes-20261110/manifest.json`，共 2,946,010 字节。
+
+该窗口 `roy` 的 X Bot 会话与消息内容没有变化，语音输入栏仍显示 `Listening…`；抽查原尺寸帧可见计时从 1:30.000 的 `0:00` 增长至末段约 `0:04`，波形指示变化，但没有识别文本、发送动作或新任务结果。1:30.000 抽样的 Bot 侧栏没有快捷键提示；1:31.000 起各 Bot/会话旁可见 `⌘1`–`⌘7` 标签并持续至 1:34.960。没有观察到会话选择改变，不推断快捷键标签出现的原因。连续片头逐帧审阅现至 1:34.960（2,375 帧），下一窗从 1:35.000 开始；这些画面只证明可见 UI 状态，不证明语音提交或后端任务执行。
+
+#### 2026-11-10 官方 Grok Bot 201 开场逐帧续审（1:35–1:39.960）
+
+逐张审阅 `research/frames/grok-201-0095-0100-compact-audit-20261110/` 的 125 个连续 25 fps 源帧和五张联系图；独立 FFmpeg 仅解码视频流，核对源视频 SHA-256、全部 PTS、`yuv420p` 像素字节数/哈希及联系图 SHA-256，125/125 帧和 5/5 图全部匹配。另保留 5 张全分辨率 PNG 关键帧，共 2,424,948 字节；关键帧 PTS、源像素哈希和 PNG 文件哈希见 `research/frames/grok-201-0095-0100-keyframes-20261110/manifest.json`。转场相邻帧 PTS 99560 与 99600（1:39.560、1:39.600）原尺寸证据及哈希见 `research/frames/grok-201-0099-56-transition-boundary-20261110/manifest.json`。
+
+`roy` 的 X Bot 对话与消息内容保持不变。1:35.000–1:39.560 输入栏为 `Listening…`，计时与波形继续变化，侧栏的 `⌘1`–`⌘7` 标签持续可见。原尺寸相邻帧确认 1:39.560 仍显示 `Listening…` 和 `0:09`；从 1:39.600 起显示 `Transcribing…` 与转圈，该状态持续到 1:39.960。末帧没有出现识别文本、已发送消息或任务结果。连续片头逐帧审阅现至 1:39.960，共 2,500 帧，下一窗从 1:40.000 开始；本段仅证明可见 UI 状态，不代表语音已识别/发送，也不代表后端 Agent 或 Computer 执行验收。
+
+#### 2026-11-10 官方 Grok Bot 201 开场逐帧续审（1:40–1:44.960）
+
+逐张审阅 `research/frames/grok-201-0100-0105-compact-audit-20261110/` 的 125 个连续 25 fps 源帧和五张联系图；独立 FFmpeg 仅解码视频流，核对源视频 SHA-256、全部 PTS、`yuv420p` 像素字节数/哈希及联系图 SHA-256，125/125 帧和 5/5 图匹配。另保留 5 张全分辨率关键帧（2,470,355 字节）与 6 张转场边界 PNG；PTS、源像素哈希及 PNG 哈希见 `research/frames/grok-201-0100-0105-keyframes-20261110/manifest.json` 和 `research/frames/grok-201-0100-0105-state-boundaries-20261110/manifest.json`。
+
+`roy` 输入栏在 1:40.960 仍显示 `Transcribing…`；1:41.000 出现可编辑转写草稿 “Go ahead and post on X, tell the X bot to say that we are live with Grokbot 201.”，直到 1:41.960 仍未发送。1:42.000 该文本出现在聊天中，Bot 状态切换为 `Making progress`。这证明录音转写进入草稿、用户消息发送与 Bot 开始处理；截至 1:44.960 没有外部 X 发布证明或任务完成状态。连续片头逐帧审阅至 1:44.960（2,625 帧），下一窗从 1:45.000 开始；可见 UI 状态不等同于后端操作成功。
+
+#### 2026-11-10 官方 Grok Bot 201 开场逐帧续审（1:45–1:49.960）
+
+逐张审阅 `research/frames/grok-201-0105-0110-compact-audit-20261110/` 的 125 个连续源帧和五张联系图；独立重解码核验源视频 SHA-256、全部 PTS、`yuv420p` 像素字节数/哈希及联系图 SHA-256，125/125 帧与 5/5 图匹配。另保留 3 张全分辨率 PNG 状态关键帧，共 1,438,878 字节；PTS、源像素哈希和 PNG 文件哈希见 `research/frames/grok-201-0105-0110-keyframes-20261110/manifest.json`。
+
+1:45–1:49.960 `roy` 对上述 X 发布请求持续显示 `Making progress`；没有新的 Bot 回复、X 帖子发布证明或完成状态。连续片头逐帧审阅至 1:49.960（2,750 帧），下一窗从 1:50.000 开始。该观察仅记录客户端状态，不把执行中当作外部操作成功。
+
+#### 2026-11-10 官方 Grok Bot 201 开场逐帧续审（1:50–1:54.960）
+
+逐张检查 `research/frames/grok-201-0110-0115-compact-audit-20261110/` 的 125 个连续源帧及五张联系图；独立 FFmpeg 重解码核对源文件 SHA-256、全部 PTS、`yuv420p` 像素字节数/哈希和联系图 SHA-256，125/125 帧、5/5 图匹配。保留 5 张原尺寸状态/转场 PNG，共 2,480,869 字节，源 PTS、源像素哈希、PNG 哈希见 `research/frames/grok-201-0110-0115-state-boundaries-20261110/manifest.json`。
+
+在 PTS 112760（1:52.760），`roy` 的 Bot 回复称 X Bot 已在用户确认后发布 “we are live on grok bot 201”，并显示通往 X 帖子的链接；这是画面中的 Bot 陈述，未打开链接独立确认外部帖子。PTS 112800 仍显示 `Typing…`，PTS 112840 开始淡入第二条帖子选择卡，PTS 112880 起两项选择清晰可辨：`Keep the existing post` 与 `Post the new wording too`，新措辞为 “we are live with Grokbot 201”。该卡片持续到窗口末帧 1:54.960，未见用户选择或第二次发布结果。连续片头逐帧审阅至 1:54.960（2,875 帧），下一窗从 1:55.000 开始。只记录可见聊天与卡片状态；不把 Bot 文案当作外部发布证明。
+
+#### 2026-11-10 官方 Grok Bot 201 开场逐帧续审（1:55–1:59.960）
+
+逐张检查 `research/frames/grok-201-0115-0120-compact-audit-20261110/` 的 125 个连续源帧和五张联系图；独立 FFmpeg 重解码核对源文件哈希、全部 PTS、`yuv420p` 像素字节数/哈希及联系图 SHA-256，125/125 帧、5/5 图匹配。保留 5 张原尺寸状态 PNG，共 2,467,660 字节；PTS、源像素哈希和 PNG 哈希见 `research/frames/grok-201-0115-0120-keyframes-20261110/manifest.json`。
+
+1:55.000–1:59.960，第二条帖子选择卡持续显示 `Keep the existing post` 和 `Post the new wording too`。指针在卡片附近移动；没有看到选项被激活、提交后状态或新帖子结果，因此不据此宣称用户选择了任一项。片头连续逐帧覆盖至 1:59.960（3,000 帧），下一窗从 2:00.000 开始。第一条帖子的发布仍仅是 Bot 回复中的陈述，未独立访问 X 验证。
+
+#### 2026-11-10 官方 Grok Bot 201 开场逐帧续审（2:00–2:04.960）
+
+逐张检查 `research/frames/grok-201-0120-0125-compact-audit-20261110/` 的 125 个连续源帧和五张联系图；独立 FFmpeg 重解码核对视频源 SHA-256、全部 PTS、`yuv420p` 像素字节数/哈希及联系图 SHA-256，125/125 帧和 5/5 图匹配。
+
+2:00.000–2:04.960，`roy` 的帖子选择卡持续显示 `Keep the existing post` / `Post the new wording too`，指针附近变化没有形成可见选中或提交状态；没有第二条帖子的结果，也未独立验证 Bot 对第一条帖子的陈述。没有另存重复的原尺寸关键帧。连续片头逐帧审阅至 2:04.960（3,125 帧），下一窗从 2:05.000 开始。
+
+针对上面的跨用户镜像漂移，`DesktopProvisioner` 现为每个 user namespace 保存独立的 `desktop-image-pin` ConfigMap，分别记录 Desktop 与 Agent 的完整镜像 tag。新 namespace 继承当前 Broker 配置；已有 namespace 尚无 pin 时，先从已存在的 Deployment 读取各自镜像，再按该镜像生成完整期望资源，并在任何创建之前逐项校验现有 Deployment、Service、Secret、PVC、NetworkPolicy 和 ConfigMap。验证任一项失败时不创建 pin。pin 使用 Kubernetes `immutable: true`；后续受控版本升级必须在可回退发布流程中显式协调新的 pin 和对应 Deployment，不能只更新单个 Agent。
+
+覆盖测试包括旧用户 namespace 对不同 Agent/Desktop 镜像的接管、结构漂移时拒绝写 pin、已有 pin 对后续镜像漂移的拒绝，以及 pin 缺少 immutable 属性时拒绝 provisioning。定向资源测试 12/12、完整 runtime 测试 171/171、`npm run build:deployment` 均通过。Broker 候选 `coke-grok-desktop-broker:candidate-per-user-runtime-pins-20261110` 已按一对一方式部署到 Mac K3D；Broker 1/1 Ready，Auth、Namespace Bootstrap、4 个既有用户 Agent/Desktop Deployment 均 Ready，固定 MySQL 和 PVC 未改。公网路由返回 HTTP 200；候选运行后已观察到一个用户 namespace 创建匹配现有镜像的 immutable pin，10 分钟观测内未见 Broker `RESOURCE_MISMATCH` 或 Auth `BROKER_REJECTED`。另一个持有不同候选镜像的旧 namespace 尚未触发 pin adoption。支持的 Chrome 可见控制中，`getState` 与按公网 URL 直接绑定均各超时 30 秒，因此尚无可见公网 Computer 状态确认，也未完成 Gmail 拟稿端到端验收；不能将其描述为全部租户问题已修复或 Gmail 已通过。
+
+#### 2026-11-10 隔离 K3D 旧镜像 pin adoption 端到端复验
+
+为验证“已有用户 namespace 没有 pin 时读取现存 Agent/Desktop 镜像，并在之后 Broker 默认镜像改变时仍复用 per-user pin”，扩展 `tests/desktop-provisioner-k3d.e2e.ts`。测试顺序完成：新 owner 创建并等待 Agent/Desktop Ready；然后创建独立临时 owner namespace，预置不带 pin、Agent 与 Desktop 都使用本机 K3D 已有镜像 `candidate-focus-screenshot-fix-20261107-r1` 的完整资源；用当前 Broker 默认 `sha-2670fed…` 调用真实 `DesktopProvisioner.connect()`，断言其创建的 immutable pin 精确保留两个已有镜像；再用一组不同默认镜像创建新的 Provisioner 实例重连，确认 Agent/Desktop 均保持旧 pin 镜像，没有滚动测试 Pod。
+
+复验命令 `COKE_GROK_DESKTOP_TEST_IMAGE=coke-grok-desktop:sha-2670fed3f6830a2344ac7590d5856901e190b00d COKE_GROK_DESKTOP_TEST_LEGACY_IMAGE=coke-grok-desktop:candidate-focus-screenshot-fix-20261107-r1 npm run test:provisioner-k3d` 退出码 0。脚本逐个删除自己创建的临时 namespace 并读取确认 namespace 已不存在；结束后只剩原有两个 user namespace。原有用户 Agent/Desktop Pod 名称和 Ready 状态保持不变，workspace PVC UID 保持原值，固定 MySQL Pod 未改。运行时内存检查开始时 K3D Node 使用约 57%；测试顺序只运行一个临时电脑 namespace，避免同时叠加两套测试 Pod。
+
+同轮 `node --import tsx --test tests/desktop-provisioner.test.ts tests/desktop-resources.test.ts` 12/12、`npx tsc --noEmit` 和 `git diff --check` 通过；此前完整 runtime 171/171 和部署构建成功，生产源代码本轮没有再改。该 E2E 是当前候选源码在隔离 K3D namespace 中的真实 Kubernetes 行为证据；现有旧租户 namespace 仍未被触发或改动，且其实际资源规格与该隔离种子未逐字段比对。公网可见 Computer UI、Pi/DeepSeek 真实任务及 Gmail 流程仍是独立验收项，不能以本测试替代。
+
+#### 2026-11-10 群任务误报“用户正在接管电脑”
+
+对本轮三个 BSE 群任务的只读运行记录快照显示：`BSE Frontend Dev`、`BSE E2E Tester`、`BSE Ops/Release` 在 07:19 UTC 前后均从 `running` 转为 `unknown`，诊断码为 `agent_paused_for_control`，每条约持续 8–10 秒，`computer_used=0`。用户明确表示没有接管。旧版 `agent-runtime.mjs` 将任何 `controlOwner !== 'agent'` 的值一律包装成 `pausedForControl=true`，且没有记录原始 owner；Pi 因此写入 `agent_paused_for_control`，前端又把它解释成电脑处于用户控制模式。该实现会把 `unknown`、无效或读控制权失败误归因成用户接管。旧运行没有 owner observation audit，故无法恢复当时的原始控制权响应，不能断言这三次当时一定是状态读取失败。
+
+事后只读检查中，五个 BSE Bot 的控制端点都返回 `owner=agent`；受影响的三个 Bot 没有持久化 user-owner 覆盖。该信息只证明检查时的状态，不能倒推 07:19 UTC。K3D 检查时两个既有用户 namespace 的 Agent/Desktop Pod 均 Ready、重启计数为 0；Broker 当前使用 per-user runtime pin 候选。没有重启 Pod、删除任务、PVC 或登录态，也没有自动重试任何 `Outcome unknown`。此前只读屏幕预览曾显示 BSE Research 的当前 Chrome 页面为 404，这不能确认另外三个任务的执行结果。当前公网 Chrome 可见检查再次因浏览器绑定/读取超时而无法完成。
+
+当前未提交候选已把 `owner=user` 与 unknown/unavailable 分开：只有明确 `user` 才记作接管；未知控制权走 `computer_control_state_unknown`，前端使用不归责于用户的解释。Agent 对开始与运行中观察写入脱敏 screen key 日志；Desktop 对成功的接管/归还转移追加权限为 0600 的审计事件。`tests/agent-runtime-screens.test.mjs`、`tests/control-owner-audit.test.mjs`、Pi/DSH 执行器定向测试通过；完整 `npm run test:runtime` 为 173/173，`npm run build:deployment` 成功，`git diff --check` 通过。这些是本地候选的源码和构建证据，不代表公网或当前 K3D Agent 已运行此修复。
+
+
+#### 2026-11-11 BSE 云电脑 localhost 预览连接拒绝
+
+开发 Bot 生成的 `/workspace/tasks/7bd72e63-ef8b-4a56-b115-80be031f6fc1/artifacts/bse-demo/` 中已有页面资源，但 Bot 云电脑 Chromium 打开 `127.0.0.1:8765` 时连接拒绝。根因已确认有两层：Pi/DSH 的 Computer Terminal 命令在 Agent Pod 执行，`runApprovedTerminal()` 的 `finally` 会对该命令进程组执行 `SIGKILL`，所以 `nohup ... &` 在工具返回后不能保活；同时浏览器 Chromium 在独立 Desktop Pod，两个 Pod 虽共享工作区 PVC，却各有不同网络命名空间和 loopback。
+
+本轮从 Agent Pod `127.0.0.1:8765` 启动一次仅用于诊断的临时 HTTP listener：Agent Pod 内请求得到 HTTP 200；同时从 Desktop Pod 请求它自己的 `127.0.0.1:8765` 得到 `ECONNREFUSED`。Agent/Desktop Pod IP 分别为 `10.42.0.201` 和 `10.42.0.200`。该临时进程已停止并复核两侧都没有 listener；未创建或重启容器/Pod，未变更 PVC、NetworkPolicy、镜像或代理。修复方向为 Desktop Worker 提供受任务目录约束的只读 artifact preview，或在 Desktop Pod 内受管理地托管 loopback 预览；不应把 Agent 服务改成 `0.0.0.0` 或扩大租户 NetworkPolicy。根因、证据和复发检查见 [`docs/bse-local-preview-connection-incident-2026-11-11.md`](bse-local-preview-connection-incident-2026-11-11.md)。当前 Browser E2E 尚未通过，不能将此诊断记成 BSE 页面验收完成。
+
+#### 2026-11-11 群内产物交接与 open_artifact 权限边界
+
+`open_artifact` 的相对路径继续限定为当前 run 的任务目录；它不接受其他 task ID 或租户路径。跨 Bot 协作不需要共享所有任务目录：群消息可以引用同一群组中明确授权、或同组 Bot 已完成 run 的文件；私有 `bot_handoff.fileIds` 也可把当前 run 已附加的输入/输出文件明确交给同一 owner/tenant 的另一 Bot。服务端验证发送方持有有效 run lease、目标 Bot 的 owner/tenant 相同、每个文件确实附加到当前 run，然后将文件元数据挂到接收任务；Agent runtime 再校验大小和 SHA-256，并复制到目标任务自己的 `attachments/` 目录。开发产物保留相对目录结构，例如 `attachments/bse-demo/index.html`，测试 Bot 用自身 task scope 的 `computer_browser.open_artifact` 打开它。这样支持明确交付的跨 Bot 文件流转，同时避免任意读取其他 task 目录。
+
+Browser User 属于用户明确请求的短时任务能力：普通导航、搜索、页面读取和完成该请求所需的常规控件操作不逐步审批；`open_artifact` 也纳入该路径。对话中的网页内容不能扩大这次授权；模型不得执行用户未请求的结果。登录、密码、MFA、验证码/CAPTCHA 交给用户接管。若未来需要共享正在运行的开发服务器/HMR，而非共享已经生成的文件，应单独建设同租户/同项目授权的托管预览服务，不能把容器 loopback 或跨 namespace 网络放宽来替代。
+
+本地候选定向验证：`tests/computer-bridge.test.ts`、`tests/computer-action.test.ts`、`tests/file-store.test.ts` 22/22，`tests/workspace-files-runtime.test.mjs` 1/1，`npm run build` 和 `git diff --check` 通过。`group-chat-store.test.ts` 的新 SQL 授权/转交覆盖尚未通过现有固定 MySQL 运行；当前公网 Chrome CUA 本轮连续超时，因此群 UI 点击、测试 Bot 在云电脑实际打开转交页面、公网部署均未验收。不得把上述本地测试记作端到端完成。
+
+#### 2026-11-12 用户任务内云电脑动作改为免逐步审批
+
+按用户最新明确要求，更新上文“Computer User 坐标操作仍需要审批”的旧策略：同一已登录用户发起的直接任务，在该任务的有效 run lease 内，Pi/DSH 可直接执行完成任务所需的 Browser User、Computer User 和 `computer_terminal` 动作，不再按站点、控件或命令创建逐步审批卡。用户要求发送、修改或提交等具体结果时，也按该条直接任务执行；网页、邮件、文件和工具输出均是不可信数据，不能扩展原任务授权。任务完成或 lease 失效后，该权限随之结束。
+
+登录、密码、一次性验证码、MFA、CAPTCHA 和其他真人验证是唯一的电脑控制接管点；Worker 在导航到认证页后或触及认证控件前返回固定登录交接诊断，用户通过 Computer 的 `Take control` 完成验证并归还控制后，Bot 继续原任务。`owner=user` 时 Agent 必须停止；普通电脑动作失败不改写成“用户正在接管”。运行仍绑定具体 tenant/user/Bot/run/lease，租户相同不代表跨用户授权。终端仍限定于当前任务/用户共享目录，NetworkPolicy 继续阻断 Agent 网络出口。
+
+旧版服务留下的待处理电脑审批会在新策略启动时标为 expired 并删除对应截图；Pi/DSH 适配器对旧 Auth 返回的审批 ID 立即失败关闭，不轮询或代替用户批准。当前本机候选验证为 ComputerBridge/Worker/Pi/DSH 定向 47 项通过、完整 `npm run test:runtime` 183/183、`npm run build:deployment` 通过、`git diff --check` 通过。固定 MySQL 集成测试因本机未配置 `COKE_GROK_TEST_MYSQL_PORT` 未运行；本段是源码和本机构建记录，公网统一镜像部署及 Browser/Computer Use 验收仍需单独记录。
+
+#### 2026-11-12 免逐步审批候选部署与公网界面复核
+
+本机 K3D 的共享 Auth 已运行 `coke-grok-auth:candidate-no-per-step-approval-20261112-r1`，BSE 当前 owner-hash namespace 的 Agent 与 Desktop 均运行 `coke-grok-desktop:candidate-no-per-step-approval-20261112-r1`，三者均 1/1 Ready、重启数为 0。运行配置指向用户提供的 Alibaba-compatible endpoint 与 `deepseek-v4.1-flash`；Key 保存在 K3D Secret，不记录值。发布后尚无新模型 run，因此这次没有把 DeepSeek 实际调用记为已验证。BSE 工作区 PVC 保持原绑定，没有重建或清理。
+
+Auth 启动时把 37 条旧 pending approval 标为 expired，并删除关联审批截图；历史 `approved`、`denied`、`consumed` 记录保留。通过已登录 Chrome 的原生 Computer Use 可访问性树读取公网 `https://codex.cokeagent.com/grok-bot/`，打开 `北交所交易规则适配项目组` 后，当前界面没有 `Approval requested` 或 Approve/Deny 控件。页面仍有旧的 `Computer activity · Review`、`Reviewed · outcome unknown` 和排队任务；它们是历史结果未确认/队列状态，不是有效审批，但也不证明那些任务成功。此复核未用截图或 Playwright。
+
+2026-11-12 后续原生 Chrome 可访问性树复核仍未见活动的 `Approval requested` 卡或 Approve/Deny 按钮。聊天历史中一些已标为 Failed 的旧运行回复仍会提到 `Computer action was not approved` / `COMPUTER_APPROVAL_REJECTED`；这是当时的失败结果文本，不是当前待审批操作。保留这些对话记录，不能把它们改写成成功或重试。`Computer activity · Review` / `Outcome unknown` 是另一类结果核对状态，不应显示成审批或触发批准动作。若用户之后再次遇到可点击的活动审批卡，先记录 Bot、run、时间和实际 Pod 镜像，再确认是否来自旧 owner namespace 或未更新的运行时。
+
+同一集群另有一个不同 owner-hash namespace 仍固定在 `candidate-focus-screenshot-fix-20261107-r1`。这轮没有更新它，因为必须先从有效会话确认它是否属于当前用户，并核对其活跃 run 与接管状态；不能把当前 BSE namespace 已部署误报为所有 owner namespace 都已部署。公网首页 HTTP 200 仅是连通性证据，不是产品验收。北交所群聊里开发/测试仍有 outcome unknown，运维与 Chief 有排队状态；从公网打开 BSE 前端开发电脑时，侧栏明确显示 `Bot is in control`，因此该排队现象没有证据指向用户接管，具体调度原因仍待查。全网页点击的 BSE 多 Bot E2E 尚未完成。
+
+#### 2026-11-13 彻底关闭逐步审批入口
+
+用户要求普通任务操作不再出现任何逐步 Approval，只在登录、密码、验证码、MFA、CAPTCHA 等身份验证处通过 Computer `Take control` 交接。复查发现旧审批表仍可插入 pending 记录，内部 Model Gateway 仍保留 action-approval 路由，Web API 仍可批准，UI 仍会把数据库 pending 状态画成 Approve/Deny 卡；只在 Auth 启动时清理旧卡无法覆盖旧 Worker 的迟到写入。
+
+本地候选将审批存储改为只读兼容：新建始终返回空、批准/消费始终拒绝、历史 pending 映射为 expired 且不再返回截图；Gateway action-approval 路由返回 410；Web 决策 API 同样返回 410。任务内 Browser/Computer 仍受当前登录用户、租户、Bot、run lease 和原始请求约束；网页内容不能扩大授权。身份验证继续使用 Computer takeover。Outcome unknown 的重复执行恢复确认不是 action approval，仍保留以避免不确定副作用被重复执行。以上为源码设计变化；定向验证与候选部署结果待补记，不能据此声称公网已切换。
+
+
+#### 2026-11-13 逐步审批关闭候选部署与北交所验收续接
+
+Auth 候选 `coke-grok-auth:candidate-no-action-approvals-20261113-r1` 已在 Mac 本机 K3D `k3d-tp1121-sandbox-dev` 的 `coke-grok-bot` namespace 一对一上线，Auth 1/1 Ready，运行中的 `/app/auth.cjs` SHA 与发布制品一致。`scripts/verify.sh` 通过，公网路由返回 HTTP 200（仅连通性）。本次只滚动 Auth；没有重启 Agent、Desktop、Broker、MySQL、PVC、VPS 或其他 namespace。完整 runtime 186/186、固定 MySQL 集成 18/18、部署构建及 `git diff --check` 通过；隔离 K3D Chromium 真实点击没有新增 approval row，改为 `owner=user` 后 Agent 后续自动化停止。
+
+候选已关闭 action approval 的创建、批准、消费和旧 API 入口；历史 pending 变 expired 并移除审批截图。登录、凭据、MFA、CAPTCHA 和其他身份验证仍通过 Computer `Take control`。同一有效任务 lease 内常规 Browser/Computer 操作继续受 owner、tenant、Bot、run、lease 与原始用户任务约束。`Outcome unknown` 是副作用核验状态，不是 approval。本次 Chrome AX 可见的运维记录属于 unknown outcome；点击 `I checked · continue` 只解除复核队列，不证明运行成功。
+
+只读 K3D ConfigMap 复核显示 `deepseek-v4.1-flash` 与用户指定的 Alibaba-compatible base URL；`auth-runtime-secrets/model-key` 存在，但没有读取或记录 Key 内容，也没有本轮 rollout 后模型调用成功证据。公网 Browser Use 中 native Chrome 可访问；GitHub 当前已登录页面按精确仓库名显示 0 个匹配仓库。该页面是本机 Chrome，不是 Bot 云电脑 Browser User。没有创建仓库或任何 PR/Pages 副作用。北交所全链路仍未完成；继续前先查具体 run 的持久化结果，再在 Bot 云电脑 Browser User 里幂等续作。候选记录、验证细项和回退镜像见发布目录 `releases/candidate-grok-bot-action-approvals-disabled-2026-11-13/`。
+
+#### 2026-11-13 移除残留 Approval 卡片与轮询
+
+复查发现，虽然后端 ApprovalStore/Gateway/API 已关闭逐步审批，前端仍保留历史 `ApprovalCard`、`Approve`/`Deny` 回调，并持续轮询个人与群聊运行的 approvals API。该渲染路径依赖服务端返回 pending；它没有给当前后端重新启用审批，但旧数据或旧服务返回 pending 时仍可能再次显示卡片。现在从个人和群聊界面删除卡片、审批状态轮询、决策请求和相关 CSS。任务 `unknown` 的外部副作用核对保留为独立恢复流程，避免不确定的发送/提交被自动重复；这不是操作批准。
+
+本地 `npm run test:ui` 通过。界面回归用例返回一条合成的 legacy pending 审批记录，并断言前端既不请求 approvals API，也不显示 Approval/Approve/Deny。`npx tsc --noEmit`、`npm run build:deployment` 和 `git diff --check` 通过。候选镜像 `coke-grok-auth:candidate-no-approval-ui-20261113-r1`（`sha256:5d968279f96067adbbd448722f916070ad0d5cf743940998f0aae812bab8ac93`）只替换共享 Auth Deployment；`scripts/verify.sh` 通过，Auth 1/1 Ready，运行 `/app/auth.cjs` 与发布目录 SHA 一致。BSE Agent/Desktop Pod 名与 Ready 状态保持原样，未重启它们、Broker、PVC 或 MySQL。
+
+公网 `/grok-bot/` 返回 HTTP 200，HTML 引用 JS `index-Dr84wAm9.js` 与 CSS `index-DoZt7S5j.css`；公网 JS 的 SHA-256 与候选 artifact 一致，且检查不到审批标题、Approve/Deny 文案及审批 API 轮询/决策字符串。这是公网静态制品检查，不是可见 UI 点击验收。本轮 Chrome 标签枚举成功，但绑定已登录应用标签超时；没有用截图代替，也没有声称完成公网浏览器验收。通过 MySQL port-forward 读取运行中/排队任务计数返回 `ER_ACCESS_DENIED_ERROR`，因此不声称任务状态预检成功；后续诊断需在集群内用最小只读查询，不打印或传递密钥。北交所多 Bot 全网页点击验收仍未完成。
+
+发布制品、镜像标签、回退镜像、校验和及操作记录见 `releases/candidate-grok-bot-no-approval-ui-2026-11-13/`。当前仍在唯一 feature 分支；未提交、推送、合并或打 tag，等待北交所验收继续完成。
+
+#### 2026-11-13 免审批候选续接检查与北交所规则基线
+
+用户再次确认普通网页/电脑动作不需要逐步 Approval，只在登录凭据、验证码、MFA、CAPTCHA 等身份验证时让人类通过 Computer Take control。候选仍按有效的 user/tenant/Bot/run lease 和用户原始任务范围授权普通动作；同租户不改变其他账号的数据隔离。Outcome unknown 是防止不确定副作用重复执行的结果核验状态，不是 Approval。
+
+最初的原生 Chrome 标签绑定与 `cua.getState` 曾超时；随后通过可用的原生 Chrome Computer Use 可访问性树检查了已登录公网页面，没有使用截图或 Playwright。该树确认 `北交所交易规则适配项目组` 存在，且当前没有活动 `Approval requested`、Approve 或 Deny 控件。这只验证审批 UI，不代表北交所任务链验收成功。
+
+为避免重复执行历史任务，只读查询使用唯一固定应用库容器 `coke-grok-local-auth-mysql` 的 mysql 客户端与它已有的 password-file；凭据值未读取到输出。不可误用 `coke-auth` namespace 下另一个 MySQL Pod，它没有 `coke_grok_local` 数据库；Auth 镜像是单文件 bundle，也不能直接 require `/app/node_modules/mysql2/promise`。读取到 `agent_runs` 全局汇总 queued=7、unknown/pending=7、unknown/retried=7、unknown/acknowledged=88；查询只读、未改运行记录。此前使用中文群名的 `LIKE` 查询受 MySQL 客户端连接字符集影响，不能正确匹配存储的 UTF-8；因此“只有一个拉丁字母 BSE 群”、该群成员名单及其具体 run 状态均为错误结论，现已撤回。原生 Chrome 的实际群聊界面确认目标中文群和调研、开发、E2E、运维发布、Chief 角色 Bots 均存在；但当前 SQL 汇总不能说明该中文群的具体 run 状态。后续需先用 `utf8mb4` 或精确 group UUID/hex 只读查找，并以群聊 UI 交叉核验，不能据此自动重试 unknown。
+
+手工核实的官方规则基线（这是为后续验收准备，不代表已由 Grok Bot 调研）：北交所 2026 年修订交易规则于 2026-04-24 发布，通常条款自 2026-07-06 起施行；4.5.1–4.5.4 风险警示与退市整理条款于 2026-08-31 实施；无涨跌幅限制股票的大宗交易参考价改为当日竞价实时成交均价，申报价受均价 130%/70% 与当日已成交最高/最低价共同约束，该 3.6.5 条款于 2026-10-26 实施。4 月公告把 3.7.1–3.7.10 盘后固定价格交易的实施时间留待另行通知；在找到后续正式实施公告前，不能将其标为已生效。来源：北交所规则公告（北证公告〔2026〕17号）https://www.bse.cn/jygl_list/200028217.html、相关条款实施公告（北证公告〔2026〕43号）https://www.bse.cn/jygl_list/200029608.html、交易业务技术变更指南发布通知 https://www.bse.cn/class_b/200028199.html。
+
+下一次真正的 BSE 多 Bot 验收从公网产品界面现存的 `北交所交易规则适配项目组` 继续，不要创建重复群。由实际调研 Bot 产出来源文档，再由开发、E2E 与发布 Bot 接续；必须先通过 Browser/Computer Use 核对各自精确 run 的持久化状态，不可把人工查询或官方来源搜索算成 Agent 全链路成功。免 Approval 候选只部署了共享 Auth；BSE Agent/Desktop 仍是原镜像，须在公网点击链路恢复后统一版本并再次验证，当前 feature 分支和未提交状态保持不变。
+
+#### 2026-11-13 BSE 公网 Pages 与云电脑只读复核
+
+公开演示仓库 `c-m-ai-copilot/coke-bse-trading-demo` 的 PR #1 已合并到 `main`（合并提交 `07d9e73`）；Pages workflow run `43364367477` 为成功，报告 1 条 warning、3 条 notice。公开页面为 `https://c-m-ai-copilot.github.io/coke-bse-trading-demo/`。本机 Chrome 曾打开该地址；另一个已完成的 BSE Ops Browser User 只读任务报告了相同 URL、标题 `北证证券终端 · DEMO · 920999 N星澜`、可见 H1 `N星澜`、日期 `2026-10-26` 与 17/34/43 来源入口标签。该 inspect 回执没有返回链接 href，本记录不据此声称所有链接都经该任务核验，也不把页面可打开当作多 Bot 链路完成。
+
+本轮本机自动化控制 `cua.getState()` 明确返回 `Browsers: Error: Local browser use is disabled in Work settings`，虽然 Google Chrome 应用本身正在运行。停止本地 Computer Use 尝试，没有使用截图、坐标脚本或其他 UI 控制路径绕过设置；因此无法在本轮重新打开公网 Grok Bot 并逐个核对群内 Bot 的运行状态。云电脑 Browser User 的历史 inspect 回执与本机 Chrome 的可见操作是两种不同证据，不能混为同一次验收。
+
+本地验证：`npm test` 的 2/2 reference-frame tests 通过；同一工作轮次前序的 runtime 188/188、固定 MySQL 隔离 schema 集成 18/18、`npm run build:deployment` 均通过，`git diff --check` 无错误。没有运行会输出截图制品的 `npm run test:ui`。这仍不是公网 Computer Use 产品验收。
+
+BSE 多 Bot 全链路仍未通过最终验收：仍须在可用的签名态公网 Grok Bot UI 中确认现存群和精确 run，由调研 Bot 产出并交接来源文档，开发 Bot 生成页面，测试 Bot 在真实云电脑 Chrome 操作，运维 Bot 发布 Pages，最后在云电脑 Chrome 打开发布页；同时核验未知结果、跨 Bot 文件 SHA 与各阶段持久化证据。当前唯一 feature 分支不变；功能代码已推送，工作区仍有多个本地候选发布目录未跟踪；不得把全部 `releases/candidate-*` 或约 945 MiB 的运行镜像 tar 一并加入提交。未经用户最终验收，不合并或创建 acceptance checkpoint tag。
+
+#### 2026-11-13 BSE 测试产物与 GitHub 远端复核
+
+只读 MySQL 查询确认，现存北交所群的 owner namespace 运行 `coke-grok-desktop:candidate-browser-upload-20261113-r1`。产品调研 Bot 最近完成的任务把工作交给了开发和运维；最新测试 Bot 运行仍为 `unknown/pending`，无持久化结果或已登记的结果文件。运维子任务为 `unknown/acknowledged`，诊断 `agent_result_status_unconfirmed`；其受限工具审计记录 Browser `inspect` 成功、Terminal 成功、Browser `navigate` 失败、后续 `inspect` 成功。不能把 `I checked`/acknowledged 视作任务成功，也不能据此直接重试。
+
+有一条更早的实际 Tester 完成记录（MySQL 时间 `2026-11-12 16:46:32`）引用的 canonical Developer task 与当前公开仓库内容匹配：共享工作区 `artifacts/bse-demo/index.html` SHA-256 `f6a7c29955e1f5c2bb6f9b6c191c4be88997b1e286c4f72f1fc73b3ae6352857`，`README.md` SHA-256 `eb281a4a410f2fa3d812225d0f38e2e383610dd64474160618dad273a2eb37dd`。该 Tester 报告复核 17/34/43 号公告的页面直链和 README 映射均正确，且没有交易、改文件、截图或派发其他 Bot。此前模拟限价/大宗订单报告所用的文件哈希不同，并发现 34/43 链接互换；它不覆盖当前 `f6a7…` 版本的交易交互测试。
+
+对公开仓库 `c-m-ai-copilot/coke-bse-trading-demo` 做只读浅克隆，远端 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`；检出的 `index.html` 和 `README.md` SHA-256 分别与上述 Tester 对应的 Developer 产物完全相同。因此当前仓库文件可证明内容已进入公开 GitHub main；但这不证明运维 Bot 执行了提交/发布，也不代表本轮重新验证 Pages 部署或 Grok Bot 的可见 UI。较早 Ops 产出的 `github-stage-status.md` 曾记录当时 Chrome 未登录、仓库未找到、没有 GitHub 写操作；该快照与当前远端事实不同，只能代表那次任务运行时的状态。
+
+剩余验收边界：本机 `cua.getState()` 仍明确报告 Work settings 禁用本地浏览器控制，故没有通过其他 UI 路径继续。应保留现有群与这些精确 run 的状态，不重复交易或发布；待 Computer Use 可用后，先通过公网产品 UI复查 unknown 任务副作用，再验证该公开页面与云电脑当前页面，并对当前 GitHub 版本补做真实交互回归。现在已有“当前源码＝已测源码＝GitHub main 内容”的哈希证据，但缺少同一多 Bot 任务链的成功运维记录、当前 Pages 页面复核和最新 Tester unknown 结果处理。
