@@ -5442,3 +5442,11 @@ PTS 527960（8:47.960）仍是 Dex 单聊，显示 `Chipping away` 与灰色 Com
 PTS 539960（8:59.960）仍在输入框编辑两条结构化提及后的跟进内容；PTS 540360（9:00.360）仍是输入框，PTS 540400（9:00.400）首次显示为右侧已发送消息气泡，输入框复位为空。相邻源帧将发送转变定位在 40 ms 范围内。完整消息包括 Dex 提及和 `Let's do a very happy blue one.`，以及 Martin 提及和 `yo what do you think about it?`。PTS 551000（9:11.000）光标悬停在该消息附近，出现三个消息操作图标；未见打开 reaction picker 或选择反应。
 
 PTS 554240（9:14.240）仍显示 `Reading...`，还没有新的 Dex 回复；PTS 554280（9:14.280）首次出现 Dex 消息 `On it, a very happy blue one coming up.`，同时仍显示 `Reading...`；PTS 554960（9:14.960）这条消息和处理中状态仍在。蓝色贴纸尚未出现，因此没有观察到该请求已交付。此时右侧是群组 Details/Library/Members 资料栏，没有 Computer 面板或电脑操作画面。必要的原尺寸边界/悬停帧和源像素校验见 `research/frames/grok-201-0900-send-0911-hover-0914-reply-keyframes-20261114/manifest.json`。V2 连续逐帧覆盖延至 9:14.960（13,875 帧），下一窗口从 9:15.000 开始；以上视频记录不等同本项目运行时验收。
+
+### Grok Bot 201 逐帧续审：9:15.000–9:29.960（2026-11-14）
+
+连续检查 9:15、9:20、9:25 三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧和 15 张 5×5 联系图；联系图逐张查看。完整 MKV SHA-256、375/375 帧 PTS 与 `yuv420p` 像素字节数/SHA-256、15/15 联系图 SHA-256 已独立重解码复核并与 manifest 一致。源 MKV SHA-256：`2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。窗口目录：`research/frames/grok-201-0915-0920-compact-audit-20261114/`、`grok-201-0920-0925-compact-audit-20261114/`、`grok-201-0925-0930-compact-audit-20261114/`。
+
+9:15–9:28.960 持续显示 `Joseph, Martin` 群聊、红色大水滴与青绿色小伙伴，以及 `On it, a very happy blue one coming up.` / `Handling it...` 状态；没有看到蓝色成品或新群聊消息。PTS 569000（9:29.000）仍为 Grok Bot 全屏窗口；PTS 569040（9:29.040）首次出现后方 Cursor 工作区与前景 Grok Bot 群聊窗口叠放；PTS 569120（9:29.120）首次可见 macOS `Desktop 1`–`Desktop 5` 桌面概览，此后至 PTS 569960（9:29.960）仍保持并排窗口状态。Cursor 工作区可读到 `Grok Bot sticker shop landing` 任务和 `data.ts`、`App.tsx`、`index.css` 三个改动文件；这里只记录演示屏幕上可见内容，不推断代码质量、任务完成或真实发布。前景 Grok Bot 仍是 Joseph/Martin 群聊，右侧为 Details/Library/Members，没有 Computer 视图或电脑任务证据。
+
+仅保存 8 张全尺寸转场/稳定状态帧，PTS 为 569000、569040、569080、569120、569160、569560、569600、569960；其 PNG 哈希、字节数及源 `yuv420p` 像素哈希见 `research/frames/grok-201-0929-desktop-transition-keyframes-20261114/manifest.json`。逐帧审阅现覆盖至 9:29.960（14,250 帧），下一窗口从 9:30.000 开始；视频观察是 UI/交互参考，不代表本项目功能或 Agent/Computer runtime 验收。
