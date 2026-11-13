@@ -2726,3 +2726,13 @@ ChatGPT 重启后重新读取 Chrome 扩展清单，扩展能枚举公网 Grok B
 通过原生 Chrome 控件关闭电脑屏幕后，只读打开北交所项目群，确认组内当前仍有多个 `Outcome unknown`，Tester 的近期状态为 `Outcome unknown`，Chief 为 `Queued`。群消息中存在 Ops 的一条已完成 Pages 检查回执，报告实际 URL 为 `https://c-m-ai-copilot.github.io/coke-bse-trading-demo/`，页面标题为「北证证券终端 · DEMO · 920999 N星澜」，显示 `3.6.5(2)(3)`、`2026-10-26` 及 17/34/43 号公告来源。该回执是 Ops 云电脑 Browser User 的先前完成记录；本轮没有重新导航该云电脑，也没有消解 Tester/Chief 的未知运行。
 
 本轮仅查看真实 UI、没有截图、没有确认未知结果、没有重放任务、没有触发订单或发布操作。多 Bot 全链路仍不能依据 Pages 已发布或单条 Ops 回执判为完成；后续须先按各自原 run 核验 unknown 的可能副作用，再在公网产品 UI 中完成尚缺的阶段交接与验收。
+
+#### 2026-11-13 Browser Use 重启复测与 Tester 历史运行核验
+
+ChatGPT 重启后，Chrome 扩展仍能列出 `https://codex.cokeagent.com/grok-bot/` 与 BSE Pages 标签，但 Browser Use `getTab()` 绑定公网 Grok Bot 标签约 35 秒超时。随后原生 Computer Use 可正常读取 Chrome 无障碍树并打开运维 Bot；两种控制能力必须分别报告，不能把原生 Computer Use 可用说成 Browser Use 已恢复。
+
+为核对 Tester 当前可见的 `Outcome unknown`，只读检查 Agent 持久工作区中对应历史 run `044c5465-51ec-4076-b33b-8a0c92c44883` 的 Pi JSONL 轨迹（2026-11-12 22:21:38–22:22:07 UTC）。轨迹共有 24 条记录：打开 GitHub 的 Browser `navigate` 收到审批错误；之后 Browser `open_artifact` 与 `computer_files.list` 有错误，错误码包含 `COMPUTER_WORKER_HTTP_ERROR`；末尾有失败说明。run 目录只发现该 Pi session 文件，没有本 run 的 artifacts 文件；轨迹未见点击、提交或 GitHub 写操作。该历史运行早于 2026-11-13 的 `candidate-browser-upload-20261113-r1` Agent/Desktop 部署，不能用于断言当前版本仍存在逐步审批或相同 Worker 故障。此检查不能使旧任务变成功，也不能代替之后在当前版本下的新验收。
+
+当前公网 Grok Bot UI 仍把 BSE E2E Tester 列为 `Outcome unknown`、Chief 列为 `Queued`；Ops 已完成的 Browser User 页面检查回执仍指向已发布的 Pages。保留未知记录，不点 `I checked · continue`、不重试该旧 run，也不重复发布。用户明确选择不轮换本轮误输出的应用 MySQL 口令；不得再读取、打印或用于诊断，除非用户之后另行指示。该凭据操作与浏览器控制故障无关。
+
+本轮开始时，feature 分支为 `codex/grok-bot-persistent-group-chat`，HEAD `853552b` 与远端同名分支一致；工作区仍有未跟踪的候选 `releases/` 目录，未触碰。没有重启 Pod、MySQL 或 K3D，也未运行测试。
