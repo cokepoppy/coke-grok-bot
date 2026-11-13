@@ -5342,3 +5342,9 @@ V1 连续逐帧覆盖现推进至 20:29.967（36,900 帧）；下一窗口从 20
 连续审阅三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧和 15 张 5×5 联系图；全部联系图逐张检查。独立重解码核对完整源 MKV SHA-256、逐帧 PTS、`yuv420p` 像素字节数/SHA-256 与联系图 SHA-256，均与 manifest 一致。源 MKV SHA-256：`2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。窗口目录：`research/frames/grok-201-0530-0535-compact-audit-20261113/`、`research/frames/grok-201-0535-0540-compact-audit-20261113/`、`research/frames/grok-201-0540-0545-compact-audit-20261113/`。
 
 5:30.000–5:36.040 仍是紫色 `Grok Bot 101 Recap` 幻灯片。PTS 336080（5:36.080）切换到贴纸展示幻灯片：左侧列出六款贴纸（Hello Blob、Cloud Nap、Whoa Wedge、Stack of Three、Looking at You、Piggyback），右侧嵌有 Grok Bot 聊天工作区截图；此后画面保持到 5:44.960。该工作区是幻灯片中的静态嵌入图，不是现场客户端交互或任务执行证据。前后五帧 335.960–336.120 秒的全分辨率 JPEG 及源帧像素哈希/文件哈希记录在 `research/frames/grok-201-0536-transition-keyframes-20261113/manifest.json`。V2 连续逐帧覆盖现至 5:44.960（8,625 帧），下一未审窗口从 5:45.000 开始。
+
+### Grok Bot 201 逐帧续审：5:45.000–5:59.960（2026-11-13）
+
+连续检查三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧和 15 张 5×5 联系图；联系图逐张查看。独立 FFmpeg 重解码核对完整 MKV SHA-256、全部帧 PTS、`yuv420p` 像素字节数/SHA-256 和联系图哈希，全部与 manifest 匹配。证据目录：`research/frames/grok-201-0545-0550-compact-audit-20261113/`、`research/frames/grok-201-0550-0555-compact-audit-20261113/`、`research/frames/grok-201-0555-0600-compact-audit-20261113/`。
+
+5:45.000–5:59.960 持续显示六款贴纸作品的展示幻灯片，右侧嵌入 Grok Bot 聊天界面小图；没有观察到现场产品交互或任务状态变化。V2 连续逐帧覆盖现为 5:59.960（9,000 帧），下一未审窗口从 6:00.000 开始。该片段的嵌入截图仅是幻灯片素材，不作为产品 UI 或运行时验收证据。
