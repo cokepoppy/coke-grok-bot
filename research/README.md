@@ -5318,3 +5318,9 @@ V1 连续逐帧覆盖现推进至 20:29.967（36,900 帧）；下一窗口从 20
 连续审阅三个五秒窗口，共 375 个 1920×1080、25 fps 源帧与 15 张 5×5 联系图，联系图均已逐张查看。完整源视频 SHA-256、每帧源 PTS、`yuv420p` 像素字节数/SHA-256 与所有联系图 SHA-256 经独立 FFmpeg 重解码复核，均匹配 manifest。源 MKV SHA-256：`2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。证据目录：`research/frames/grok-201-0415-0420-compact-audit-20261113/`、`grok-201-0420-0425-compact-audit-20261113/`、`grok-201-0425-0430-compact-audit-20261113/`。
 
 4:15.000–4:29.960 持续显示 `What we will learn` 演讲页，列出 Bots run on their own、Bots work as a team、Team bots keep the memory 三项；讲者小窗有轻微画面变化。未见产品客户端、Bot 会话、Computer 操作或实际工作流结果。V2 片头连续逐帧覆盖延长至 4:29.960（6,750 帧），下一未审窗口从 4:30.000 开始。本段仅是官方演示视频中的幻灯片证据，不作 UI 或 Agent/Computer 运行时验收。
+
+### Grok Bot 201 逐帧续审：4:30.000–4:44.960（2026-11-13）
+
+连续审阅三个五秒窗口，共 375 个 1920×1080、25 fps 源帧与 15 张 5×5 联系图，全部逐张检查。完整源 MKV SHA-256、每帧源 PTS、`yuv420p` 像素字节数/SHA-256 和联系图 SHA-256 经独立 FFmpeg 重解码复核，均匹配 manifest。源 MKV SHA-256：`2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。证据目录：`research/frames/grok-201-0430-0435-compact-audit-20261113/`、`grok-201-0435-0440-compact-audit-20261113/`、`grok-201-0440-0445-compact-audit-20261113/`。
+
+4:30.000 至 4:41.680 持续为 `What we will learn` 演讲页；4:41.720 切换到紫色 `Grok Bot 101 Recap` 演讲页，展示 Dex（Designer）、Maya（Community）、Penny（Sourcing）三个不同形状和颜色的 Bot 标记，讲者小窗仍在右上方。没有产品工作区或实际 Bot/Computer 操作。V2 连续逐帧覆盖延长至 4:44.960（7,125 帧），下一窗口从 4:45.000 开始。此转场只作视频内容记录，不作为产品运行或 UI 验收证据。
