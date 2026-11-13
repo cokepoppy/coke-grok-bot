@@ -2727,6 +2727,12 @@ ChatGPT 重启后重新读取 Chrome 扩展清单，扩展能枚举公网 Grok B
 
 本轮仅查看真实 UI、没有截图、没有确认未知结果、没有重放任务、没有触发订单或发布操作。多 Bot 全链路仍不能依据 Pages 已发布或单条 Ops 回执判为完成；后续须先按各自原 run 核验 unknown 的可能副作用，再在公网产品 UI 中完成尚缺的阶段交接与验收。
 
+#### 2026-11-13 ChatGPT 重启后 Computer Use 复核及官方 201 逐帧续审
+
+重启后的当前回合中，Computer Use `getState()` 可枚举 Chrome；原生 `getApp("Google Chrome")` 读取无障碍树成功。使用语义标签控件打开现有 Pages 标签并刷新后，Chrome 实际停在 `https://c-m-ai-copilot.github.io/coke-bse-trading-demo/`，页面标题为 `北证证券终端 · DEMO · 920999 N星澜`。可见「纯前端演示」「合成」「网络 0 请求」、3.6.5(2)(3) 边界台 5/5 PASS、上/下限 ¥13.00/¥7.00，以及 17→200028217、34→200029142、43→200029608 的公告链接映射。本轮只有页面刷新，没有下单、撤单或修改本地演示数据。该证明是公开 Pages 可见性和本机 Computer Use 状态，不代表官方产品像素验收、云电脑 runtime 或 BSE 多 Bot 的未知任务已解决。
+
+继续逐帧研究本地官方 Grok Bot 201 视频：补审 2:10.000–2:14.960 的 125 个连续源帧；五张联系图逐张检查，完整视频 SHA-256、源 PTS 130000–134960 ms、`yuv420p` 像素哈希/字节数和联系图哈希均经独立 FFmpeg 重解码匹配。该段可见 `roy` 的 X Bot 对话、已 Dismissed 的二次发帖澄清卡及 `post a new one please` 用户消息；没有新的 Bot 回复或外部帖子状态证明。观察记录和本机紧凑证据目录见 `research/README.md` 与 `research/frames/grok-201-0130-0135-compact-audit-20261113/`。V2 现连续审阅到 2:14.960；下一未覆盖区间为 2:15–14:19.960，官网嵌入动画仍须独立研究。
+
 #### 2026-11-13 Browser Use 重启复测与 Tester 历史运行核验
 
 ChatGPT 重启后，Chrome 扩展仍能列出 `https://codex.cokeagent.com/grok-bot/` 与 BSE Pages 标签，但 Browser Use `getTab()` 绑定公网 Grok Bot 标签约 35 秒超时。随后原生 Computer Use 可正常读取 Chrome 无障碍树并打开运维 Bot；两种控制能力必须分别报告，不能把原生 Computer Use 可用说成 Browser Use 已恢复。
