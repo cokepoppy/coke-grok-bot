@@ -2831,3 +2831,7 @@ ChatGPT 重启后，Browser Use 扩展仍能枚举 Chrome 中的 Grok Bot 与北
 #### 2026-11-13 官方 Grok Bot 201 逐帧续审（7:15.000–7:29.960）
 
 连续检查三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧和 15 张 5×5 联系图；独立 FFmpeg 重解码核验完整视频 SHA-256、全部 PTS、`yuv420p` 像素字节数/哈希及联系图 SHA-256，375/375 帧与 15/15 图均匹配。7:15–约 7:21.9 延续 Dex 单聊中的贴纸和群聊分享请求；Dex 表示须在群聊中被 @ 才能回应。PTS 442000 显示新消息收件人菜单及 `Create group chat`、Bot 列表、`Team Bots`；PTS 445000 显示 Team Bots 目录，PTS 447000 搜索 `dex` 并筛选结果；PTS 449960 显示 Dex 对话及右侧 Computer 桌面预览。未观察到群聊创建完成或贴纸已在群内发送。四张原尺寸关键帧及哈希见 `research/frames/grok-201-0720-0730-state-keyframes-20261113/manifest.json`；连续帧 manifest 位于三个 `grok-201-0715-0730` 五秒目录。V2 连续覆盖现延长至 7:29.960（11,250 帧），下一窗口从 7:30.000 开始；这些视频观察不是当前项目运行时验收。
+
+#### 2026-11-13 官方 Grok Bot 201 逐帧续审（7:30.000–7:44.960）
+
+检查三个相邻五秒窗口，覆盖 375 个源帧和 15 张逐张查看的 5×5 联系图；独立 FFmpeg 重解码核验完整 MKV SHA-256、逐帧 PTS/`yuv420p` 像素哈希与字节数、联系图哈希，全部匹配 manifest。7:30–7:43.520 保持 Dex 贴纸会话和 Computer 桌面预览。PTS 463520（7:43.520）仍为普通消息输入框；PTS 463560（7:43.560）首次显示 `Listening...` 与 0:00 计时、停止/发送控件；PTS 464960（7:44.960）显示 0:01。仅记为屏幕上的录音/聆听 UI 状态，不推断有效音频采集或完成。相邻全尺寸状态帧、像素及 PNG 哈希见 `research/frames/grok-201-0743-voice-transition-keyframes-20261113/manifest.json`；紧凑窗口 manifest 见 `research/frames/grok-201-0730-0735-compact-audit-20261113/`、`grok-201-0735-0740-compact-audit-20261113/`、`grok-201-0740-0745-compact-audit-20261113/`。V2 连续逐帧覆盖延至 7:44.960（11,625 帧），下一未审区间从 7:45.000 开始。该视频记录不等于当前 UI 或 Agent/Computer runtime 验收。
