@@ -2675,6 +2675,10 @@ BSE 多 Bot 全链路仍未通过最终验收：仍须在可用的签名态公�
 
 同一 BSE owner namespace 的 Agent 与 Desktop 均为 `candidate-browser-upload-20261113-r1`、Ready；`agent-runtime.mjs` 与 `computer-worker.mjs` 在 Pod 内的 SHA-256 分别与当前仓库文件一致（`f0a7e904…ba5d6`、`0acba636…3e285`）。本轮没有重启任何 Pod。
 
-尝试经本地 loopback 临时转发只读查询群组运行状态时，MySQL 拒绝了来自 `127.0.0.1` 的应用用户连接（`ER_ACCESS_DENIED_ERROR`）；查询没有返回记录，也未写入数据或修改授权。不能据此推断任务队列为空。不要扩大 MySQL 主机授权；先使用保留受信来源身份的现有只读访问路径核实 Bot 的 live lease、queued 与 unknown 状态，再评估更新 Auth。公网可见 Browser/Computer Use 在此前检查中仍被 Work settings 拒绝，工具清单也没有提供设置管理器；不使用其他 UI 控制路径替代真实点击验收。
+第一次只读探测误连到 K3D `coke-auth/mysql`，而 Auth 实际配置指向 Docker 中固定的 `coke-grok-local-auth-mysql`（Auth 配置主机 `172.18.0.4`，Mac 映射端口 `127.0.0.1:13316`）。误连被拒时没有返回记录，也没有写入数据或修改授权。随后从 Auth Secret 文件把口令经管道送入只读客户端、未显示口令，查询正确的应用数据库成功。
+
+截至本次复查，群 `北交所交易规则适配项目组` 最新状态为：产品调研完成（`2026-11-13 00:42:03 UTC`），前端开发完成（`2026-11-12 22:21:46 UTC`），端到端测试 `unknown/pending`（`22:22:07 UTC`），运维发布 `unknown/acknowledged`（`22:23:18 UTC`），Chief 仍为 `queued`（`22:21:35 UTC`）；全群当前 active lease 为 0、queued 为 5、unknown/pending 为 1。`I checked`/acknowledged 仍不等于运维任务成功；保留这些记录，不自动重试未知结果。
+
+用户本轮确认 GitHub Pages 已发布（https://c-m-ai-copilot.github.io/coke-bse-trading-demo/）。因此不能把重复发布当作缺失步骤；剩余可见验收是由项目组运维 Bot 在真实云电脑 Chrome 打开该 Pages 并核对页面，同时先处理 Tester unknown 与 Chief queued 的既有状态。当前 `cua.getState()` 再次明确返回 `Local browser use is disabled in Work settings`，浏览器列表为空；工具清单没有 Work settings 管理器。没有用其他 UI 路径替代网页点击，也没有启动/重试任务。
 
 后续顺序：先取得受信路径的群组状态与副作用证据；再为当前分支构建固定 Auth 候选，核对镜像 ID 和运行 bundle SHA；在确认更新不会中断 live lease 后才一对一替换 Auth。随后恢复公网签名态 Computer Use，通过原有北交所群继续真实 Browser/Computer User 的调研、开发、测试、Pages 发布和云电脑打开流程。此项版本复核不是多 Bot E2E 验收。
