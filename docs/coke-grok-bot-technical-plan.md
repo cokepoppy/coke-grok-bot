@@ -2835,3 +2835,9 @@ ChatGPT 重启后，Browser Use 扩展仍能枚举 Chrome 中的 Grok Bot 与北
 #### 2026-11-13 官方 Grok Bot 201 逐帧续审（7:30.000–7:44.960）
 
 检查三个相邻五秒窗口，覆盖 375 个源帧和 15 张逐张查看的 5×5 联系图；独立 FFmpeg 重解码核验完整 MKV SHA-256、逐帧 PTS/`yuv420p` 像素哈希与字节数、联系图哈希，全部匹配 manifest。7:30–7:43.520 保持 Dex 贴纸会话和 Computer 桌面预览。PTS 463520（7:43.520）仍为普通消息输入框；PTS 463560（7:43.560）首次显示 `Listening...` 与 0:00 计时、停止/发送控件；PTS 464960（7:44.960）显示 0:01。仅记为屏幕上的录音/聆听 UI 状态，不推断有效音频采集或完成。相邻全尺寸状态帧、像素及 PNG 哈希见 `research/frames/grok-201-0743-voice-transition-keyframes-20261113/manifest.json`；紧凑窗口 manifest 见 `research/frames/grok-201-0730-0735-compact-audit-20261113/`、`grok-201-0735-0740-compact-audit-20261113/`、`grok-201-0740-0745-compact-audit-20261113/`。V2 连续逐帧覆盖延至 7:44.960（11,625 帧），下一未审区间从 7:45.000 开始。该视频记录不等于当前 UI 或 Agent/Computer runtime 验收。
+
+### Grok Bot 201 逐帧续审：7:45.000–7:59.960（2026-11-13）
+
+连续检查三个相邻五秒窗口，覆盖 375 个 1920×1080、25 fps 源帧；15 张 5×5 联系图均逐张查看。独立 FFmpeg 重解码复核完整源视频 SHA-256、375/375 帧的 PTS 与 `yuv420p` 像素字节数/哈希、15/15 联系图哈希，全部匹配 manifest。紧凑证据目录：`research/frames/grok-201-0745-0750-compact-audit-20261113/`、`grok-201-0750-0755-compact-audit-20261113/`、`grok-201-0755-0800-compact-audit-20261113/`。
+
+7:45 后 Dex 单聊仍显示右侧 Computer 桌面预览。聊天输入区域从录音计时切到 `Transcribing...`，识别文本 `Let's do a very happy blue one.` 出现在输入框；PTS 469680（7:49.680）该文本仍是草稿，PTS 469720（7:49.720）首次显示已发送的紫色消息气泡、输入框复位。PTS 470440（7:50.440）可见 Bot 活动图标但尚无状态文字；PTS 470480（7:50.480）首次显示 `Working on it`。到 PTS 479960（7:59.960）仍是 `Working on it`，本段没有完成结果，也没有看到 Computer 预览中的网页操作。四张相邻全分辨率边界帧、PNG SHA-256、源像素 SHA-256 见 `research/frames/grok-201-0749-send-working-transition-keyframes-20261113/manifest.json`。V2 连续逐帧审阅现覆盖 0:00.000–7:59.960（12,000 帧），下一未审区间从 8:00.000 开始；此视频观察仅为交互参考，不是当前产品 UI、模型或云电脑运行验收。
