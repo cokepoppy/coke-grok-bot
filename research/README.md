@@ -5366,3 +5366,11 @@ V1 连续逐帧覆盖现推进至 20:29.967（36,900 帧）；下一窗口从 20
 连续审阅三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧与 15 张 5×5 联系图；联系图均逐张检查。完整源 MKV SHA-256、全部源帧 PTS、`yuv420p` 像素字节数/SHA-256 与联系图 SHA-256 均经独立 FFmpeg 重解码复核，并与 manifest 一致。源 MKV SHA-256：`2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。窗口目录：`research/frames/grok-201-0630-0635-compact-audit-20261113/`、`research/frames/grok-201-0635-0640-compact-audit-20261113/`、`research/frames/grok-201-0640-0645-compact-audit-20261113/`。
 
 6:30.000–6:38.520 持续显示紫色 `Sticker shop` 演讲页及白色云朵标记。源 PTS 398560（6:38.560）首次切换至 `Meet the team` 幻灯片，列出 Dex（Designer，橙色水滴）、Lew（Fullstack，粉色胶囊）、Sam（UI/UX，蓝色圆形）；画面保持至 6:44.960。转场前后保留 398.480–398.680 秒的六张全分辨率 PNG；完整源视频独立重提后 PTS、PNG SHA-256 和联系图哈希均匹配 manifest，目录为 `research/frames/grok-201-0638-transition-keyframes-20261113/`。此前误标为转场的 6:44 关键帧目录已删除，因为其六帧全部处于稳定的 `Meet the team` 页面。两页均为演讲幻灯片，没有现场客户端或实际 Bot/Computer 工作流。V2 连续逐帧覆盖延长至 6:44.960（10,125 帧），下一窗口从 6:45.000 开始；本段不作为产品 UI/运行时验收证据。
+
+### Grok Bot 201 逐帧续审：6:45.000–6:59.960（2026-11-13）
+
+连续审阅三个五秒窗口，共 375 个 1920×1080、25 fps 源帧和 15 张 5×5 联系图；联系图逐张检查。独立从完整 MKV 重解码后，375/375 源 PTS 与 `yuv420p` 像素 SHA-256/字节数、15/15 联系图 SHA-256 均与 manifest 匹配；完整源 MKV SHA-256 为 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。三段目录为 `research/frames/grok-201-0645-0650-compact-audit-20261113/`、`research/frames/grok-201-0650-0655-compact-audit-20261113/`、`research/frames/grok-201-0655-0700-compact-audit-20261113/`。
+
+6:45.000 至约 6:56.520 继续显示 `Meet the team` 幻灯片（Dex/Designer 橙色水滴、Lew/Fullstack 粉色胶囊、Sam/UI/UX 蓝色圆形）。PTS 416560（6:56.560）出现 macOS Dock；PTS 417360（6:57.360）可见 Chrome 菜单栏；PTS 417800（6:57.800）切入 Google Slides 的 `Grok Bot 201 Slides` 编辑器，仍选中 `Meet the team`，下方备注写明 Dex 设计贴纸、Metrics 跟踪投票和销售、Full Stack 构建并发布网站。随后画面进入 macOS Mission Control/桌面概览，能看到 X 个人主页窗口与 Slides 窗口并列。此处是演讲者屏幕分享与演示材料编辑，不是 Grok Bot 客户端或 Bot/Computer 运行证据。
+
+仅保留 Dock/窗口切换相关的 18 张全分辨率边界帧，分别位于 `research/frames/grok-201-0656-screen-share-transition-keyframes-20261113/`、`research/frames/grok-201-0657-google-slides-transition-keyframes-20261113/` 和 `research/frames/grok-201-0657-desktop-view-transition-keyframes-20261113/`；三组 PTS、PNG 文件 SHA-256 和联系图哈希均已从完整视频独立重提取匹配。V2 连续逐帧覆盖现为 0:00.000–6:59.960，共 10,500 帧；下一窗口从 7:00.000 开始。本段不作为产品 UI/运行时验收证据。

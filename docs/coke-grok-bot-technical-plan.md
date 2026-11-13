@@ -71,6 +71,8 @@
 
 2026-11-13 官方 Grok Bot 201 连续逐帧审阅新增 6:30.000–6:44.960：375 个源帧、15 张联系图全部审阅并独立核验源 SHA-256、PTS、像素哈希/字节数及联系图哈希。PTS 398560（6:38.560）从 `Sticker shop` 切到 `Meet the team`，展示 Dex（Designer）、Lew（Fullstack）、Sam（UI/UX）；这是演讲幻灯片，不是产品客户端或实际运行时证据。转场六帧留存于 `research/frames/grok-201-0638-transition-keyframes-20261113/`。V2 连续覆盖现延长至 6:44.960（10,125 帧），下一窗口 6:45.000；详细证据见 `research/README.md`。
 
+2026-11-13 官方 Grok Bot 201 逐帧复核再延长至 6:59.960（10,500 帧）：6:56.560 出现 macOS Dock，6:57.360 显示 Chrome 菜单栏，6:57.800 切入 Google Slides 编辑器并看到 Dex/Metrics/Full Stack 备注。375 个源帧、15 张联系图及 18 张转场全分辨率帧均经独立重提取核验；这是演讲者屏幕分享，不是产品客户端或实际运行时证据。下一窗口从 7:00.000 开始；详见 `research/README.md`。
+
 ## 3. Coke Dots 复用方案
 
 本次只读核对了 `/Users/shangguan/Documents/home2026/coke-dots`。该主工作区存在未提交修改；其本地 `origin/main` 与远端 `main` 核对为 `4213e769e49da7a479ab2ad186584c77b721fa69`。实现时从新确认的 Coke Dots `origin/main` 提取明确范围，不复制未提交内容、配置或用户数据。
@@ -2810,3 +2812,14 @@ V2 开场连续逐帧覆盖由 2:29.960 延长至 2:59.960（累计 4,500 帧）
 #### 2026-11-13 官方 Grok Bot 201 逐帧续审（6:15.000–6:29.960）
 
 连续审阅三个五秒窗口的 375 个源帧和 15 张联系图，并独立重解码核对完整 MKV SHA-256、逐帧 PTS/`yuv420p` 像素哈希及联系图哈希。记录两个精确硬切：6:15.080 切到 `What should we do in 201?` 紫色演讲页；6:19.480 切到 `Sticker shop` 紫色演讲页，后者持续至 6:29.960。两处切点的全分辨率相邻帧均已留存并独立重提取验证。两页均为演示材料，未展示现场产品或工作流。V2 连续逐帧覆盖现延长至 6:29.960（9,750 帧），下一窗口从 6:30.000 开始。详细观察与本地证据目录见 `research/README.md`。
+
+
+#### 2026-11-13 ChatGPT 重启后 Browser Use 复测与北交所公网验收复核
+
+ChatGPT 重启后，Browser Use 扩展仍能枚举 Chrome 中的 Grok Bot 与北交所 Pages 标签，但 `getTab()` 绑定现有 Chrome 标签仍超时，根因未确认。原生 Computer Use 单独可用：通过语义无障碍控件读取 Chrome，并检查已发布 Pages。两种浏览器控制通道分别记录；没有用重复截图或坐标点击替代 Browser Use。
+
+北交所公开 Pages `https://c-m-ai-copilot.github.io/coke-bse-trading-demo/` 可见标题 `北证证券终端 · DEMO · 920999 N星澜`、纯前端/合成数据/网络 0 请求提示、规则 3.6.5(2)(3) 边界台及 17/34/43 公告链接映射。外部仓库 `c-m-ai-copilot/coke-bse-trading-demo` 的 PR #1 已并入 `main`（合并提交 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`），Pages 构建成功。
+
+项目群「北交所交易规则适配项目组」显示 Chief、BSE 产品调研、BSE 前端开发、BSE 端到端测试、BSE 运维发布五个正确职责。群历史中可见规则调研、开发文件、测试结果、发布和公网验证阶段。复核的最终 Tester 任务明确显示 Pi 使用 `deepseek-v4.1-flash` 收到响应，Browser User 执行 `inspect`、`navigate`、`click`、`inspect`、`click`、`inspect`；最终 Ops 任务显示同一模型响应并由 Browser User `inspect`。已发布页面的运维侧最终检查与当前 Chrome 页面相符。
+
+因此可确认北交所演示已合并、部署，并通过最终公网页面及云电脑 Browser User 检查。不同历史阶段并非都有一条已证实的连续 canonical run；旧的 `Outcome unknown` 和 `Queued` 状态仍保留，不能将其改写成已成功或声称已完成单次无中断多 Bot 全链路。此前独立的旧 run 不重放，不重复创建 PR 或发布。用户明确选择不轮换本轮应用数据库密码；不得读取、打印、复用或轮换该值。此次仅核查和记录，没有操作数据库或服务。
