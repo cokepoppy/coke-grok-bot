@@ -2668,3 +2668,13 @@ BSE 多 Bot 全链路仍未通过最终验收：仍须在可用的签名态公�
 对公开仓库 `c-m-ai-copilot/coke-bse-trading-demo` 做只读浅克隆，远端 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`；检出的 `index.html` 和 `README.md` SHA-256 分别与上述 Tester 对应的 Developer 产物完全相同。因此当前仓库文件可证明内容已进入公开 GitHub main；但这不证明运维 Bot 执行了提交/发布，也不代表本轮重新验证 Pages 部署或 Grok Bot 的可见 UI。较早 Ops 产出的 `github-stage-status.md` 曾记录当时 Chrome 未登录、仓库未找到、没有 GitHub 写操作；该快照与当前远端事实不同，只能代表那次任务运行时的状态。
 
 剩余验收边界：本机 `cua.getState()` 仍明确报告 Work settings 禁用本地浏览器控制，故没有通过其他 UI 路径继续。应保留现有群与这些精确 run 的状态，不重复交易或发布；待 Computer Use 可用后，先通过公网产品 UI复查 unknown 任务副作用，再验证该公开页面与云电脑当前页面，并对当前 GitHub 版本补做真实交互回归。现在已有“当前源码＝已测源码＝GitHub main 内容”的哈希证据，但缺少同一多 Bot 任务链的成功运维记录、当前 Pages 页面复核和最新 Tester unknown 结果处理。
+
+#### 2026-11-13 当前分支与运行中 Auth 制品复核
+
+当前源码为唯一 feature 分支 `codex/grok-bot-persistent-group-chat`，分支 HEAD `2de557e`（功能代码 HEAD `fcc385b`）。`npm run build:deployment` 成功；本机 `dist/server/auth.cjs` SHA-256 为 `18db3c7f490ba21e79c29b5c6436875f4f3235881bf06d46e5192d2845c59dc7`。K3D `coke-grok-bot/coke-grok-auth` 仍运行 `coke-grok-auth:candidate-browser-upload-20261113-r1`，Pod 1/1 Ready，内 `/app/auth.cjs` SHA-256 为 `ca94ba95135c8b6cc519cd8b10abddf67ab65661b47fbde84466874a1ffd52ef`；两者不一致，因此不能声称线上 Auth 与当前源码构建一致，也不能仅凭部署标签断言 `scheduled` 结果修复已生效。
+
+同一 BSE owner namespace 的 Agent 与 Desktop 均为 `candidate-browser-upload-20261113-r1`、Ready；`agent-runtime.mjs` 与 `computer-worker.mjs` 在 Pod 内的 SHA-256 分别与当前仓库文件一致（`f0a7e904…ba5d6`、`0acba636…3e285`）。本轮没有重启任何 Pod。
+
+尝试经本地 loopback 临时转发只读查询群组运行状态时，MySQL 拒绝了来自 `127.0.0.1` 的应用用户连接（`ER_ACCESS_DENIED_ERROR`）；查询没有返回记录，也未写入数据或修改授权。不能据此推断任务队列为空。不要扩大 MySQL 主机授权；先使用保留受信来源身份的现有只读访问路径核实 Bot 的 live lease、queued 与 unknown 状态，再评估更新 Auth。公网可见 Browser/Computer Use 在此前检查中仍被 Work settings 拒绝，工具清单也没有提供设置管理器；不使用其他 UI 控制路径替代真实点击验收。
+
+后续顺序：先取得受信路径的群组状态与副作用证据；再为当前分支构建固定 Auth 候选，核对镜像 ID 和运行 bundle SHA；在确认更新不会中断 live lease 后才一对一替换 Auth。随后恢复公网签名态 Computer Use，通过原有北交所群继续真实 Browser/Computer User 的调研、开发、测试、Pages 发布和云电脑打开流程。此项版本复核不是多 Bot E2E 验收。
