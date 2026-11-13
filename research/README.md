@@ -5402,3 +5402,21 @@ V1 连续逐帧覆盖现推进至 20:29.967（36,900 帧）；下一窗口从 20
 连续检查三个相邻五秒窗口，覆盖 375 个 1920×1080、25 fps 源帧；15 张 5×5 联系图均逐张查看。独立 FFmpeg 重解码复核完整源视频 SHA-256、375/375 帧的 PTS 与 `yuv420p` 像素字节数/哈希、15/15 联系图哈希，全部匹配 manifest。紧凑证据目录：`research/frames/grok-201-0745-0750-compact-audit-20261113/`、`grok-201-0750-0755-compact-audit-20261113/`、`grok-201-0755-0800-compact-audit-20261113/`。
 
 7:45 后 Dex 单聊仍显示右侧 Computer 桌面预览。聊天输入区域从录音计时切到 `Transcribing...`，识别文本 `Let's do a very happy blue one.` 出现在输入框；PTS 469680（7:49.680）该文本仍是草稿，PTS 469720（7:49.720）首次显示已发送的紫色消息气泡、输入框复位。PTS 470440（7:50.440）可见 Bot 活动图标但尚无状态文字；PTS 470480（7:50.480）首次显示 `Working on it`。到 PTS 479960（7:59.960）仍是 `Working on it`，本段没有完成结果，也没有看到 Computer 预览中的网页操作。四张相邻全分辨率边界帧、PNG SHA-256、源像素 SHA-256 见 `research/frames/grok-201-0749-send-working-transition-keyframes-20261113/manifest.json`。V2 连续逐帧审阅现覆盖 0:00.000–7:59.960（12,000 帧），下一未审区间从 8:00.000 开始；此视频观察仅为交互参考，不是当前产品 UI、模型或云电脑运行验收。
+
+### Grok Bot 201 逐帧续审：8:00.000–8:14.960（2026-11-13）
+
+连续审阅三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧和 15 张 5×5 联系图；15 张联系图均已逐张检查。独立从完整 MKV 重解码后，375/375 帧 PTS、`yuv420p` 像素字节数/SHA-256、15/15 联系图 SHA-256 均与 manifest 匹配；完整源视频 SHA-256 为 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。紧凑证据目录：`research/frames/grok-201-0800-0805-compact-audit-20261113/`、`grok-201-0805-0810-compact-audit-20261113/`、`grok-201-0810-0815-compact-audit-20261113/`。
+
+PTS 480000（8:00.000）显示用户已发送 `Let's do a very happy blue one.`，Dex 处于 `Working on it`；PTS 486000（8:06.000）可见 Dex 回复正在制作与 Odd Couple 同风格的蓝色 Grok Bot，PTS 488000（8:08.000）还显示 `I'll send it over as soon as it's ready.` 和 `Getting it done`。PTS 490240（8:10.240）光标悬停左上角“+”，聊天仍显示 Dex 对话；PTS 490280（8:10.280）首次显示新聊天收件人选择器 `To: Start a chat with...`。菜单列出 `Create new Bot`、`Create group chat`、Dex、X、roy、sr swe、sam、ed、lew、gen、`Team Bots`。PTS 492000（8:12.000）`Create group chat` 行处于高亮状态；PTS 493000（8:13.000）搜索框显示 `To: dex`，候选有 Dex 和 Team Bots。至 PTS 494960（8:14.960）仍停留在收件人选择流程；没有观察到群聊创建完成，也没有看到蓝色 Bot 成品或 Computer 中的网页操作。右侧仍是 Dex 的 Computer 桌面预览。
+
+在 `research/frames/grok-201-0810-picker-transition-keyframes-20261113/` 保留 PTS 490240/490280 两张转场原尺寸 PNG；manifest 同时记录 PNG SHA-256 和对应紧凑源帧像素 SHA-256。V2 连续逐帧覆盖推进到 8:14.960（12,375 帧），下一段从 8:15.000 开始。本段记录的是视频可见行为，不能替代当前产品的 UI、Agent、群聊或云电脑验收。
+
+### Grok Bot 201 逐帧续审：8:15.000–8:29.960（2026-11-13）
+
+连续检查 8:15、8:20、8:25 三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧与 15 张 5×5 联系图；15 张联系图均已逐张查看。独立从完整 MKV 定位并重解码三段视频，375/375 帧像素 SHA-256、字节数及 PTS 对齐、15/15 联系图哈希均与 manifest 匹配；完整源视频 SHA-256 为 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。证据目录：`research/frames/grok-201-0815-0820-compact-audit-20261113/`、`grok-201-0820-0825-compact-audit-20261113/`、`grok-201-0825-0830-compact-audit-20261113/`。
+
+收件人选择器在 PTS 500920（8:20.920）仍显示空白新聊天目标 `To: Start a chat with...`；PTS 500960（8:20.960）首次切到 `Joseph, Martin` 群聊。转场前该群已在左侧会话列表出现，因此这段画面证明的是打开既有群聊，不是创建新群。原尺寸相邻帧及 PNG/源像素哈希见 `research/frames/grok-201-0820-group-chat-transition-keyframes-20261113/manifest.json`。
+
+PTS 501000（8:21.000）起可见群聊历史：用户让 Dex 把另一会话生成的 Odd Couple 展示给 Martin；Dex 回答该产物不在当前会话所用文件夹中，建议用户上传或描述后重做。用户接着要求参考一个 Figma 设计生成贴纸；Dex 表示正在查看设计，并在回复中描述青绿色高水滴与红色小球、斜置胶囊眼、粗白色贴纸边缘。Dex 还称它使用 Joseph 的访问权限打开了 Figma。以上是视频中可见的对话文案，不能据此单独证明 Figma 实际授权/读取链路。至 PTS 505000（8:25.000）附近可见生成的贴纸图片卡；本区间右侧信息栏展示群聊信息，标签为 Details、Library、Members，未看到 Computer 标签或群聊云电脑操作。该视频也不能作为本项目相应功能已实现的验收证据。
+
+V2 连续逐帧审阅覆盖推进到 8:29.960（12,750 帧），下一段从 8:30.000 开始。
