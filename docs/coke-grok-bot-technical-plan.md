@@ -2823,3 +2823,7 @@ ChatGPT 重启后，Browser Use 扩展仍能枚举 Chrome 中的 Grok Bot 与北
 项目群「北交所交易规则适配项目组」显示 Chief、BSE 产品调研、BSE 前端开发、BSE 端到端测试、BSE 运维发布五个正确职责。群历史中可见规则调研、开发文件、测试结果、发布和公网验证阶段。复核的最终 Tester 任务明确显示 Pi 使用 `deepseek-v4.1-flash` 收到响应，Browser User 执行 `inspect`、`navigate`、`click`、`inspect`、`click`、`inspect`；最终 Ops 任务显示同一模型响应并由 Browser User `inspect`。已发布页面的运维侧最终检查与当前 Chrome 页面相符。
 
 因此可确认北交所演示已合并、部署，并通过最终公网页面及云电脑 Browser User 检查。不同历史阶段并非都有一条已证实的连续 canonical run；旧的 `Outcome unknown` 和 `Queued` 状态仍保留，不能将其改写成已成功或声称已完成单次无中断多 Bot 全链路。此前独立的旧 run 不重放，不重复创建 PR 或发布。用户明确选择不轮换本轮应用数据库密码；不得读取、打印、复用或轮换该值。此次仅核查和记录，没有操作数据库或服务。
+
+#### 2026-11-13 官方 Grok Bot 201 逐帧续审（7:00.000–7:14.960）
+
+连续审核 375 个源帧和 15 张联系图，独立 FFmpeg 重解码验证完整源视频 SHA、PTS、像素字节数/哈希和联系图哈希。PTS 422000 可见 X 公开发帖确认；PTS 423000 切到 Dex 单聊，展示五款贴纸概念、图片卡，以及“要在群聊中被 @ 才能分享”的行为；Computer 预览从 `Connecting` 经加载到桌面壁纸与 Dock。六张必要全尺寸状态帧与 manifest 保存在 `research/frames/grok-201-0702-0714-state-keyframes-20261113/`。聊天声称帖子已发布，但没有 X 页面核对；桌面上也未见打开网页，因此不扩大为外部效果或浏览器任务完成证据。V2 连续覆盖更新为 0:00.000–7:14.960（10,875 帧）；下一段 7:15.000 起。详细观察在 `research/README.md`。
