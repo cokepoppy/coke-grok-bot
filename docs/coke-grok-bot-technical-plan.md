@@ -2696,3 +2696,9 @@ BSE 多 Bot 全链路仍未通过最终验收：仍须在可用的签名态公�
 这解释了为何 Chief 的 5 个组内任务一直 queued：Chief 自己更早的个人对话 unknown/pending 会阻塞 Chief 屏幕。Research 与 Tester 也各自有待核对项；Ops 最近的 unknown 是 `acknowledged`，不是成功，但不会以 pending 状态阻塞其屏幕。未知结果必须逐个核实可能副作用后再从产品 UI 继续，不能通过修改数据库、批量确认、重置聊天或重放任务来清队列。
 
 本机 Computer Use 本轮仍报告 Work settings 禁用控制，故无法通过公网产品 UI 查看这三个运行的完整消息与电脑画面，也没有触发任何新任务。GitHub Pages 已发布；最后需要由 Ops Bot 在云电脑 Chrome 打开 Pages URL 并核对页面，但应在可见地核对当前队列状态后继续。该队列诊断不等于 E2E 验收。
+
+#### 2026-11-13 unknown 执行审计持久化路径复核
+
+源码复核确认，`RunScheduler.execute()` 会把 `RunDiagnosticError.executionAudit` 传给 `RunStore.markUnknown()`；该方法验证后通过 `COALESCE(?, execution_audit)` 保留/写入有效审计。`tests/run-scheduler.test.ts` 已覆盖诊断错误及 execution audit 持久化。故当前 Tester/Chief 记录无审计，不能归因于 `markUnknown` 会清空审计；更可能是当时 Worker 没有返回有效 audit，或诊断发生在收到 audit 之前，但这两种原因都未由历史记录证实。
+
+当前 Research pending run 确实存有 Browser `inspect` 与 `bot_memory` 两个成功调用；Tester/Chief 的精确 run 没有审计、结果或文件。不要为消除空字段而改写历史数据或自动重放；后续应在可见 UI 核实这些原始运行的完整状态。此复核没有改源码，现有测试与这些历史 run 的证据范围不同。
