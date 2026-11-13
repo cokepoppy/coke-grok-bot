@@ -5300,3 +5300,9 @@ V1 连续逐帧覆盖现推进至 20:29.967（36,900 帧）；下一窗口从 20
 连续审阅三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧和 15 张 5×5 联系图；15 张联系图均已逐张查看。完整源视频 SHA-256、所有帧 PTS、`yuv420p` 像素 SHA-256/字节数和联系图 SHA-256 经独立重解码核验，均与 manifest 匹配。证据目录：`research/frames/grok-201-0330-0335-compact-audit-20261113/`、`grok-201-0335-0340-compact-audit-20261113/`、`grok-201-0340-0345-compact-audit-20261113/`。
 
 3:30.000–3:44.960 继续显示 `Agenda` 幻灯片（Welcome、Sticker shop、Demo、GB Sticker shop、Q&A），右上角讲者小窗有动作变化；未见客户端、Bot 对话、Computer 操作或任务结果。V2 片头连续逐帧覆盖现为 0:00.000–3:44.960，共 5,625 帧；下一窗口从 3:45.000 开始。
+
+### Grok Bot 201 逐帧续审：3:45.000–3:59.960（2026-11-13）
+
+连续审阅三个五秒窗口，共 375 个 1920×1080、25 fps 源帧和 15 张 5×5 联系图；所有联系图已逐张查看。重新解码核对原视频 SHA-256、每帧 PTS、`yuv420p` 像素 SHA-256/字节数和联系图 SHA-256，均匹配 manifest。证据目录：`research/frames/grok-201-0345-0350-compact-audit-20261113/`、`grok-201-0350-0355-compact-audit-20261113/`、`grok-201-0355-0400-compact-audit-20261113/`。
+
+3:45.000 至约 3:53 仍显示 `Agenda`（Welcome、Sticker shop、Demo、GB Sticker shop、Q&A）；约 3:53 转为 `What we will learn` 幻灯片，并持续至 3:59.960。该页写有：Bots run on their own（每日例程依预设工作流检查商店并更换商品）；Bots work as a team（UI、Design、Full Stack Bot 在群聊分工并把构建交给 cloud agent）；Team bots keep the memory（团队 Bot 继承 Dex 的记忆和技能）。画面仍是演讲幻灯片，没有真实工作区、群聊或 Computer 执行状态。V2 连续逐帧覆盖现为 0:00.000–3:59.960，共 6,000 帧；下一窗口从 4:00.000 开始。
