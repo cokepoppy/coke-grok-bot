@@ -2702,3 +2702,11 @@ BSE 多 Bot 全链路仍未通过最终验收：仍须在可用的签名态公�
 源码复核确认，`RunScheduler.execute()` 会把 `RunDiagnosticError.executionAudit` 传给 `RunStore.markUnknown()`；该方法验证后通过 `COALESCE(?, execution_audit)` 保留/写入有效审计。`tests/run-scheduler.test.ts` 已覆盖诊断错误及 execution audit 持久化。故当前 Tester/Chief 记录无审计，不能归因于 `markUnknown` 会清空审计；更可能是当时 Worker 没有返回有效 audit，或诊断发生在收到 audit 之前，但这两种原因都未由历史记录证实。
 
 当前 Research pending run 确实存有 Browser `inspect` 与 `bot_memory` 两个成功调用；Tester/Chief 的精确 run 没有审计、结果或文件。不要为消除空字段而改写历史数据或自动重放；后续应在可见 UI 核实这些原始运行的完整状态。此复核没有改源码，现有测试与这些历史 run 的证据范围不同。
+
+#### 2026-11-13 ChatGPT 重启后的 Computer Use 复核
+
+用户重启 ChatGPT 后，Computer Use 已能枚举并操作本机 Chrome。目标标签是已登录的 `https://codex.cokeagent.com/grok-bot/`。扩展 `getTab()` 绑定该标签连续超时，但之后读取应用状态发现标签已经在目标页面；随后改用原生 `getApp("Google Chrome")` 与可访问性树进行语义操作，成功打开 `BSE 运维发布` Bot。遇到绑定超时时应先重新读取 UI 状态，不能盲目重复导航或点击。
+
+该 Bot 聊天中有一条已完成的 Browser User 记录，`Computer activity` 显示 `Done`；任务结果报告其云电脑 Chrome 实际检查了 `https://c-m-ai-copilot.github.io/coke-bse-trading-demo/`，页面标题为 `北证证券终端 · DEMO · 920999 N星澜`，H1 为 `N星澜`，并读到 `3.6.5(2)(3)` 与日期 `2026-10-26`。该记录是之前已完成的 Bot 任务，不是本轮新发起的执行。本轮打开电脑面板时显示 `BSE 运维发布’s screen`、`Bot is in control`。所以这次确认了既有 Ops 云电脑页面检查结果；没有声称检查了该任务之外的页面链接，也没有据此判定多 Bot 全流程通过。
+
+本轮没有使用截图或重放任务。Tester 私聊仍有一条独立的 `Outcome unknown` 只读 GitHub 盘点记录，尚未确认副作用；它与 Ops 已完成的 Pages 页面检查不同，本轮未重试。源码分支 `codex/grok-bot-persistent-group-chat` 的 runtime 单测 189/189 通过，`npm run build:deployment` 通过。未运行 MySQL 集成套件：本机只发现应用 MySQL 映射在 13316，没有发现约定的隔离测试 MySQL 13317；不把集成套件指向应用数据。
