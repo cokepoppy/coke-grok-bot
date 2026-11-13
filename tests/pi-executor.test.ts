@@ -107,6 +107,24 @@ test('Pi recognizes an ordinary Chinese mail request as Browser User work',async
  }finally{await executor.close();gateway.close()}
 });
 
+test('Pi grants Browser User scope when a direct task explicitly names computer_browser.open_artifact',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const task:AgentRun={...run,prompt:'请完成页面后用 computer_browser.open_artifact 打开本次任务 artifacts/bse-demo/index.html，并检查页面标题与委托控件。'};
+ let issuedScope:{browserTask?:boolean}|undefined,receivedPrompt='';
+ const issue=gateway.issue.bind(gateway);gateway.issue=options=>{issuedScope=options.scope;return issue(options)};
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
+  receivedPrompt=JSON.parse(String(init?.body)).prompt;
+  return Response.json({status:'done',message:'Artifact preview dispatched.'});
+ });
+ try{
+  const result=await executor.execute(screen,task,new AbortController().signal,randomUUID());
+  assert.equal(result.status,'completed');
+  assert.equal(issuedScope?.browserTask,true,'the explicit tool-oriented task must receive run-scoped Browser User authorization');
+  assert.match(receivedPrompt,/generic, short-lived user-request scope/i);
+  assert.match(receivedPrompt,/Do not enter usernames, passwords, one-time codes/i);
+ }finally{await executor.close();gateway.close()}
+});
+
 test('Pi carries a recent same-Bot sign-in handoff into an approval follow-up without expanding its scope',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const original='帮我打开谷歌，然后登录我的 Gmail，然后你在登录的时候停下来，让我去操作。在云电脑里面打开 Chrome 浏览器。';
@@ -248,8 +266,13 @@ test('Pi dispatch fails closed for wrong owner, transport error or interrupted d
  const wrong=new PiExecutor({connect:async()=>({agentUrl:new URL('http://other.svc.cluster.local:8083/'),agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>{throw new Error('must not dispatch')});
  await assert.rejects(wrong.execute(screen,run,new AbortController().signal,randomUUID()));
  let calls=0;
- const interrupted=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>{calls++;return Response.json({status:'waiting',pausedForControl:true,message:'paused'})});
+ const interrupted=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>{calls++;return Response.json({status:'waiting',pausedForControl:true,controlOwner:'user',message:'paused'})});
  await assert.rejects(interrupted.execute(screen,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='agent_paused_for_control');assert.equal(calls,1);
+ const unknownOwner=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>Response.json({status:'waiting',pausedForControl:true,controlOwner:'unknown',message:'paused'}));
+ await assert.rejects(unknownOwner.execute(screen,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='computer_control_state_unknown');
+ const waitingAudit={engine:'pi',model:'model',modelCompleted:true,calls:[{tool:'computer_browser',action:'navigate',outcome:'succeeded'}],truncated:false};
+ const genericWaiting=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>Response.json({status:'waiting',message:'waiting for a non-computer reason',executionAudit:waitingAudit}));
+ await assert.rejects(genericWaiting.execute(screen,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='agent_result_status_unconfirmed'&&JSON.stringify(error.executionAudit)===JSON.stringify(waitingAudit));
  const unexpected=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>Response.json({status:'running',message:'Still running'}));
  await assert.rejects(unexpected.execute(screen,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='agent_result_status_unconfirmed');
  const missing=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>Response.json({status:'done',message:'  '}));

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { listSharedFiles, readSharedFile, runApprovedTerminal } from '../deploy/desktop/computer-tools.mjs';
+import { listSharedFiles, readSharedFile, runTaskTerminal } from '../deploy/desktop/computer-tools.mjs';
 
 test('shared computer file reads stay inside the persistent shared folder and reject symlinks', async () => {
   const root = await mkdtemp(join(tmpdir(), 'grok-shared-files-'));
@@ -27,20 +27,20 @@ test('approved terminal runs once in the selected folder with a clean child envi
   const old = process.env.COKE_GROK_TEST_SECRET;
   process.env.COKE_GROK_TEST_SECRET = 'do-not-inherit';
   try {
-    const result = await runApprovedTerminal({ command: 'pwd && printf terminal-ok > result.txt && env', directory: 'task' }, { workspaceValue: canonicalRoot, taskDirectory: canonicalTask });
+    const result = await runTaskTerminal({ command: 'pwd && printf terminal-ok > result.txt && env', directory: 'task' }, { workspaceValue: canonicalRoot, taskDirectory: canonicalTask });
     assert.equal(result.exitCode, 0);
     assert.ok(result.stdout.startsWith(`${canonicalTask}\n`));
     assert.equal((await readFile(join(task, 'result.txt'), 'utf8')), 'terminal-ok');
     assert.doesNotMatch(result.stdout, /COKE_GROK_TEST_SECRET|do-not-inherit/);
     assert.equal(process.env.COKE_GROK_TEST_SECRET, 'do-not-inherit');
-    const echoedSecret = await runApprovedTerminal({ command: "printf '%s' 'do-not-inherit'", directory: 'task' }, { workspaceValue: canonicalRoot, taskDirectory: canonicalTask });
+    const echoedSecret = await runTaskTerminal({ command: "printf '%s' 'do-not-inherit'", directory: 'task' }, { workspaceValue: canonicalRoot, taskDirectory: canonicalTask });
     assert.equal(echoedSecret.stdout, '[redacted]');
 
-    const shared = await runApprovedTerminal({ command: 'pwd && printf shared-ok > output.txt', directory: 'shared' }, { workspaceValue: canonicalRoot, taskDirectory: canonicalTask });
+    const shared = await runTaskTerminal({ command: 'pwd && printf shared-ok > output.txt', directory: 'shared' }, { workspaceValue: canonicalRoot, taskDirectory: canonicalTask });
     assert.equal(shared.exitCode, 0);
     assert.ok(shared.stdout.startsWith(`${join(canonicalRoot, 'shared')}\n`));
     assert.equal(await readFile(join(root, 'shared', 'output.txt'), 'utf8'), 'shared-ok');
-    await assert.rejects(runApprovedTerminal({ command: 'yes x | head -c 40000', directory: 'task' }, { workspaceValue: canonicalRoot, taskDirectory: canonicalTask }), /exceeded 32 KiB/);
+    await assert.rejects(runTaskTerminal({ command: 'yes x | head -c 40000', directory: 'task' }, { workspaceValue: canonicalRoot, taskDirectory: canonicalTask }), /exceeded 32 KiB/);
   } finally {
     if (old === undefined) delete process.env.COKE_GROK_TEST_SECRET; else process.env.COKE_GROK_TEST_SECRET = old;
     await rm(root, { recursive: true, force: true });
@@ -52,7 +52,7 @@ test('terminal abort kills the command process group', async () => {
   const task = join(root, 'task'); await mkdir(task);
   const canonicalRoot = await realpath(root), canonicalTask = await realpath(task);
   const controller = new AbortController();
-  const running = runApprovedTerminal({ command: 'sleep 20', directory: 'task' }, { workspaceValue: canonicalRoot, taskDirectory: canonicalTask, signal: controller.signal });
+  const running = runTaskTerminal({ command: 'sleep 20', directory: 'task' }, { workspaceValue: canonicalRoot, taskDirectory: canonicalTask, signal: controller.signal });
   setTimeout(() => controller.abort(new Error('test stopped')), 100).unref();
   try { await assert.rejects(running, /test stopped/); }
   finally { await rm(root, { recursive: true, force: true }); }

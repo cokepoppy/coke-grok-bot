@@ -103,13 +103,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .file-preview-image { flex: 1; min-height: 0; max-width: 100%; max-height: calc(100% - 52px); margin: auto; object-fit: contain; }
 .file-preview-video { flex: 1; min-height: 0; width: 100%; padding: 16px; object-fit: contain; background: #111; }
 .file-preview-audio { width: min(560px, calc(100% - 32px)); margin: auto; }
-.approval-card { margin-top: 12px; padding: 12px; border: 1px solid #d9d5e4; border-radius: 10px; background: #fff; font-size: 14px; }
-.approval-card p { margin: 6px 0 10px; }
-.approval-card pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
-.approval-card img { display: block; max-width: 100%; height: auto; margin: 8px 0; border-radius: 6px; }
-.approval-card div { display: flex; gap: 8px; }
-.approval-card button { border: 1px solid #cbc5dc; background: #fff; border-radius: 7px; padding: 5px 12px; cursor: pointer; }
-.approval-card button:disabled { opacity: .5; cursor: default; }
 .message-actions { display: flex; gap: 12px; opacity: 0; color: #555; }
 .message-line:hover .message-actions { opacity: 1; }
 .message-actions svg { width: 18px; height: 18px; }

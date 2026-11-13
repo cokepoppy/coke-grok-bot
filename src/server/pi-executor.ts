@@ -112,7 +112,7 @@ export class DesktopAgentExecutor implements RunExecutor {
       if(!handoffBots)throw new RunDiagnosticError('bot_handoff_scope_invalid');
     }
     let capability:string;
-    try { capability=this.gateway.issue({ttlMs:14*60_000,calls:100,scope:{...memoryScope,requestedNavigationOrigins:navigationOrigins,signInHandoff,gmailReadDraftWorkflow,browserTask}}); }
+    try { capability=this.gateway.issue({ttlMs:14*60_000,calls:100,scope:{...memoryScope,requestedNavigationOrigins:navigationOrigins,signInHandoff,continuedSignInHandoff,gmailReadDraftWorkflow,browserTask}}); }
     catch { throw new RunDiagnosticError('capability_issue_failed'); }
     try {
       const memoryContext=this.memories?formatBotMemory(storedMemories||[]):'';
@@ -150,17 +150,18 @@ export class DesktopAgentExecutor implements RunExecutor {
       try { value=await response.json(); }
       catch { throw new RunDiagnosticError('agent_response_invalid'); }
       if (!value || typeof value!=='object' || Array.isArray(value)) throw new RunDiagnosticError('agent_response_invalid');
-      const result=value as {status?:unknown;message?:unknown;pausedForControl?:unknown;files?:unknown;executionAudit?:unknown};
+      const result=value as {status?:unknown;message?:unknown;pausedForControl?:unknown;controlOwner?:unknown;files?:unknown;executionAudit?:unknown};
+      const executionAudit=validateAgentExecutionAudit(result.executionAudit);
       // A pause may have interrupted an operation after a side effect. Reconciliation is required.
-      if (result.pausedForControl===true || result.status==='waiting') throw new RunDiagnosticError('agent_paused_for_control');
-      if (!['done','failed','delegating'].includes(String(result.status))) throw new RunDiagnosticError('agent_result_status_unconfirmed');
-      if (typeof result.message!=='string' || !result.message.trim()) throw new RunDiagnosticError('agent_result_message_missing');
+      if (result.pausedForControl===true) throw new RunDiagnosticError(result.controlOwner==='user'?'agent_paused_for_control':'computer_control_state_unknown',executionAudit);
+      if (result.status==='waiting') throw new RunDiagnosticError(result.controlOwner==='unknown'?'computer_control_state_unknown':'agent_result_status_unconfirmed',executionAudit);
+      if (!['done','failed','delegating'].includes(String(result.status))) throw new RunDiagnosticError('agent_result_status_unconfirmed',executionAudit);
+      if (typeof result.message!=='string' || !result.message.trim()) throw new RunDiagnosticError('agent_result_message_missing',executionAudit);
       let safe=result.message.split(capability).join('[redacted]').split(desktop.agentToken).join('[redacted]').slice(0,20000);
       if(explicitMemorySave==='saved') safe+=/\p{Script=Han}/u.test(run.prompt)?'\n\n已保存到此 Bot 的记忆中。':'\n\nSaved to this Bot’s memory.';
       else if(explicitMemorySave==='blocked') safe+=/\p{Script=Han}/u.test(run.prompt)?'\n\n这条记忆未保存；密码、密钥和联系方式应存放在 Vault 中。':'\n\nThis memory was not saved; keep passwords, keys, and contact details in the Vault.';
       else if(explicitMemorySave==='unavailable') safe+=/\p{Script=Han}/u.test(run.prompt)?'\n\n我无法确认这条记忆已保存，请稍后重试。':'\n\nI could not confirm that this memory was saved. Please try again later.';
       safe=safe.slice(0,20000);
-      const executionAudit=validateAgentExecutionAudit(result.executionAudit);
       return {status:result.status==='failed'?'failed':'completed',result:safe,...(result.status==='done'&&Array.isArray(result.files)?{artifacts:result.files}:{}),...(executionAudit?{executionAudit}:{})};
     } finally { this.gateway.revoke(capability); }
   }

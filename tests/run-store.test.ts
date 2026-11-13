@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import mysql from 'mysql2/promise';
+import { mysqlTestCredentials } from './helpers/mysql-test-credentials.ts';
 import { TenantStore, type Session } from '../src/server/tenant-store.ts';
 import { BotStore } from '../src/server/bot-store.ts';
 import { RunStore } from '../src/server/run-store.ts';
@@ -9,11 +10,12 @@ import { WorkspaceFileStore } from '../src/server/file-store.ts';
 
 const port = Number(process.env.COKE_GROK_TEST_MYSQL_PORT);
 if (!port) throw new Error('Set COKE_GROK_TEST_MYSQL_PORT to a disposable local MySQL instance.');
+const mysqlCredentials = mysqlTestCredentials(port);
 test('runs are deduplicated, isolated, serialized per computer and never silently retried after lease expiry', async () => {
   const database = `grok_runs_${randomUUID().replaceAll('-','')}`;
-  const admin = await mysql.createConnection({host:'127.0.0.1',port,user:'root'});
+  const admin = await mysql.createConnection(mysqlCredentials);
   await admin.query(`CREATE DATABASE \`${database}\``);
-  const pool = mysql.createPool({host:'127.0.0.1',port,user:'root',database,timezone:'Z',connectionLimit:6});
+  const pool = mysql.createPool({...mysqlCredentials,database,timezone:'Z',connectionLimit:6});
   try {
     const identities = new TenantStore(pool); await identities.migrate();
     const bots = new BotStore(pool); await bots.migrate();
@@ -128,9 +130,9 @@ test('runs are deduplicated, isolated, serialized per computer and never silentl
 });
 
 test('separate Bot screens can be leased in parallel while each Bot queue remains serial',async()=>{
-  const database=`grok_screen_runs_${randomUUID().replaceAll('-','')}`,admin=await mysql.createConnection({host:'127.0.0.1',port,user:'root'});
+  const database=`grok_screen_runs_${randomUUID().replaceAll('-','')}`,admin=await mysql.createConnection(mysqlCredentials);
   await admin.query(`CREATE DATABASE \`${database}\``);
-  const pool=mysql.createPool({host:'127.0.0.1',port,user:'root',database,timezone:'Z',connectionLimit:8});
+  const pool=mysql.createPool({...mysqlCredentials,database,timezone:'Z',connectionLimit:8});
   try{
     const identities=new TenantStore(pool);await identities.migrate();const bots=new BotStore(pool);await bots.migrate();const runs=new RunStore(pool);await runs.migrate();
     const identity=await identities.signInGoogle({subject:'bot-screens',email:'screens@example.test',name:'Screen Owner'}),session:Session={...identity,email:'screens@example.test',name:'Screen Owner',role:'owner'};

@@ -26,6 +26,7 @@ COPY --chmod=0644 deploy/desktop/active-tab-extension/runtime-config.js /opt/cok
 COPY --chmod=0644 deploy/desktop/desktop-screen-layout.mjs /opt/coke-dots/desktop-screen-layout.mjs
 COPY --chmod=0644 deploy/desktop/desktop-input.mjs /opt/coke-dots/desktop-input.mjs
 COPY --chmod=0644 deploy/desktop/shared-computer-root.mjs /opt/coke-dots/shared-computer-root.mjs
+COPY --chmod=0644 deploy/desktop/control-owner-audit.mjs /opt/coke-dots/control-owner-audit.mjs
 COPY --chmod=0644 deploy/desktop/guarded-computer.mjs /opt/coke-grok/guarded-computer.mjs
 COPY --chmod=0755 deploy/desktop/clear-stale-x11.sh /usr/local/bin/clear-stale-grok-x11
 ENV DOTS_DSH_BIN=/opt/coke-grok/dsh-runtime/node_modules/.bin/dsh

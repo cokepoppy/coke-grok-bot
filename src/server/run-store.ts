@@ -220,10 +220,11 @@ export class RunStore {
       return true;
     });
   }
-  async markUnknown(runId: string, leaseId: string, diagnosticCode: RunDiagnosticCode = 'executor_error'): Promise<boolean> {
+  async markUnknown(runId: string, leaseId: string, diagnosticCode: RunDiagnosticCode = 'executor_error', executionAuditValue?: unknown): Promise<boolean> {
     if (!uuid.test(runId) || !uuid.test(leaseId) || !isRunDiagnosticCode(diagnosticCode)) throw new Error('Invalid lease');
+    const executionAudit=validateAgentExecutionAudit(executionAuditValue);
     return this.transaction(async connection => {
-      const [updated] = await connection.execute<ResultSetHeader>(`UPDATE agent_runs SET status='unknown',recovery_state='pending',replacement_run_id=NULL,lease_id=NULL,lease_until=NULL WHERE id=? AND lease_id=? AND status='running'`,[runId,leaseId]);
+      const [updated] = await connection.execute<ResultSetHeader>(`UPDATE agent_runs SET status='unknown',recovery_state='pending',replacement_run_id=NULL,execution_audit=COALESCE(?,execution_audit),lease_id=NULL,lease_until=NULL WHERE id=? AND lease_id=? AND status='running'`,[executionAudit?JSON.stringify(executionAudit):null,runId,leaseId]);
       if (!updated.affectedRows) return false;
       await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown',?)`,[runId,`diagnostic:${diagnosticCode}`]);
       return true;

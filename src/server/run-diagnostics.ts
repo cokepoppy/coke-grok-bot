@@ -1,3 +1,5 @@
+import type { AgentExecutionAudit } from './execution-audit.ts';
+
 const runDiagnosticCodes = [
   'executor_error',
   'desktop_connect_failed',
@@ -22,6 +24,7 @@ const runDiagnosticCodes = [
   'agent_response_invalid',
   'agent_result_unconfirmed',
   'agent_paused_for_control',
+  'computer_control_state_unknown',
   'agent_result_status_unconfirmed',
   'agent_result_message_missing',
   'execution_aborted',
@@ -34,7 +37,7 @@ export type RunDiagnosticCode = typeof runDiagnosticCodes[number];
 
 /** Stable, non-sensitive error categories for uncertain runs. Never stores provider messages or task text. */
 export class RunDiagnosticError extends Error {
-  constructor(readonly diagnosticCode: RunDiagnosticCode) {
+  constructor(readonly diagnosticCode: RunDiagnosticCode, readonly executionAudit?: AgentExecutionAudit | null) {
     super(diagnosticCode);
     this.name = 'RunDiagnosticError';
   }

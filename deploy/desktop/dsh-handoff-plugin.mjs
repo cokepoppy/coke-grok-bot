@@ -9,11 +9,12 @@ export function apply(ctx) {
   const address=bot=>`${nameAddress(bot)} [Bot ID ${bot.id}]`;
   ctx.tools.register({
     name:'bot_handoff',
-    description:`Send a private asynchronous task to another Bot owned by this same user. Available Bots include stable IDs; use targetBotId when selecting a Bot, especially when names overlap: ${bridge.bots.map(address).join(', ')}. The recipient works on its own Pi/DSH run queue and replies later.`,
-    parameters:{type:'object',properties:{targetBotId:{type:'string',pattern:uuid.source},targetBotName:{type:'string',minLength:1,maxLength:200},message:{type:'string',minLength:1,maxLength:4000}},required:['message'],additionalProperties:false},
+    description:`Send a private asynchronous task to another Bot owned by this same user. Pass fileIds from this task's attached-file list when the recipient needs those files; verified copies appear under the recipient's attachments/ folder. Available Bots include stable IDs; use targetBotId when selecting a Bot, especially when names overlap: ${bridge.bots.map(address).join(', ')}. The recipient works on its own Pi/DSH run queue and replies later.`,
+    parameters:{type:'object',properties:{targetBotId:{type:'string',pattern:uuid.source},targetBotName:{type:'string',minLength:1,maxLength:200},message:{type:'string',minLength:1,maxLength:4000},fileIds:{type:'array',items:{type:'string',pattern:uuid.source},maxItems:20}},required:['message'],additionalProperties:false},
     output:{schema:{type:'object',additionalProperties:true},render:(_args,value)=>[{type:'text',text:JSON.stringify(value)}]},
     async execute(args,exec){
       if(exec.signal?.aborted)throw exec.signal.reason||new Error('Task was stopped');
+      if(args.fileIds!==undefined&&(!Array.isArray(args.fileIds)||args.fileIds.length>20||args.fileIds.some(id=>typeof id!=='string'||!uuid.test(id))||new Set(args.fileIds).size!==args.fileIds.length))throw new Error('Bot handoff file list is invalid');
       const hasId=typeof args.targetBotId==='string'&&args.targetBotId.length>0;
       const hasName=typeof args.targetBotName==='string'&&args.targetBotName.trim().length>0;
       if(hasId===hasName||typeof args.message!=='string'||!args.message.trim()||args.message.length>4000)throw new Error('Bot handoff target or message is invalid');
@@ -28,7 +29,7 @@ export function apply(ctx) {
       if(!target)throw new Error('Bot handoff target or message is invalid');
       const response=await fetch(`${bridge.url}/bot-handoffs`,{
         method:'POST',headers:{authorization:`Bearer ${bridge.token}`,'content-type':'application/json'},
-        body:JSON.stringify({targetBotId:target.id,message:args.message}),signal:exec.signal,redirect:'error',
+        body:JSON.stringify({targetBotId:target.id,message:args.message,...(args.fileIds?.length?{fileIds:args.fileIds}:{})}),signal:exec.signal,redirect:'error',
       });
       const value=await response.json().catch(()=>null);
       if(!response.ok||response.status!==202||!value?.handoff?.targetRunId)throw new Error('Bot handoff could not be queued');

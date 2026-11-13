@@ -41,7 +41,7 @@ test('DeepSeek Harness preserves a confirmed failure and refuses uncertain outco
  });
  try{
   assert.deepEqual(await executor.execute(screen,run,new AbortController().signal,randomUUID()),{status:'failed',result:'The requested context was unavailable.'});
-  const uncertain=new DshExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>Response.json({status:'waiting',pausedForControl:true,message:'Paused'}));
+  const uncertain=new DshExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>Response.json({status:'waiting',pausedForControl:true,controlOwner:'user',message:'Paused'}));
   await assert.rejects(uncertain.execute(screen,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='agent_paused_for_control');
  }finally{gateway.close()}
 });

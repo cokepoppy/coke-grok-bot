@@ -19,7 +19,7 @@ const toolNames = new Set([
   'computer_browser', 'computer_desktop', 'computer_files', 'computer_terminal',
   'open_public_page', 'bot_memory', 'bot_handoff', 'bot_routines',
 ]);
-const computerBrowserActions = new Set(['inspect', 'navigate', 'click', 'fill', 'select', 'check', 'uncheck', 'press', 'open_artifact']);
+const computerBrowserActions = new Set(['inspect', 'navigate', 'click', 'fill', 'select', 'check', 'uncheck', 'press', 'open_artifact', 'upload_file']);
 const computerDesktopActions = new Set(['screenshot', 'click', 'type', 'press']);
 const computerFilesActions = new Set(['list', 'read']);
 const computerTerminalActions = new Set(['run']);

@@ -4,7 +4,7 @@ set -euo pipefail
 export DISPLAY="${DISPLAY:-:1}"
 resolution="${COKE_DESKTOP_RESOLUTION:-1440x900}"
 screen_slots="${COKE_DESKTOP_SCREEN_SLOTS:-8}"
-start_url="${COKE_DESKTOP_START_URL:-https://example.com}"
+start_url="${COKE_DESKTOP_START_URL:-about:blank}"
 chrome_bin="${COKE_DESKTOP_CHROME_BIN:-/usr/bin/chromium}"
 profile_dir="$HOME/.config/chromium"
 [[ "$resolution" =~ ^([0-9]{3,4})x([0-9]{3,4})$ ]] || { echo "COKE_DESKTOP_RESOLUTION must be WxH" >&2; exit 1; }

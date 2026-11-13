@@ -109,9 +109,13 @@ try {
   stage = 'start local browser fixture in isolated Pod';
   const pod = await kubectl(['-n', identity.namespace, 'get', 'pods', '-l', 'app=grok-desktop', '-o', 'jsonpath={.items[0].metadata.name}']);
   const fixturePath = `/tmp/grok-screen-fixture-${randomUUID()}.cjs`;
+  const artifactTaskId = randomUUID();
+  const uploadArtifactPath = `/workspace/tasks/${artifactTaskId}/artifacts/upload-check.txt`;
+  await kubectl(['-n', identity.namespace, 'exec', pod, '-c', 'agent', '--', 'node', '-e', `require('node:fs').mkdirSync(require('node:path').dirname(${JSON.stringify(uploadArtifactPath)}),{recursive:true});require('node:fs').writeFileSync(${JSON.stringify(uploadArtifactPath)},'GROK_UPLOAD_FILE_OK')`]);
   const fixtureHtml = `<!doctype html><title>SCREEN_LABEL</title><h1>SCREEN_LABEL</h1>
     <div id="screen-marker" style="position:fixed;right:20px;top:20px;width:180px;height:90px;background:SCREEN_COLOR;color:#fff;font:24px sans-serif">SCREEN_LABEL</div>
     <button onclick="document.getElementById('browser').textContent='BROWSER_CLICK_OK'">Mark complete</button><p id="browser">WAITING</p>
+    <label for="file-upload">Upload fixture file</label><input id="file-upload" aria-label="Upload fixture file" type="file"><p id="uploaded">WAITING</p><script>document.getElementById('file-upload').addEventListener('change',async event=>{const file=event.target.files[0];document.getElementById('uploaded').textContent=file.name+':'+await file.text()})</script>
     <form onsubmit="event.preventDefault();document.getElementById('computer').textContent='COMPUTER_INPUT_OK'"><input aria-label="Desktop input" oninput="document.getElementById('typed').textContent=this.value" style="position:fixed;left:120px;top:180px;width:360px;height:54px;background:rgb(255,230,20);font:24px sans-serif"><button type="submit" style="position:fixed;left:520px;top:180px;width:200px;height:54px;background:#155ab5;color:white">Submit</button></form>
     <p id="typed"></p>
     <p id="computer">WAITING</p><p id="shared"></p><script>const key='grok-shared',cookie='grok-shared=ok',had=localStorage.getItem(key)==='ok'&&document.cookie.split('; ').includes(cookie);if(localStorage.getItem(key)!=='ok')localStorage.setItem(key,'ok');if(!document.cookie.split('; ').includes(cookie))document.cookie=cookie+'; path=/';document.getElementById('shared').textContent=had?'SHARED_STATE_OK':'SHARED_STATE_INIT'</script>`;
@@ -174,6 +178,16 @@ try {
   await expectStatus(browserClick, 200, 'Browser User click');
   assert.ok((await inspect(screenA)).text.includes('BROWSER_CLICK_OK'));
 
+  stage = 'Browser User uploads an artifact through the webpage file input';
+  const upload = await worker('/v1/browser', screenA, { action: 'upload_file', taskId: artifactTaskId, path: 'artifacts/upload-check.txt', by: 'css', target: 'input[type="file"][aria-label="Upload fixture file"]' });
+  await expectStatus(upload, 200, stage);
+  let uploadState = await inspect(screenA);
+  for (let attempt = 0; attempt < 20 && !uploadState.text.includes('upload-check.txt:GROK_UPLOAD_FILE_OK'); attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    uploadState = await inspect(screenA);
+  }
+  assert.ok(uploadState.text.includes('upload-check.txt:GROK_UPLOAD_FILE_OK'), 'the real browser page should receive the isolated task file through input[type=file]');
+
   stage = 'capture two 1440x900 Bot screenshots';
   const images = await Promise.all([screenA, screenB].map(screenId => worker('/v1/screenshot', screenId)));
   assert.ok(images.every(response => response.status === 200 && response.headers.get('content-type') === 'image/png'));
@@ -211,7 +225,7 @@ try {
   assert.equal((await inspect(screenB)).title, 'BOT_B_SCREEN', 'Bot B should remain usable during Bot A takeover');
   assert.equal((await worker('/v1/control', screenA, { owner: 'agent' })).status, 200);
 
-  console.log('Worker K3D test passed: separate Bot screens, shared browser profile, browser click, Computer User input, screenshots, takeover, and cross-Bot isolation; no model calls.');
+  console.log('Worker K3D test passed: separate Bot screens, shared browser profile, browser click and artifact upload, Computer User input, screenshots, takeover, and cross-Bot isolation; no model calls.');
 } catch (error) {
   console.error(`Last test stage: ${stage}`);
   if (lastScreenState) console.error(`Last inspected screen: ${JSON.stringify({ ...lastScreenState, text: lastScreenState.text.slice(0, 600) })}`);

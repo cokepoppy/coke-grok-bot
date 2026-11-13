@@ -26,3 +26,12 @@ test('a message accepts at most 20 distinct valid file references', () => {
   assert.throws(() => WorkspaceFileStore.validateFileIds([ids[0], ids[0]]), /Invalid attachment list/);
   assert.throws(() => WorkspaceFileStore.validateFileIds(['../../secrets']), /Invalid attachment list/);
 });
+
+test('completed task artifact metadata preserves safe nested paths for explicit group handoff',()=>{
+  const runId=randomUUID(),sha256='a'.repeat(64),bytes=Buffer.from('<h1>BSE preview</h1>');
+  const files=WorkspaceFileStore.validateArtifacts([{name:'bse-demo/index.html',mimeType:'text/html',size:bytes.length,sha256,storageKey:`tasks/${runId}/artifacts/bse-demo/index.html`}],runId);
+  assert.deepEqual(files,[{name:'bse-demo/index.html',mimeType:'text/html',size:bytes.length,sha256,storageKey:`tasks/${runId}/artifacts/bse-demo/index.html`}]);
+  for(const name of ['../index.html','bse-demo/../index.html','bse-demo/.secret','/etc/passwd','bse-demo\\index.html']){
+    assert.throws(()=>WorkspaceFileStore.validateArtifacts([{name,mimeType:'text/html',size:bytes.length,sha256,storageKey:`tasks/${runId}/artifacts/${name}`}],runId),/Invalid result file/);
+  }
+});

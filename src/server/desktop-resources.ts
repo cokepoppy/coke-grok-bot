@@ -4,16 +4,24 @@ import type { Session } from './tenant-store.ts';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const desktopImageRef = /^coke-grok-desktop:(?:sha-[a-f0-9]{40}|candidate-[a-z0-9]+(?:-[a-z0-9]+)*)$/;
+export function isValidDesktopImageRef(value:unknown):value is string{return typeof value==='string'&&desktopImageRef.test(value)}
 export interface DesktopIdentity { namespace: string; ownerHash: string; workerToken: string; agentToken: string; controlToken: string; activeTabBridgeToken: string }
+export function normalizeDesktopSigningKey(value:Buffer|string):Buffer {
+  const text=typeof value==='string'?value:value.toString('utf8');
+  const isUtf8Text=typeof value==='string'||Buffer.from(text,'utf8').equals(value);
+  const normalized=isUtf8Text?Buffer.from(text.trim(),'utf8'):Buffer.from(value);
+  if(normalized.length<32)throw new Error('Invalid desktop identity');
+  return normalized;
+}
 export function desktopOwnerHash(session:Pick<Session,'tenantId'|'userId'>):string {
   if(!uuid.test(session.tenantId)||!uuid.test(session.userId))throw new Error('Invalid desktop identity');
   return createHash('sha256').update(`${session.tenantId.toLowerCase()}:${session.userId.toLowerCase()}`).digest('hex').slice(0,32);
 }
 export function desktopIdentity(session: Pick<Session,'tenantId'|'userId'>, signingKey: Buffer): DesktopIdentity {
-  if (signingKey.length < 32) throw new Error('Invalid desktop identity');
+  const normalizedSigningKey=normalizeDesktopSigningKey(signingKey);
   const subject = `${session.tenantId.toLowerCase()}:${session.userId.toLowerCase()}`;
   const ownerHash = desktopOwnerHash(session);
-  const token = (role: string) => createHmac('sha256',signingKey).update(`coke-grok-desktop:${role}:${subject}`).digest('base64url');
+  const token = (role: string) => createHmac('sha256',normalizedSigningKey).update(`coke-grok-desktop:${role}:${subject}`).digest('base64url');
   return { namespace:`grok-user-${ownerHash}`, ownerHash, workerToken:token('worker'), agentToken:token('agent'), controlToken:token('control'), activeTabBridgeToken:token('active-tab-bridge') };
 }
 
@@ -21,7 +29,7 @@ export function desktopIdentity(session: Pick<Session,'tenantId'|'userId'>, sign
 export type DesktopProxyOptions={desktopProxyServer?:string;desktopProxyHostIp?:string};
 export function desktopResources(identity: DesktopIdentity, options: { image: string; controlNamespace: string; gatewayCA: string; guarded?:boolean }&DesktopProxyOptions): Record<string, unknown>[] {
   if (!/^grok-user-[a-f0-9]{32}$/.test(identity.namespace) || !/^[a-f0-9]{32}$/.test(identity.ownerHash) || identity.namespace !== `grok-user-${identity.ownerHash}` || !/^[A-Za-z0-9_-]{43}$/.test(identity.workerToken) || !/^[A-Za-z0-9_-]{43}$/.test(identity.agentToken) || !/^[A-Za-z0-9_-]{43}$/.test(identity.controlToken) || !/^[A-Za-z0-9_-]{43}$/.test(identity.activeTabBridgeToken) || new Set([identity.workerToken,identity.agentToken,identity.controlToken,identity.activeTabBridgeToken]).size!==4) throw new Error('Invalid desktop identity');
-  if (!desktopImageRef.test(options.image) || !/^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/.test(options.controlNamespace) || !options.gatewayCA.includes('BEGIN CERTIFICATE') || options.gatewayCA.length > 16384) throw new Error('Invalid desktop configuration');
+  if (!isValidDesktopImageRef(options.image) || !/^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/.test(options.controlNamespace) || !options.gatewayCA.includes('BEGIN CERTIFICATE') || options.gatewayCA.length > 16384) throw new Error('Invalid desktop configuration');
   const proxyServer=options.desktopProxyServer?.trim(),proxyHostIp=options.desktopProxyHostIp?.trim(),proxyConfigured=options.desktopProxyServer!==undefined||options.desktopProxyHostIp!==undefined;
   if(proxyConfigured&&(proxyServer!=='http://host.docker.internal:17891'||proxyHostIp!=='192.168.65.254'||isIP(proxyHostIp||'')!==4))throw new Error('Invalid desktop proxy configuration');
   const ns = identity.namespace, labels = { 'app.kubernetes.io/managed-by':'coke-grok-bot', 'coke-grok-bot.io/owner-hash':identity.ownerHash };
@@ -33,6 +41,7 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
     { apiVersion:'v1',kind:'PersistentVolumeClaim',metadata:meta('workspace'),spec:{accessModes:['ReadWriteOnce'],resources:{requests:{storage:'10Gi'}}} },
     { apiVersion:'v1',kind:'Secret',metadata:meta('desktop-runtime'),type:'Opaque',stringData:{worker:identity.workerToken,agent:identity.agentToken,control:identity.controlToken,activeTabBridge:identity.activeTabBridgeToken,activeTabBridgeConfig:`self.COKE_GROK_ACTIVE_TAB_BRIDGE_TOKEN=${JSON.stringify(identity.activeTabBridgeToken)};`} },
     { apiVersion:'v1',kind:'ConfigMap',metadata:meta('model-ca'),data:{'ca.pem':options.gatewayCA} },
+    { apiVersion:'v1',kind:'ConfigMap',metadata:meta('desktop-image-pin'),immutable:true,data:{desktopImage:options.image,agentImage:options.image} },
     { apiVersion:'networking.k8s.io/v1',kind:'NetworkPolicy',metadata:meta('desktop-isolation'),spec:{
       podSelector:{matchLabels:{app:'grok-desktop'}},policyTypes:['Ingress','Egress'],
       ingress:[{from:[{namespaceSelector:{matchLabels:{'kubernetes.io/metadata.name':options.controlNamespace}}}],ports:[{protocol:'TCP',port:6080},{protocol:'TCP',port:8082},{protocol:'TCP',port:8083}]}],
@@ -69,10 +78,11 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
 /** Separate computer and Agent Pods with independently pinned runtime images. */
 export function splitDesktopResources(identity:DesktopIdentity,options:{image:string;agentImage?:string;controlNamespace:string;gatewayCA:string}&DesktopProxyOptions):Record<string,unknown>[] {
   const agentImage=options.agentImage ?? options.image;
-  if(!desktopImageRef.test(agentImage))throw new Error('Invalid desktop configuration');
+  if(!isValidDesktopImageRef(agentImage))throw new Error('Invalid desktop configuration');
   const resources=structuredClone(desktopResources(identity,{...options,image:options.image,guarded:true}));
   const ns=identity.namespace;
   const find=(kind:string,name:string)=>{const resource=resources.find(item=>item.kind===kind&&(item.metadata as {name?:string})?.name===name);if(!resource)throw new Error('Missing desktop resource');return resource as any};
+  find('ConfigMap','desktop-image-pin').data.agentImage=agentImage;
   const desktop=find('Deployment','desktop'),pod=desktop.spec.template.spec;
   const [desktopContainer,agentContainer]=pod.containers;
   agentContainer.image=agentImage;

@@ -4,6 +4,7 @@ import { browserActionRequiresApproval, isAuthenticationChallenge, isCredentialE
 
 test('authentication surfaces and credential entry require a human handoff without a site allowlist', () => {
   assert.equal(isAuthenticationChallenge({ url: 'https://accounts.google.com/v3/signin/', controls: [] }), true);
+  assert.equal(isAuthenticationChallenge({ url: 'https://accounts.google.com/', title: 'Choose an account', text: 'Use another account', controls: [] }), true, 'identity-provider account pickers hand off before any account interaction');
   assert.equal(isAuthenticationChallenge({ url: 'https://login.example.org/', controls: [] }), true);
   assert.equal(isAuthenticationChallenge({ url: 'https://portal.example.org/session', title: 'Verify your identity', text: 'Enter your code', controls: [{ type: 'email', label: 'Email address' }] }), true);
   assert.equal(isAuthenticationChallenge({ url: 'https://portal.example.org/', humanChallenge: true }), true);

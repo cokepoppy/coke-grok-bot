@@ -11,6 +11,14 @@ export interface WorkspaceFileTransportApi {
   removeUpload(owner: RunOwner, id: string, extension: string, signal: AbortSignal): Promise<void>;
 }
 
+function validWorkspaceFileKey(value:string):boolean {
+  if(/^shared\/uploads\/[a-f0-9-]{36}(?:\.[a-z0-9]{1,12})?$/i.test(value))return true;
+  const parts=value.split('/');
+  return parts.length>=4&&parts[0]==='tasks'&&/^[a-f0-9-]{36}$/i.test(parts[1])&&parts[2]==='artifacts'
+    &&parts.slice(3).every(part=>part.length>0&&part.length<=180&&part!=='.'&&part!=='..'&&!part.startsWith('.')&&!part.includes('\\')&&!/[\u0000-\u001f\u007f]/.test(part))
+    &&Buffer.byteLength(parts.slice(3).join('/'),'utf8')<=255;
+}
+
 export class WorkspaceFileTransportError extends Error {
   constructor(readonly diagnosticCode: string) {
     super('Workspace file transport failed');
@@ -72,7 +80,7 @@ export class WorkspaceFileTransport implements WorkspaceFileTransportApi {
 
   async download(owner: RunOwner, storageKey: string, signal: AbortSignal): Promise<WorkspaceDownload> {
     const { endpoint, token } = await this.connection(owner, signal);
-    if (!/^(?:shared\/uploads\/[a-f0-9-]{36}(?:\.[a-z0-9]{1,12})?|tasks\/[a-f0-9-]{36}\/artifacts\/[^/]{1,180})$/i.test(storageKey) || storageKey.includes('..') || storageKey.includes('\\')) throw new Error('Invalid workspace file');
+    if (!validWorkspaceFileKey(storageKey)) throw new Error('Invalid workspace file');
     const target = new URL('/v1/workspace/file', endpoint); target.searchParams.set('key', storageKey);
     return new Promise<WorkspaceDownload>((resolve, reject) => {
       const upstream = this.request(target, { method: 'GET', headers: { authorization: `Bearer ${token}` }, signal, timeout: 5 * 60_000 }, response => {

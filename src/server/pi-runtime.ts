@@ -49,6 +49,10 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  const handoffs=new BotHandoffStore(pool);await handoffs.migrate();
  const files=new WorkspaceFileStore(pool),workspaceFiles=new WorkspaceFileTransport(provisioner);
  const approvals=new ApprovalStore(pool);await approvals.migrate();
+ // Pending cards belong to the former per-action approval flow. Retire them
+ // before serving the task-authorized computer policy so old clients cannot
+ // keep prompting or execute an action after this policy rollout.
+ await approvals.expirePending();
  await approvals.purgeExpiredScreenshots();
  const bridge=new ComputerBridge(runs,approvals,scope=>{
   const identity=desktopIdentity(scope.owner,signingKey);

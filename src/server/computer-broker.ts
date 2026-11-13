@@ -8,7 +8,7 @@ export interface GuardedComputerWorker {
  snapshot(signal:AbortSignal):Promise<ComputerState>;
  snapshotWithImage?(signal:AbortSignal):Promise<{state:ComputerState;image:Buffer}>;
  navigationState?(signal:AbortSignal):Promise<ComputerNavigationState>;
- navigateIfUnchanged?(input:unknown,expected:ComputerNavigationState,signal:AbortSignal):Promise<unknown>;
+ navigateIfUnchanged?(input:unknown,expected:ComputerNavigationState,signal:AbortSignal,workflowPolicy?:'browser-task'|'gmail-read-draft'):Promise<unknown>;
  performIfUnchanged(input:unknown,expected:ComputerState,signal:AbortSignal,workflowPolicy?:'browser-task'|'gmail-read-draft'):Promise<unknown>;
 }
 /**
@@ -24,7 +24,7 @@ export class ComputerBroker {
   const state=captured?.state ?? await this.worker.snapshot(signal);if(state.owner!=='agent')throw new Error('User controls the computer');
   const action=canonicalComputerAction(input,state);
   const approval=await this.approvals.propose(runId,leaseId,action,300,captured?.image);
-  if(!approval)throw new Error('Run lease is unavailable');
+  if(!approval)throw new Error('Per-action approvals are disabled');
   return approval;
  }
  async execute(runId:string,leaseId:string,approvalId:string,input:unknown,signal:AbortSignal):Promise<unknown>{

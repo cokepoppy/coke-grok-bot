@@ -12,6 +12,7 @@ import { ActiveTabResolutionError, BotScreenCapacityError, BotScreenPages } from
 import { createDesktopScreenLayout, parseDesktopScreenSlots } from './desktop-screen-layout.mjs';
 import { captureOwnedDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from './desktop-input.mjs';
 import { ensureSharedComputerRoots } from './shared-computer-root.mjs';
+import { appendControlOwnerEvent, computerScreenKey } from './control-owner-audit.mjs';
 import { createGuardedComputer } from '/opt/coke-grok/guarded-computer.mjs';
 import { browserActionRequiresApproval, isAuthenticationChallenge, isCredentialEntry } from './browser-task-policy.mjs';
 
@@ -255,10 +256,18 @@ async function screenOwner(screenId) {
 async function setScreenOwner(screenId, value) {
   if (!['agent','user'].includes(value)) throw new Error('Invalid control owner');
   const root = await ensureSharedComputerRoots(workspace);
+  const previousOwner = await screenOwner(screenId);
   const file = path.join(root, `${screenId}.json`), temporary = `${file}.${crypto.randomUUID()}.tmp`;
   await fs.writeFile(temporary, JSON.stringify({ screenId, owner: value }), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
   await fs.rename(temporary, file);
   screenOwners.set(screenId, value);
+  if (previousOwner !== value) {
+    try {
+      await appendControlOwnerEvent(root, { screenId, fromOwner: previousOwner, toOwner: value, source: value === 'user' ? 'take-control' : 'return-to-bot' });
+    } catch {
+      process.stderr.write(`${JSON.stringify({ event: 'coke_grok_computer_control_audit_write_failed', at: new Date().toISOString(), screenKey: computerScreenKey(screenId), fromOwner: previousOwner, toOwner: value, source: value === 'user' ? 'take-control' : 'return-to-bot' })}\n`);
+    }
+  }
 }
 
 function screenIdFromRequest(req) {
@@ -273,7 +282,7 @@ async function screenshot(screenId) {
   return desktopActionGate(async () => captureOwnedDesktopScreen(exec, browserPage, bounds, await screenOwner(screenId)));
 }
 
-const artifactTaskId = /^[a-f0-9-]{36}$/i;
+const taskIdPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const maxArtifactBytes = 25 * 1024 * 1024;
 const maxArtifactCount = 100;
 const artifactTypes = new Map(Object.entries({
@@ -286,7 +295,7 @@ const artifactTypes = new Map(Object.entries({
 const previewTypes = new Set(['text/html', 'text/css', 'text/javascript', 'application/json', 'text/markdown', 'text/plain', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf']);
 
 async function artifactRoot(taskId) {
-  if (!artifactTaskId.test(taskId)) throw new Error('invalid task id');
+  if (!taskIdPattern.test(taskId)) throw new Error('invalid task id');
   const workspaceRoot = await fs.realpath(workspace);
   const taskRoot = path.join(workspaceRoot, 'tasks');
   const base = await fs.realpath(taskRoot);
@@ -430,10 +439,8 @@ function browserTaskPolicyError(code) {
   return error;
 }
 
-async function assertBrowserTaskAction(browserPage, input, action, locator) {
-  if (!input.workflowPolicy) return;
-  if (input.workflowPolicy !== 'browser-task') throw new Error('Unsupported browser task policy');
-  const pageState = await browserPage.evaluate(() => {
+async function browserSecurityState(browserPage) {
+  return browserPage.evaluate(() => {
     const visible = element => {
       const style = getComputedStyle(element), rect = element.getBoundingClientRect();
       return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
@@ -454,6 +461,12 @@ async function assertBrowserTaskAction(browserPage, input, action, locator) {
     });
     return { title: document.title.slice(0, 200), text: (document.body?.innerText || '').slice(0, 1200), controls, humanChallenge };
   });
+}
+
+async function assertBrowserTaskAction(browserPage, input, action, locator) {
+  if (!input.workflowPolicy) return;
+  if (input.workflowPolicy !== 'browser-task') throw new Error('Unsupported browser task policy');
+  const pageState = await browserSecurityState(browserPage);
   if (isAuthenticationChallenge({ url: browserPage.url(), ...pageState })) throw browserTaskPolicyError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
   const control = await locator.evaluate(element => {
     const labels = Array.from(element.labels || []).map(label => label.innerText).filter(Boolean);
@@ -483,6 +496,10 @@ async function agentBrowserAction(input, screenId) {
     // the explicit 30s navigation timeout without latching the renderer as
     // unresponsive after the probe's 3s deadline.
     await browserPage.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    if (input.workflowPolicy === 'browser-task') {
+      const pageState = await browserSecurityState(browserPage);
+      if (isAuthenticationChallenge({ url: browserPage.url(), ...pageState })) throw browserTaskPolicyError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
+    }
     await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => undefined));
     return { ready: true, action, url: safePageUrl(browserPage.url()), title: await rendererHealth.run(() => browserPage.title()) };
   }
@@ -527,11 +544,34 @@ async function agentBrowserAction(input, screenId) {
 
     if (action === 'open_artifact') {
       const taskId = String(input.taskId || '');
-      if (!/^[a-f0-9-]{36}$/i.test(taskId)) throw new Error('Task id is invalid');
-      const resolved = await resolveArtifact(taskId, String(input.path || ''));
+      if (!taskIdPattern.test(taskId)) throw new Error('Task id is invalid');
+      const artifactTaskId = input.artifactTaskId === undefined ? taskId : String(input.artifactTaskId);
+      if (!taskIdPattern.test(artifactTaskId)) throw new Error('Artifact task id is invalid');
+      const artifactPath = String(input.path || '');
+      if (artifactTaskId !== taskId && !/^(artifacts|attachments)\//.test(artifactPath)) throw new Error('Cross-task previews are limited to artifacts and attachments');
+      if (artifactTaskId !== taskId && artifactPath.split('/').some(part => part.startsWith('.'))) throw new Error('Hidden task files are not available for cross-task preview');
+      const resolved = await resolveArtifact(artifactTaskId, artifactPath);
       if (!resolved.mediaType.startsWith('text/html')) throw new Error('Only HTML task files can open in the cloud browser');
       if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
       await browserPage.goto(pathToFileURL(resolved.real).href, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+    } else if (action === 'upload_file') {
+      const taskId = String(input.taskId || '');
+      if (!taskIdPattern.test(taskId)) throw new Error('Task id is invalid');
+      const artifactTaskId = input.artifactTaskId === undefined ? taskId : String(input.artifactTaskId);
+      if (!taskIdPattern.test(artifactTaskId)) throw new Error('Artifact task id is invalid');
+      const artifactPath = String(input.path || '');
+      if (!/^(artifacts|attachments)\//.test(artifactPath) || artifactPath.split('/').some(part => !part || part.startsWith('.'))) throw new Error('Uploads are limited to visible task artifacts and attachments');
+      if (artifactTaskId !== taskId && !/^(artifacts|attachments)\//.test(artifactPath)) throw new Error('Cross-task uploads are limited to artifacts and attachments');
+      const resolved = await resolveArtifact(artifactTaskId, artifactPath);
+      if (input.by !== 'css' && input.by !== 'label') throw new Error('Upload requires a CSS or label locator');
+      const locator = browserLocator(browserPage, input);
+      const count = await locator.count();
+      if (count !== 1) throw new Error(`Browser upload target matched ${count} controls; inspect the page and choose one file input`);
+      const fileInput = await locator.evaluate(element => ({ tag: element.tagName.toLowerCase(), type: element.getAttribute('type') || '' }));
+      if (fileInput.tag !== 'input' || fileInput.type.toLowerCase() !== 'file') throw new Error('Browser upload target must be an input[type="file"] control');
+      if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
+      await assertBrowserTaskAction(browserPage, input, action, locator);
+      await locator.setInputFiles(resolved.real, { timeout: 10_000 });
     } else if (['click', 'fill', 'select', 'check', 'uncheck', 'press'].includes(action)) {
       const locator = browserLocator(browserPage, input);
       const count = await locator.count();
@@ -573,7 +613,7 @@ function guardedComputerFor(screenId) {
     perform: async input => {
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid guarded action');
       const { kind, taskId, ...parameters } = input;
-      if (kind === 'browser' && /^[a-f0-9-]{36}$/i.test(String(taskId || '')) && ['navigate','open_artifact','click','fill','select','check','uncheck','press'].includes(parameters.action)) return agentBrowserAction({ ...parameters, taskId }, screenId);
+      if (kind === 'browser' && /^[a-f0-9-]{36}$/i.test(String(taskId || '')) && ['navigate','open_artifact','upload_file','click','fill','select','check','uncheck','press'].includes(parameters.action)) return agentBrowserAction({ ...parameters, taskId }, screenId);
       if (kind === 'desktop' && ['click','type','press'].includes(parameters.action)) return command({ ...parameters, actor:'agent' }, screenId);
       throw new Error('Unsupported guarded action');
     },

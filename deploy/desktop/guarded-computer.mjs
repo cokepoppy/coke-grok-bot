@@ -87,7 +87,8 @@ export function createGuardedComputer({readOwner,readPageUrl,readScreenshot,perf
       if(!expected||typeof expected!=='object'||expected.owner!=='agent'||typeof expected.url!=='string'||!/^[a-f0-9]{64}$/.test(expected.screenshotSha256||'')||!/^[a-f0-9]{64}$/.test(expected.guardFingerprint||''))throw new Error('Invalid expected computer state');
       const current=await capture();
       const approvedNavigation=input?.kind==='browser'&&input.action==='navigate';
-      if(current.owner!=='agent'||current.url!==expected.url||(!approvedNavigation&&current.guardFingerprint!==expected.guardFingerprint))throw new Error('Computer state or ownership changed');
+      const browserTaskPageAction=input?.kind==='browser'&&input.workflowPolicy==='browser-task'&&['click','fill','select','check','uncheck','press','upload_file'].includes(input.action);
+      if(current.owner!=='agent'||current.url!==expected.url||(!approvedNavigation&&!browserTaskPageAction&&current.guardFingerprint!==expected.guardFingerprint))throw new Error('Computer state or ownership changed');
       return perform(input);
     }),
   };

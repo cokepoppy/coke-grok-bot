@@ -6,20 +6,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { runCloudKernel } from '../deploy/desktop/cloud-kernel-adapter.mjs';
 
-test('Pi exposes a shared computer terminal only through exact owner approval, not the built-in Bash tool', async () => {
+test('Pi runs task-scoped terminal commands without per-command approvals or built-in Bash', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'grok-pi-tools-'));
   const cwd = path.join(workspace, 'tasks', 'shell-policy');
   await mkdir(cwd, { recursive: true });
   let options;
   const oldFetch = globalThis.fetch;
-  const approvalId = randomUUID(), requests = [];
+  const requests = [];
   globalThis.fetch = async (url, init = {}) => {
     const pathname = new URL(String(url)).pathname;
     requests.push({ pathname, method: init.method || 'GET', body: init.body ? JSON.parse(init.body) : undefined });
     if (pathname.endsWith('/computer/control')) return Response.json({ owner: 'agent' });
-    if (pathname.endsWith('/computer/actions')) return Response.json({ id: approvalId });
-    if (pathname.endsWith(`/computer/actions/${approvalId}`)) return Response.json({ status: 'approved' });
-    if (pathname.endsWith(`/computer/actions/${approvalId}/execute`)) return Response.json({ approved: true });
     throw new Error('Unexpected computer gateway request');
   };
   const sdk = {
@@ -56,26 +53,24 @@ test('Pi exposes a shared computer terminal only through exact owner approval, n
     assert.ok(options.tools.includes('computer_terminal'));
     assert.equal(options.tools.includes('bash'), false);
     const terminal = options.customTools.find(tool => tool.name === 'computer_terminal');
-    const command = `printf PI_TERMINAL_OK > pi-${approvalId}.txt`;
+    const commandMarker = randomUUID();
+    const command = `printf PI_TERMINAL_OK > pi-${commandMarker}.txt`;
     const result = await terminal.execute('run', { command, directory: 'shared' }, new AbortController().signal);
     assert.match(result.content[0].text, /"exitCode":0/);
-    assert.equal(await readFile(path.join(workspace, 'shared', `pi-${approvalId}.txt`), 'utf8'), 'PI_TERMINAL_OK');
-    assert.deepEqual(requests.find(request => request.pathname.endsWith('/computer/actions'))?.body, { action: { kind: 'terminal', action: 'run', command, directory: 'shared' } });
-    assert.equal(requests.filter(request => request.pathname.endsWith(`/computer/actions/${approvalId}/execute`)).length, 1);
+    assert.equal(await readFile(path.join(workspace, 'shared', `pi-${commandMarker}.txt`), 'utf8'), 'PI_TERMINAL_OK');
+    assert.deepEqual(requests.map(request => request.pathname), ['/v1/computer/control']);
   } finally {
     globalThis.fetch = oldFetch;
     await rm(workspace, { recursive: true, force: true });
   }
 });
 
-test('Pi reports only the allowlisted computer diagnostic after an approved action is rejected',async()=>{
+test('Pi fails closed instead of polling a legacy computer approval id',async()=>{
  const workspace=await mkdtemp(path.join(os.tmpdir(),'grok-pi-computer-diagnostic-')),cwd=path.join(workspace,'tasks','diagnostic');await mkdir(cwd,{recursive:true});
- const oldFetch=globalThis.fetch,approvalId=randomUUID(),token='x'.repeat(43);let options;
+ const oldFetch=globalThis.fetch,approvalId=randomUUID(),token='x'.repeat(43),requests=[];let options;
  globalThis.fetch=async(url,init={})=>{
-  const pathname=new URL(String(url)).pathname;
+  const pathname=new URL(String(url)).pathname;requests.push({pathname,method:init.method||'GET'});
   if(pathname==='/v1/computer/actions'&&init.method==='POST')return Response.json({id:approvalId},{status:201});
-  if(pathname===`/v1/computer/actions/${approvalId}`)return Response.json({status:'approved'});
-  if(pathname===`/v1/computer/actions/${approvalId}/execute`&&init.method==='POST')return Response.json({error:'computer_request_failed',diagnostic:{code:'COMPUTER_WORKER_HTTP_ERROR',status:503},message:'credential-do-not-forward'},{status:409});
   throw new Error('Unexpected mediated computer request');
  };
  const sdk={
@@ -86,7 +81,8 @@ test('Pi reports only the allowlisted computer diagnostic after an approved acti
  try{
   await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:token},prompt:'Check the browser tool.',signal:new AbortController().signal},{piSdk:sdk});
   const browser=options.customTools.find(tool=>tool.name==='computer_browser');assert.ok(browser);
-  await assert.rejects(()=>browser.execute('call',{action:'navigate',url:'https://example.com/'},new AbortController().signal),error=>error instanceof Error&&error.message==='Computer action failed: COMPUTER_WORKER_HTTP_ERROR (worker HTTP 503)');
+  await assert.rejects(()=>browser.execute('call',{action:'navigate',url:'https://example.com/'},new AbortController().signal),/approval prompts are disabled and no action was performed/);
+  assert.deepEqual(requests,[{pathname:'/v1/computer/actions',method:'POST'}],'a legacy id must never be polled or executed');
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });
 
@@ -111,19 +107,17 @@ test('Pi redirects a desktop attempt to open a requested website to Browser User
   assert.equal(requests.filter(request=>request.pathname==='/v1/computer/actions').length,1);
   assert.equal(requests.length,2,'no approval status poll or execute call follows the navigation directive');
   assert.match(desktop.promptGuidelines.join(' '),/Natural-language requests to search or read email.*count as browser tasks/i);
-  assert.match(desktop.promptGuidelines.join(' '),/never use desktop coordinates for webpage controls during a browser task/i);
+  assert.match(desktop.promptGuidelines.join(' '),/never use desktop coordinates for webpage controls/i);
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });
 
-test('Pi does not create another browser or desktop approval after the owner denies it',async()=>{
+test('Pi does not poll or execute legacy approval ids for browser or desktop actions',async()=>{
  const workspace=await mkdtemp(path.join(os.tmpdir(),'grok-pi-denied-computer-action-')),cwd=path.join(workspace,'tasks','denied');await mkdir(cwd,{recursive:true});
  const oldFetch=globalThis.fetch,approvalIds=[],token='x'.repeat(43);let options;
  globalThis.fetch=async(url,init={})=>{
   const pathname=new URL(String(url)).pathname,method=init.method||'GET';
   if(pathname.endsWith('/computer/control'))return Response.json({owner:'agent'});
   if(pathname.endsWith('/computer/actions')&&method==='POST'){const id=randomUUID();approvalIds.push(id);return Response.json({id},{status:201})}
-  const denied=pathname.match(/\/computer\/actions\/([0-9a-f-]+)$/i);
-  if(denied&&approvalIds.includes(denied[1])&&method==='GET')return Response.json({status:'denied'});
   throw new Error(`Unexpected computer gateway request: ${method} ${pathname}`);
  };
  const sdk={
@@ -134,14 +128,10 @@ test('Pi does not create another browser or desktop approval after the owner den
  try{
   await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:token},prompt:'Use the requested browser site.',signal:new AbortController().signal},{piSdk:sdk});
   const browser=options.customTools.find(tool=>tool.name==='computer_browser'),desktop=options.customTools.find(tool=>tool.name==='computer_desktop');assert.ok(browser);assert.ok(desktop);
-  await assert.rejects(()=>browser.execute('browser-navigate',{action:'navigate',url:'https://www.google.com/'},new AbortController().signal),/Computer action was not approved/);
+  await assert.rejects(()=>browser.execute('browser-navigate',{action:'navigate',url:'https://www.google.com/'},new AbortController().signal),/approval prompts are disabled and no action was performed/);
   assert.equal(approvalIds.length,1);
-  await assert.rejects(()=>browser.execute('browser-retry',{action:'navigate',url:'https://www.google.com/'},new AbortController().signal),/owner denied a computer action; wait for a new user message/);
-  assert.equal(approvalIds.length,1,'Pi must not create another browser approval after owner denial');
-  await assert.rejects(()=>desktop.execute('desktop-click',{action:'click',x:10,y:10},new AbortController().signal),/Computer action was not approved/);
-  assert.equal(approvalIds.length,2);
-  await assert.rejects(()=>desktop.execute('desktop-retry',{action:'click',x:10,y:10},new AbortController().signal),/owner denied a computer action; wait for a new user message/);
-  assert.equal(approvalIds.length,2,'Pi must not create another desktop approval after owner denial');
+  await assert.rejects(()=>desktop.execute('desktop-click',{action:'click',x:10,y:10},new AbortController().signal),/approval prompts are disabled and no action was performed/);
+  assert.equal(approvalIds.length,2,'each direct tool call fails fast and neither action is polled or executed');
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });
 

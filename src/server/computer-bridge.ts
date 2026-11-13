@@ -1,10 +1,10 @@
 import type { ApprovalStore } from './approval-store.ts';
-import { ComputerBroker,type ComputerState,type GuardedComputerWorker } from './computer-broker.ts';
+import type { ComputerState,GuardedComputerWorker } from './computer-broker.ts';
 import { canonicalComputerAction } from './computer-action.ts';
 import type { RunOwner,RunStore } from './run-store.ts';
 import { SafeDiagnosticError } from './safe-diagnostics.ts';
 
-export interface RunScope {owner:RunOwner;runId:string;leaseId:string;botId:string;requestedNavigationOrigins?:readonly string[];signInHandoff?:boolean;gmailReadDraftWorkflow?:boolean;browserTask?:boolean}
+export interface RunScope {owner:RunOwner;runId:string;leaseId:string;botId:string;requestedNavigationOrigins?:readonly string[];signInHandoff?:boolean;continuedSignInHandoff?:boolean;gmailReadDraftWorkflow?:boolean;browserTask?:boolean}
 export interface ComputerReadWorker extends GuardedComputerWorker { control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>; inspect(signal:AbortSignal):Promise<unknown>; screenshot(signal:AbortSignal):Promise<Buffer> }
 function isDesktopBrowserNavigationAttempt(action:{kind?:unknown;action?:unknown;arguments?:Record<string,unknown>}):boolean{
  if(action.kind!=='desktop')return false;
@@ -22,8 +22,8 @@ function isDesktopBrowserNavigationAttempt(action:{kind?:unknown;action?:unknown
  }
  return false;
 }
-function isDesktopBrowserPageInteraction(scope:RunScope,action:{kind?:unknown;action?:unknown},state:ComputerState):boolean{
- if(scope.browserTask!==true||action.kind!=='desktop'||!['click','type','press'].includes(String(action.action)))return false;
+function isDesktopBrowserPageInteraction(action:{kind?:unknown;action?:unknown},state:ComputerState):boolean{
+ if(action.kind!=='desktop'||!['click','type','press'].includes(String(action.action)))return false;
  try{
   const url=new URL(state.url);
   return url.protocol==='http:'||url.protocol==='https:';
@@ -31,7 +31,7 @@ function isDesktopBrowserPageInteraction(scope:RunScope,action:{kind?:unknown;ac
 }
 /** Only the authenticated, live run capability may call these methods. */
 export class ComputerBridge {
- constructor(private readonly runs:Pick<RunStore,'hasLiveLease'|'markComputerUsed'>,private readonly approvals:Pick<ApprovalStore,'propose'|'consume'|'status'>,private readonly worker:(scope:RunScope)=>ComputerReadWorker){}
+ constructor(private readonly runs:Pick<RunStore,'hasLiveLease'|'markComputerUsed'>,private readonly approvals:Pick<ApprovalStore,'status'>,private readonly worker:(scope:RunScope)=>ComputerReadWorker){}
  private async authorize(scope:RunScope,signal:AbortSignal):Promise<ComputerReadWorker>{
   if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
   let live:boolean;try{live=await this.runs.hasLiveLease(scope.owner,scope.runId,scope.leaseId,scope.botId)}catch{throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_CHECK_FAILED')}
@@ -44,6 +44,11 @@ export class ComputerBridge {
  async screenshot(scope:RunScope,signal:AbortSignal):Promise<Buffer>{const image=await (await this.authorize(scope,signal)).screenshot(signal);await this.markUsed(scope);return image}
  async propose(scope:RunScope,input:unknown,signal:AbortSignal):Promise<{id:string}|{status:'completed';result:unknown}>{
   const worker=await this.authorize(scope,signal);
+  // Computer tools are present in the runtime, but a browser capability is
+  // granted only for a task that the signed-in owner explicitly requested as
+  // browser work. The run lease alone must not turn an unrelated chat into a
+  // blanket browsing grant.
+  if(input&&typeof input==='object'&&!Array.isArray(input)&&(input as {kind?:unknown}).kind==='browser'&&scope.browserTask!==true)throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN');
   if(worker.navigationState&&worker.navigateIfUnchanged&&input&&typeof input==='object'&&!Array.isArray(input)){
    const candidate=input as Record<string,unknown>;
    if(candidate.kind==='browser'&&candidate.action==='navigate'&&typeof candidate.url==='string'){
@@ -66,7 +71,7 @@ export class ComputerBridge {
       if(disallowedDuringSignInHandoff(scope,action))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
       if(action.kind==='browser'&&action.action==='navigate'){
        if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
-       try{const result=await worker.navigateIfUnchanged(input,navigationState,signal);await this.markUsed(scope);return {status:'completed',result}}
+       try{const result=await worker.navigateIfUnchanged(input,navigationState,signal,'browser-task');await this.markUsed(scope);return {status:'completed',result}}
        catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
       }
      }
@@ -82,7 +87,7 @@ export class ComputerBridge {
   let action:string;try{action=canonicalComputerAction(input,state)}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
   const canonical=JSON.parse(action) as {kind?:unknown;action?:unknown;arguments?:Record<string,unknown>};
   if(disallowedDuringSignInHandoff(scope,canonical))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
-  if(isDesktopBrowserNavigationAttempt(canonical)||isDesktopBrowserPageInteraction(scope,canonical,state))throw new SafeDiagnosticError('COMPUTER_NAVIGATION_USE_BROWSER');
+  if(isDesktopBrowserNavigationAttempt(canonical)||isDesktopBrowserPageInteraction(canonical,state))throw new SafeDiagnosticError('COMPUTER_NAVIGATION_USE_BROWSER');
   if(canonical.kind==='browser'&&canonical.action==='navigate'&&typeof canonical.arguments?.url==='string'){
    if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
    try{
@@ -91,10 +96,10 @@ export class ComputerBridge {
     return {status:'completed',result};
    }catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
   }
-  // The user-requested Browser User scope is run-bound and site-generic. The
-  // Worker hands authentication to the owner; page controls are not individually
-  // approved or allowlisted for this explicit task scope.
-  if(scope.browserTask===true&&canonical.kind==='browser'&&['click','fill','press','select','check','uncheck'].includes(String(canonical.action))){
+  // Every valid browser action is bounded by the authenticated user task and
+  // live run lease. Browser controls pass through the Worker auth guard; that
+  // guard hands off login, credential, and human-verification surfaces.
+  if(canonical.kind==='browser'){
    if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
    try{
     const result=await worker.performIfUnchanged(input,state,signal,'browser-task');
@@ -109,46 +114,32 @@ export class ComputerBridge {
     else throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED');
    }
   }
-  let captured:Awaited<ReturnType<NonNullable<ComputerReadWorker['snapshotWithImage']>>>|null=null;
-  if(worker.snapshotWithImage){
-   try{captured=await worker.snapshotWithImage(signal)}catch(error){
-    if(error instanceof SafeDiagnosticError)throw error;
-    throw new SafeDiagnosticError('COMPUTER_SNAPSHOT_FAILED');
-   }
-   state=captured.state;
-   if(state.owner!=='agent')throw new SafeDiagnosticError('COMPUTER_OWNER_USER');
-   try{action=canonicalComputerAction(input,state)}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
-   const currentCanonical=JSON.parse(action) as {kind?:unknown;action?:unknown};
-   if(disallowedDuringSignInHandoff(scope,currentCanonical))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
+  // Desktop controls on native UI are task-authorized. Browser chrome and
+  // HTTP(S) page controls were redirected to Browser User above.
+  if(canonical.kind==='desktop'){
+   if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');
+   try{const result=await worker.performIfUnchanged(input,state,signal);await this.markUsed(scope);return {status:'completed',result}}
+   catch(error){if(signal.aborted)throw new SafeDiagnosticError('COMPUTER_RUN_LEASE_UNAVAILABLE');if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('COMPUTER_WORKER_FAILED')}
   }
-  let approval:Awaited<ReturnType<ApprovalStore['propose']>>;
-  try{approval=await this.approvals.propose(scope.runId,scope.leaseId,action,300,captured?.image)}catch{throw new SafeDiagnosticError('COMPUTER_APPROVAL_STORE_FAILED')}
-  if(!approval)throw new SafeDiagnosticError('COMPUTER_APPROVAL_RUN_UNAVAILABLE');
-  return {id:approval.id};
+  // The terminal runs inside the Agent Pod, not the Desktop Worker. Current
+  // Pi/DSH adapters execute it directly inside this user's task/shared folder;
+  // reject stale adapters instead of recreating per-command approval cards.
+  if(canonical.kind==='terminal')throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN');
+  throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID');
  }
  async status(scope:RunScope,id:string,signal:AbortSignal):Promise<string|null>{
-  await this.authorize(scope,signal);return this.approvals.status(scope.runId,scope.leaseId,id);
+  await this.authorize(scope,signal);const status=await this.approvals.status(scope.runId,scope.leaseId,id);return status==='pending'?'expired':status;
  }
  async execute(scope:RunScope,id:string,input:unknown,signal:AbortSignal):Promise<unknown>{
   const worker=await this.authorize(scope,signal);
   if(scope.signInHandoff){
    const state=await worker.snapshot(signal);if(state.owner!=='agent')throw new SafeDiagnosticError('COMPUTER_OWNER_USER');
    let action:string;try{action=canonicalComputerAction(input,state)}catch{throw new SafeDiagnosticError('COMPUTER_ACTION_INVALID')}
-   const canonical=JSON.parse(action) as {kind?:unknown;action?:unknown};
-   if(disallowedDuringSignInHandoff(scope,canonical))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
+   if(disallowedDuringSignInHandoff(scope,JSON.parse(action) as {kind?:unknown;action?:unknown}))throw new SafeDiagnosticError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
   }
-  if(input&&typeof input==='object'&&!Array.isArray(input)&&(input as {kind?:unknown}).kind==='terminal'){
-   if(signal.aborted)throw new Error('Task stopped');
-   const state=await worker.snapshot(signal);if(state.owner!=='agent')throw new Error('User controls the computer');
-   const action=canonicalComputerAction(input,state);
-   if(!await this.approvals.consume(scope.runId,scope.leaseId,id,action))throw new Error('Terminal approval is missing, expired or does not match the current action and screen');
-   if(signal.aborted)throw new Error('Task stopped after approval');
-   await this.markUsed(scope);
-   return {approved:true};
-  }
-  const result=await new ComputerBroker(this.approvals,worker).execute(scope.runId,scope.leaseId,id,input,signal);
-  await this.markUsed(scope);
-  return result;
+  if(input&&typeof input==='object'&&!Array.isArray(input)&&(input as {kind?:unknown}).kind==='terminal')throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN');
+  void id;
+  throw new SafeDiagnosticError('COMPUTER_APPROVAL_REJECTED');
  }
 }
 
@@ -158,7 +149,7 @@ function disallowedDuringSignInHandoff(scope:RunScope,action:{kind?:unknown;acti
  // normally after the owner returns control. The task capability remains
  // short-lived, Browser User only, and the Worker still guards auth surfaces,
  // credentials, CAPTCHA and sign-in controls.
- if(scope.browserTask===true)return action.kind!=='browser';
+ if(scope.browserTask===true&&scope.continuedSignInHandoff===true)return action.kind!=='browser';
  if(action.kind!=='browser')return true;
  if(action.action==='navigate'){
   const arguments_=(action as {arguments?:Record<string,unknown>}).arguments||{};

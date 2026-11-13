@@ -305,15 +305,10 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         if(req.method==='GET' && approvalListMatch) {
           const list=await approvals.list(session,approvalListMatch[1]);return list?reply(200,{approvals:list}):reply(404,{error:'Not found'});
         }
-        if(req.method!=='POST'||!approvalMatch)return reply(405,{error:'Method not allowed'});
-        if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
-        if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return reply(415,{error:'Expected JSON'});
-        let size=0;const chunks:Buffer[]=[];for await(const chunk of req){size+=chunk.length;if(size>1024)return reply(413,{error:'Request too large'});chunks.push(chunk)}
-        let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return reply(400,{error:'Invalid JSON'})}
-        const decision=body && typeof body==='object' && !Array.isArray(body) ? (body as {decision?:unknown}).decision : undefined;
-        if(decision!=='approved'&&decision!=='denied')return reply(400,{error:'Invalid decision'});
-        const result=await approvals.decide(session,approvalMatch[1],decision);
-        return result==='decided'?reply(200,{ok:true}):result==='not_found'?reply(404,{error:'Not found'}):reply(409,{error:'Approval is no longer pending'});
+        if(req.method!=='POST'||!approvalMatch){req.resume();return reply(405,{error:'Method not allowed'})}
+        if(req.headers.origin!==origin.origin){req.resume();return reply(403,{error:'Invalid origin'})}
+        req.resume();
+        return reply(410,{error:'Per-action approvals are disabled. Use Computer takeover for sign-in or verification.'});
       }
       if (runs && (runMatch || runEventsMatch || runRecoveryMatch)) {
         const reply = (status:number, value:unknown) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(value)); };

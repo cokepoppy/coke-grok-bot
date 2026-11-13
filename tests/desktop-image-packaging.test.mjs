@@ -15,6 +15,8 @@ test('desktop image copies the Bot screen manager and real desktop I/O modules b
   assert.match(dockerignore, /^!deploy\/desktop\/desktop-input\.mjs$/m);
   assert.match(dockerfile, /COPY --chmod=0644 deploy\/desktop\/shared-computer-root\.mjs \/opt\/coke-dots\/shared-computer-root\.mjs/);
   assert.match(dockerignore, /^!deploy\/desktop\/shared-computer-root\.mjs$/m);
+  assert.match(dockerfile, /COPY --chmod=0644 deploy\/desktop\/control-owner-audit\.mjs \/opt\/coke-dots\/control-owner-audit\.mjs/);
+  assert.match(dockerignore, /^!deploy\/desktop\/control-owner-audit\.mjs$/m);
   assert.match(dockerfile, /COPY --chmod=0644 deploy\/desktop\/active-tab-extension\/manifest\.json \/opt\/coke-grok\/active-tab-extension\/manifest\.json/);
   assert.match(dockerfile, /COPY --chmod=0644 deploy\/desktop\/active-tab-extension\/service-worker\.js \/opt\/coke-grok\/active-tab-extension\/service-worker\.js/);
   assert.match(dockerfile, /COPY --chmod=0644 deploy\/desktop\/active-tab-extension\/runtime-config\.js \/opt\/coke-grok\/active-tab-extension\/runtime-config\.js/);
@@ -22,6 +24,7 @@ test('desktop image copies the Bot screen manager and real desktop I/O modules b
   assert.match(dockerignore, /^!deploy\/desktop\/active-tab-extension\/service-worker\.js$/m);
   assert.match(dockerignore, /^!deploy\/desktop\/active-tab-extension\/runtime-config\.js$/m);
   assert.match(fs.readFileSync(new URL('../deploy/desktop/start-desktop.sh', import.meta.url), 'utf8'), /--load-extension=\/opt\/coke-grok\/active-tab-extension/);
+  assert.match(fs.readFileSync(new URL('../deploy/desktop/start-desktop.sh', import.meta.url), 'utf8'), /COKE_DESKTOP_START_URL:-about:blank/);
   assert.match(fs.readFileSync(new URL('../deploy/desktop/active-tab-extension/service-worker.js', import.meta.url), 'utf8'), /importScripts\('runtime-config\.js'\)/);
   assert.match(fs.readFileSync(new URL('../deploy/desktop/active-tab-extension/service-worker.js', import.meta.url), 'utf8'), /authorization: `Bearer \$\{self\.COKE_GROK_ACTIVE_TAB_BRIDGE_TOKEN\}`/);
   const manifest = JSON.parse(fs.readFileSync(new URL('../deploy/desktop/active-tab-extension/manifest.json', import.meta.url), 'utf8'));

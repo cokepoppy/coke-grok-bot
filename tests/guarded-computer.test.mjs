@@ -51,6 +51,18 @@ test('approved browser clicks remain bound to the exact screenshot',async()=>{
  await assert.rejects(worker.execute({kind:'browser',action:'click',by:'role',role:'button',target:'Continue'},state),/state or ownership changed/);
  assert.equal(effects,0);
 });
+test('run-scoped Browser User controls tolerate redraws but stay bound to the same agent-owned URL',async()=>{
+ let owner='agent',url='file:///workspace/tasks/task-id/artifacts/demo.html',image=Buffer.from('screen-a'),effects=0;
+ const worker=createGuardedComputer({readOwner:()=>owner,readPageUrl:async()=>url,readScreenshot:async()=>image,perform:async()=>++effects});
+ const state=await worker.snapshot();
+ image=Buffer.from('screen-b');
+ assert.equal(await worker.execute({kind:'browser',action:'click',workflowPolicy:'browser-task',by:'role',role:'button',target:'Validate'},state),1);
+ url='file:///workspace/tasks/other-id/artifacts/demo.html';
+ await assert.rejects(worker.execute({kind:'browser',action:'click',workflowPolicy:'browser-task',by:'role',role:'button',target:'Validate'},state),/state or ownership changed/);
+ url=state.url;owner='user';
+ await assert.rejects(worker.execute({kind:'browser',action:'fill',workflowPolicy:'browser-task',by:'label',target:'Quantity',value:'100'},state),/state or ownership changed/);
+ assert.equal(effects,1);
+});
 test('guarded browser actions tolerate only volatile panel pixels',async()=>{
  let image=screenshot([1,2,3],[8,9,10]),effects=0;
  const worker=createGuardedComputer({readOwner:()=> 'agent',readPageUrl:async()=> 'https://example.test/',readScreenshot:async()=>image,perform:async()=>++effects});

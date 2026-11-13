@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {once} from 'node:events';
 import mysql from 'mysql2/promise';
+import { mysqlTestCredentials } from './helpers/mysql-test-credentials.ts';
 import {TenantStore,type Session} from '../src/server/tenant-store.ts';
 import {BotStore} from '../src/server/bot-store.ts';
 import {RunStore} from '../src/server/run-store.ts';
@@ -11,9 +12,10 @@ import {BotMemoryBridge} from '../src/server/bot-memory-bridge.ts';
 import {ModelGateway} from '../src/server/model-gateway.ts';
 
 const port=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);if(!port)throw new Error('Disposable MySQL port required');
+const mysqlCredentials = mysqlTestCredentials(port);
 
 test('Bot memory is private to its Bot, lease scoped, persistent, editable and removable',async()=>{
- const db=`grok_bot_memory_${randomUUID().replaceAll('-','')}`,admin=await mysql.createConnection({host:'127.0.0.1',port,user:'root'});await admin.query(`CREATE DATABASE \`${db}\``);const pool=mysql.createPool({host:'127.0.0.1',port,user:'root',database:db,timezone:'Z',connectionLimit:8});
+ const db=`grok_bot_memory_${randomUUID().replaceAll('-','')}`,admin=await mysql.createConnection(mysqlCredentials);await admin.query(`CREATE DATABASE \`${db}\``);const pool=mysql.createPool({...mysqlCredentials,database:db,timezone:'Z',connectionLimit:8});
  try{
   const ids=new TenantStore(pool),bots=new BotStore(pool),runs=new RunStore(pool),memories=new BotMemoryStore(pool);await ids.migrate();await bots.migrate();await runs.migrate();await memories.migrate();
   const identity=await ids.signInGoogle({subject:'memory-owner',email:'memory@example.test',name:'Memory Owner'}),other=await ids.signInGoogle({subject:'memory-other',email:'other@example.test',name:'Other'});
@@ -36,7 +38,7 @@ test('Bot memory is private to its Bot, lease scoped, persistent, editable and r
 });
 
 test('memory gateway allows Bot-chosen memory updates and rejects cross-Bot scope',async()=>{
- const db=`grok_memory_gate_${randomUUID().replaceAll('-','')}`,admin=await mysql.createConnection({host:'127.0.0.1',port,user:'root'});await admin.query(`CREATE DATABASE \`${db}\``);const pool=mysql.createPool({host:'127.0.0.1',port,user:'root',database:db,timezone:'Z',connectionLimit:8});
+ const db=`grok_memory_gate_${randomUUID().replaceAll('-','')}`,admin=await mysql.createConnection(mysqlCredentials);await admin.query(`CREATE DATABASE \`${db}\``);const pool=mysql.createPool({...mysqlCredentials,database:db,timezone:'Z',connectionLimit:8});
  const ids=new TenantStore(pool),bots=new BotStore(pool),runs=new RunStore(pool),memories=new BotMemoryStore(pool);await ids.migrate();await bots.migrate();await runs.migrate();await memories.migrate();const bridge=new BotMemoryBridge(memories);
  const gateway=new ModelGateway('fake-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'),undefined,undefined,bridge),server=gateway.createServer();server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();if(!address||typeof address==='string')throw new Error('No gateway');const base=`http://127.0.0.1:${address.port}/v1/bot-memory`;
  try{

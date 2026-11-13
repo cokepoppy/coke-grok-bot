@@ -5,6 +5,7 @@ import {once} from 'node:events';
 import {Readable} from 'node:stream';
 import type {IncomingMessage} from 'node:http';
 import mysql from 'mysql2/promise';
+import { mysqlTestCredentials } from './helpers/mysql-test-credentials.ts';
 import {TenantStore} from '../src/server/tenant-store.ts';
 import {BotStore} from '../src/server/bot-store.ts';
 import {RunStore,type GroupRunContext} from '../src/server/run-store.ts';
@@ -16,13 +17,14 @@ import {GoogleAuthService,type IdentityProvider} from '../src/server/google-auth
 import {createAuthServer} from '../src/server/auth-http.ts';
 
 const port=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);
-if(!port)throw new Error('Set COKE_GROK_TEST_MYSQL_PORT to a disposable local MySQL instance.');
+if(!port)throw new Error('Set COKE_GROK_TEST_MYSQL_PORT to a local MySQL service that permits isolated disposable schemas.');
+const mysqlCredentials=mysqlTestCredentials(port);
 
 test('group chats persist six Bot memberships, authorized input files, isolated runs, and Bot result-file metadata',async()=>{
  const database=`grok_groups_${randomUUID().replaceAll('-','')}`;
- const admin=await mysql.createConnection({host:'127.0.0.1',port,user:'root'});
+ const admin=await mysql.createConnection(mysqlCredentials);
  await admin.query(`CREATE DATABASE \`${database}\``);
- const pool=mysql.createPool({host:'127.0.0.1',port,user:'root',database,timezone:'Z',connectionLimit:12});
+ const pool=mysql.createPool({...mysqlCredentials,database,timezone:'Z',connectionLimit:12});
  const identities=new TenantStore(pool),bots=new BotStore(pool),runs=new RunStore(pool),groups=new GroupChatStore(pool),files=new WorkspaceFileStore(pool);
  await identities.migrate();await bots.migrate();await runs.migrate();await groups.migrate();await groups.migrate();
  const uploadedBytes=new Map<string,Buffer>();
@@ -178,10 +180,21 @@ test('group chats persist six Bot memberships, authorized input files, isolated 
   assert.deepEqual(JSON.parse(String(targetedRunRows[0].runtimeContext)),{kind:'group-chat',groupName:'Offsite crew',currentBot:{name:'Sales Outbound',label:'Role 2'},members:members.map((member,index)=>({name:['Chief','Sales Outbound','Inbox Manager','Account Manager','Talent Scout','Expense Manager'][index],label:`Role ${index+1}`})),targeted:true});
   const [targetedFiles]=await pool.execute<mysql.RowDataPacket[]>('SELECT b.id AS botId,f.storage_key AS storageKey,rf.kind FROM agent_run_files rf JOIN agent_runs r ON r.id=rf.run_id JOIN bots b ON b.id=r.bot_id JOIN bot_files f ON f.id=rf.file_id WHERE r.id=?',[targetedRunId]);
   assert.equal(targetedFiles.length,1);assert.equal(String(targetedFiles[0].botId),targetedBotId);assert.equal(String(targetedFiles[0].storageKey),`shared/uploads/${uploaded.id}.txt`);assert.equal(String(targetedFiles[0].kind),'input');
+  const sharedResultFile=chiefMessage?.files.find(file=>file.kind==='output');assert.ok(sharedResultFile);
+  const artifactTransferBotId=members[2].id,artifactTransferPayload={requestId:randomUUID(),text:'Validate the lead Bot result file as the next team stage.',targetBotIds:[artifactTransferBotId],files:[sharedResultFile.id]};
+  const artifactTransferResponse=await request(`/api/groups/${group.id}/messages`,alice.cookie,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify(artifactTransferPayload)});
+  assert.equal(artifactTransferResponse.status,202);
+  const artifactTransferView=await artifactTransferResponse.json() as {messages:{id:string;turnId:string;role:string;botId:string|null;runId:string|null;status:string|null;files?:{id:string;name:string;kind:string}[]}[]};
+  const artifactTransferUser=artifactTransferView.messages.find(message=>message.role==='user'&&message.files?.some(file=>file.id===sharedResultFile.id));
+  assert.ok(artifactTransferUser);assert.deepEqual(artifactTransferUser.files?.map(file=>({id:file.id,name:file.name,kind:file.kind})),[{id:sharedResultFile.id,name:'offsite-idea.txt',kind:'input'}]);
+  const artifactTransferBot=artifactTransferView.messages.find(message=>message.turnId===artifactTransferUser.turnId&&message.role==='bot');
+  assert.equal(artifactTransferBot?.botId,artifactTransferBotId);assert.equal(artifactTransferBot?.status,'queued');assert.ok(artifactTransferBot?.runId);
+  const [artifactTransferRows]=await pool.execute<mysql.RowDataPacket[]>('SELECT f.display_name AS name,f.storage_key AS storageKey,rf.kind FROM agent_run_files rf JOIN bot_files f ON f.id=rf.file_id WHERE rf.run_id=?',[artifactTransferBot.runId]);
+  assert.deepEqual(artifactTransferRows.map(row=>({name:String(row.name),storageKey:String(row.storageKey),kind:String(row.kind)})),[{name:'offsite-idea.txt',storageKey:`tasks/${runIds[0]}/artifacts/offsite-idea.txt`,kind:'input'}]);
   const attachmentOnlyRequest=randomUUID(),attachmentOnly=await request(`/api/groups/${group.id}/messages`,alice.cookie,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify({requestId:attachmentOnlyRequest,text:'',targetBotIds:[members[2].id],files:[uploaded.id]})});
   assert.equal(attachmentOnly.status,202);
-  const attachmentOnlyView=await attachmentOnly.json() as {messages:{turnId:string;role:string;botId:string|null;text:string|null;runId:string|null;status:string|null}[]};
-  const attachmentOnlyUser=attachmentOnlyView.messages.find(message=>message.role==='user'&&message.turnId!==targetedUser.turnId&&message.turnId!==view.messages[0]!.turnId);
+  const attachmentOnlyView=await attachmentOnly.json() as {messages:{turnId:string;role:string;botId:string|null;text:string|null;runId:string|null;status:string|null;files?:{id:string}[]}[]};
+  const attachmentOnlyUser=attachmentOnlyView.messages.find(message=>message.role==='user'&&message.text===null&&message.files?.some(file=>file.id===uploaded.id));
   assert.ok(attachmentOnlyUser);assert.equal(attachmentOnlyUser.text,null);
   const attachmentOnlyBot=attachmentOnlyView.messages.find(message=>message.turnId===attachmentOnlyUser.turnId&&message.role==='bot');
   assert.equal(attachmentOnlyBot?.botId,members[2].id);assert.equal(attachmentOnlyBot?.status,'queued');assert.ok(attachmentOnlyBot?.runId);
@@ -193,7 +206,7 @@ test('group chats persist six Bot memberships, authorized input files, isolated 
   assert.equal(observedContexts.get(members[0].id)?.currentBot.name,'Chief');
   assert.equal((await runs.list(aliceSession,members[0].id))?.some(run=>'runtimeContext' in run),false,'private group runtime metadata is not exposed by Bot history');
   const [turnRows]=await pool.execute<mysql.RowDataPacket[]>('SELECT COUNT(*) AS count FROM bot_group_turns WHERE group_id=?',[group.id]);
-  assert.equal(Number(turnRows[0].count),3);
+  assert.equal(Number(turnRows[0].count),4);
   await pool.execute("UPDATE agent_runs SET status='unknown',recovery_state='pending' WHERE id=?",[runIds[0]]);
   await pool.execute("INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','diagnostic:agent_paused_for_control')",[runIds[0]]);
   assert.equal((await groups.get(aliceSession,group.id))?.messages.find(message=>message.runId===runIds[0])?.diagnosticCode,'agent_paused_for_control');

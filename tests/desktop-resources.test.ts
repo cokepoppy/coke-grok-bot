@@ -1,7 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { desktopIdentity, desktopResources, splitDesktopResources } from '../src/server/desktop-resources.ts';
+import { desktopIdentity, desktopResources, normalizeDesktopSigningKey, splitDesktopResources } from '../src/server/desktop-resources.ts';
+
+test('desktop signing keys normalize trailing file whitespace before HMAC derivation',()=>{
+ const tenantId=randomUUID(),userId=randomUUID(),normalized=Buffer.from('desktop-signing-key-'.repeat(3)),raw=Buffer.concat([normalized,Buffer.from('\n')]);
+ assert.deepEqual(normalizeDesktopSigningKey(raw),normalized);
+ assert.deepEqual(desktopIdentity({tenantId,userId},raw),desktopIdentity({tenantId,userId},normalized));
+});
+
+test('desktop signing key normalization preserves arbitrary binary bytes for Auth and Broker HMACs',()=>{
+ const tenantId=randomUUID(),userId=randomUUID(),raw=Buffer.alloc(48,0xff),normalized=normalizeDesktopSigningKey(raw);
+ assert.deepEqual(normalized,raw);
+ assert.notDeepEqual(Buffer.from(raw.toString('utf8').trim(),'utf8'),raw);
+ assert.deepEqual(desktopIdentity({tenantId,userId},raw),desktopIdentity({tenantId,userId},normalized));
+});
 
 test('desktop identities separate users and tenants and resources do not expose the provider key', () => {
  const signingKey=randomBytes(32), tenantId=randomUUID(), userId=randomUUID();
@@ -14,6 +27,7 @@ test('desktop identities separate users and tenants and resources do not expose 
  assert.notEqual(identity.controlToken,identity.activeTabBridgeToken);
  assert.throws(()=>desktopIdentity({tenantId,userId},randomBytes(8)));
  const resources=desktopResources(identity,{image:`coke-grok-desktop:sha-${'a'.repeat(40)}`,controlNamespace:'coke-grok-bot',gatewayCA:'-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----'});
+ const imagePin=resources.find(item=>item.kind==='ConfigMap'&&(item.metadata as {name:string}).name==='desktop-image-pin') as any;
  const deployment=resources.find(item=>item.kind==='Deployment') as any;
  const runtimeSecret=resources.find(item=>item.kind==='Secret'&&(item.metadata as {name:string}).name==='desktop-runtime') as any;
  const pod=deployment.spec.template.spec;
@@ -26,6 +40,8 @@ test('desktop identities separate users and tenants and resources do not expose 
  assert.equal(pod.containers[0].env.find((entry:any)=>entry.name==='COKE_DESKTOP_SCREEN_SLOTS').value,'8');
  assert.equal(pod.containers[0].env.find((entry:any)=>entry.name==='COKE_GROK_ACTIVE_TAB_BRIDGE_TOKEN').valueFrom.secretKeyRef.key,'activeTabBridge');
  assert.equal(runtimeSecret.stringData.activeTabBridge,identity.activeTabBridgeToken);
+ assert.equal(imagePin.immutable,true);
+ assert.deepEqual(imagePin.data,{desktopImage:`coke-grok-desktop:sha-${'a'.repeat(40)}`,agentImage:`coke-grok-desktop:sha-${'a'.repeat(40)}`});
  assert.equal(runtimeSecret.stringData.activeTabBridgeConfig,`self.COKE_GROK_ACTIVE_TAB_BRIDGE_TOKEN=${JSON.stringify(identity.activeTabBridgeToken)};`);
  assert.ok(pod.containers[0].volumeMounts.some((mount:any)=>mount.mountPath==='/opt/coke-grok/active-tab-extension/runtime-config.js'&&mount.subPath==='runtime-config.js'&&mount.readOnly));
  assert.equal(pod.volumes.find((volume:any)=>volume.name==='active-tab-bridge').secret.defaultMode,288);

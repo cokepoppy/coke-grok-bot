@@ -1,6 +1,6 @@
 import type { AgentRun, RunScreenScope } from './run-store.ts';
 import type { AgentExecutionAudit } from './execution-audit.ts';
-import { safeRunDiagnosticCode, type RunDiagnosticCode } from './run-diagnostics.ts';
+import { RunDiagnosticError, safeRunDiagnosticCode, type RunDiagnosticCode } from './run-diagnostics.ts';
 
 export interface SchedulerStore {
   markExpiredUnknown(): Promise<number>;
@@ -8,7 +8,7 @@ export interface SchedulerStore {
   claimNext(screen: RunScreenScope, leaseSeconds: number): Promise<{run:AgentRun;leaseId:string}|null>;
   renew(runId:string, leaseId:string, leaseSeconds:number): Promise<boolean>;
   finish(runId:string, leaseId:string, status:'completed'|'failed', result:string, artifacts?:unknown, executionAudit?:unknown): Promise<boolean>;
-  markUnknown(runId:string, leaseId:string, diagnosticCode?:RunDiagnosticCode): Promise<boolean>;
+  markUnknown(runId:string, leaseId:string, diagnosticCode?:RunDiagnosticCode, executionAudit?:unknown): Promise<boolean>;
 }
 export type ExecutionResult = {status:'completed'|'failed';result:string;artifacts?:unknown;executionAudit?:AgentExecutionAudit|null};
 export interface RunExecutor { execute(screen:RunScreenScope,run:AgentRun,signal:AbortSignal,leaseId:string):Promise<ExecutionResult> }
@@ -60,13 +60,14 @@ export class RunScheduler {
     try {
       if(claim.run.botId!==screen.botId)throw new Error('Claimed run does not match its Bot screen');
       const outcome = await this.executor.execute(screen,claim.run,abort.signal,claim.leaseId);
-      if (leaseLost || abort.signal.aborted) { await this.store.markUnknown(claim.run.id,claim.leaseId,leaseLost?'lease_lost':'execution_aborted'); return; }
+      if (leaseLost || abort.signal.aborted) { await this.store.markUnknown(claim.run.id,claim.leaseId,leaseLost?'lease_lost':'execution_aborted',outcome.executionAudit); return; }
       if (!outcome || !['completed','failed'].includes(outcome.status) || typeof outcome.result !== 'string' || !outcome.result.trim() || outcome.result.length > 20000) throw new Error('Invalid executor result');
       const saved = await this.store.finish(claim.run.id,claim.leaseId,outcome.status,outcome.result,outcome.artifacts,outcome.executionAudit);
-      if (!saved) await this.store.markUnknown(claim.run.id,claim.leaseId,'result_persist_failed');
+      if (!saved) await this.store.markUnknown(claim.run.id,claim.leaseId,'result_persist_failed',outcome.executionAudit);
     } catch (error) {
       // The executor might already have performed an external side effect. Do not repeat it.
-      await this.store.markUnknown(claim.run.id,claim.leaseId,safeRunDiagnosticCode(error)).catch(() => undefined);
+      const executionAudit=error instanceof RunDiagnosticError?error.executionAudit:undefined;
+      await this.store.markUnknown(claim.run.id,claim.leaseId,safeRunDiagnosticCode(error),executionAudit).catch(() => undefined);
     } finally { clearInterval(timer); }
   }
   async stop():Promise<void> {

@@ -36,7 +36,7 @@ export async function readSharedFile(workspaceValue, relativeFile) {
   } finally { await handle.close(); }
 }
 
-export async function runApprovedTerminal({ command, directory }, { workspaceValue, taskDirectory, signal }) {
+export async function runTaskTerminal({ command, directory }, { workspaceValue, taskDirectory, signal }) {
   if (typeof command !== 'string' || !command.trim() || Buffer.byteLength(command, 'utf8') > maxCommandBytes || /[\u0000-\u0008\u000b-\u001f\u007f]/.test(command)) throw new Error('Terminal command is invalid');
   if (!['task', 'shared'].includes(directory)) throw new Error('Terminal working directory is invalid');
   if (signal?.aborted) throw signal.reason || new Error('Task was stopped');

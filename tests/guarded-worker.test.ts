@@ -70,6 +70,21 @@ test('guarded action failures preserve only a safe diagnostic code and HTTP stat
    return metadata.code==='COMPUTER_WORKER_HTTP_ERROR'&&metadata.status===status&&error instanceof Error&&error.message==='COMPUTER_WORKER_HTTP_ERROR';
   });
  }
+ const forbidden=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>Response.json({error:`private upstream detail ${token}`},{status:403}));
+ await assert.rejects(forbidden.performIfUnchanged(action,state,signal),error=>{
+  const metadata=safeDiagnosticMetadata(error);
+  return metadata.code==='COMPUTER_WORKER_FORBIDDEN'&&metadata.status===403&&error instanceof Error&&error.message==='COMPUTER_WORKER_FORBIDDEN'&&!error.message.includes(token);
+ });
+ const signInWorker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>Response.json({code:'COMPUTER_SIGNIN_HANDOFF_REQUIRED',error:'Human sign-in or verification is required'},{status:403}));
+ await assert.rejects(signInWorker.performIfUnchanged({kind:'browser',action:'click',by:'role',role:'button',target:'Continue'},state,signal,'browser-task'),error=>{
+  const metadata=safeDiagnosticMetadata(error);
+  return metadata.code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED'&&metadata.status===403&&error instanceof Error&&error.message==='COMPUTER_SIGNIN_HANDOFF_REQUIRED';
+ });
+ const signInNavigationWorker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>Response.json({code:'COMPUTER_SIGNIN_HANDOFF_REQUIRED',error:'Human sign-in or verification is required'},{status:403}));
+ await assert.rejects(signInNavigationWorker.navigateIfUnchanged({kind:'browser',action:'navigate',url:'https://accounts.example.test/signin'}, {owner:'agent',url:'https://example.test/'}, signal, 'browser-task'), error=>{
+  const metadata=safeDiagnosticMetadata(error);
+  return metadata.code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED'&&metadata.status===403&&error instanceof Error&&error.message==='COMPUTER_SIGNIN_HANDOFF_REQUIRED';
+ });
  const offline=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>{throw new Error(`private endpoint ${url.href} and ${token}`)});
  await assert.rejects(offline.performIfUnchanged(action,state,signal),error=>safeDiagnosticMetadata(error).code==='COMPUTER_WORKER_TRANSPORT_FAILED');
  const invalid=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>new Response('private upstream detail'));

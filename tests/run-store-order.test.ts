@@ -2,15 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import mysql from 'mysql2/promise';
+import { mysqlTestCredentials } from './helpers/mysql-test-credentials.ts';
 import { TenantStore, type Session } from '../src/server/tenant-store.ts';
 import { BotStore } from '../src/server/bot-store.ts';
 import { RunStore } from '../src/server/run-store.ts';
 const port=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);
 if (!port) throw new Error('Disposable MySQL port required');
+const mysqlCredentials = mysqlTestCredentials(port);
 test('a run result is owner-scoped and transition events persist in order',async()=>{
  const db=`grok_events_${randomUUID().replaceAll('-','')}`;
- const admin=await mysql.createConnection({host:'127.0.0.1',port,user:'root'}); await admin.query(`CREATE DATABASE \`${db}\``);
- const pool=mysql.createPool({host:'127.0.0.1',port,user:'root',database:db,timezone:'Z',connectionLimit:1});
+ const admin=await mysql.createConnection(mysqlCredentials); await admin.query(`CREATE DATABASE \`${db}\``);
+ const pool=mysql.createPool({...mysqlCredentials,database:db,timezone:'Z',connectionLimit:1});
  try {
   const timezoneConnection=await pool.getConnection();await timezoneConnection.query("SET time_zone = '+08:00'");timezoneConnection.release();
   const identities=new TenantStore(pool); await identities.migrate(); const bots=new BotStore(pool); await bots.migrate(); const runs=new RunStore(pool); await runs.migrate();

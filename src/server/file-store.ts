@@ -15,6 +15,12 @@ const maxImagesTotalBytes = 200 * 1024 * 1024;
 const maxDocumentBytes = 250 * 1024 * 1024;
 const maxVideoBytes = 1024 * 1024 * 1024;
 
+function cleanArtifactPath(value: string): string {
+  const parts=value.split('/');
+  if(!value||value.length>500||Buffer.byteLength(value,'utf8')>255||value.includes('\\')||parts.some(part=>!safeName.test(part)||part==='.'||part==='..'||part.startsWith('.')))throw new Error('Invalid result file name');
+  return value;
+}
+
 export function cleanUploadName(value: string): string {
   const name = value.normalize('NFC').split(/[\\/]/).at(-1)?.trim() || '';
   if (!safeName.test(name) || name === '.' || name === '..' || Buffer.byteLength(name, 'utf8') > 255) throw new Error('Invalid attachment name');
@@ -134,7 +140,7 @@ export class WorkspaceFileStore {
     return value.map(item => {
       if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Invalid result file');
       const file = item as Record<string,unknown>;
-      const name = cleanUploadName(String(file.name || ''));
+      const name = cleanArtifactPath(String(file.name || ''));
       const mimeType = String(file.mimeType || 'application/octet-stream');
       const size = Number(file.size);
       const sha256 = String(file.sha256 || '');

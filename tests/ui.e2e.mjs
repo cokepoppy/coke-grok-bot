@@ -234,8 +234,8 @@ try {
   ];
   let delayNextRunHistoryRead = false;
   let postedMentionBody = null;
-  let approvalScrollScenario = false;
-  const demoApprovals = new Map();
+  let runningTaskScenario = false;
+  let approvalApiRequests = 0;
   const demoMessages = [
     { id: 'welcome-message', role: 'bot', text: 'Hey Armand, good to meet you. What do you want me around for? Anything concrete, or more of a general sidekick?', createdAt: new Date(referenceActivity.getTime() - 60000).toISOString() },
     { id: 'rename-event', role: 'system', text: 'Renamed to Sales Outbound', createdAt: referenceActivity.toISOString() },
@@ -246,10 +246,11 @@ try {
   await productShellPage.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     const routineCollection = '/api/bots/sales-outbound/routines';
-    const runApprovalsMatch = path.match(/\/api\/runs\/([^/]+)\/approvals$/);
-    if (runApprovalsMatch && route.request().method() === 'GET') {
-      const runId = decodeURIComponent(runApprovalsMatch[1]);
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ approvals: demoApprovals.get(runId) || [] }) });
+    if (path.includes('/approvals')) {
+      approvalApiRequests++;
+      // Simulate a stale legacy pending row. The current UI must not poll it
+      // or render an Approve/Deny card.
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ approvals: [{ id: 'legacy-pending', action: 'stale action', status: 'pending' }] }) });
     }
     if (path.endsWith(routineCollection)) {
       if (route.request().method() === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ routines: demoRoutines }) });
@@ -284,8 +285,7 @@ try {
       postedMentionBody = route.request().postDataJSON();
       const previousActivity = Math.max(0, ...demoMessages.map(message => Date.parse(message.createdAt) || 0), ...demoRuns.flatMap(run => [Date.parse(run.createdAt) || 0, Date.parse(run.updatedAt) || 0]));
       const createdAt = new Date(Math.max(Date.now(), previousActivity + 1)).toISOString();
-      const run = { id:`submitted-run-${demoRuns.length + 1}`, prompt:postedMentionBody.prompt, status:approvalScrollScenario?'running':'queued', result:approvalScrollScenario?'Waiting for the requested browser action.':null, recoveryState:'none', replacementRunId:null, computerUsed:false, createdAt, updatedAt:createdAt, files:[] };
-      if (approvalScrollScenario) demoApprovals.set(run.id, [{ id:`approval-${run.id}`, action:JSON.stringify({kind:'browser',action:'click',page:'https://mail.google.com/mail/u/0/',arguments:{by:'role',target:'Gmail inbox',role:'link'}}), status:'pending' }]);
+      const run = { id:`submitted-run-${demoRuns.length + 1}`, prompt:postedMentionBody.prompt, status:runningTaskScenario?'running':'queued', result:runningTaskScenario?'Working on the requested task.':null, recoveryState:'none', replacementRunId:null, computerUsed:false, createdAt, updatedAt:createdAt, files:[] };
       demoRuns.push(run);
       delayNextRunHistoryRead = true;
       // Model a POST response whose clock differs from the canonical history
@@ -513,7 +513,7 @@ try {
   await productShellPage.getByRole('button',{name:'Send task'}).click();
   await productShellPage.getByText('Please ask @Chief to check the schedule.',{exact:true}).waitFor();
   assert.deepEqual(postedMentionBody,{requestId:postedMentionBody.requestId,prompt:'Please ask @Chief to check the schedule.',files:[],mentionBotIds:['chief']});
-  approvalScrollScenario = true;
+  runningTaskScenario = true;
   demoMessages.unshift(...Array.from({length:32},(_,index)=>({
     id:`product-scroll-history-${index}`,
     role:index%2?'bot':'user',
@@ -539,9 +539,9 @@ try {
   await waitForProductTimelineAtLatest('authenticated task composition');
   await productShellPage.getByRole('button',{name:'Send task'}).click();
   await productShellPage.locator('.message-line.user .message-bubble').filter({hasText:'Scroll follow-up message'}).waitFor();
-  await productShellPage.locator('.approval-card').first().getByText('Approval requested',{exact:true}).waitFor();
+  assert.equal(await productShellPage.locator('.approval-card').count(),0,'a running task must not display an action approval card');
   assert.equal(await productShellPage.locator('.message-line.user .message-bubble').last().innerText(),'Scroll follow-up message','the newest authenticated Agent task should follow the existing timeline');
-  await waitForProductTimelineAtLatest('authenticated first task with pending approval card');
+  await waitForProductTimelineAtLatest('authenticated first task without an approval card');
   await productShellPage.waitForTimeout(2800);
   assert.equal(await productShellPage.locator('.message-line.user .message-bubble').last().innerText(),'Scroll follow-up message','a later run-history poll must keep the submitted task as the newest chat item');
   await assertProductTimelineAtLatest('authenticated task after run-history polling');
@@ -556,10 +556,10 @@ try {
   assert.ok((await productScrollMetrics()).scrollTop<=2,'composing while reading authenticated history should preserve the history position');
   await productShellPage.getByRole('button',{name:'Send task'}).click();
   await productShellPage.locator('.message-line.user .message-bubble').filter({hasText:'Second scroll follow-up'}).waitFor();
-  await productShellPage.locator('.approval-card').nth(1).getByText('Approval requested',{exact:true}).waitFor();
+  assert.equal(await productShellPage.locator('.approval-card').count(),0,'a later task must not restore the legacy approval UI');
   assert.equal(await productShellPage.locator('.message-line.user .message-bubble').last().innerText(),'Second scroll follow-up','the second authenticated Agent task should follow existing history');
-  assert.equal(await productShellPage.locator('.approval-card').count(),2,'both pending approvals should remain attached to their separate tasks');
-  await waitForProductTimelineAtLatest('authenticated next task with two pending approval cards');
+  await waitForProductTimelineAtLatest('authenticated next task without approval UI');
+  assert.equal(approvalApiRequests,0,'the product UI must not poll the legacy action-approval API');
 
   // A stored chat message can carry a timestamp older than mixed historical
   // rows. The newly submitted item must still be rendered last and stay in

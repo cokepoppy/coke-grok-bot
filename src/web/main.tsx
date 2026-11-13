@@ -13,10 +13,9 @@ type ExecutionAudit = {engine:'pi'|'dsh';model:string;modelCompleted:boolean;cal
 type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; executionAudit?:ExecutionAudit|null; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: string | null };
 type GroupMember = Pick<Bot,'id'|'name'|'label'|'color'|'shape'> & { position: number };
 type GroupChat = { id: string; name: string; members: GroupMember[]; preview: string; lastActivityAt: string | null };
-type GroupReplacementRun = { id:string; status:AgentRun['status']; result:string|null; computerUsed:boolean; executionAudit?:ExecutionAudit|null; updatedAt:string|null; diagnosticCode?:string|null; files:RunFile[]; approvals?:Approval[] };
-type GroupMessage = { id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;runId:string|null;status:AgentRun['status']|null;recoveryState:AgentRun['recoveryState']|null;replacementRunId:string|null;replacementRun:GroupReplacementRun|null;computerUsed:boolean;executionAudit?:ExecutionAudit|null;updatedAt:string|null;diagnosticCode?:string|null;targetBotIds?:string[];approvals?:Approval[];files?:RunFile[] };
+type GroupReplacementRun = { id:string; status:AgentRun['status']; result:string|null; computerUsed:boolean; executionAudit?:ExecutionAudit|null; updatedAt:string|null; diagnosticCode?:string|null; files:RunFile[] };
+type GroupMessage = { id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;runId:string|null;status:AgentRun['status']|null;recoveryState:AgentRun['recoveryState']|null;replacementRunId:string|null;replacementRun:GroupReplacementRun|null;computerUsed:boolean;executionAudit?:ExecutionAudit|null;updatedAt:string|null;diagnosticCode?:string|null;targetBotIds?:string[];files?:RunFile[] };
 type GroupChatView = { group: GroupChat; messages: GroupMessage[] };
-type Approval = { id: string; action: string; status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired'; hasScreenshot?: boolean };
 type Routine = { id:string; name:string; instruction:string; schedule:{kind:'weekly';weekday:number;hour:number;minute:number}|{kind:'interval';minutes:number}; timezone:string; paused:boolean; when:string; nextRunAt:string; runs:{id:string;status:string;scheduledFor:string;result:string|null}[] };
 type PreviewState = { bots: Bot[]; activeId: string; messages: Record<string, Message[]>; showOnboarding: Record<string, boolean> };
 type IconName = 'search' | 'plus' | 'mic' | 'sound' | 'close' | 'panel' | 'share' | 'screen' | 'arrow' | 'smile' | 'reply' | 'more' | 'gear' | 'back' | 'clock';
@@ -158,7 +157,7 @@ function timelineTime(value?:string|null):number {
   const timestamp=Date.parse(value);
   return Number.isFinite(timestamp)?timestamp:0;
 }
-function buildBotTimeline(messages:Message[],runs:AgentRun[],runApprovals:Record<string,Approval[]>,latestSubmittedItemId?:string):BotTimelineEntry[] {
+function buildBotTimeline(messages:Message[],runs:AgentRun[],latestSubmittedItemId?:string):BotTimelineEntry[] {
   const entries:BotTimelineEntry[]=[];
   messages.forEach((message,index)=>entries.push({key:`message:${message.id}`,at:timelineTime(message.createdAt),priority:1,order:index,kind:'message',message}));
   runs.forEach((run,index)=>{
@@ -167,8 +166,7 @@ function buildBotTimeline(messages:Message[],runs:AgentRun[],runApprovals:Record
     const genericDone=Boolean(run.computerUsed&&/^(done|done\.)$/i.test(run.result?.trim()||''));
     const showRecovery=run.status==='unknown'&&run.recoveryState==='pending';
     const showRetryNote=run.status==='unknown'&&run.recoveryState==='retried'&&Boolean(run.replacementRunId);
-    const pendingApprovals=(runApprovals[run.id]||[]).some(approval=>approval.status==='pending');
-    const showFollowup=!run.computerUsed||Boolean((run.result&&!genericDone)||outputFiles.length||showRecovery||showRetryNote||pendingApprovals);
+    const showFollowup=!run.computerUsed||Boolean((run.result&&!genericDone)||outputFiles.length||showRecovery||showRetryNote);
     if(run.computerUsed)entries.push({key:`computer:${run.id}`,at:createdAt,priority:1,order:index,kind:'computer',run});
     else entries.push({key:`prompt:${run.id}`,at:createdAt,priority:0,order:index,kind:'run-prompt',run});
     if(showFollowup)entries.push({key:`result:${run.id}`,at:updatedAt,priority:2,order:index,kind:'run-result',run});
@@ -231,7 +229,8 @@ function renderGroupUserText(message: GroupMessage, members: GroupMember[]): Rea
 
 function runDiagnosticExplanation(code?: string | null): string | null {
   if (code === 'model_upstream_429') return 'Model requests are temporarily paused after a provider rate limit. This run’s result is unconfirmed; review the computer before continuing.';
-  if (code === 'agent_paused_for_control') return 'The Bot paused because the cloud computer was under your control. The result is unconfirmed; review the screen before continuing.';
+  if (code === 'agent_paused_for_control') return 'The Bot paused while the cloud computer was in user-control mode. The result is unconfirmed; review the screen before continuing.';
+  if (code === 'computer_control_state_unknown') return 'The Bot could not confirm who controls the cloud computer. The result is unconfirmed; review the screen before continuing.';
   if (code === 'agent_result_status_unconfirmed') return 'The Agent returned an unexpected task status. The result is unconfirmed; review the computer before continuing.';
   if (code === 'agent_result_message_missing') return 'The Agent returned no readable result. The task outcome is unconfirmed; review the computer before continuing.';
   return null;
@@ -255,17 +254,6 @@ function BotMenuIcon({name}:{name:'pin'|'folder'|'unread'|'rename'|'copy'|'hide'
 }
 
 type Account = { userId: string; tenantId: string; email: string; name: string; role: string };
-
-function ApprovalCard({approval, disabled, decide}: {approval:Approval; disabled:boolean; decide:(decision:'approved'|'denied')=>void}) {
-  const [imageLoaded,setImageLoaded]=useState(false);
-  let detail: {kind?:string;action?:string;arguments?:Record<string,unknown>;page?:string}|null=null;
-  try { const value=JSON.parse(approval.action); if(value && typeof value==='object' && typeof value.action==='string') detail=value; } catch { /* Legacy textual approvals. */ }
-  return <div className="approval-card"><strong>Approval requested</strong>
-    {detail ? <><p>{detail.kind === 'desktop' ? 'Desktop' : detail.kind === 'terminal' ? 'Computer terminal' : 'Browser'}: {detail.action}</p>{detail.page && <p>Page: {detail.page}</p>}{detail.arguments && <pre>{detail.kind === 'terminal' ? `${String(detail.arguments.directory || 'task')} directory\n${String(detail.arguments.command || '')}` : JSON.stringify(detail.arguments,null,2)}</pre>}</> : <p>{approval.action}</p>}
-    {approval.hasScreenshot && <img src={`${import.meta.env.BASE_URL}api/approvals/${approval.id}/screenshot`} alt="Computer screen when this action was requested" onLoad={()=>setImageLoaded(true)} onError={()=>setImageLoaded(false)} />}
-    <div><button type="button" disabled={disabled} onClick={()=>decide('denied')}>Deny</button><button type="button" disabled={disabled || Boolean(approval.hasScreenshot && !imageLoaded)} onClick={()=>decide('approved')}>Approve</button></div>
-  </div>;
-}
 
 function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveName,onLabelChange,onSaveLabel,onChangeAvatar,onEditRoutine}:{name:string;botId:string;official?:boolean;bot?:Bot;onClose?:()=>void;onRename?:(value:string)=>void;onSaveName?:()=>void;onLabelChange?:(value:string)=>void;onSaveLabel?:()=>void;onChangeAvatar?:()=>void;onEditRoutine?:(name:string)=>void}) {
   const [owner,setOwner]=useState<'agent'|'user'|null>(null),[image,setImage]=useState(''),[error,setError]=useState(''),[diagnostic,setDiagnostic]=useState(''),[busy,setBusy]=useState(false),[text,setText]=useState('');
@@ -554,6 +542,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [pendingFiles, setPendingFiles] = useState<Record<string, File[]>>({});
   const [pendingRunFiles, setPendingRunFiles] = useState<Record<string, RunFile[]>>({});
   const [pendingGroupFiles, setPendingGroupFiles] = useState<Record<string, Array<{key:string;file:File;uploadedId?:string}>>>({});
+  const [pendingGroupRunFiles, setPendingGroupRunFiles] = useState<Record<string, RunFile[]>>({});
   const [previewFile, setPreviewFile] = useState<RunFile | null>(null);
   const filePicker = useRef<HTMLInputElement>(null);
   const [customAnswer, setCustomAnswer] = useState('');
@@ -562,8 +551,6 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [agentEngine, setAgentEngine] = useState<'pi' | 'dsh' | null>(null);
   const [runHistory, setRunHistory] = useState<{ id: string; status: 'loading' | 'ready' | 'error'; runs: AgentRun[] }>({ id: '', status: 'loading', runs: [] });
   const [runRefresh, setRunRefresh] = useState(0);
-  const [runApprovals, setRunApprovals] = useState<Record<string, Approval[]>>({});
-  const [decidingApproval, setDecidingApproval] = useState<string | null>(null);
   const [resolvingRun, setResolvingRun] = useState<string | null>(null);
   const decidingRef = useRef(false);
   const uncertainMutation = useRef(false);
@@ -604,7 +591,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const activeIdRef = useRef(active?.id); activeIdRef.current = active?.id;
   const messages = active ? state.messages[active.id] || [] : [];
   const activeRuns=active&&runHistory.id===active.id&&agentFeature==='enabled'?runHistory.runs:[];
-  const botTimeline=buildBotTimeline(messages,activeRuns,runApprovals,active?latestSubmittedTimelineItemByBot.current[active.id]:undefined);
+  const botTimeline=buildBotTimeline(messages,activeRuns,active?latestSubmittedTimelineItemByBot.current[active.id]:undefined);
   const visibleConversationLength=activeGroup?(groupChat.id===activeGroup.id?groupChat.view?.messages.length||0:0):botTimeline.length;
   const activeConversationKey=activeGroup?`group:${activeGroup.id}`:`bot:${active?.id||''}`;
   const visibleConversationTailKey=activeGroup?(groupChat.id===activeGroup.id?groupChat.view?.messages.at(-1)?.id||'':''):botTimeline.at(-1)?.key||'';
@@ -668,28 +655,14 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         if(!response.ok)throw new Error('group unavailable');
         const view=await response.json() as GroupChatView;
         if(!view.group||!Array.isArray(view.messages))throw new Error('invalid group response');
-        const actionable=view.messages.flatMap(message=>[
-          ...(message.runId&&(message.status==='running'||(message.status==='unknown'&&message.recoveryState==='pending'))?[message.runId]:[]),
-          ...(message.replacementRun&&(message.replacementRun.status==='running'||message.replacementRun.status==='unknown')?[message.replacementRun.id]:[])
-        ]);
-        const approvals=await Promise.all([...new Set(actionable)].map(async runId=>{
-          try{
-            const approvalResponse=await fetch(`${import.meta.env.BASE_URL}api/runs/${runId}/approvals`,{credentials:'same-origin',cache:'no-store',signal:controller.signal});
-            if(!approvalResponse.ok)return[runId,[] as Approval[]] as const;
-            const data=await approvalResponse.json() as {approvals:Approval[]};
-            return[runId,Array.isArray(data.approvals)?data.approvals:[]] as const;
-          }catch(error){if(controller.signal.aborted)throw error;return[runId,[] as Approval[]] as const}
-        }));
-        const approvalsByRun=new Map(approvals);
-        view.messages=view.messages.map(message=>({...message,
-          approvals:message.runId?approvalsByRun.get(message.runId)||[]:[],
-          replacementRun:message.replacementRun?{...message.replacementRun,approvals:approvalsByRun.get(message.replacementRun.id)||[]}:null
-        }));
         if(controller.signal.aborted)return;
         setGroupChat({id,status:'ready',view});
         setGroups(current=>current.map(group=>group.id===id?{...group,...view.group}:group));
         timer=setTimeout(()=>void load(),2000);
-      }catch(error){if(!controller.signal.aborted)setGroupChat(current=>({id,status:'error',view:current.id===id?current.view:null}))}
+      }catch(error){if(!controller.signal.aborted){
+        setGroupChat(current=>({id,status:'error',view:current.id===id?current.view:null}));
+        timer=setTimeout(()=>void load(),2000);
+      }}
     };
     void load();return()=>{controller.abort();if(timer)clearTimeout(timer)};
   },[remote,agentFeature,groupsStatus,selectedGroupId,groupRefresh]);
@@ -718,13 +691,6 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         if (!response.ok) throw new Error('runs unavailable');
         const value = await response.json() as { runs: AgentRun[] };
         if (!Array.isArray(value.runs)) throw new Error('invalid runs');
-        const pending = await Promise.all(value.runs.filter(run => run.status === 'running').map(async run => {
-          const approvalResponse = await fetch(`${import.meta.env.BASE_URL}api/runs/${run.id}/approvals`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
-          if (!approvalResponse.ok) throw new Error('approvals unavailable');
-          const data = await approvalResponse.json() as { approvals: Approval[] };
-          if (!Array.isArray(data.approvals)) throw new Error('invalid approvals');
-          return [run.id, data.approvals] as const;
-        }));
         if (controller.signal.aborted || uncertainMutation.current) return;
         // A history poll can have started before a successful POST /runs and
         // return a snapshot that does not contain the accepted task. Keep each
@@ -736,13 +702,15 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         const confirmedRuns=Object.values(submitted).filter(run=>!confirmedRunIds.has(run.id));
         if(Object.keys(submitted).length===0)delete submittedRunsByBot.current[id];
         const runs=[...value.runs,...confirmedRuns];
-        setRunApprovals(Object.fromEntries(pending));
         setRunHistory({ id, status: 'ready', runs });
         const latest=runs.at(-1);
         if(latest)setState(current=>({...current,bots:current.bots.map(bot=>bot.id===id?{...bot,preview:runPreview(latest),lastActivityAt:latest.updatedAt||bot.lastActivityAt}:bot)}));
         timer = setTimeout(() => void load(), 2000);
       } catch (error) {
-        if (!controller.signal.aborted) setRunHistory(current => ({ id, status: 'error', runs: current.id === id ? current.runs : [] }));
+        if (!controller.signal.aborted) {
+          setRunHistory(current => ({ id, status: 'error', runs: current.id === id ? current.runs : [] }));
+          timer = setTimeout(() => void load(), 2000);
+        }
       }
     };
     void load();
@@ -961,33 +929,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     try{localStorage.removeItem(`${storageKey}:selected-group`)}catch{/* Selection persistence is optional. */}
     setCreateDialog(null);setNewChat(false);setPanel(false);
   }
-  async function decideApproval(id: string, decision: 'approved' | 'denied') {
-    if (uncertainMutation.current || decidingRef.current || !active || runHistory.id !== active.id || runHistory.status !== 'ready') return;
-    decidingRef.current = true; setDecidingApproval(id); setBotError('');
-    try {
-      const response = await fetch(`${import.meta.env.BASE_URL}api/approvals/${id}`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision }) });
-      if (!response.ok) throw new Error('decision could not be confirmed');
-      setRunRefresh(value => value + 1);
-    } catch {
-      uncertainMutation.current = true;
-      setBotError('Approval could not be confirmed. Refresh and check its status before trying again.');
-      setRunHistory(current => ({ ...current, status: 'error' }));
-    } finally { decidingRef.current = false; setDecidingApproval(null); }
-  }
-  async function decideGroupApproval(id:string,decision:'approved'|'denied'){
-    if(uncertainMutation.current||decidingRef.current||!selectedGroupId||groupChat.id!==selectedGroupId||groupChat.status!=='ready')return;
-    decidingRef.current=true;setDecidingApproval(id);setGroupError('');
-    try{
-      const response=await fetch(`${import.meta.env.BASE_URL}api/approvals/${id}`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision})});
-      if(!response.ok)throw new Error('decision could not be confirmed');
-      setGroupRefresh(value=>value+1);
-    }catch{
-      uncertainMutation.current=true;setGroupError('Approval could not be confirmed. Refresh and check its status before trying again.');
-      setGroupChat(current=>({...current,status:'error'}));
-    }finally{decidingRef.current=false;setDecidingApproval(null)}
-  }
   async function recoverGroupRun(message:GroupMessage,decision:'retry'|'acknowledge'){
-    if(uncertainMutation.current||decidingRef.current||!selectedGroupId||groupChat.id!==selectedGroupId||groupChat.status!=='ready'||!message.runId||message.status!=='unknown'||message.recoveryState!=='pending'||(message.approvals||[]).some(approval=>approval.status==='pending'))return;
+    if(uncertainMutation.current||decidingRef.current||!selectedGroupId||groupChat.id!==selectedGroupId||groupChat.status!=='ready'||!message.runId||message.status!=='unknown'||message.recoveryState!=='pending')return;
     decidingRef.current=true;setResolvingRun(message.runId);setGroupError('');
     try{
       const response=await fetch(`${import.meta.env.BASE_URL}api/runs/${message.runId}/recovery`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision})});
@@ -1032,7 +975,6 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     const genericDone=Boolean(run.computerUsed&&/^(done|done\.)$/i.test(run.result?.trim()||''));
     const showRecovery=run.status==='unknown'&&run.recoveryState==='pending';
     const showRetryNote=run.status==='unknown'&&run.recoveryState==='retried'&&Boolean(run.replacementRunId);
-    const pendingApprovals=(runApprovals[run.id]||[]).filter(approval=>approval.status==='pending');
     if(entry.kind==='run-prompt')return <div key={entry.key} className="message-line user"><div className="message-bubble">{run.prompt}<RunFileCards files={inputFiles} onPreview={setPreviewFile}/></div></div>;
     if(entry.kind==='computer')return <div key={entry.key} className="computer-activity-line"><ComputerActivityCard run={run} botId={active.id} showScreen={run.id===latestComputerRunId} onOpenComputer={()=>openProductPanel('Computer')}><RunFileCards files={inputFiles} onPreview={setPreviewFile}/></ComputerActivityCard></div>;
     return <div key={entry.key} className={`message-line bot${run.computerUsed?' computer-followup':''}`}><div className="message-bubble">
@@ -1041,7 +983,6 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       <RunFileCards files={outputFiles} onPreview={setPreviewFile} onReuse={reuseRunFile}/>
       {showRecovery&&<section className="run-recovery" aria-label="Review uncertain task outcome"><p>{runDiagnosticExplanation(run.diagnosticCode)||'The previous task may have run even though its result was not saved. Review the computer before deciding.'}</p><div><button type="button" disabled={Boolean(resolvingRun)||runHistory.status!=='ready'} onClick={()=>void recoverRun(run,'acknowledge')}>{resolvingRun===run.id?'Saving…':'I checked · continue'}</button><button type="button" disabled={Boolean(resolvingRun)||runHistory.status!=='ready'} onClick={()=>void recoverRun(run,'retry')}>{resolvingRun===run.id?'Saving…':'Retry as a new task'}</button></div></section>}
       {showRetryNote&&<p className="run-recovery-note">A separate queued task was created; the original outcome remains in history.</p>}
-      {pendingApprovals.map(approval=><ApprovalCard key={approval.id} approval={approval} disabled={Boolean(decidingApproval)||runHistory.status!=='ready'} decide={decision=>void decideApproval(approval.id,decision)}/>)}
     </div></div>;
   }
   function updateBotMentionDraft(value:string,caret:number){
@@ -1071,8 +1012,10 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     if(remote&&selectedGroupId){
       const clean=text.trim();
       const selectedFiles=pendingGroupFiles[selectedGroupId]||[];
-      if((!clean&&!selectedFiles.length)||uncertainMutation.current||groupSendingRef.current||groupChat.id!==selectedGroupId||groupChat.status!=='ready')return;
+      const selectedRunFiles=pendingGroupRunFiles[selectedGroupId]||[];
+      if((!clean&&!selectedFiles.length&&!selectedRunFiles.length)||uncertainMutation.current||groupSendingRef.current||groupChat.id!==selectedGroupId||groupChat.status!=='ready')return;
       if(clean.length>8000){setGroupError('Message is too long.');return}
+      if(selectedFiles.length+selectedRunFiles.length>attachmentCountLimit){setGroupError('Attach up to 20 files per message.');return}
       groupSendingRef.current=true;setGroupSending(true);setGroupError('');
       let submissionStarted=false;
       try{
@@ -1088,7 +1031,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         }
         const targetBotIds=Array.from(new Set(botMentionTokensRef.current.map(token=>token.botId)));
         submissionStarted=true;
-        const response=await fetch(`${import.meta.env.BASE_URL}api/groups/${encodeURIComponent(selectedGroupId)}/messages`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),text:clean,...(uploadedIds.length?{files:uploadedIds}:{}),...(targetBotIds.length?{targetBotIds}:{})})});
+        const messageFileIds=[...uploadedIds,...selectedRunFiles.map(file=>file.id)];
+        const response=await fetch(`${import.meta.env.BASE_URL}api/groups/${encodeURIComponent(selectedGroupId)}/messages`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),text:clean,...(messageFileIds.length?{files:messageFileIds}:{}),...(targetBotIds.length?{targetBotIds}:{})})});
         if(!response.ok){if(response.status<500){setGroupError('The message was rejected. Review it and try again.');return}throw new Error('group message submission failed');}
         const view=await response.json() as GroupChatView;
         if(!view.group||!Array.isArray(view.messages)||view.group.id!==selectedGroupId)throw new Error('invalid group response');
@@ -1100,6 +1044,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         const recipientBotIds=new Set(groupRecipientBotIds(view.group.members.map(member=>member.id),targetBotIds));
         setState(current=>({...current,bots:current.bots.map(bot=>recipientBotIds.has(bot.id)?{...bot,preview:clean||'Attached files',lastActivityAt:new Date().toISOString()}:bot)}));
         setPendingGroupFiles(current=>({...current,[selectedGroupId]:[]}));
+        setPendingGroupRunFiles(current=>({...current,[selectedGroupId]:[]}));
         if(selectedGroupId){setDraft('');botMentionTokensRef.current=[];setBotMentionTokens([]);setBotMentionQuery(null)}
       }catch{
         if(submissionStarted){uncertainMutation.current=true;setGroupChat(current=>({...current,status:'error'}));setGroupError('Group message could not be confirmed. Refresh and check the chat before sending again.');}
@@ -1200,16 +1145,28 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   function stageGroupFiles(files:File[]){
     if(!activeGroup||!files.length)return;
     const current=pendingGroupFiles[activeGroup.id]||[],combined=[...current,...files.map(file=>({key:crypto.randomUUID(),file}))];
-    if(combined.length>attachmentCountLimit){setGroupError('Attach up to 20 files per message.');return}
+    const selectedRunFiles=pendingGroupRunFiles[activeGroup.id]||[];
+    if(combined.length+selectedRunFiles.length>attachmentCountLimit){setGroupError('Attach up to 20 files per message.');return}
     for(const item of combined){
       const mimeType=attachmentMimeType(item.file);
       if(!Number.isSafeInteger(item.file.size)||item.file.size<1){setGroupError(`${item.file.name||'This file'} is empty or unreadable.`);return}
       const limit=mimeType.startsWith('image/')?attachmentImageLimit:mimeType.startsWith('video/')?attachmentVideoLimit:attachmentDocumentLimit;
       if(item.file.size>limit){setGroupError(`${item.file.name} is too large. The limit is ${mimeType.startsWith('image/')?'25 MB per image':mimeType.startsWith('video/')?'1 GB per video':'250 MB per file'}.`);return}
     }
-    const images=combined.filter(item=>attachmentMimeType(item.file).startsWith('image/'));
-    if(images.reduce((total,item)=>total+item.file.size,0)>attachmentImagesTotalLimit){setGroupError('Images exceed the 200 MB total limit per message.');return}
+    const images=[...combined.filter(item=>attachmentMimeType(item.file).startsWith('image/')).map(item=>item.file.size),...selectedRunFiles.filter(file=>file.mimeType.startsWith('image/')).map(file=>file.size)];
+    if(images.reduce((total,size)=>total+size,0)>attachmentImagesTotalLimit){setGroupError('Images exceed the 200 MB total limit per message.');return}
     setGroupError('');setPendingGroupFiles(value=>({...value,[activeGroup.id]:combined}));
+  }
+  function reuseGroupRunFile(file:RunFile){
+    if(!activeGroup||agentFeature!=='enabled')return;
+    const current=pendingGroupRunFiles[activeGroup.id]||[],localFiles=pendingGroupFiles[activeGroup.id]||[];
+    if(current.some(item=>item.id===file.id))return;
+    if(current.length+localFiles.length>=attachmentCountLimit){setGroupError('Attach up to 20 files per message.');return}
+    const mimeType=file.mimeType,limit=mimeType.startsWith('image/')?attachmentImageLimit:mimeType.startsWith('video/')?attachmentVideoLimit:attachmentDocumentLimit;
+    const imageBytes=current.filter(item=>item.mimeType.startsWith('image/')).reduce((total,item)=>total+item.size,0)+localFiles.filter(item=>attachmentMimeType(item.file).startsWith('image/')).reduce((total,item)=>total+item.file.size,0);
+    if(!Number.isSafeInteger(file.size)||file.size<1||file.size>limit){setGroupError(`${file.name} is too large or unavailable for attachment.`);return}
+    if(mimeType.startsWith('image/')&&imageBytes+file.size>attachmentImagesTotalLimit){setGroupError('Images exceed the 200 MB total limit per message.');return}
+    setGroupError('');setPendingGroupRunFiles(value=>({...value,[activeGroup.id]:[...(value[activeGroup.id]||[]),file]}));
   }
   function reuseRunFile(file: RunFile) {
     if (!active || agentFeature !== 'enabled') return;
@@ -1456,7 +1413,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
               <div className="message-content" ref={messageContent}>
               {activeGroup ? <>
                 {groupChat.id===activeGroup.id&&groupChat.status==='loading'&&<div role="status">Loading group chat…</div>}
-                {groupChat.id===activeGroup.id&&groupChat.status==='error'&&<div role="alert">Could not confirm this group chat. Refresh to check its messages before sending again.</div>}
+                {groupChat.id===activeGroup.id&&groupChat.status==='error'&&<div role="alert">Could not confirm this group chat. Checking again; refresh before submitting another task.</div>}
                 {(groupChat.view?.messages.length||0)>0&&<div className="date-line">{formatBotTime(activeGroup.lastActivityAt)||'Today'}</div>}
                 {groupChat.id===activeGroup.id&&groupChat.view?.messages.map(message=>message.role==='user'
                   ? <div key={message.id} className="message-line user group-user-message"><div className="message-bubble">{renderGroupUserText(message,activeGroup.members)}<RunFileCards files={(message.files||[]).filter(file=>file.kind==='input')} onPreview={setPreviewFile}/></div></div>
@@ -1465,17 +1422,15 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
                     <div className="message-bubble">
                       <header className="group-message-heading"><strong>{message.botName||'Bot'}</strong><span className={`group-run-status ${message.status||'queued'}`} title={groupRunStatusLabel(message)}>{groupRunStatusLabel(message)}</span></header>
                       <p>{message.text||groupRunFallback(message)}</p>
-                      <RunFileCards files={(message.files||[]).filter(file=>file.kind==='output')} onPreview={setPreviewFile}/>
+                      <RunFileCards files={(message.files||[]).filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
                       {message.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.runId||message.id,prompt:'',status:message.status||'queued',result:message.text,recoveryState:message.recoveryState||'none',replacementRunId:message.replacementRunId,files:message.files||[],computerUsed:true,executionAudit:message.executionAudit}} botId={message.botId} showScreen={message.status==='running'||message.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
-                      {(message.approvals||[]).filter(approval=>approval.status==='pending').map(approval=><ApprovalCard key={approval.id} approval={approval} disabled={Boolean(decidingApproval)||groupChat.status!=='ready'} decide={decision=>void decideGroupApproval(approval.id,decision)}/>)}
-                      {message.status==='unknown'&&message.recoveryState==='pending'&&!(message.approvals||[]).some(approval=>approval.status==='pending')&&<section className="run-recovery" aria-label={`Review uncertain task outcome for ${message.botName||'Bot'}`}><p>{runDiagnosticExplanation(message.diagnosticCode)||'The previous task may have run even though its result was not saved. Review this Bot’s computer before deciding.'}</p><div><button type="button" disabled={Boolean(resolvingRun)||groupChat.status!=='ready'} onClick={()=>void recoverGroupRun(message,'acknowledge')}>{resolvingRun===message.runId?'Saving…':'I checked · continue'}</button><button type="button" disabled={Boolean(resolvingRun)||groupChat.status!=='ready'} onClick={()=>void recoverGroupRun(message,'retry')}>{resolvingRun===message.runId?'Saving…':'Retry as a new task'}</button></div></section>}
+                      {message.status==='unknown'&&message.recoveryState==='pending'&&<section className="run-recovery" aria-label={`Review uncertain task outcome for ${message.botName||'Bot'}`}><p>{runDiagnosticExplanation(message.diagnosticCode)||'The previous task may have run even though its result was not saved. Review this Bot’s computer before deciding.'}</p><div><button type="button" disabled={Boolean(resolvingRun)||groupChat.status!=='ready'} onClick={()=>void recoverGroupRun(message,'acknowledge')}>{resolvingRun===message.runId?'Saving…':'I checked · continue'}</button><button type="button" disabled={Boolean(resolvingRun)||groupChat.status!=='ready'} onClick={()=>void recoverGroupRun(message,'retry')}>{resolvingRun===message.runId?'Saving…':'Retry as a new task'}</button></div></section>}
                       {message.status==='unknown'&&message.recoveryState==='retried'&&message.replacementRunId&&<p className="run-recovery-note">The original task outcome remains unknown. The separate retry is shown below.</p>}
                       {message.replacementRun&&<section className="group-replacement-run" aria-label={`Separate retry for ${message.botName||'Bot'}`}>
                         <header><strong>Separate retry</strong><span className={`group-run-status ${message.replacementRun.status}`}>{replacementRunLabel(message.replacementRun.status)}</span></header>
                         <p>{message.replacementRun.result||replacementRunFallback(message.replacementRun.status)}</p>
-                        <RunFileCards files={message.replacementRun.files.filter(file=>file.kind==='output')} onPreview={setPreviewFile}/>
+                        <RunFileCards files={message.replacementRun.files.filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
                         {message.replacementRun.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.replacementRun.id,prompt:'',status:message.replacementRun.status,result:message.replacementRun.result,recoveryState:'none',replacementRunId:null,files:message.replacementRun.files,computerUsed:true,executionAudit:message.replacementRun.executionAudit}} botId={message.botId} showScreen={message.replacementRun.status==='running'||message.replacementRun.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
-                        {(message.replacementRun.approvals||[]).filter(approval=>approval.status==='pending').map(approval=><ApprovalCard key={approval.id} approval={approval} disabled={Boolean(decidingApproval)||groupChat.status!=='ready'} decide={decision=>void decideGroupApproval(approval.id,decision)}/>)}
                       </section>}
                     </div>
                   </div>)}
@@ -1486,7 +1441,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
               {remote && history.id === active.id && history.status === 'error' && <div role="alert">Could not confirm message history. Refresh to check it.</div>}
               {botTimeline.length > 0 && !panel && <div className="date-line">{formatBotTime(active.lastActivityAt) || 'Today'}</div>}
               {botTimeline.map(renderBotTimelineEntry)}
-              {remote && agentFeature === 'enabled' && runHistory.id === active.id && runHistory.status === 'error' && <div role="alert">Could not confirm task history. Refresh to check it before submitting again.</div>}
+              {remote && agentFeature === 'enabled' && runHistory.id === active.id && runHistory.status === 'error' && <div role="alert">Could not confirm task history. Checking again; refresh before submitting another task.</div>}
               {state.showOnboarding[active.id] && <div className="onboarding-card">
                 <div className="onboarding-title">What do you want me helping with most right now?<IconButton name="close" label="Dismiss suggestions" onClick={() => setState(current => ({ ...current, showOnboarding: { ...current.showOnboarding, [active.id]: false } }))} /></div>
                 <div className="choice-list">{['Work & projects', 'Email & Slack', 'Calendar & scheduling', 'Research & writing', 'Something else'].map((option, index) => <button key={option} type="button" onClick={() => addMessage(option)}><span className="choice-key">{String.fromCharCode(65 + index)}</span><span>{option}{index === 4 && <small>I’ll tell you in chat</small>}</span></button>)}</div>
@@ -1499,10 +1454,10 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
               </div>
             </div>
             {remote && agentFeature === 'enabled' && <input ref={filePicker} className="file-picker" type="file" multiple aria-label="Choose files to attach" onChange={event=>{const selected=Array.from(event.currentTarget.files||[]);activeGroup?stageGroupFiles(selected):stageFiles(selected);event.currentTarget.value=''}}/>}
-            {activeGroup&&remote&&agentFeature==='enabled'&&(pendingGroupFiles[activeGroup.id]||[]).length>0&&<div className="pending-files" aria-label="Files to attach">{(pendingGroupFiles[activeGroup.id]||[]).map(item=><span className="pending-file" key={item.key}><span>{item.file.name}{item.uploadedId?' · Ready':''}</span><button type="button" aria-label={`Remove ${item.file.name}`} disabled={groupSending} onClick={()=>setPendingGroupFiles(current=>({...current,[activeGroup.id]:(current[activeGroup.id]||[]).filter(file=>file.key!==item.key)}))}>×</button></span>)}</div>}
+            {activeGroup&&remote&&agentFeature==='enabled'&&((pendingGroupFiles[activeGroup.id]||[]).length+(pendingGroupRunFiles[activeGroup.id]||[]).length)>0&&<div className="pending-files" aria-label="Files to attach">{(pendingGroupRunFiles[activeGroup.id]||[]).map((file,index)=><span className="pending-file" key={`run:${file.id}`}><span>{file.name}</span><button type="button" aria-label={`Remove reused ${file.name}`} disabled={groupSending} onClick={()=>setPendingGroupRunFiles(current=>({...current,[activeGroup.id]:(current[activeGroup.id]||[]).filter((_,itemIndex)=>itemIndex!==index)}))}>×</button></span>)}{(pendingGroupFiles[activeGroup.id]||[]).map(item=><span className="pending-file" key={item.key}><span>{item.file.name}{item.uploadedId?' · Ready':''}</span><button type="button" aria-label={`Remove ${item.file.name}`} disabled={groupSending} onClick={()=>setPendingGroupFiles(current=>({...current,[activeGroup.id]:(current[activeGroup.id]||[]).filter(file=>file.key!==item.key)}))}>×</button></span>)}</div>}
             {remote && agentFeature === 'enabled' && ((pendingFiles[active.id]||[]).length+(pendingRunFiles[active.id]||[]).length)>0 && <div className="pending-files" aria-label="Files to attach">{(pendingRunFiles[active.id]||[]).map((file,index)=><span className="pending-file" key={`run:${file.id}`}><span>{file.name}</span><button type="button" aria-label={`Remove reused ${file.name}`} onClick={()=>setPendingRunFiles(current=>({...current,[active.id]:(current[active.id]||[]).filter((_,itemIndex)=>itemIndex!==index)}))}>×</button></span>)}{(pendingFiles[active.id]||[]).map((file,index)=><span className="pending-file" key={`local:${file.name}:${file.lastModified}:${index}`}><span>{file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={()=>setPendingFiles(current=>({...current,[active.id]:(current[active.id]||[]).filter((_,itemIndex)=>itemIndex!==index)}))}>×</button></span>)}</div>}
             {botMentionQuery&&botMentionCandidates.length>0&&<div id="bot-mention-list" className="group-mention-menu" role="listbox" aria-label="Mention a Bot">{botMentionCandidates.map((member,index)=><button id={`bot-mention-option-${member.id}`} key={member.id} type="button" role="option" aria-selected={index===botMentionActiveIndex} onMouseDown={event=>event.preventDefault()} onClick={()=>selectBotMention(member)}><Avatar bot={member} size={25}/><span><strong>{member.name}</strong>{member.label&&<small>{member.label}</small>}</span><small>Bot</small></button>)}</div>}
-            <form className="composer" onSubmit={event=>{event.preventDefault();void addMessage(draft)}}><IconButton name="plus" label="Add attachment" onClick={()=>remote&&agentFeature==='enabled'?filePicker.current?.click():setNotice(true)}/><textarea ref={activeGroup?groupComposer:composerInput} aria-label={`Message ${activeGroup?.name||active.name}`} placeholder={`Message ${activeGroup?.name||active.name}`} value={draft} rows={1} disabled={composerDisabled} aria-autocomplete={botMentionQuery?'list':undefined} aria-expanded={botMentionQuery?Boolean(botMentionCandidates.length):undefined} aria-controls={botMentionQuery&&botMentionCandidates.length?'bot-mention-list':undefined} aria-activedescendant={botMentionQuery&&botMentionCandidates[botMentionActiveIndex]?`bot-mention-option-${botMentionCandidates[botMentionActiveIndex].id}`:undefined} onChange={event=>updateBotMentionDraft(event.currentTarget.value,event.currentTarget.selectionStart)} onPaste={event=>{if(!remote||agentFeature!=='enabled')return;const pasted=Array.from(event.clipboardData.files||[]);if(!pasted.length)return;event.preventDefault();activeGroup?stageGroupFiles(pasted):stageFiles(pasted)}} onKeyDown={handleComposerKeyDown}/><IconButton name="mic" label="Voice input" onClick={()=>setNotice(true)}/>{draft.trim()||(activeGroup?(pendingGroupFiles[activeGroup.id]||[]).length>0:((pendingFiles[active.id]||[]).length+(pendingRunFiles[active.id]||[]).length)>0)?<button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote?'Send task':'Save local message'}><Icon name="arrow"/></button>:<IconButton name="sound" label="Start voice chat" className="voice-button" onClick={()=>setNotice(true)}/>}</form>
+            <form className="composer" onSubmit={event=>{event.preventDefault();void addMessage(draft)}}><IconButton name="plus" label="Add attachment" onClick={()=>remote&&agentFeature==='enabled'?filePicker.current?.click():setNotice(true)}/><textarea ref={activeGroup?groupComposer:composerInput} aria-label={`Message ${activeGroup?.name||active.name}`} placeholder={`Message ${activeGroup?.name||active.name}`} value={draft} rows={1} disabled={composerDisabled} aria-autocomplete={botMentionQuery?'list':undefined} aria-expanded={botMentionQuery?Boolean(botMentionCandidates.length):undefined} aria-controls={botMentionQuery&&botMentionCandidates.length?'bot-mention-list':undefined} aria-activedescendant={botMentionQuery&&botMentionCandidates[botMentionActiveIndex]?`bot-mention-option-${botMentionCandidates[botMentionActiveIndex].id}`:undefined} onChange={event=>updateBotMentionDraft(event.currentTarget.value,event.currentTarget.selectionStart)} onPaste={event=>{if(!remote||agentFeature!=='enabled')return;const pasted=Array.from(event.clipboardData.files||[]);if(!pasted.length)return;event.preventDefault();activeGroup?stageGroupFiles(pasted):stageFiles(pasted)}} onKeyDown={handleComposerKeyDown}/><IconButton name="mic" label="Voice input" onClick={()=>setNotice(true)}/>{draft.trim()||(activeGroup?((pendingGroupFiles[activeGroup.id]||[]).length+(pendingGroupRunFiles[activeGroup.id]||[]).length)>0:((pendingFiles[active.id]||[]).length+(pendingRunFiles[active.id]||[]).length)>0)?<button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote?'Send task':'Save local message'}><Icon name="arrow"/></button>:<IconButton name="sound" label="Start voice chat" className="voice-button" onClick={()=>setNotice(true)}/>}</form>
           </section>
           {account && panel && <div className="computer-panel-resize-handle" role="separator" aria-label="Resize computer panel" aria-orientation="vertical" aria-valuemin={productPanelMin()} aria-valuemax={productPanelMax(layoutSidebarWidth)} aria-valuenow={Math.round(computerPanelWidth)} aria-valuetext={`${Math.round(computerPanelWidth)} pixels`} tabIndex={0} onPointerDown={startComputerPanelResize} onPointerMove={moveComputerPanelResize} onPointerUp={finishComputerPanelResize} onPointerCancel={finishComputerPanelResize} onKeyDown={adjustComputerPanelResize} onDoubleClick={() => setComputerPanelWidth(initialProductPanelWidth('', layoutSidebarWidth, ''))} />}
           {panel && (activeGroup?<aside className="details-panel group-details-panel" aria-label="Group details"><GroupAvatar members={activeGroup.members} size={80}/><div className="group-panel-name">{activeGroup.name}</div><div className="group-panel-count">{activeGroup.members.length} Bots</div><div className="tabs"><button type="button" className={tab==='Details'?'active':''} onClick={()=>setTab('Details')}>Details</button><button type="button" className={tab==='Computer'?'active':''} onClick={()=>setTab('Computer')}>Computer</button></div>{tab==='Computer'?remote&&agentFeature==='enabled'?<ComputerPanel name={activeGroup.members.find(member=>member.id===groupComputerBotId)?.name||activeGroup.members[0].name} botId={groupComputerBotId||activeGroup.members[0].id}/>:<div className="computer-preview"><Icon name="screen"/><span>Computer not connected</span></div>:<div className="group-member-list" aria-label="Group members">{activeGroup.members.map(member=><div className="group-member" key={member.id}><Avatar bot={member} size={30}/><span><strong>{member.name}</strong>{member.label&&<small>{member.label}</small>}</span><button type="button" onClick={()=>{setGroupComputerBotId(member.id);setTab('Computer')}}>Computer</button></div>)}</div>}</aside>:<aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" ref={avatarButton} aria-label="Change Bot picture" onClick={openAvatar}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => saveBotName(active.id,active.name)} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && agentFeature === 'enabled' ? <ComputerPanel name={active.name} botId={active.id} official bot={active} onClose={()=>setPanel(false)} onRename={renameBot} onSaveName={()=>saveBotName(active.id,active.name)} onLabelChange={label=>setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))} onSaveLabel={saveBotLabel} onChangeAvatar={openAvatar} onEditRoutine={name=>{setDraft(`Edit your routine: ${name}`);setPanel(false);requestAnimationFrame(()=>composerInput.current?.focus())}} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>)}

@@ -18,11 +18,12 @@ import { UserComputer } from '../src/server/user-computer.ts';
 import { WorkspaceFileStore } from '../src/server/file-store.ts';
 import { GroupChatStore } from '../src/server/group-chat-store.ts';
 import type { WorkspaceFileTransport } from '../src/server/workspace-file-client.ts';
+import { mysqlTestCredentials } from './helpers/mysql-test-credentials.ts';
 const mysqlPort=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);if(!mysqlPort)throw new Error('Disposable MySQL port required');
 async function freePort(){const s=createServer();s.listen(0,'127.0.0.1');await once(s,'listening');const p=(s.address() as import('node:net').AddressInfo).port;await new Promise<void>(resolve=>s.close(()=>resolve()));return p}
 const frontPort=await freePort(),backPort=await freePort(),identityPort=await freePort(),origin=`http://127.0.0.1:${frontPort}`,base='/grok-bot/',publicUrl=origin+base;
-const database=`grok_run_ui_${randomUUID().replaceAll('-','')}`,admin=await mysql.createConnection({host:'127.0.0.1',port:mysqlPort,user:'root'});await admin.query(`CREATE DATABASE \`${database}\``);
-const pool=mysql.createPool({host:'127.0.0.1',port:mysqlPort,user:'root',database,timezone:'Z'}),store=new TenantStore(pool),bots=new BotStore(pool),runs=new RunStore(pool),files=new WorkspaceFileStore(pool),groups=new GroupChatStore(pool),workspaceFiles=new Map<string,Buffer>(),approvals=new ApprovalStore(pool);await store.migrate();await bots.migrate();await runs.migrate();await groups.migrate();await approvals.migrate();
+const database=`grok_run_ui_${randomUUID().replaceAll('-','')}`,mysqlCredentials=mysqlTestCredentials(mysqlPort),admin=await mysql.createConnection(mysqlCredentials);await admin.query(`CREATE DATABASE \`${database}\``);
+const pool=mysql.createPool({...mysqlCredentials,database,timezone:'Z'}),store=new TenantStore(pool),bots=new BotStore(pool),runs=new RunStore(pool),files=new WorkspaceFileStore(pool),groups=new GroupChatStore(pool),workspaceFiles=new Map<string,Buffer>(),approvals=new ApprovalStore(pool);await store.migrate();await bots.migrate();await runs.migrate();await groups.migrate();await approvals.migrate();
 const flows=new Map<string,{nonce:string;challenge:string}>();let state='',identity='alice';
 const provider:IdentityProvider={authorizationUrl(s,nonce,challenge){flows.set(s,{nonce,challenge});return `http://127.0.0.1:${identityPort}/?state=${s}`},async exchange(code,verifier){const f=flows.get(state)!;assert.equal(createHash('sha256').update(verifier).digest('base64url'),f.challenge);return {sub:code,email:`${code}@example.test`,email_verified:true,name:code,nonce:f.nonce}}};
 const identityServer=createHttpServer((req,res)=>{state=new URL(req.url||'/',`http://127.0.0.1:${identityPort}`).searchParams.get('state')!;res.writeHead(302,{Location:`${publicUrl}auth/google/callback?state=${state}&code=${identity}`});res.end()});identityServer.listen(identityPort,'127.0.0.1');await once(identityServer,'listening');
@@ -80,7 +81,10 @@ try{
  await page.getByRole('button',{name:'Shape oval'}).press('Escape');await page.getByRole('button',{name:'Hide computer'}).click();
  const field=page.getByLabel('Message New Bot');await field.fill('Test queued task');await page.getByRole('button',{name:'Send task'}).click();
  await page.getByText('Queued · waiting for your computer').waitFor();await scheduler.tick();await page.getByText('Working on your computer').waitFor();
- await page.getByText('Browser: click').waitFor();const image=page.getByRole('img',{name:'Computer screen when this action was requested'});await image.waitFor();await page.waitForFunction(()=>{const image=document.querySelector('.approval-card img') as HTMLImageElement|null;return Boolean(image?.complete && image.naturalWidth)});assert.equal(await page.getByRole('button',{name:'Approve',exact:true}).isEnabled(),true);let decisionPosts=0;
+ await page.getByText('Browser: click').waitFor();const image=page.getByRole('img',{name:'Computer screen when this action was requested'});await image.waitFor();await page.waitForFunction(()=>{const image=document.querySelector('.approval-card img') as HTMLImageElement|null;return Boolean(image?.complete && image.naturalWidth)});assert.equal(await page.getByRole('button',{name:'Approve',exact:true}).isEnabled(),true);
+ let taskHistoryFailures=0;await page.route('**/api/bots/*/runs',async route=>{if(route.request().method()==='GET'&&taskHistoryFailures===0){taskHistoryFailures++;await route.fulfill({status:503,body:'{}'});return}await route.continue()});
+ await page.getByText('Could not confirm task history or approval status. Checking again; refresh before submitting another task.',{exact:true}).waitFor();assert.equal(await page.locator('.approval-card').count(),0,'an unconfirmed approval from the last successful poll must not remain visible');
+ await page.locator('.approval-card').waitFor();assert.equal(taskHistoryFailures,1,'history polling should recover automatically');await page.unroute('**/api/bots/*/runs');let decisionPosts=0;
  await page.route('**/api/approvals/*',async route=>{decisionPosts++;await route.fetch();await route.fulfill({status:503,body:'{}'})});
  await page.getByRole('button',{name:'Approve',exact:true}).click();await page.getByText('Approval could not be confirmed. Refresh and check its status before trying again.').waitFor();
  await page.waitForTimeout(2300);assert.equal(decisionPosts,1);assert.equal(await page.getByRole('button',{name:'Approve',exact:true}).isDisabled(),true);
@@ -126,6 +130,12 @@ try{
  await groupComposer.fill('Group approval UI test: each Bot gives one safe offsite idea.');await page.getByRole('button',{name:'Send task'}).click();
  for(let i=0;i<8&&await page.locator('.group-bot-message .approval-card').count()<2;i++){await scheduler.tick();await page.waitForTimeout(40)}
  await page.waitForFunction(()=>document.querySelectorAll('.group-bot-message .approval-card').length===2,null,{timeout:8000});
+ let failNextGroupHistoryPoll=true;const groupHistoryPattern=`**/api/groups/${createdGroup.id}`;
+ await page.route(groupHistoryPattern,async route=>{if(failNextGroupHistoryPoll&&route.request().method()==='GET'){failNextGroupHistoryPoll=false;await route.fulfill({status:503,contentType:'application/json',body:'{}'});return}await route.continue()});
+ await page.getByRole('alert').filter({hasText:'Could not confirm this group chat or approval status. Checking again'}).waitFor({timeout:8000});
+ assert.equal(await page.locator('.group-bot-message .approval-card').count(),0,'A failed group-history poll must hide approvals it can no longer confirm');
+ await page.waitForFunction(()=>document.querySelectorAll('.group-bot-message .approval-card').length===2,null,{timeout:8000});
+ assert.equal(failNextGroupHistoryPoll,false,'The group-history poll failure was exercised');await page.unroute(groupHistoryPattern);
  const groupApprovalCards=page.locator('.group-bot-message .approval-card');
  for(let i=0;i<2;i++){const card=groupApprovalCards.first();await card.locator('img').waitFor();await card.getByRole('button',{name:'Approve',exact:true}).click();await page.waitForFunction(expected=>document.querySelectorAll('.group-bot-message .approval-card').length===expected,1-i,{timeout:8000})}
  releaseGroupApproval();

@@ -57,20 +57,18 @@ test('DSH computer screenshot becomes a durable model image attachment', async (
   }
 });
 
-test('DSH browser control clicks use one exact approval and never retry execute', async () => {
+test('DSH browser control clicks execute directly without approval polling', async () => {
   const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
   const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
   const oldFetch = globalThis.fetch;
   process.env.COKE_GROK_COMPUTER_BRIDGE_URL = 'https://gateway.example.test/v1';
   process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = bridgeToken;
-  const approvalId = randomUUID(), calls = [];
+  const calls = [];
   globalThis.fetch = async (url, init = {}) => {
     const path = new URL(String(url)).pathname;
     calls.push({ path, method: init.method || 'GET', body: init.body ? JSON.parse(init.body) : undefined });
     if (path.endsWith('/computer/control')) return Response.json({ owner: 'agent' });
-    if (path.endsWith('/computer/actions')) return Response.json({ id: approvalId });
-    if (path.endsWith(`/computer/actions/${approvalId}`)) return Response.json({ status: 'approved' });
-    if (path.endsWith(`/computer/actions/${approvalId}/execute`)) return Response.json({ ready: true, action: 'click', url: 'https://example.test/' });
+    if (path.endsWith('/computer/actions')) return Response.json({ status: 'completed', result: { ready: true, action: 'click', url: 'https://example.test/' } }, { status: 201 });
     throw new Error('Unexpected computer route');
   };
   try {
@@ -79,10 +77,9 @@ test('DSH browser control clicks use one exact approval and never retry execute'
     assert.ok(browser);
     const value = await browser.execute({ action: 'click', by: 'role', role: 'link', target: 'Docs' }, { signal: new AbortController().signal });
     assert.equal(value.action, 'click');
-    const executes = calls.filter(call => call.path.endsWith(`/computer/actions/${approvalId}/execute`));
-    assert.equal(executes.length, 1);
+    assert.equal(calls.length, 2);
     assert.deepEqual(calls.find(call => call.path.endsWith('/computer/actions'))?.body, { action: { kind: 'browser', action: 'click', by: 'role', role: 'link', target: 'Docs' } });
-    assert.ok(calls.some(call => call.method === 'GET' && call.path.endsWith(`/computer/actions/${approvalId}`)));
+    assert.ok(calls.every(call => call.path.endsWith('/computer/control') || call.path.endsWith('/computer/actions')));
   } finally {
     globalThis.fetch = oldFetch;
     if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
@@ -117,6 +114,64 @@ test('DSH direct Gmail navigation consumes an immediate completion without creat
     assert.match(browser.description, /If sign-in or human verification appears, stop and tell the owner to open the Computer screen and choose Take control/i);
     assert.match(browser.description, /open the Computer screen and choose Take control/i);
     assert.match(browser.description, /Do not claim control has transferred/i);
+    assert.match(browser.description, /reuse the exact current page\/session when it is already the requested signed-in site/i);
+    assert.match(browser.description, /Do not reload, open another tab, or guess account-specific paths/i);
+    assert.match(browser.description, /after takeover, inspect the same computer and resume on its current page/i);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
+    if (oldToken === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN; else process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = oldToken;
+  }
+});
+
+test('DSH browser action forwards an explicitly identified same-user task artifact', async () => {
+  const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
+  const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
+  const oldFetch = globalThis.fetch;
+  process.env.COKE_GROK_COMPUTER_BRIDGE_URL = 'https://gateway.example.test/v1';
+  process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = bridgeToken;
+  const calls = [], taskId = '8faf80b9-752d-42f1-86fc-38bdaa0e4bc9';
+  globalThis.fetch = async (url, init = {}) => {
+    const path = new URL(String(url)).pathname;
+    calls.push({ path, method: init.method || 'GET', body: init.body ? JSON.parse(init.body) : undefined });
+    if (path.endsWith('/computer/control')) return Response.json({ owner: 'agent' });
+    if (path.endsWith('/computer/actions')) return Response.json({ status: 'completed', result: { ready: true, url: `file:///workspace/tasks/${taskId}/artifacts/bse-demo/index.html`, title: 'BSE Demo' } }, { status: 201 });
+    throw new Error('Cross-task preview must use the direct browser-task completion path');
+  };
+  try {
+    const browser = mount().tools.get('computer_browser');
+    const value = await browser.execute({ action: 'open_artifact', artifactTaskId: taskId, path: 'artifacts/bse-demo/index.html' }, { signal: new AbortController().signal });
+    assert.equal(value.action, 'open_artifact');
+    assert.deepEqual(calls.find(call => call.path.endsWith('/computer/actions'))?.body, { action: { kind: 'browser', action: 'open_artifact', artifactTaskId: taskId, path: 'artifacts/bse-demo/index.html' } });
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
+    if (oldToken === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN; else process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = oldToken;
+  }
+});
+
+test('DSH Browser User uploads a same-user task artifact through the live page file input without approval polling', async () => {
+  const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
+  const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
+  const oldFetch = globalThis.fetch;
+  process.env.COKE_GROK_COMPUTER_BRIDGE_URL = 'https://gateway.example.test/v1';
+  process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = bridgeToken;
+  const calls = [], taskId = '8faf80b9-752d-42f1-86fc-38bdaa0e4bc9';
+  globalThis.fetch = async (url, init = {}) => {
+    const path = new URL(String(url)).pathname;
+    calls.push({ path, method: init.method || 'GET', body: init.body ? JSON.parse(init.body) : undefined });
+    if (path.endsWith('/computer/control')) return Response.json({ owner: 'agent' });
+    if (path.endsWith('/computer/actions')) return Response.json({ status: 'completed', result: { ready: true, action: 'upload_file', title: 'GitHub' } }, { status: 201 });
+    throw new Error('A direct file upload must not create or poll an approval');
+  };
+  try {
+    const { tools } = mount(), browser = tools.get('computer_browser');
+    const value = await browser.execute({ action: 'upload_file', artifactTaskId: taskId, path: 'artifacts/bse-demo/index.html', by: 'css', target: 'input[type="file"]' }, { signal: new AbortController().signal });
+    assert.equal(value.action, 'upload_file');
+    assert.deepEqual(calls.find(call => call.path.endsWith('/computer/actions'))?.body, { action: { kind: 'browser', action: 'upload_file', artifactTaskId: taskId, path: 'artifacts/bse-demo/index.html', by: 'css', target: 'input[type="file"]' } });
+    assert.equal(calls.length, 2, 'only check control and perform the requested upload');
+    assert.match(browser.description, /input\[type="file"\]/i);
+    assert.match(browser.description, /do not access host files/i);
   } finally {
     globalThis.fetch = oldFetch;
     if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
@@ -195,7 +250,7 @@ test('DSH computer plugin refuses actions when the user owns the screen and reje
   }
 });
 
-test('DSH computer plugin does not request the same action again after the owner denies it', async () => {
+test('DSH computer plugin fails closed instead of polling legacy approval ids', async () => {
   const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
   const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
   const oldFetch = globalThis.fetch;
@@ -211,11 +266,8 @@ test('DSH computer plugin does not request the same action again after the owner
   };
   try {
     const browser = mount().tools.get('computer_browser');
-    const action = { action: 'navigate', url: 'https://example.test/' };
-    const exec = { signal: new AbortController().signal };
-    await assert.rejects(browser.execute(action, exec), /wait for a new user message/);
-    await assert.rejects(browser.execute(action, exec), /owner denied a computer action/);
-    assert.equal(proposals, 1);
+    await assert.rejects(browser.execute({ action: 'navigate', url: 'https://example.test/' }, { signal: new AbortController().signal }), /approval prompts are disabled and no action was performed/);
+    assert.equal(proposals, 1,'stale approval responses are not polled or executed');
   } finally {
     globalThis.fetch = oldFetch;
     if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
@@ -247,18 +299,16 @@ test('DSH exposes only the persistent shared folder to file reads', async () => 
   }
 });
 
-test('DSH terminal runs the exact owner-approved command once in the shared folder', async () => {
+test('DSH terminal runs a task command without a per-command approval', async () => {
   const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL, oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
   const oldWorkspace = process.env.COKE_GROK_WORKSPACE_ROOT, oldFetch = globalThis.fetch;
   const root = await mkdtemp(join(tmpdir(), 'dsh-terminal-'));
   process.env.COKE_GROK_COMPUTER_BRIDGE_URL = 'https://gateway.example.test/v1'; process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = bridgeToken;
   process.env.COKE_GROK_WORKSPACE_ROOT = root;
-  const approvalId = randomUUID(), calls = [];
+  const calls = [];
   globalThis.fetch = async (url, init = {}) => {
     const path = new URL(String(url)).pathname; calls.push({ path, method: init.method || 'GET', body: init.body ? JSON.parse(init.body) : undefined });
-    if (path.endsWith('/computer/actions')) return Response.json({ id: approvalId });
-    if (path.endsWith(`/computer/actions/${approvalId}`)) return Response.json({ status: 'approved' });
-    if (path.endsWith(`/computer/actions/${approvalId}/execute`)) return Response.json({ approved: true });
+    if (path.endsWith('/computer/control')) return Response.json({ owner: 'agent' });
     throw new Error('Unexpected computer route');
   };
   try {
@@ -266,8 +316,7 @@ test('DSH terminal runs the exact owner-approved command once in the shared fold
     const result = await terminal.execute({ command: 'printf DSH_TERMINAL_OK > result.txt', directory: 'shared' }, { signal: new AbortController().signal });
     assert.match(result.text, /"exitCode":0/);
     assert.equal(await readFile(join(root, 'shared', 'result.txt'), 'utf8'), 'DSH_TERMINAL_OK');
-    assert.deepEqual(calls.filter(call => call.path.endsWith('/computer/actions'))[0].body, { action: { kind: 'terminal', action: 'run', command: 'printf DSH_TERMINAL_OK > result.txt', directory: 'shared' } });
-    assert.equal(calls.filter(call => call.path.endsWith(`/computer/actions/${approvalId}/execute`)).length, 1);
+    assert.deepEqual(calls.map(call => call.path), ['/v1/computer/control']);
   } finally {
     globalThis.fetch = oldFetch;
     if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;

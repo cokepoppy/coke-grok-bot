@@ -1,7 +1,8 @@
 const authRoute = /(?:^|[./_-])(?:login|log-in|signin|sign-in|oauth|sso|challenge|captcha|verify|verification|mfa)(?:$|[./?_-])/i;
+const identityHost = /^(?:accounts?|auth|identity|login|signin|sso)\./i;
 const credentialControl = /(?:password|passcode|one.?time.?code|verification.?code|security.?code|recovery.?code|\botp\b|\bmfa\b|密码|口令|验证码|安全码|恢复码)/i;
 const identityControl = /(?:username|user.?name|account.?identifier|email(?:.?address)?|e-mail|邮箱|用户名)/i;
-const loginCopy = /(?:sign\s*in|log\s*in|verify (?:it'?s|your)|verification required|enter (?:your )?(?:code|password)|two.?factor|multi.?factor|登录|登陆|验证身份|输入验证码)/i;
+const loginCopy = /(?:sign\s*in|log\s*in|verify (?:it'?s|your)|verification required|enter (?:your )?(?:code|password)|two.?factor|multi.?factor|choose (?:an? )?account|select (?:an? )?account|use another account|continue with (?:google|microsoft|apple)|登录|登陆|验证身份|输入验证码|选择账号|选择帐户|使用其他账号)/i;
 function normalized(value) {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, 500) : '';
 }
@@ -10,7 +11,7 @@ export function isAuthenticationChallenge({ url = '', title = '', text = '', con
   let parsed;
   try { parsed = new URL(url); } catch { return false; }
   if (humanChallenge) return true;
-  const route = authRoute.test(parsed.hostname) || authRoute.test(parsed.pathname);
+  const route = identityHost.test(parsed.hostname) || authRoute.test(parsed.hostname) || authRoute.test(parsed.pathname);
   const sensitive = Array.isArray(controls) && controls.some(control => {
     const identity = [control?.type, control?.name, control?.autocomplete, control?.ariaLabel, control?.label, control?.placeholder].map(normalized).join(' ');
     return /^password$/i.test(normalized(control?.type))

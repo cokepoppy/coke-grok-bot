@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import mysql from 'mysql2/promise';
+import { mysqlTestCredentials } from './helpers/mysql-test-credentials.ts';
 import { TenantStore } from '../src/server/tenant-store.ts';
 import { BotStore } from '../src/server/bot-store.ts';
 import { RunStore } from '../src/server/run-store.ts';
@@ -12,12 +13,13 @@ import { createAuthServer } from '../src/server/auth-http.ts';
 
 const port=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);
 if(!port)throw new Error('Set COKE_GROK_TEST_MYSQL_PORT to a disposable local MySQL instance.');
+const mysqlCredentials = mysqlTestCredentials(port);
 
 test('routine APIs enforce Bot ownership, persist schedules, and queue one real run per due occurrence',async()=>{
  const database=`grok_routines_${randomUUID().replaceAll('-','')}`;
- const admin=await mysql.createConnection({host:'127.0.0.1',port,user:'root'});
+ const admin=await mysql.createConnection(mysqlCredentials);
  await admin.query(`CREATE DATABASE \`${database}\``);
- const pool=mysql.createPool({host:'127.0.0.1',port,user:'root',database,timezone:'Z',connectionLimit:12});
+ const pool=mysql.createPool({...mysqlCredentials,database,timezone:'Z',connectionLimit:12});
  const identities=new TenantStore(pool),bots=new BotStore(pool),runs=new RunStore(pool),routines=new RoutineStore(pool);
  await identities.migrate();await bots.migrate();await runs.migrate();await routines.migrate();await routines.migrate();
  const net=await import('node:net'),reservation=net.createServer();reservation.listen(0,'127.0.0.1');await once(reservation,'listening');

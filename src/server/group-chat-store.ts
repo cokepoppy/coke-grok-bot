@@ -263,9 +263,21 @@ export class GroupChatStore {
    let sourceFiles:Array<RunFile&{storageKey:string}>=[];
    if(fileIds.length){
     const [rows]=await connection.execute<RowDataPacket[]>(`SELECT f.id,f.bot_id AS botId,f.display_name AS name,f.mime_type AS mimeType,f.size,f.sha256,f.storage_key AS storageKey
-     FROM bot_group_files gf JOIN bot_files f ON f.id=gf.file_id JOIN bots b ON b.id=f.bot_id
-     WHERE gf.group_id=? AND f.bot_id=? AND b.tenant_id=? AND b.owner_id=? AND f.id IN (${fileIds.map(()=>'?').join(',')})
-     ORDER BY FIELD(f.id,${fileIds.map(()=>'?').join(',')}) FOR UPDATE`,[groupId,sourceBotId,session.tenantId,session.userId,...fileIds,...fileIds]);
+     FROM bot_files f JOIN bots b ON b.id=f.bot_id
+     WHERE b.tenant_id=? AND b.owner_id=? AND f.id IN (${fileIds.map(()=>'?').join(',')})
+       AND (
+        EXISTS(SELECT 1 FROM bot_group_files gf WHERE gf.group_id=? AND gf.file_id=f.id AND f.bot_id=?)
+        OR EXISTS(
+         SELECT 1 FROM agent_run_files rf
+         JOIN agent_runs r ON r.id=rf.run_id AND r.bot_id=f.bot_id AND r.status='completed'
+         JOIN bot_group_messages gm ON gm.group_id=? AND gm.sender_type='bot' AND gm.sender_bot_id=f.bot_id AND (gm.run_id=r.id OR EXISTS(
+          SELECT 1 FROM agent_runs parent WHERE parent.id=gm.run_id AND parent.replacement_run_id=r.id AND parent.bot_id=f.bot_id
+         ))
+         JOIN bot_group_members member ON member.group_id=? AND member.bot_id=f.bot_id
+         WHERE rf.file_id=f.id AND rf.kind='output'
+        )
+       )
+     ORDER BY FIELD(f.id,${fileIds.map(()=>'?').join(',')}) FOR UPDATE`,[session.tenantId,session.userId,...fileIds,groupId,sourceBotId,groupId,groupId,...fileIds]);
     sourceFiles=WorkspaceFileStore.validateInputRows(rows,fileIds).map(file=>({...file,storageKey:file.storageKey!}));
    }
    const requested=targetBotIds===undefined?null:new Set(targetBotIds),recipients=members.map(row=>String(row.id)).filter(id=>requested===null||requested.has(id));

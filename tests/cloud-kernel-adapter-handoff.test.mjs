@@ -24,9 +24,11 @@ test('Pi installs an owner-scoped private async Bot handoff tool and queues thro
   await runCloudKernel({engine:'pi',modelConfig:{apiKey:capability,baseUrl:'https://gateway.example.test/v1',model:'deepseek-v4.1-flash'},handoffs:{...handoffs,bots:[targetBot,sameNameBot]},workspace,cwd:path.relative(workspace,cwd),prompt:'Ask Sales Outbound to research one safe example prospect. Do not contact anyone.',signal:new AbortController().signal},{piSdk:sdk});
   const tool=options.customTools.find(item=>item.name==='bot_handoff');assert.ok(tool);assert.ok(options.tools.includes('bot_handoff'));
   assert.match(tool.description,/Sales Outbound \(Prospecting\).*Bot ID/);assert.match(tool.promptSnippet,/targetBotId/);
-  const queued=await tool.execute('tool-call',{targetBotId:targetBot.id,message:'Research one fictional sample prospect without contacting anyone.'},new AbortController().signal);
+  const fileId=randomUUID();
+  const queued=await tool.execute('tool-call',{targetBotId:targetBot.id,message:'Research one fictional sample prospect without contacting anyone.',fileIds:[fileId]},new AbortController().signal);
   assert.match(queued.content[0].text,/queued private task/i);assert.equal(request.url,'https://gateway.example.test/v1/bot-handoffs');assert.equal(request.method,'POST');
-  assert.equal(request.headers.get('authorization'),`Bearer ${capability}`);assert.deepEqual(request.body,{targetBotId:targetBot.id,message:'Research one fictional sample prospect without contacting anyone.'});
+  assert.equal(request.headers.get('authorization'),`Bearer ${capability}`);assert.deepEqual(request.body,{targetBotId:targetBot.id,message:'Research one fictional sample prospect without contacting anyone.',fileIds:[fileId]});
+  await assert.rejects(()=>tool.execute('tool-call',{targetBotId:targetBot.id,message:'Duplicate file ids.',fileIds:[fileId,fileId]},new AbortController().signal),/file list is invalid/);
   await assert.rejects(()=>tool.execute('tool-call',{targetBotName:sourceBot.name,message:'not in the owner-scoped roster'},new AbortController().signal),/target or message is invalid/);
   await assert.rejects(()=>tool.execute('tool-call',{targetBotName:'Sales Outbound',message:'ambiguous display name'},new AbortController().signal),/target name is ambiguous/);
   const fallback=await tool.execute('tool-call',{targetBotName:'Sales Outbound (Prospecting)',message:'Use the unique legacy name-and-label address.'},new AbortController().signal);
@@ -122,8 +124,10 @@ test('DSH handoff plugin sends only rostered targets through the mediated gatewa
  try{
   const module=await import(`${new URL(`file://${url}`).href}?case=${randomUUID()}`),tools=[];module.apply({tools:{register:tool=>tools.push(tool)}});const tool=tools.find(item=>item.name==='bot_handoff');assert.ok(tool);
   assert.match(tool.description,/Bot ID/);
-  const result=await tool.execute({targetBotId:targetBot.id,message:'Check one harmless detail.'},{signal:new AbortController().signal});assert.equal(result.status,'queued');
-  assert.equal(request.url,'https://gateway.example.test/v1/bot-handoffs');assert.equal(request.method,'POST');assert.equal(request.headers.get('authorization'),`Bearer ${capability}`);assert.deepEqual(request.body,{targetBotId:targetBot.id,message:'Check one harmless detail.'});
+  const fileId=randomUUID();
+  const result=await tool.execute({targetBotId:targetBot.id,message:'Check one harmless detail.',fileIds:[fileId]},{signal:new AbortController().signal});assert.equal(result.status,'queued');
+  assert.equal(request.url,'https://gateway.example.test/v1/bot-handoffs');assert.equal(request.method,'POST');assert.equal(request.headers.get('authorization'),`Bearer ${capability}`);assert.deepEqual(request.body,{targetBotId:targetBot.id,message:'Check one harmless detail.',fileIds:[fileId]});
+  await assert.rejects(()=>tool.execute({targetBotId:targetBot.id,message:'Invalid duplicate files.',fileIds:[fileId,fileId]},{signal:new AbortController().signal}),/file list is invalid/);
   await assert.rejects(()=>tool.execute({targetBotName:sourceBot.name,message:'outside roster'},{signal:new AbortController().signal}),/target or message is invalid/);
   await assert.rejects(()=>tool.execute({targetBotName:'Sales Outbound',message:'ambiguous display name'},{signal:new AbortController().signal}),/target name is ambiguous/);
   await assert.rejects(()=>tool.execute({targetBotId:randomUUID(),message:'unrostered id'},{signal:new AbortController().signal}),/target or message is invalid/);

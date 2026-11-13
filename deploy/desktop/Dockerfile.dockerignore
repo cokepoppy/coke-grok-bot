@@ -14,6 +14,7 @@
 !deploy/desktop/desktop-screen-layout.mjs
 !deploy/desktop/desktop-input.mjs
 !deploy/desktop/shared-computer-root.mjs
+!deploy/desktop/control-owner-audit.mjs
 !deploy/desktop/active-tab-extension/
 !deploy/desktop/active-tab-extension/manifest.json
 !deploy/desktop/active-tab-extension/service-worker.js
