@@ -2743,6 +2743,14 @@ ChatGPT 重启后，Chrome 扩展仍能列出 `https://codex.cokeagent.com/grok-
 
 本轮开始时，feature 分支为 `codex/grok-bot-persistent-group-chat`，HEAD `853552b` 与远端同名分支一致；工作区仍有未跟踪的候选 `releases/` 目录，未触碰。没有重启 Pod、MySQL 或 K3D，也未运行测试。
 
+#### 2026-11-13 官方 Grok Bot 201 逐帧续审至 2:59.960
+
+继续审核本机完整官方视频 `research/videos/grok-201-rOVomdnWhjQ.mkv`（1920×1080、25 fps、SHA-256 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`）。新增连续区间 2:30.000–2:59.960，共 750 帧、30 张 5×5 联系图；所有联系图已逐张查看。此前完成的 2:30.000–2:44.960 三个窗口已有独立解码记录；本轮复核最后三个窗口，375/375 源 PTS、`yuv420p` 像素字节数/哈希、15/15 联系图哈希及完整视频 SHA 均与 manifest 匹配。仅保留一张便于读清末帧聊天的原尺寸 JPEG：`research/frames/grok-201-0255-0300-keyframes-20261113/keyframe-0179.960.jpg`，原帧索引与哈希在同目录 manifest；为节省空间，重复的三张临时关键帧已删。
+
+观察到 `roy` 的 X Bot 会话从登录后继续操作：Bot 文案称账号 `@josephyangx` 已登录、`what's up` 已发布；随后对 `we are live on grok bot 201` 出现显式公开发帖确认卡及 `yes always just post it` 选项。Computer 预览从 `Connecting` 转至已登录的 X 主页（相邻 PTS 2:43.040/2:43.080）；主页显示 4 条帖子，但画面中可见的一条近期帖子为 `if you're available next hour, come join me at grok bot 201:`，并非请求的确切文案。2:59.960 聊天仍称另一版本 `we are live with Grokbot 201` “isn't live yet”，状态 `Clicking around`。因此视频展示了登录状态延续、公开发帖确认界面、Computer 预览恢复及执行中/已完成文案，但可见 X 帖文与 Bot 的发布陈述/请求不完全匹配；现有画面不足以证明目标文案已成功发布，不能把聊天中的 “your post” 当作独立外部确认。
+
+V2 开场连续逐帧覆盖由 2:29.960 延长至 2:59.960（累计 4,500 帧）；下一连续待审从 3:00.000 开始。完整观察、不确定项与各段 manifest 路径记于 `research/README.md`。这部分是官方视频 UI/交互证据，不代表当前实现已具备同等外部 X 连接或全链路验收。
+
 #### 2026-11-13 Browser Use 绑定、北交所 Pages 与 PR 复核
 
 使用已登录 Chrome 的原生 Computer Use 语义读取公网 Grok Bot，能打开 `https://codex.cokeagent.com/grok-bot/` 并读到北交所项目组；未使用截图。侧栏当时分别显示：BSE 端到端测试 16:55 有已完成的线上页验收摘要、BSE 运维发布 17:17 有只读页面核验摘要；BSE 产品调研 08:42 显示 `Outcome unknown`，前端开发 06:21 的摘要说明其未执行 GitHub 写操作，Chief 06:21 显示 `Queued`。这些是不同会话/任务的侧栏摘要，不能据此认定调研、开发、测试、运维都属于同一条成功 run；保留未知与排队状态。
