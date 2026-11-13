@@ -2718,3 +2718,11 @@ ChatGPT 重启后重新读取 Chrome 扩展清单，扩展能枚举公网 Grok B
 通过已登录本机 Chrome 的语义控件检查实际 GitHub Pages：标题 `北证证券终端 · DEMO · 920999 N星澜`，页面标注 `纯前端演示`、`网络 0 请求`，3.6.5(2)(3) 边界校验显示 5/5 PASS。随后执行一笔纯模拟限价买入 9.95 × 10,000 股，页面生成 `D20261112-0001`，挂单冻结现金 ¥99,500；撤单后显示 `已撤`、释放冻结资金，可用现金回到 ¥5,000,000、冻结为 ¥0。该交互只验证公开静态演示页的前端模拟状态，不能证明 Grok Bot Agent、K3D Browser User 或交易系统链路。
 
 再次检查公网 Grok Bot 项目组，群成员是 Chief、BSE 产品调研、BSE 前端开发、BSE 端到端测试、BSE 运维发布，共 5 个。群组 Computer 面板显示 `Computer not connected` / `Chief's screen · Waiting for computer`；切到 BSE 运维发布个人电脑则加载出其真实屏幕并显示 `Bot is in control`。这是按 Bot 屏幕区分的可见状态，不足以认定全局云电脑断连，因此本轮没有重启 Pod 或 Worker。历史群聊仍有多个 `Outcome unknown` 以及 Chief queued 状态；不将它们标为成功，不点 `I checked · continue` 或重试，也不据此宣称北交所多 Bot 全链路已验收。下一步需先用同一原始 run 的持久化证据消解未知结果，再通过公网产品 UI 顺序完成真实调研→开发→测试→运维与 Pages 云电脑打开。
+
+#### 2026-11-13 再次重启后复测 Browser Use 与 BSE 公网状态
+
+本轮 `cua.getState()` 可列出已登录 Chrome 扩展实例及公网 Grok Bot、BSE Pages 两个标签。随后用扩展 Browser Use `getTab("841112088", { browser: "chrome" })` 绑定 Grok Bot 标签，35 秒后超时并重置 CUA。原生 Computer Use `getApp("Google Chrome")` 随后成功读取当前 Chrome 可访问性树，当前页为 `/grok-bot/`，显示 BSE 运维发布 Bot 的个人电脑面板及 `Bot is in control`、`Take control`、`Enter computer full screen` 控件。因而已证明原生 Computer Use 可达；Browser Use 扩展绑定仍失败，重启未解决该故障，根因未知。不要据此推断 Work 设置被关闭或云电脑全局断连；避免循环重试绑定。
+
+通过原生 Chrome 控件关闭电脑屏幕后，只读打开北交所项目群，确认组内当前仍有多个 `Outcome unknown`，Tester 的近期状态为 `Outcome unknown`，Chief 为 `Queued`。群消息中存在 Ops 的一条已完成 Pages 检查回执，报告实际 URL 为 `https://c-m-ai-copilot.github.io/coke-bse-trading-demo/`，页面标题为「北证证券终端 · DEMO · 920999 N星澜」，显示 `3.6.5(2)(3)`、`2026-10-26` 及 17/34/43 号公告来源。该回执是 Ops 云电脑 Browser User 的先前完成记录；本轮没有重新导航该云电脑，也没有消解 Tester/Chief 的未知运行。
+
+本轮仅查看真实 UI、没有截图、没有确认未知结果、没有重放任务、没有触发订单或发布操作。多 Bot 全链路仍不能依据 Pages 已发布或单条 Ops 回执判为完成；后续须先按各自原 run 核验 unknown 的可能副作用，再在公网产品 UI 中完成尚缺的阶段交接与验收。
