@@ -2682,3 +2682,17 @@ BSE 多 Bot 全链路仍未通过最终验收：仍须在可用的签名态公�
 用户本轮确认 GitHub Pages 已发布（https://c-m-ai-copilot.github.io/coke-bse-trading-demo/）。因此不能把重复发布当作缺失步骤；剩余可见验收是由项目组运维 Bot 在真实云电脑 Chrome 打开该 Pages 并核对页面，同时先处理 Tester unknown 与 Chief queued 的既有状态。当前 `cua.getState()` 再次明确返回 `Local browser use is disabled in Work settings`，浏览器列表为空；工具清单没有 Work settings 管理器。没有用其他 UI 路径替代网页点击，也没有启动/重试任务。
 
 后续顺序：先取得受信路径的群组状态与副作用证据；再为当前分支构建固定 Auth 候选，核对镜像 ID 和运行 bundle SHA；在确认更新不会中断 live lease 后才一对一替换 Auth。随后恢复公网签名态 Computer Use，通过原有北交所群继续真实 Browser/Computer User 的调研、开发、测试、Pages 发布和云电脑打开流程。此项版本复核不是多 Bot E2E 验收。
+
+#### 2026-11-13 北交所 Bot 屏幕队列阻塞根因复核
+
+再次只读检查正确的应用 MySQL。全群有 0 个有效运行 lease、5 个 queued Chief 任务；按仓库 `RunStore.queuedScreens()` 的查询在该群返回 0 个可领取屏幕。Auth 当前 bundle 与本机构建虽不一致，但两边都包含按 Bot 屏幕检查 `running` / `unknown,pending` 的查询，因此“运行时还是全 owner 串行”不是已证实原因。
+
+将范围从群聊消息扩展到该项目组所有成员 Bot 的全部对话后，发现 3 个待核对状态阻塞各自的屏幕队列：
+
+- Research Bot 的个人对话 run `d763d288-3513-4bc6-8887-c0110740d70f`：`unknown/pending`、`agent_result_status_unconfirmed`、无结果和输出文件。受限执行审计显示 Pi `deepseek-v4.1-flash` 完成，Browser `inspect` 与 `bot_memory` 均成功。`bot_memory` 是已经发生的写操作，不能将该 run 视为无副作用或自动重放。
+- Tester 的群聊 run `044c5465-51ec-4076-b33b-8a0c92c44883`：`unknown/pending`、`agent_result_status_unconfirmed`、`computer_used=true`，没有持久化执行审计、结果或输出文件。
+- Chief 的个人对话 run `65ff6add-e72a-401b-8f13-74275569dd6b`：`unknown/pending`、`agent_paused_for_control`、`computer_used=true`，没有持久化执行审计、结果或输出文件。该诊断不证明用户实际接管；用户报告没有接管，且缺少能还原历史控制人的审计证据。
+
+这解释了为何 Chief 的 5 个组内任务一直 queued：Chief 自己更早的个人对话 unknown/pending 会阻塞 Chief 屏幕。Research 与 Tester 也各自有待核对项；Ops 最近的 unknown 是 `acknowledged`，不是成功，但不会以 pending 状态阻塞其屏幕。未知结果必须逐个核实可能副作用后再从产品 UI 继续，不能通过修改数据库、批量确认、重置聊天或重放任务来清队列。
+
+本机 Computer Use 本轮仍报告 Work settings 禁用控制，故无法通过公网产品 UI 查看这三个运行的完整消息与电脑画面，也没有触发任何新任务。GitHub Pages 已发布；最后需要由 Ops Bot 在云电脑 Chrome 打开 Pages URL 并核对页面，但应在可见地核对当前队列状态后继续。该队列诊断不等于 E2E 验收。
