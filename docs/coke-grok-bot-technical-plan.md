@@ -2736,3 +2736,13 @@ ChatGPT 重启后，Chrome 扩展仍能列出 `https://codex.cokeagent.com/grok-
 当前公网 Grok Bot UI 仍把 BSE E2E Tester 列为 `Outcome unknown`、Chief 列为 `Queued`；Ops 已完成的 Browser User 页面检查回执仍指向已发布的 Pages。保留未知记录，不点 `I checked · continue`、不重试该旧 run，也不重复发布。用户明确选择不轮换本轮误输出的应用 MySQL 口令；不得再读取、打印或用于诊断，除非用户之后另行指示。该凭据操作与浏览器控制故障无关。
 
 本轮开始时，feature 分支为 `codex/grok-bot-persistent-group-chat`，HEAD `853552b` 与远端同名分支一致；工作区仍有未跟踪的候选 `releases/` 目录，未触碰。没有重启 Pod、MySQL 或 K3D，也未运行测试。
+
+#### 2026-11-13 Browser Use 绑定、北交所 Pages 与 PR 复核
+
+使用已登录 Chrome 的原生 Computer Use 语义读取公网 Grok Bot，能打开 `https://codex.cokeagent.com/grok-bot/` 并读到北交所项目组；未使用截图。侧栏当时分别显示：BSE 端到端测试 16:55 有已完成的线上页验收摘要、BSE 运维发布 17:17 有只读页面核验摘要；BSE 产品调研 08:42 显示 `Outcome unknown`，前端开发 06:21 的摘要说明其未执行 GitHub 写操作，Chief 06:21 显示 `Queued`。这些是不同会话/任务的侧栏摘要，不能据此认定调研、开发、测试、运维都属于同一条成功 run；保留未知与排队状态。
+
+在公网 Pages `https://c-m-ai-copilot.github.io/coke-bse-trading-demo/` 的 Chrome 页签中实际读到标题 `北证证券终端 · DEMO · 920999 N星澜`、DEMO/纯前端演示说明、合成行情与 `网络 0 请求` 标记；第 3.6.5(2)(3) 边界台显示 5/5 PASS，区间为 ¥7.00–¥13.00。既有模拟委托 `D20261112-0001` 显示已撤、资金释放完成；本轮没有下单或重置账户。GitHub PR `c-m-ai-copilot/coke-bse-trading-demo#1` 实际显示 `Merged`，已将 1 个提交合并到 `main`；合并提交为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`，来源分支 `codex/bse-demo`。没有重复发布，也未删除分支。
+
+单独复测 Browser Use：Chrome 扩展 inventory 可列出 Grok Bot、Pages 与 PR 标签，但 `getTab("841112109", { browser: "chrome" })` 在 40 秒后超时并重置 CUA；随后 `cua.getState()` 也在 30 秒后超时。两次超时之间的原生 `getApp("Google Chrome")` 与语义网页点击正常完成，说明 Browser Use 扩展标签绑定与原生 Computer Use 是不同控制通道；当前也观察到 CUA 服务随后不稳定。原因未确认，不能据此断言 Work setting 被禁用、云电脑断连或页面故障。停止循环绑定，不用截图或坐标脚本绕过。
+
+因此本轮确认了 PR 合并和 Pages 可见，但没有解决侧栏中的 Research `Outcome unknown`、Chief `Queued`，也没有证明这些近期摘要属于同一个多 Bot canonical run。不能把北交所多 Bot 全链路标记为全部验收通过。数据库凭据未读取或变更；本轮没有运行测试、重启服务或改动运行数据。
