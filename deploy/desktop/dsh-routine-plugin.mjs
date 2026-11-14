@@ -7,7 +7,7 @@ export function apply(ctx) {
   if(!bridge)throw new Error('The mediated Bot routine bridge is not configured');
   ctx.tools.register({
     name:'bot_routines',
-    description:'List this Bot’s routines, or create/edit a weekly or interval schedule when the user directly asks. Creating or editing schedules real future work.',
+    description:'List this Bot’s routines, or create/edit a weekly schedule, interval, or authenticated webhook trigger when the user directly asks. Creating or editing a routine can schedule real future work.',
     parameters:{
       type:'object',
       properties:{
@@ -19,6 +19,7 @@ export function apply(ctx) {
         schedule:{oneOf:[
           {type:'object',properties:{kind:{const:'weekly'},weekday:{type:'integer',minimum:0,maximum:6},hour:{type:'integer',minimum:0,maximum:23},minute:{type:'integer',minimum:0,maximum:59}},required:['kind','weekday','hour','minute'],additionalProperties:false},
           {type:'object',properties:{kind:{const:'interval'},minutes:{type:'integer',minimum:5,maximum:10080}},required:['kind','minutes'],additionalProperties:false},
+          {type:'object',properties:{kind:{const:'webhook'}},required:['kind'],additionalProperties:false},
         ]},
       },required:['action'],additionalProperties:false,
     },
@@ -26,11 +27,12 @@ export function apply(ctx) {
     async execute(args,exec){
       if(exec.signal?.aborted)throw exec.signal.reason||new Error('Task was stopped');
       const isList=args.action==='list',isEdit=args.action==='edit';
-      if(!['list','create','edit'].includes(args.action)||!isList&&(!args.name?.trim()||!args.instruction?.trim()||!args.timezone||!validSchedule(args.schedule)||isEdit&&!uuid.test(args.routineId||'')))throw new Error('Bot routine request is incomplete');
+      const isWebhook=args.schedule?.kind==='webhook';
+      if(!['list','create','edit'].includes(args.action)||!isList&&(!args.name?.trim()||!args.instruction?.trim()||(!isWebhook&&!args.timezone)||args.timezone!==undefined&&!args.timezone||!validSchedule(args.schedule)||isEdit&&!uuid.test(args.routineId||'')))throw new Error('Bot routine request is incomplete');
       const response=await fetch(`${bridge.url}/bot-routines${isEdit?`/${encodeURIComponent(args.routineId)}`:''}`,{
         method:isList?'GET':isEdit?'PATCH':'POST',
         headers:{authorization:`Bearer ${bridge.token}`,...(!isList?{'content-type':'application/json'}:{})},
-        ...(!isList?{body:JSON.stringify({name:args.name,instruction:args.instruction,timezone:args.timezone,schedule:args.schedule})}:{}),
+        ...(!isList?{body:JSON.stringify({name:args.name,instruction:args.instruction,timezone:args.timezone||(isWebhook?'UTC':undefined),schedule:args.schedule})}:{}),
         signal:exec.signal,redirect:'error',
       });
       const value=await response.json().catch(()=>null);
@@ -43,6 +45,7 @@ export function apply(ctx) {
 function validSchedule(value){
   if(!value||typeof value!=='object'||Array.isArray(value))return false;
   if(value.kind==='weekly')return Number.isInteger(value.weekday)&&value.weekday>=0&&value.weekday<=6&&Number.isInteger(value.hour)&&value.hour>=0&&value.hour<=23&&Number.isInteger(value.minute)&&value.minute>=0&&value.minute<=59&&Object.keys(value).length===4;
+  if(value.kind==='webhook')return Object.keys(value).length===1;
   if(value.kind==='interval')return Number.isInteger(value.minutes)&&value.minutes>=5&&value.minutes<=10080&&Object.keys(value).length===2;
   return false;
 }

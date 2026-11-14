@@ -3087,3 +3087,11 @@ Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无
 本轮参考源限定为官方 xAI Grok Bot 201 演示视频。连续审阅 22:55.000–23:14.960 四个五秒片段，覆盖 500 个 1920×1080、25 fps 源帧及 20 张联系图。每段经独立 FFmpeg 重解码核对 125/125 PTS 和源像素哈希、5/5 联系图哈希；源视频 SHA-256 为 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。完整观察及本机证据目录见 `research/README.md` 的同名续审条目；素材位于 Git 忽略的 `research/frames/`。
 
 可见的 `full stack` Bot 问候与建议卡、右侧 Computer 灰色占位和中栏输入框在该段基本保持不变。PTS 1,389,040（23:09.040）标题上方没有工具条；PTS 1,389,080（23:09.080）首次出现包含 Bot 图标、动态指示、设置、聊天、麦克风及红色关闭控件的浮动条，并延续到观察段结束。虽然指针在变化帧附近位于语音控件，视频不足以确定触发原因；不应将其称为语音模式启动，也不应将 Computer 占位解读为已连接。原尺寸相邻关键帧与双重哈希记录于 `research/frames/grok-201-2309-040-080-header-toolbar-transition-keyframes-20261115/manifest.json`。V2 连续逐帧覆盖从 22:54.960 推进到 23:14.960（累计 34,875 帧），下一待审区间为 23:15.000 起；视频视觉研究仍不等于对本项目 UI 或真实运行功能的验收。
+
+#### 2026-11-15 Routine 通用 Webhook 触发候选
+
+根据 xAI [Skills and routines 官方文档](https://docs.x.ai/grok-bot/skills-routines-and-automations)，Routine 除定时外可由 Webhook 调用；Routine 详情应展示 POST URL、Bearer key 和完整 Authorization header，Webhook 请求可带 JSON，`200` 只表示已接受并启动运行。文档列出每个 Routine 每小时 200 次、账号下全部 Routines 每小时 300 次的限额，以及每个 Bot 最多 50 个 Routine、保留最近 20 条运行记录。
+
+当前唯一功能分支正在实现通用 Bearer Webhook 触发并接入真实 Agent run queue：Pi/DSH 可创建触发器，owner-only Routine 详情读取密钥；数据库只存密钥哈希和使用持久签名密钥派生的 AES-GCM 密文；可选事件 ID 用于重试去重；请求体作为不可信 JSON 输入，不能提升自身权限。定时、Test、Webhook 共享每 Routine/账号小时限额；限流失败进入历史，Webhook 返回 429。通用 Webhook 不是 Slack、GitHub、Linear、Sentry、PagerDuty 或邮件的原生事件连接器，这些集成仍未实现。
+
+本轮源码构建、Routine schedule 单测 4/4、Pi/DSH Routine adapter 测试 3/3 和 `git diff --check` 通过。MySQL 集成测试未运行：当前只有应用 MySQL 实例可见，测试账号未配置；既有用户约束禁止读取或复用应用数据库密码，也没有新建测试容器。公网 Computer Use 的 Chrome tab inventory 成功，但 URL tab binding 超时，未对页面执行操作；因此没有公网 Routine Webhook / DeepSeek / K3D 持久化验收证据。改动仍只在 `codex/grok-bot-routine-panel-parity`，未提交、推送、部署、合并或打 tag；不要据此称 Routine 事件触发已通过端到端验收。

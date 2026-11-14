@@ -21,3 +21,11 @@ test('routine validation enforces bounded schedules, instructions, and IANA zone
  assert.throws(()=>validateRoutineInput({...valid,timezone:'Not/AZone'}),/Invalid routine/);
  assert.throws(()=>validateRoutineInput({...valid,instruction:'  '}),/Invalid routine/);
 });
+
+test('webhook routines validate as event triggers and default their history time zone',()=>{
+ const valid={requestId:'55555555-5555-4555-8555-555555555555',name:'Issue webhook',instruction:'Summarize the new issue.',schedule:{kind:'webhook'}};
+ assert.deepEqual(validateRoutineInput(valid),{...valid,timezone:'UTC'});
+ assert.equal(routineWhen({kind:'webhook'},'UTC'),'When a webhook is called');
+ assert.throws(()=>validateRoutineInput({...valid,schedule:{kind:'webhook',extra:true}}),/Invalid routine/);
+ assert.throws(()=>validateRoutineInput({...valid,timezone:'Not/AZone'}),/Invalid routine/);
+});

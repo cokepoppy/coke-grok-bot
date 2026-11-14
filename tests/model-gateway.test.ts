@@ -150,14 +150,19 @@ test('routine capabilities require an owner Bot and live-run scope and reject ma
  const token=gateway.issue({ttlMs:10_000,calls:1,scope}),unscoped=gateway.issue({ttlMs:10_000,calls:1});
  const request=(capability:string,path='',init:RequestInit={})=>fetch(`${url}${path}`,{...init,headers:{authorization:`Bearer ${capability}`,...init.headers}});
  const input={name:'Weekly review',instruction:'Prepare a short status.',timezone:'Asia/Shanghai',schedule:{kind:'weekly',weekday:1,hour:9,minute:30}};
+ const webhookInput={name:'Issue webhook',instruction:'Summarize the new issue for review.',timezone:'UTC',schedule:{kind:'webhook'}};
  try{
   assert.equal((await request(unscoped)).status,404);
   assert.equal((await request(token)).status,200);
   assert.equal((await request(token,'',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(input)})).status,201);
   const routineId='66666666-6666-4666-8666-666666666666';
   assert.equal((await request(token,`/${routineId}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(input)})).status,200);
+  assert.equal((await request(token,'',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(webhookInput)})).status,201);
+  assert.equal((await request(token,`/${routineId}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(webhookInput)})).status,200);
   assert.equal((await request(token,'',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...input,unexpected:true})})).status,400);
-  assert.equal(calls.length,3);for(const call of calls)assert.deepEqual(call.scope,scope);
+  assert.equal((await request(token,'',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...webhookInput,schedule:{kind:'webhook',unexpected:true}})})).status,400);
+  assert.equal(calls.length,5);for(const call of calls)assert.deepEqual(call.scope,scope);
   assert.equal(calls[2].routineId,routineId);
+  assert.deepEqual(calls[3].input,webhookInput);assert.equal(calls[4].routineId,routineId);assert.deepEqual(calls[4].input,webhookInput);
  }finally{gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}
 });

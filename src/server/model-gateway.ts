@@ -44,6 +44,7 @@ function validRoutineEditInput(value:unknown):value is RoutineEditInput {
   const body=value as Record<string,unknown>;
   if(Object.keys(body).sort().join(',')!=='instruction,name,schedule,timezone'||typeof body.name!=='string'||typeof body.instruction!=='string'||typeof body.timezone!=='string'||!body.schedule||typeof body.schedule!=='object'||Array.isArray(body.schedule))return false;
   const schedule=body.schedule as Record<string,unknown>;
+  if(schedule.kind==='webhook')return Object.keys(schedule).length===1;
   if(schedule.kind==='weekly')return Object.keys(schedule).sort().join(',')==='hour,kind,minute,weekday'&&Number.isInteger(schedule.weekday)&&Number.isInteger(schedule.hour)&&Number.isInteger(schedule.minute);
   return schedule.kind==='interval'&&Object.keys(schedule).sort().join(',')==='kind,minutes'&&Number.isInteger(schedule.minutes);
 }

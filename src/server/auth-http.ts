@@ -324,12 +324,38 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         }
         return reply(405,{error:'Method not allowed'});
       }
+      const routineWebhookMatch=url.pathname.match(new RegExp(`^${origin.prefix}/api/routine-webhooks/([0-9a-f-]{36})$`,'i'));
+      if(routines&&routineWebhookMatch){
+        if(req.method!=='POST')return replyJson(res,405,{error:'Method not allowed'});
+        const authorization=typeof req.headers.authorization==='string'?req.headers.authorization:'';
+        const bearer=authorization.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
+        if(!bearer)return replyJson(res,404,{error:'Webhook not found'});
+        let size=0;const chunks:Buffer[]=[];
+        for await(const chunk of req){size+=chunk.length;if(size>16384)return replyJson(res,413,{error:'Webhook payload too large'});chunks.push(Buffer.from(chunk))}
+        let payload:unknown={};
+        if(size){
+          if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return replyJson(res,415,{error:'Expected JSON'});
+          try{payload=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return replyJson(res,400,{error:'Invalid JSON'})}
+        }
+        const eventId=typeof req.headers['x-webhook-event-id']==='string'?req.headers['x-webhook-event-id']:undefined;
+        const result=await routines.triggerWebhook(routineWebhookMatch[1],bearer,payload,eventId);
+        if(result.status==='accepted'||result.status==='duplicate')return replyJson(res,200,{accepted:true,duplicate:result.status==='duplicate',runId:result.runId});
+        if(result.status==='paused')return replyJson(res,409,{error:'Routine is paused'});
+        if(result.status==='rate-limited')return replyJson(res,429,{error:'Automation run rate limit exceeded'});
+        if(result.status==='invalid')return replyJson(res,400,{error:'Invalid webhook request'});
+        return replyJson(res,404,{error:'Webhook not found'});
+      }
       const routineCollectionMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/routines$`,'i'));
       const routineTestMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/routines/([0-9a-f-]{36})/test$`,'i'));
+      const routineWebhookDetailsMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/routines/([0-9a-f-]{36})/webhook$`,'i'));
       const routineItemMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/routines/([0-9a-f-]{36})$`,'i'));
-      if(routines&&(routineCollectionMatch||routineTestMatch||routineItemMatch)){
+      if(routines&&(routineCollectionMatch||routineTestMatch||routineWebhookDetailsMatch||routineItemMatch)){
         const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value))};
         const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated'});
+        if(routineWebhookDetailsMatch&&req.method==='GET'){
+          const webhook=await routines.getWebhook(session,routineWebhookDetailsMatch[1],routineWebhookDetailsMatch[2]);
+          return webhook?reply(200,{webhook}):reply(404,{error:'Not found'});
+        }
         if(routineCollectionMatch&&req.method==='GET'){
           const items=await routines.list(session,routineCollectionMatch[1]);
           return items?reply(200,{routines:items}):reply(404,{error:'Not found'});

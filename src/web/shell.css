@@ -928,6 +928,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .routine-detail-schedule > strong { color: #191919; font-size: 14px; font-weight: 500; }
 .routine-detail-schedule > small { color: #999791; font-size: 11px; }
 .routine-detail-instruction > p { margin: 0; color: #34332f; font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.routine-webhook { display: grid; gap: 8px; }
+.routine-webhook > h2 { margin: 0; color: #777670; font-size: 12px; font-weight: 400; }
+.routine-webhook > p { margin: 0; color: #999791; font-size: 12px; }
+.routine-webhook-field { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: start; gap: 5px 8px; padding: 8px 0; border-top: 1px solid #e7e3db; }
+.routine-webhook-field > span { grid-column: 1 / -1; color: #777670; font-size: 11px; }
+.routine-webhook-field > code { min-width: 0; color: #34332f; font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.routine-webhook-field > button { min-height: 26px; padding: 4px 8px; border: 1px solid #e0ddd5; border-radius: 7px; color: #363530; background: #fff; font: inherit; font-size: 11px; }
+.routine-webhook-field > button:focus-visible { outline: 2px solid #73716c; outline-offset: 2px; }
 .routine-next-run { margin: -7px 0 0; color: #777670; font-size: 12px; }
 .routine-history { display: grid; gap: 8px; }
 .routine-history > p { margin: 0; color: #999791; font-size: 12px; }

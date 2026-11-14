@@ -243,6 +243,7 @@ try {
     { id: 'rename-event', role: 'system', text: 'Renamed to Sales Outbound', createdAt: referenceActivity.toISOString() },
   ];
   const demoRoutines = [{ id:'official-routine',botId:'sales-outbound',requestId:'official-routine-request',name:'Overnight outbound',instruction:'Prepare outbound drafts for review.',schedule:{kind:'weekly',weekday:0,hour:23,minute:0},timezone:'UTC',paused:false,when:'Sundays at 11:00 PM',nextRunAt:new Date(Date.now()+86_400_000).toISOString(),runs:[] }];
+  const demoRoutineWebhook = {endpointPath:'/api/routine-webhooks/webhook-routine',key:'w'.repeat(43),authorizationHeader:`Bearer ${'w'.repeat(43)}`};
   // Crop from the user-provided public x.ai/bot screenshot; this fixture is only used for visual UI tests.
   const demoScreenBytes = await readFile(new URL('./fixtures/official-grok-bot-computer-preview.png', import.meta.url));
   await productShellPage.route('**/api/**', async route => {
@@ -272,8 +273,9 @@ try {
       if (route.request().method() === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ routines: demoRoutines }) });
     }
     if (path.startsWith(`${routineCollection}/`)) {
+      if (path.endsWith('/webhook') && route.request().method() === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ webhook: demoRoutineWebhook }) });
       const testRun = path.endsWith('/test');
-      const routineId = path.slice(routineCollection.length + 1).replace(/\/test$/, '');
+      const routineId = path.slice(routineCollection.length + 1).replace(/\/(?:test|webhook)$/, '');
       const index = demoRoutines.findIndex(routine => routine.id === routineId);
       if (index < 0) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Not found' }) });
       if (testRun && route.request().method() === 'POST') {
@@ -447,6 +449,15 @@ try {
   await productShellPage.getByRole('button', { name: 'Delete routine', exact: true }).click();
   await productShellPage.getByRole('button', { name: 'Delete routine', exact: true }).click();
   await productShellPage.getByText('Ask in chat to set a routine.', { exact: true }).waitFor();
+  demoRoutines.push({ id:'webhook-routine',botId:'sales-outbound',requestId:'webhook-request',name:'Issue webhook',instruction:'Summarize the new issue for review.',schedule:{kind:'webhook'},timezone:'UTC',paused:false,when:'When a webhook is called',nextRunAt:null,runs:[] });
+  await productShellPage.reload({ waitUntil: 'networkidle' });
+  await computerPanelToggle.click();
+  await computerPanel.waitFor({ state: 'visible' });
+  await productShellPage.getByRole('button', { name: 'Issue webhook, When a webhook is called' }).click();
+  await productShellPage.getByRole('region', { name: 'Routine Issue webhook' }).waitFor();
+  const webhookUrlText = await productShellPage.locator('.routine-webhook-field').filter({ hasText: 'POST to' }).locator('code').innerText();
+  assert.match(webhookUrlText,/\/api\/routine-webhooks\/webhook-routine$/);
+  await productShellPage.getByText(`Authorization: Bearer ${'w'.repeat(43)}`, { exact: true }).waitFor();
   const openScreen = productShellPage.getByRole('button', { name: 'Open screen' });
   await openScreen.click();
   const computerScreenDialog = productShellPage.getByRole('dialog', { name: "Sales Outbound's computer screen" });

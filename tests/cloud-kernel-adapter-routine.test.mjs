@@ -9,6 +9,7 @@ import { runCloudKernel } from '../deploy/desktop/cloud-kernel-adapter.mjs';
 const capability='r'.repeat(43);
 const routineId='55555555-5555-4555-8555-555555555555';
 const routineInput={name:'Weekly review',instruction:'Summarize new work for review.',timezone:'Asia/Shanghai',schedule:{kind:'weekly',weekday:1,hour:9,minute:30}};
+const webhookInput={name:'Issue webhook',instruction:'Summarize the new issue for review.',schedule:{kind:'webhook'}};
 
 test('Pi routine tool uses the scoped gateway for list, create, and edit',async()=>{
  const workspace=await mkdtemp(path.join(os.tmpdir(),'grok-pi-routines-')),cwd=path.join(workspace,'tasks','routines');await mkdir(cwd,{recursive:true});
@@ -25,8 +26,10 @@ test('Pi routine tool uses the scoped gateway for list, create, and edit',async(
   await tool.execute('list',{action:'list'},new AbortController().signal);
   await tool.execute('create',{action:'create',...routineInput},new AbortController().signal);
   await tool.execute('edit',{action:'edit',routineId,...routineInput},new AbortController().signal);
-  assert.deepEqual(requests.map(request=>[new URL(request.url).pathname,request.method]),[['/v1/bot-routines','GET'],['/v1/bot-routines','POST'],[`/v1/bot-routines/${routineId}`,'PATCH']]);
+  await tool.execute('webhook',{action:'create',...webhookInput},new AbortController().signal);
+  assert.deepEqual(requests.map(request=>[new URL(request.url).pathname,request.method]),[['/v1/bot-routines','GET'],['/v1/bot-routines','POST'],[`/v1/bot-routines/${routineId}`,'PATCH'],['/v1/bot-routines','POST']]);
   assert.ok(requests.every(request=>request.auth===`Bearer ${capability}`));
+  assert.equal(requests[3].body.timezone,'UTC');assert.deepEqual(requests[3].body.schedule,{kind:'webhook'});
   await assert.rejects(()=>tool.execute('invalid',{action:'create',...routineInput,schedule:{...routineInput.schedule,extra:true}},new AbortController().signal),/missing required fields/);
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });
@@ -63,8 +66,10 @@ test('DSH routine plugin validates schedules and forwards only supported operati
   await tool.execute({action:'list'},{signal:new AbortController().signal});
   await tool.execute({action:'create',...routineInput},{signal:new AbortController().signal});
   await tool.execute({action:'edit',routineId,...routineInput},{signal:new AbortController().signal});
-  assert.deepEqual(requests.map(request=>[new URL(request.url).pathname,request.method]),[['/v1/bot-routines','GET'],['/v1/bot-routines','POST'],[`/v1/bot-routines/${routineId}`,'PATCH']]);
+  await tool.execute({action:'create',...webhookInput},{signal:new AbortController().signal});
+  assert.deepEqual(requests.map(request=>[new URL(request.url).pathname,request.method]),[['/v1/bot-routines','GET'],['/v1/bot-routines','POST'],[`/v1/bot-routines/${routineId}`,'PATCH'],['/v1/bot-routines','POST']]);
   assert.ok(requests.every(request=>request.auth===`Bearer ${capability}`));
+  assert.equal(requests[3].body.timezone,'UTC');assert.deepEqual(requests[3].body.schedule,{kind:'webhook'});
   await assert.rejects(()=>tool.execute({action:'create',...routineInput,schedule:{...routineInput.schedule,minute:90}},{signal:new AbortController().signal}),/incomplete/);
  }finally{globalThis.fetch=oldFetch;for(const [key,value] of [['COKE_GROK_ROUTINE_BRIDGE_URL',oldUrl],['COKE_GROK_ROUTINE_BRIDGE_TOKEN',oldToken]])if(value===undefined)delete process.env[key];else process.env[key]=value}
 });

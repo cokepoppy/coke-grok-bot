@@ -18,7 +18,8 @@ type GroupChat = { id: string; name: string; members: GroupMember[]; preview: st
 type GroupReplacementRun = { id:string; status:AgentRun['status']; result:string|null; computerUsed:boolean; executionAudit?:ExecutionAudit|null; updatedAt:string|null; diagnosticCode?:string|null; files:RunFile[] };
 type GroupMessage = { id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;runId:string|null;status:AgentRun['status']|null;recoveryState:AgentRun['recoveryState']|null;replacementRunId:string|null;replacementRun:GroupReplacementRun|null;computerUsed:boolean;executionAudit?:ExecutionAudit|null;updatedAt:string|null;diagnosticCode?:string|null;targetBotIds?:string[];files?:RunFile[] };
 type GroupChatView = { group: GroupChat; messages: GroupMessage[] };
-type Routine = { id:string; name:string; instruction:string; schedule:{kind:'weekly';weekday:number;hour:number;minute:number}|{kind:'interval';minutes:number}; timezone:string; paused:boolean; when:string; nextRunAt:string; runs:{id:string;status:string;scheduledFor:string;result:string|null}[] };
+type Routine = { id:string; name:string; instruction:string; schedule:{kind:'weekly';weekday:number;hour:number;minute:number}|{kind:'interval';minutes:number}|{kind:'webhook'}; timezone:string; paused:boolean; when:string; nextRunAt:string|null; runs:{id:string;status:string;scheduledFor:string;result:string|null}[] };
+type RoutineWebhook = {endpointPath:string;key:string;authorizationHeader:string};
 type PrivateSkill = {id:string;creatorBotId:string|null;name:string;description:string;instructions:string;visibility:'private'|'bot';enabled:boolean;published:boolean;publishedTenantIds:string[];outOfSyncTenantIds:string[];isOwner:boolean;sharedBy:string|null;outOfSync:boolean;createdAt:string;updatedAt:string};
 type SkillPublishTarget = {tenantId:string;name:string;memberCount:number};
 type PreviewState = { bots: Bot[]; activeId: string; messages: Record<string, Message[]>; showOnboarding: Record<string, boolean> };
@@ -433,6 +434,7 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
   const [routines,setRoutines]=useState<Routine[]>([]),[routineState,setRoutineState]=useState<'loading'|'ready'|'error'>('loading');
   const [routineDetailId,setRoutineDetailId]=useState(''),[routineDeleteConfirm,setRoutineDeleteConfirm]=useState(false);
   const [routineBusy,setRoutineBusy]=useState(false),[routineError,setRoutineError]=useState('');
+  const [routineWebhook,setRoutineWebhook]=useState<RoutineWebhook|null>(null),[routineWebhookState,setRoutineWebhookState]=useState<'idle'|'loading'|'ready'|'error'>('idle'),[routineWebhookNotice,setRoutineWebhookNotice]=useState('');
   const previewButton=useRef<HTMLButtonElement>(null);
   const closeScreenButton=useRef<HTMLButtonElement>(null);
   const screenDialog=useRef<HTMLElement>(null);
@@ -444,6 +446,8 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
   const computerUrl=`${import.meta.env.BASE_URL}api/bots/${encodeURIComponent(botId)}/computer`;
   const noVncViewer=`${computerUrl}/vnc/viewer.html`;
   const routinesUrl=`${import.meta.env.BASE_URL}api/bots/${encodeURIComponent(botId)}/routines`;
+  const selectedRoutine=routines.find(routine=>routine.id===routineDetailId);
+  const webhookUrl=routineWebhook?new URL(`${import.meta.env.BASE_URL.replace(/\/$/,'')}${routineWebhook.endpointPath}`,window.location.origin).toString():'';
   const loadRoutines=async(signal?:AbortSignal)=>{
     const response=await fetch(routinesUrl,{credentials:'same-origin',cache:'no-store',signal});
     if(!response.ok)throw new Error('Could not load routines');
@@ -475,6 +479,18 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
     void refresh();timer=setInterval(()=>void refresh(),15000);
     return()=>{stopped=true;controller.abort();if(timer)clearInterval(timer)};
   },[official,routinesUrl]);
+  useEffect(()=>{
+    if(!selectedRoutine||selectedRoutine.schedule.kind!=='webhook'){setRoutineWebhook(null);setRoutineWebhookState('idle');setRoutineWebhookNotice('');return}
+    const controller=new AbortController();let stopped=false;
+    setRoutineWebhook(null);setRoutineWebhookState('loading');setRoutineWebhookNotice('');
+    void fetch(`${routinesUrl}/${encodeURIComponent(selectedRoutine.id)}/webhook`,{credentials:'same-origin',cache:'no-store',signal:controller.signal}).then(async response=>{
+      if(!response.ok)throw new Error('Webhook configuration is unavailable.');
+      const value=await response.json() as {webhook?:RoutineWebhook};
+      if(!value.webhook||typeof value.webhook.endpointPath!=='string'||typeof value.webhook.key!=='string'||typeof value.webhook.authorizationHeader!=='string')throw new Error('Webhook configuration is invalid.');
+      if(!stopped){setRoutineWebhook(value.webhook);setRoutineWebhookState('ready')}
+    }).catch(()=>{if(!stopped&&!controller.signal.aborted)setRoutineWebhookState('error')});
+    return()=>{stopped=true;controller.abort()};
+  },[routinesUrl,selectedRoutine?.id,selectedRoutine?.schedule.kind]);
   useEffect(()=>{
     if(!screenOpen)return;
     const dialog=screenDialog.current;
@@ -547,10 +563,12 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
       setRoutineDetailId('');setRoutineDeleteConfirm(false);await loadRoutines();
     }catch{setRoutineError('Could not delete this routine.')}finally{setRoutineBusy(false)}
   };
+  const copyRoutineWebhook=async(label:string,value:string)=>{
+    try{await navigator.clipboard.writeText(value);setRoutineWebhookNotice(`${label} copied.`)}catch{setRoutineWebhookNotice(`Could not copy ${label.toLowerCase()}.`)}
+  };
   const click=(event:React.MouseEvent<HTMLImageElement>)=>{if(owner!=='user'||busy)return;const rect=event.currentTarget.getBoundingClientRect();const x=Math.min(1439,Math.max(0,Math.floor((event.clientX-rect.left)*1440/rect.width))),y=Math.min(899,Math.max(0,Math.floor((event.clientY-rect.top)*900/rect.height)));void send('action',{action:'click',x,y})};
   const toggleScreenFullscreen=async()=>{const element=screenDialog.current;if(!element)return;try{if(document.fullscreenElement===element)await document.exitFullscreen();else await element.requestFullscreen()}catch{setError('Full-screen view is unavailable in this browser.')}};
   const controlLabel=owner==='user'?'You are in control':owner==='agent'?'Bot is in control':'Waiting for computer';
-  const selectedRoutine=routines.find(routine=>routine.id===routineDetailId);
   if(!official)return <><div className="computer-preview" title={diagnostic||undefined}>{image ? <img src={image} alt="Current computer screen" onClick={click} /> : <><Icon name="screen" /><span>Computer not connected</span></>}</div>
     <div className="screen-label" title={diagnostic||undefined}>{name || 'Bot'}'s screen · {controlLabel}</div><span className="sr-only" role="status" aria-live="polite">{diagnostic}</span>
     {owner && <div className="computer-controls"><button type="button" disabled={busy} onClick={()=>void send('control',{owner:owner==='agent'?'user':'agent'})}>{owner==='agent'?'Take control':'Return to Bot'}</button>
@@ -570,9 +588,17 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
       <label>Name<input aria-label="Name" value={bot?.name||name} onChange={event=>onRename?.(event.currentTarget.value)} onBlur={onSaveName} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /></label>
       <label>Title (optional)<input aria-label="Title (optional)" placeholder="Add a label" value={bot?.label||''} onChange={event=>onLabelChange?.(event.currentTarget.value)} onBlur={onSaveLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /></label>
     </div> : selectedRoutine ? <section className="computer-routine-detail" aria-label={`Routine ${selectedRoutine.name}`}>
-      <div className="routine-detail-schedule"><span>When to run</span><strong>{selectedRoutine.paused?'Paused':selectedRoutine.when}</strong><small>{selectedRoutine.timezone}</small></div>
+      <div className="routine-detail-schedule"><span>When to run</span><strong>{selectedRoutine.paused?'Paused':selectedRoutine.when}</strong>{selectedRoutine.schedule.kind!=='webhook'&&<small>{selectedRoutine.timezone}</small>}</div>
       <div className="routine-detail-instruction"><span>Instruction</span><p>{selectedRoutine.instruction}</p></div>
-      {!selectedRoutine.paused&&<p className="routine-next-run">Next run · {new Intl.DateTimeFormat('en-US',{dateStyle:'medium',timeStyle:'short',timeZone:selectedRoutine.timezone}).format(new Date(selectedRoutine.nextRunAt))}</p>}
+      {!selectedRoutine.paused&&selectedRoutine.nextRunAt&&<p className="routine-next-run">Next run · {new Intl.DateTimeFormat('en-US',{dateStyle:'medium',timeStyle:'short',timeZone:selectedRoutine.timezone}).format(new Date(selectedRoutine.nextRunAt))}</p>}
+      {selectedRoutine.schedule.kind==='webhook'&&<section className="routine-webhook" aria-label="Webhook"><h2>Webhook</h2>
+        {routineWebhookState==='loading'?<p>Loading webhook details…</p>:routineWebhookState==='error'?<p role="alert">Webhook configuration is unavailable.</p>:routineWebhook&&<>
+          <div className="routine-webhook-field"><span>POST to</span><code>{webhookUrl}</code><button type="button" onClick={()=>void copyRoutineWebhook('URL',webhookUrl)}>Copy</button></div>
+          <div className="routine-webhook-field"><span>key</span><code>{routineWebhook.key}</code><button type="button" onClick={()=>void copyRoutineWebhook('Key',routineWebhook.key)}>Copy</button></div>
+          <div className="routine-webhook-field"><span>header</span><code>Authorization: {routineWebhook.authorizationHeader}</code><button type="button" onClick={()=>void copyRoutineWebhook('Header',`Authorization: ${routineWebhook.authorizationHeader}`)}>Copy</button></div>
+          {routineWebhookNotice&&<p role="status">{routineWebhookNotice}</p>}
+        </>}
+      </section>}
       <section className="routine-history" aria-label="Run history"><h2>Run history</h2>{selectedRoutine.runs.length?selectedRoutine.runs.map(run=><div className="routine-history-row" key={run.id}><strong>{run.status==='queued'?'Queued':run.status==='running'?'Running':run.status==='completed'?'Succeeded':'Failed'}</strong><time dateTime={run.scheduledFor}>{new Intl.DateTimeFormat('en-US',{dateStyle:'medium',timeStyle:'short',timeZone:selectedRoutine.timezone}).format(new Date(run.scheduledFor))}</time>{run.result&&<p>{run.result}</p>}</div>):<p>No runs yet.</p>}</section>
       {routineDeleteConfirm?<div className="routine-delete-confirm" role="group" aria-label="Confirm delete routine"><p>Delete this routine? Future runs will stop.</p><button type="button" disabled={routineBusy} onClick={()=>setRoutineDeleteConfirm(false)}>Keep routine</button><button type="button" disabled={routineBusy} onClick={()=>void deleteRoutine(selectedRoutine)}>Delete routine</button></div>:<footer className="routine-actions"><button type="button" disabled={routineBusy} onClick={()=>{setRoutineDetailId('');onEditRoutine?.(selectedRoutine.name)}}>Edit</button><button type="button" disabled={routineBusy} onClick={()=>void toggleRoutine(selectedRoutine)}>{selectedRoutine.paused?'Resume':'Pause'}</button><button type="button" disabled={routineBusy} onClick={()=>void testRoutine(selectedRoutine)}>Test</button><button type="button" disabled={routineBusy} onClick={()=>void deleteRoutine(selectedRoutine)} aria-label="Delete routine">Delete</button></footer>}
       {routineError&&<p role="alert">{routineError}</p>}
