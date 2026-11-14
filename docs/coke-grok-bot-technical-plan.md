@@ -3069,3 +3069,9 @@ MySQL 回归新增同一作者跨 Alpha/Beta 发布、两个团队独立启用�
 在用户批准的测试范围内，明确将 Chrome 麦克风和 macOS 输入/输出都切到 BlackHole 2ch，使用公网页面 `Start voice input` / `Stop voice input` 控件播放本机合成的 2.14 秒、22.05 kHz 单声道句子 `Grok Bot voice input verification.`。页面将 `Grog Bot Voice Input Verification.` 回填到未发送草稿，说明受控路由下这次公网 UI 写入了转写，但专有词不匹配。未发送消息；草稿已清空并核验为空；Chrome 与 macOS 音频设备恢复到 MacBook Air 系统默认状态，扬声器音量 38% 且静音保持，临时设置标签与合成音频已清理。
 
 Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无障碍树完成语义操作。浏览器实际 MediaStream PCM 未单独检查，因此不能把错字归因于输入样本、浏览器转换或识别服务。此前 16 kHz WAV 精确匹配是独立的一次成功样本；这两次都不足以代表一般 ASR 准确率或证明此前问题的根因。后续同类扩展绑定超时应切换到原生 Computer Use 一次，不重复同一绑定请求，也不以截图/坐标操作替代。
+
+#### 2026-11-15 官方 Grok Bot 201 逐帧研究续记（22:55–23:14.960）
+
+本轮参考源限定为官方 xAI Grok Bot 201 演示视频。连续审阅 22:55.000–23:14.960 四个五秒片段，覆盖 500 个 1920×1080、25 fps 源帧及 20 张联系图。每段经独立 FFmpeg 重解码核对 125/125 PTS 和源像素哈希、5/5 联系图哈希；源视频 SHA-256 为 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。完整观察及本机证据目录见 `research/README.md` 的同名续审条目；素材位于 Git 忽略的 `research/frames/`。
+
+可见的 `full stack` Bot 问候与建议卡、右侧 Computer 灰色占位和中栏输入框在该段基本保持不变。PTS 1,389,040（23:09.040）标题上方没有工具条；PTS 1,389,080（23:09.080）首次出现包含 Bot 图标、动态指示、设置、聊天、麦克风及红色关闭控件的浮动条，并延续到观察段结束。虽然指针在变化帧附近位于语音控件，视频不足以确定触发原因；不应将其称为语音模式启动，也不应将 Computer 占位解读为已连接。原尺寸相邻关键帧与双重哈希记录于 `research/frames/grok-201-2309-040-080-header-toolbar-transition-keyframes-20261115/manifest.json`。V2 连续逐帧覆盖从 22:54.960 推进到 23:14.960（累计 34,875 帧），下一待审区间为 23:15.000 起；视频视觉研究仍不等于对本项目 UI 或真实运行功能的验收。
