@@ -234,6 +234,8 @@ try {
   ];
   let delayNextRunHistoryRead = false;
   let postedMentionBody = null;
+  let postedGroupMessageBody = null;
+  const demoGroupMessages = [];
   let runningTaskScenario = false;
   let approvalApiRequests = 0;
   const demoMessages = [
@@ -246,6 +248,20 @@ try {
   await productShellPage.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     const routineCollection = '/api/bots/sales-outbound/routines';
+    if (path === '/api/groups/offsite-crew' && route.request().method() === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ group: demoGroups[0], messages: demoGroupMessages }) });
+    }
+    if (path === '/api/groups/offsite-crew/messages' && route.request().method() === 'POST') {
+      postedGroupMessageBody = route.request().postDataJSON();
+      const turnId = `group-turn-${demoGroupMessages.length + 1}`;
+      const targetBotIds = postedGroupMessageBody.targetBotIds || demoGroups[0].members.map(member => member.id);
+      demoGroupMessages.push({ id: `group-user-${turnId}`, turnId, role: 'user', botId: null, botName: null, text: postedGroupMessageBody.text, runId: null, status: null, recoveryState: null, replacementRunId: null, replacementRun: null, computerUsed: false, updatedAt: new Date().toISOString(), targetBotIds });
+      for (const botId of targetBotIds) {
+        const member = demoGroups[0].members.find(item => item.id === botId);
+        demoGroupMessages.push({ id: `group-bot-${turnId}-${botId}`, turnId, role: 'bot', botId, botName: member?.name || botId, text: null, runId: `run-${turnId}-${botId}`, status: 'queued', recoveryState: 'none', replacementRunId: null, replacementRun: null, computerUsed: false, updatedAt: new Date().toISOString(), targetBotIds });
+      }
+      return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ group: demoGroups[0], messages: demoGroupMessages }) });
+    }
     if (path.includes('/approvals')) {
       approvalApiRequests++;
       // Simulate a stale legacy pending row. The current UI must not poll it
@@ -513,6 +529,22 @@ try {
   await productShellPage.getByRole('button',{name:'Send task'}).click();
   await productShellPage.getByText('Please ask @Chief to check the schedule.',{exact:true}).waitFor();
   assert.deepEqual(postedMentionBody,{requestId:postedMentionBody.requestId,prompt:'Please ask @Chief to check the schedule.',files:[],mentionBotIds:['chief']});
+  await productShellPage.getByRole('button',{name:'Open group Offsite crew'}).click();
+  const groupMentionComposer=productShellPage.getByRole('textbox',{name:'Message Offsite crew'});
+  await groupMentionComposer.waitFor();
+  await groupMentionComposer.fill('@eve');
+  const everyoneOptions=productShellPage.getByRole('listbox',{name:'Mention a Bot or everyone'});
+  await everyoneOptions.getByRole('option',{name:/@everyone.*Message every Bot/}).click();
+  await groupMentionComposer.pressSequentially('Review the project status.');
+  assert.equal(await groupMentionComposer.inputValue(),'@everyone Review the project status.');
+  await productShellPage.getByRole('button',{name:'Send task'}).click();
+  await productShellPage.locator('.group-user-message').getByText('@everyone',{exact:true}).waitFor();
+  assert.deepEqual(postedGroupMessageBody,{requestId:postedGroupMessageBody.requestId,text:'@everyone Review the project status.',targetBotIds:demoGroups[0].members.map(member=>member.id)});
+  assert.equal(await productShellPage.locator('.group-bot-message').count(),demoGroups[0].members.length,'@everyone should create one queued response per current group member');
+  await productShellPage.reload({waitUntil:'networkidle'});
+  await productShellPage.locator('.group-user-message').getByText('@everyone',{exact:true}).waitFor();
+  assert.equal(await productShellPage.locator('.group-bot-message').count(),demoGroups[0].members.length,'the broadcast and its Bot runs should remain visible after history reload');
+  await productShellPage.locator('.bot-row[data-bot-id="sales-outbound"]').click();
   runningTaskScenario = true;
   demoMessages.unshift(...Array.from({length:32},(_,index)=>({
     id:`product-scroll-history-${index}`,
@@ -926,7 +958,7 @@ try {
 
   assert.deepEqual(errors, []);
   await context.close();
-  console.log('UI E2E passed: local preview, authenticated two-column workspace, live computer activity card and screenshot, activity time, on-demand Computer panel, create/rename, messages, reload, switching, browser-profile isolation, narrow-layout sanity, 101 reference screenshot, Grok Bot website-demo static/manual states, homepage animation including takeover through Done, automatic latest-message scrolling, no page errors.');
+  console.log('UI E2E passed: local preview, authenticated two-column workspace, live computer activity card and screenshot, activity time, on-demand Computer panel, create/rename, Bot and group messages, @everyone roster routing and reload, switching, browser-profile isolation, narrow-layout sanity, 101 reference screenshot, Grok Bot website-demo static/manual states, homepage animation including takeover through Done, automatic latest-message scrolling, no page errors.');
 } finally {
   if (browser) await browser.close();
   if (authChild) authChild.kill('SIGTERM');

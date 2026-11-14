@@ -1318,6 +1318,8 @@ Computer 文档说明同一用户的 Bot 共用持久云电脑、文件、浏览
 
 未实现的范围：Routine、group 本身和连接器的 `@` 候选/行为仍未补齐；当前仓库缺少可用的 connected-app/connector 持久化和执行工具，因此不能显示假的已连接 app 选项。需继续逐项确认官方语义与后端真实能力后再接入。`@everyone` 的 unit/build 已验证；完整 MySQL 浏览器集成测试需要独立的 disposable test MySQL，目前该固定测试实例未运行；不得改用应用 MySQL 或创建临时容器来规避。
 
+官方 201 V2 的 14:00.000–14:14.960 连续帧已逐窗复核，群聊 `Joseph, Martin` 的桌面布局、`@dex`/Martin 双提及、Dex 的贴纸回复、Martin 的回应与心形 reaction 已记录在 `research/README.md`。这段视频补充了群聊视觉与消息状态参考，但不能替代模型、数据库或 Computer runtime 的验收。新增的 `test:ui` 模拟 API 用例通过真实键盘/页面点击验证 `@everyone` 候选、全员 ID 请求、各 Bot 占位状态和刷新显示；这是前端交互证据，不是数据库浏览器集成结果。
+
 官方录屏 V1 49:53–49:58 佐证其中的单聊 Bot 委派交互，但只见 Penny 确认工作，未见 Dex/Maya 结果或 Computer 动作。具体帧证据已记于 `research/README.md` 与 `research/frames/v1-2993-2998-compact-audit-20261106/`。当前 Docker/K3D 不可用，公网 502；完整公网 E2E 仍待服务安全恢复。
 
 
