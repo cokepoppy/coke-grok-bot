@@ -1,5 +1,14 @@
-export type GroupMentionToken = { botId: string; name: string; start: number; end: number };
+export type GroupMentionToken =
+  | { kind: 'bot'; botId: string; name: string; start: number; end: number }
+  | { kind: 'everyone'; name: 'everyone'; start: number; end: number };
 export type GroupMentionQuery = { start: number; end: number; query: string };
+
+/** Expand an explicit @everyone token to the group's current, server-owned Bot roster. */
+export function groupMentionRecipientBotIds(memberIds: string[], tokens: GroupMentionToken[]): string[] {
+  if (tokens.some(token => token.kind === 'everyone')) return [...new Set(memberIds)];
+  const members = new Set(memberIds);
+  return [...new Set(tokens.flatMap(token => token.kind === 'bot' && members.has(token.botId) ? [token.botId] : []))];
+}
 
 /** Use recipients persisted in the latest group turn for optimistic Bot activity. */
 export function groupRecipientBotIds(memberIds: string[], targetBotIds?: string[]): string[] {

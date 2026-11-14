@@ -1310,7 +1310,13 @@ V1 的 PTS 2993.000–2997.966 秒共连续 150 帧，1920×1080、30 fps。六�
 
 Computer 文档说明同一用户的 Bot 共用持久云电脑、文件、浏览器登录态；每个 Bot 有独立屏幕，同一 Bot 同时只执行一个 Computer-use 任务，不同 Bot 可并行。浏览器用于没有结构化 app 的场景，已有 app 时优先使用 app 工具。
 
-与当前候选分支对照：Bot 单聊及群聊的 `@Bot` 已有 stable-ID mention/handoff 路由；群聊和 Routine 的后端已有部分实现，但 composer 候选目前只枚举 Bot；仓库还没有可用的 connected-app/connector store 或执行工具。这意味着官方的完整 `@` 菜单和 app 能力尚未实现，不能把 Bot-only 菜单说成完整复刻。后续须从已存在的 Group/Routine API 及实际 connector/runtime 能力建统一的 typed mention model，逐种实体验证选择后对应的真实动作；对资料没有明确的转发语义继续查视频，不用静态菜单代替运行能力。
+与当前候选分支对照：Bot 单聊及群聊的 `@Bot` 已有 stable-ID mention/handoff 路由；群聊和 Routine 的后端已有部分实现，但 composer 候选此前只枚举 Bot；仓库还没有可用的 connected-app/connector store 或执行工具。这意味着官方完整 `@` 菜单和 app 能力尚未实现，不能把 Bot-only 菜单说成完整复刻。后续须从已存在的 Group/Routine API 及真实 connector/runtime 能力建统一的 typed mention model，逐种实体验证选择后对应的真实动作；对资料没有明确的转发语义继续查视频，不用静态菜单代替运行能力。
+
+### 2026-11-14 `@everyone` 群聊路由补齐
+
+从官方 Grok Bot 201 V2 的 8:50 连续帧记录可见，群聊 `@` 选择器包含 `@everyone`、Bot 候选和已连接 app；官方《Message and collaborate》文档也明确允许在群聊中谨慎使用 `@everyone` 发送群组广播。当前 feature 分支已将 `@everyone` 实现为群聊专用的可选择 mention token，提交时展开为该群当前成员的稳定 Bot ID；服务端按这些成员分别创建正常的持久 Pi/DSH run，用户消息重载后保留提及样式。运行上下文改为准确表达“此 Bot 是多个已选收件人之一”。
+
+未实现的范围：Routine、group 本身和连接器的 `@` 候选/行为仍未补齐；当前仓库缺少可用的 connected-app/connector 持久化和执行工具，因此不能显示假的已连接 app 选项。需继续逐项确认官方语义与后端真实能力后再接入。`@everyone` 的 unit/build 已验证；完整 MySQL 浏览器集成测试需要独立的 disposable test MySQL，目前该固定测试实例未运行；不得改用应用 MySQL 或创建临时容器来规避。
 
 官方录屏 V1 49:53–49:58 佐证其中的单聊 Bot 委派交互，但只见 Penny 确认工作，未见 Dex/Maya 结果或 Computer 动作。具体帧证据已记于 `research/README.md` 与 `research/frames/v1-2993-2998-compact-audit-20261106/`。当前 Docker/K3D 不可用，公网 502；完整公网 E2E 仍待服务安全恢复。
 

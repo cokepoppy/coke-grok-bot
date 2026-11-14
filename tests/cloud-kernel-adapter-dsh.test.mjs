@@ -93,7 +93,7 @@ test('DeepSeek Harness receives group identity as a system-prompt section, not a
    assert.match(plugin,/ctx\.systemPrompt\.section/u);
    assert.match(plugin,/Current Bot identity/u);
    assert.match(plugin,/Product crew/u);
-   assert.match(plugin,/explicitly selected by an @mention/u);
+   assert.match(plugin,/selected this Bot by an @mention/u);
    return{finalResponse:JSON.stringify({status:'done',message:'Chief reply'}),sessionId:'group-context-session',events:[]};
   }
   async close(){closeCalls++}

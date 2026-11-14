@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {findGroupMentionQuery,groupRecipientBotIds,rebaseGroupMentionTokens} from '../src/web/group-mentions.ts';
+import {findGroupMentionQuery,groupMentionRecipientBotIds,groupRecipientBotIds,rebaseGroupMentionTokens} from '../src/web/group-mentions.ts';
 
 test('group mention query opens only for a trailing @ token, not an email address or completed mention',()=>{
  assert.deepEqual(findGroupMentionQuery('Ask @Sales',10),{start:4,end:10,query:'Sales'});
@@ -10,10 +10,20 @@ test('group mention query opens only for a trailing @ token, not an email addres
 });
 
 test('selected group Bot IDs follow edits outside their visible token and are dropped when token text changes',()=>{
- const token={botId:'bot-sales',name:'Sales Outbound',start:18,end:33};
+ const token={kind:'bot' as const,botId:'bot-sales',name:'Sales Outbound',start:18,end:33};
  assert.deepEqual(rebaseGroupMentionTokens('@Chief please ask @Sales Outbound', '@Chief, please ask @Sales Outbound', [token]),[{...token,start:19,end:34}]);
  assert.deepEqual(rebaseGroupMentionTokens('@Chief please ask @Sales Outbound', '@Chief please ask @Sales', [token]),[]);
  assert.deepEqual(rebaseGroupMentionTokens('@Chief please ask @Sales Outbound', 'Update: @Chief please ask @Sales Outbound', [token]),[{...token,start:26,end:41}]);
+});
+
+test('@everyone expands only to the current group roster and survives edits outside the token',()=>{
+ const members=['chief','sales','tester'];
+ const everyone={kind:'everyone' as const,name:'everyone' as const,start:0,end:9};
+ assert.deepEqual(groupMentionRecipientBotIds(members,[everyone]),members);
+ assert.deepEqual(groupMentionRecipientBotIds(members,[everyone,{kind:'bot',botId:'sales',name:'Sales',start:14,end:20}]),members);
+ assert.deepEqual(groupMentionRecipientBotIds(members,[{kind:'bot',botId:'unknown',name:'Other',start:0,end:6}]),[]);
+ assert.deepEqual(rebaseGroupMentionTokens('@everyone please review', 'Today: @everyone please review', [everyone]),[{...everyone,start:7,end:16}]);
+ assert.deepEqual(rebaseGroupMentionTokens('@everyone please review', '@every one please review', [everyone]),[]);
 });
 
 test('optimistic Bot activity follows the server-reported recipients',()=>{

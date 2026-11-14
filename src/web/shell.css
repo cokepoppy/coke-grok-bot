@@ -714,6 +714,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .group-mention-menu button:hover,
 .group-mention-menu button[aria-selected='true'] { background: #ededed; }
 .group-mention-menu button > .avatar { width: 22px; height: 22px; }
+.group-mention-menu .everyone-mention-avatar { display: grid; flex: none; width: 25px; height: 25px; place-items: center; border-radius: 50%; color: #fff; background: #171717; font-size: 14px; font-weight: 600; }
 .group-mention-menu button > span { display: grid; flex: 1; min-width: 0; gap: 2px; }
 .group-mention-menu button strong { overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .group-mention-menu button span small { overflow: hidden; color: #888; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }

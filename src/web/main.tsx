@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { avatarPaths } from './avatar-paths';
 import { WebsiteDemoApp } from './website-demo';
-import {findGroupMentionQuery,groupRecipientBotIds,rebaseGroupMentionTokens,type GroupMentionQuery,type GroupMentionToken} from './group-mentions';
+import {findGroupMentionQuery,groupMentionRecipientBotIds,groupRecipientBotIds,rebaseGroupMentionTokens,type GroupMentionQuery,type GroupMentionToken} from './group-mentions';
 import './shell.css';
 
 type Shape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle' | 'oval' | 'square' | 'pill' | 'spark' | 'heart' | 'flower' | 'pentagon' | 'star';
@@ -12,6 +12,7 @@ type RunFile = { id: string; name: string; mimeType: string; size: number; sha25
 type ExecutionAudit = {engine:'pi'|'dsh';model:string;modelCompleted:boolean;calls:{tool:string;action:string|null;outcome:'succeeded'|'failed'|'unconfirmed'}[];truncated:boolean};
 type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; executionAudit?:ExecutionAudit|null; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: string | null };
 type GroupMember = Pick<Bot,'id'|'name'|'label'|'color'|'shape'> & { position: number };
+type BotMentionCandidate = {kind:'bot';id:string;bot:GroupMember|Bot}|{kind:'everyone';id:'everyone'};
 type GroupChat = { id: string; name: string; members: GroupMember[]; preview: string; lastActivityAt: string | null };
 type GroupReplacementRun = { id:string; status:AgentRun['status']; result:string|null; computerUsed:boolean; executionAudit?:ExecutionAudit|null; updatedAt:string|null; diagnosticCode?:string|null; files:RunFile[] };
 type GroupMessage = { id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;runId:string|null;status:AgentRun['status']|null;recoveryState:AgentRun['recoveryState']|null;replacementRunId:string|null;replacementRun:GroupReplacementRun|null;computerUsed:boolean;executionAudit?:ExecutionAudit|null;updatedAt:string|null;diagnosticCode?:string|null;targetBotIds?:string[];files?:RunFile[] };
@@ -216,7 +217,7 @@ function replacementRunFallback(status:AgentRun['status']):string {
 
 function renderGroupUserText(message: GroupMessage, members: GroupMember[]): React.ReactNode {
   const text=message.text||'',targeted=new Set(message.targetBotIds||[]);
-  const mentions=members.filter(member=>targeted.has(member.id)).map(member=>({label:`@${member.name}`,id:member.id})).sort((a,b)=>b.label.length-a.label.length);
+  const mentions=[...(members.length>0&&members.every(member=>targeted.has(member.id))?[{label:'@everyone',id:'everyone'}]:[]),...members.filter(member=>targeted.has(member.id)).map(member=>({label:`@${member.name}`,id:member.id}))].sort((a,b)=>b.label.length-a.label.length);
   if(!mentions.length)return text;
   const parts:React.ReactNode[]=[];let cursor=0;
   while(cursor<text.length){
@@ -577,7 +578,14 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const active = state.bots.find(bot => bot.id === state.activeId) || state.bots[0];
   const activeGroup=groups.find(group=>group.id===selectedGroupId);
   const layoutSidebarWidth = account && panel && !panelSidebarExpanded ? PRODUCT_SIDEBAR_MIN : sidebarWidth;
-  const botMentionCandidates=botMentionQuery?(activeGroup?activeGroup.members:state.bots.filter(bot=>bot.id!==active?.id)).filter(bot=>`${bot.name} ${bot.label}`.toLowerCase().includes(botMentionQuery.query.trim().toLowerCase())).slice(0,6):[];
+  const botMentionCandidates:BotMentionCandidate[]=botMentionQuery?(()=>{
+    const query=botMentionQuery.query.trim().toLowerCase();
+    const bots=(activeGroup?activeGroup.members:state.bots.filter(bot=>bot.id!==active?.id))
+      .filter(bot=>`${bot.name} ${bot.label}`.toLowerCase().includes(query))
+      .map(bot=>({kind:'bot' as const,id:bot.id,bot}));
+    const everyone=activeGroup&&'everyone'.includes(query)?[{kind:'everyone' as const,id:'everyone' as const}]:[];
+    return [...everyone,...bots].slice(0,activeGroup?7:6);
+  })():[];
   useEffect(()=>{botMentionTokensRef.current=[];setBotMentionTokens([]);setBotMentionQuery(null);setBotMentionActiveIndex(0)},[selectedGroupId,active?.id]);
   useLayoutEffect(()=>{
     const caret=botMentionCaretRef.current;
@@ -991,10 +999,12 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     botMentionTokensRef.current=tokens;setBotMentionTokens(tokens);
     setBotMentionQuery(findGroupMentionQuery(value,caret));setBotMentionActiveIndex(0);
   }
-  function selectBotMention(member:GroupMember|Bot){
+  function selectBotMention(candidate:BotMentionCandidate){
     if(!botMentionQuery)return;
-    const {start,end}=botMentionQuery,label=`@${member.name}`,next=`${draft.slice(0,start)}${label} ${draft.slice(end)}`,caret=start+label.length+1;
-    const token={botId:member.id,name:member.name,start,end:start+label.length};
+    const {start,end}=botMentionQuery,label=candidate.kind==='everyone'?'@everyone':`@${candidate.bot.name}`,next=`${draft.slice(0,start)}${label} ${draft.slice(end)}`,caret=start+label.length+1;
+    const token:GroupMentionToken=candidate.kind==='everyone'
+      ?{kind:'everyone',name:'everyone',start,end:start+label.length}
+      :{kind:'bot',botId:candidate.bot.id,name:candidate.bot.name,start,end:start+label.length};
     const tokens=[...rebaseGroupMentionTokens(draft,next,botMentionTokensRef.current),token].sort((a,b)=>a.start-b.start);
     botMentionCaretRef.current=caret;
     botMentionTokensRef.current=tokens;setBotMentionTokens(tokens);setDraft(next);setBotMentionQuery(null);setBotMentionActiveIndex(0);
@@ -1029,7 +1039,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
           pending.uploadedId=value.file.id;uploadedIds.push(value.file.id);
           setPendingGroupFiles(current=>({...current,[selectedGroupId]:(current[selectedGroupId]||[]).map(item=>item.key===pending.key?{...item,uploadedId:value.file!.id as string}:item)}));
         }
-        const targetBotIds=Array.from(new Set(botMentionTokensRef.current.map(token=>token.botId)));
+        const targetBotIds=groupMentionRecipientBotIds(activeGroup?.members.map(member=>member.id)||[],botMentionTokensRef.current);
         submissionStarted=true;
         const messageFileIds=[...uploadedIds,...selectedRunFiles.map(file=>file.id)];
         const response=await fetch(`${import.meta.env.BASE_URL}api/groups/${encodeURIComponent(selectedGroupId)}/messages`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),text:clean,...(messageFileIds.length?{files:messageFileIds}:{}),...(targetBotIds.length?{targetBotIds}:{})})});
@@ -1075,7 +1085,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
             uploaded.push({id:value.file.id});
           }
           const prompt = clean || 'Please review the attached file(s).';
-          const mentionBotIds=[...new Set(botMentionTokensRef.current.map(token=>token.botId))];
+          const mentionBotIds=[...new Set(botMentionTokensRef.current.flatMap(token=>token.kind==='bot'?[token.botId]:[]))];
           const response = await fetch(`${import.meta.env.BASE_URL}api/bots/${id}/runs`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: crypto.randomUUID(), prompt, files:[...uploaded.map(file=>file.id),...selectedRunFiles.map(file=>file.id)], ...(mentionBotIds.length?{mentionBotIds}:{}) }) });
           if (!response.ok) throw new Error('run submission failed');
           const { run } = await response.json() as { run: AgentRun };
@@ -1456,7 +1466,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
             {remote && agentFeature === 'enabled' && <input ref={filePicker} className="file-picker" type="file" multiple aria-label="Choose files to attach" onChange={event=>{const selected=Array.from(event.currentTarget.files||[]);activeGroup?stageGroupFiles(selected):stageFiles(selected);event.currentTarget.value=''}}/>}
             {activeGroup&&remote&&agentFeature==='enabled'&&((pendingGroupFiles[activeGroup.id]||[]).length+(pendingGroupRunFiles[activeGroup.id]||[]).length)>0&&<div className="pending-files" aria-label="Files to attach">{(pendingGroupRunFiles[activeGroup.id]||[]).map((file,index)=><span className="pending-file" key={`run:${file.id}`}><span>{file.name}</span><button type="button" aria-label={`Remove reused ${file.name}`} disabled={groupSending} onClick={()=>setPendingGroupRunFiles(current=>({...current,[activeGroup.id]:(current[activeGroup.id]||[]).filter((_,itemIndex)=>itemIndex!==index)}))}>×</button></span>)}{(pendingGroupFiles[activeGroup.id]||[]).map(item=><span className="pending-file" key={item.key}><span>{item.file.name}{item.uploadedId?' · Ready':''}</span><button type="button" aria-label={`Remove ${item.file.name}`} disabled={groupSending} onClick={()=>setPendingGroupFiles(current=>({...current,[activeGroup.id]:(current[activeGroup.id]||[]).filter(file=>file.key!==item.key)}))}>×</button></span>)}</div>}
             {remote && agentFeature === 'enabled' && ((pendingFiles[active.id]||[]).length+(pendingRunFiles[active.id]||[]).length)>0 && <div className="pending-files" aria-label="Files to attach">{(pendingRunFiles[active.id]||[]).map((file,index)=><span className="pending-file" key={`run:${file.id}`}><span>{file.name}</span><button type="button" aria-label={`Remove reused ${file.name}`} onClick={()=>setPendingRunFiles(current=>({...current,[active.id]:(current[active.id]||[]).filter((_,itemIndex)=>itemIndex!==index)}))}>×</button></span>)}{(pendingFiles[active.id]||[]).map((file,index)=><span className="pending-file" key={`local:${file.name}:${file.lastModified}:${index}`}><span>{file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={()=>setPendingFiles(current=>({...current,[active.id]:(current[active.id]||[]).filter((_,itemIndex)=>itemIndex!==index)}))}>×</button></span>)}</div>}
-            {botMentionQuery&&botMentionCandidates.length>0&&<div id="bot-mention-list" className="group-mention-menu" role="listbox" aria-label="Mention a Bot">{botMentionCandidates.map((member,index)=><button id={`bot-mention-option-${member.id}`} key={member.id} type="button" role="option" aria-selected={index===botMentionActiveIndex} onMouseDown={event=>event.preventDefault()} onClick={()=>selectBotMention(member)}><Avatar bot={member} size={25}/><span><strong>{member.name}</strong>{member.label&&<small>{member.label}</small>}</span><small>Bot</small></button>)}</div>}
+            {botMentionQuery&&botMentionCandidates.length>0&&<div id="bot-mention-list" className="group-mention-menu" role="listbox" aria-label={activeGroup?'Mention a Bot or everyone':'Mention a Bot'}>{botMentionCandidates.map((candidate,index)=><button id={`bot-mention-option-${candidate.id}`} key={candidate.id} type="button" role="option" aria-selected={index===botMentionActiveIndex} onMouseDown={event=>event.preventDefault()} onClick={()=>selectBotMention(candidate)}>{candidate.kind==='everyone'?<span className="everyone-mention-avatar" aria-hidden="true">@</span>:<Avatar bot={candidate.bot} size={25}/>}<span><strong>{candidate.kind==='everyone'?'@everyone':candidate.bot.name}</strong>{candidate.kind==='everyone'?<small>Message every Bot in this group</small>:candidate.bot.label&&<small>{candidate.bot.label}</small>}</span><small>{candidate.kind==='everyone'?'Group':'Bot'}</small></button>)}</div>}
             <form className="composer" onSubmit={event=>{event.preventDefault();void addMessage(draft)}}><IconButton name="plus" label="Add attachment" onClick={()=>remote&&agentFeature==='enabled'?filePicker.current?.click():setNotice(true)}/><textarea ref={activeGroup?groupComposer:composerInput} aria-label={`Message ${activeGroup?.name||active.name}`} placeholder={`Message ${activeGroup?.name||active.name}`} value={draft} rows={1} disabled={composerDisabled} aria-autocomplete={botMentionQuery?'list':undefined} aria-expanded={botMentionQuery?Boolean(botMentionCandidates.length):undefined} aria-controls={botMentionQuery&&botMentionCandidates.length?'bot-mention-list':undefined} aria-activedescendant={botMentionQuery&&botMentionCandidates[botMentionActiveIndex]?`bot-mention-option-${botMentionCandidates[botMentionActiveIndex].id}`:undefined} onChange={event=>updateBotMentionDraft(event.currentTarget.value,event.currentTarget.selectionStart)} onPaste={event=>{if(!remote||agentFeature!=='enabled')return;const pasted=Array.from(event.clipboardData.files||[]);if(!pasted.length)return;event.preventDefault();activeGroup?stageGroupFiles(pasted):stageFiles(pasted)}} onKeyDown={handleComposerKeyDown}/><IconButton name="mic" label="Voice input" onClick={()=>setNotice(true)}/>{draft.trim()||(activeGroup?((pendingGroupFiles[activeGroup.id]||[]).length+(pendingGroupRunFiles[activeGroup.id]||[]).length)>0:((pendingFiles[active.id]||[]).length+(pendingRunFiles[active.id]||[]).length)>0)?<button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote?'Send task':'Save local message'}><Icon name="arrow"/></button>:<IconButton name="sound" label="Start voice chat" className="voice-button" onClick={()=>setNotice(true)}/>}</form>
           </section>
           {account && panel && <div className="computer-panel-resize-handle" role="separator" aria-label="Resize computer panel" aria-orientation="vertical" aria-valuemin={productPanelMin()} aria-valuemax={productPanelMax(layoutSidebarWidth)} aria-valuenow={Math.round(computerPanelWidth)} aria-valuetext={`${Math.round(computerPanelWidth)} pixels`} tabIndex={0} onPointerDown={startComputerPanelResize} onPointerMove={moveComputerPanelResize} onPointerUp={finishComputerPanelResize} onPointerCancel={finishComputerPanelResize} onKeyDown={adjustComputerPanelResize} onDoubleClick={() => setComputerPanelWidth(initialProductPanelWidth('', layoutSidebarWidth, ''))} />}
