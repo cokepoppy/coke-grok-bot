@@ -2887,3 +2887,59 @@ ChatGPT 重启后，Browser Use 扩展仍能枚举 Chrome 中的 Grok Bot 与北
 #### 2026-11-14 官方 Grok Bot 201 逐帧补缺（14:15.000–14:19.960）
 
 对原官方 MKV 的 125 个连续源帧逐张审阅五张 5×5 联系图。重新核对视频 SHA-256，并独立 FFmpeg 重解码逐项比对 125/125 帧的源 PTS、`yuv420p` 像素 SHA-256/字节数和 5/5 联系图文件哈希，全部与 manifest 一致。该段持续显示 `Joseph, Martin` 群聊；未见产品布局或状态转场、Computer 操作或新任务结果。它补上 14:14.960–14:20.000 的连续记录缺口，使该官方演示已有 0:00.000–21:34.960 的连续逐帧覆盖（32,375 帧）；21:35.000 以后尚未连续审阅，且 20:50 后已转入第三方 Cursor 内容，不能用作 Grok Bot UI 证据。完整清单、时间线与证据边界见 `research/README.md`。
+
+#### 2026-11-14 Token Plan 语音模型候选实现
+
+唯一功能分支 `codex/grok-bot-voice-audio` 增加了 Qwen ASR 听写、Qwen TTS 按 Bot 回复朗读、Qwen Realtime 语音会话及会话记录持久化。7 项语音测试、189 项运行时回归、部署构建与 diff 检查通过；使用合成短句对 Token Plan 实际验证了 TTS 音频下载、ASR 识别和 Realtime `session.updated`。此候选尚未部署到公网 Auth，也没有完成已登录公网浏览器的麦克风/朗读 UI 验收；不能把 API 连通检查称作完整产品 E2E。实现限制、API 路径和证据见 [`docs/voice-runtime.md`](voice-runtime.md)。
+
+#### 2026-11-14 语音候选公网部署与朗读点击验收
+
+只在既有 `codex/grok-bot-voice-audio` 功能分支继续工作；分支 HEAD 和 `origin/main` 均仍为 `92f973d9e30ae46bbfec25a682a4fee94b49e515`，功能改动未提交。公网 Auth 当前运行 `coke-grok-auth:candidate-voice-audio-20261114-r2`，镜像清单 SHA-256 `969855c0ece828611f747e0c63e21a65804a701649bd6f604096fc2e6ced7ff9`；Pod 1/1 Ready，运行中 `/app/auth.cjs` SHA-256 与本机 `dist/server/auth.cjs` 都是 `e9dc9cf2769b814ebb790157c207a4d9e05f83701d5047a80f65a918dff97771`。`npm run build:deployment` 与 `git diff --check` 通过。此次只替换共享 Auth；MySQL、Broker、两组现存 Agent/Desktop Pod 和 PVC 均保持原 Pod/数据。空间检查时宿主卷剩余约 24 GiB，K3D 节点使用约 51% 内存。
+
+在已登录公网 Chrome 中新建专用语音测试 Bot 并提交一条短文本，Bot 返回了回复。首次观察发现真实 run-result 卡没有朗读按钮（按钮原先只在普通 Bot 消息显示）；同一分支将朗读控制补到已完成的 run-result，构建并部署 r2。页面刷新后能看到 `Read aloud`；点击后切为 `Stop reading aloud`，约 10 秒后恢复 `Read aloud`，无可见错误。该 UI 路径通过，但页面没有提供独立上游调用追踪，故不单凭控件状态声称上游模型身份已验明。
+
+Chrome 站点信息显示麦克风权限已打开；本轮没有启动麦克风采集，也没有把环境音发送至 Token Plan。浏览器实时麦克风/ASR 与 Realtime 会话仍待安全的合成语音输入验证；通话中的跨 Bot 导航、结束卡展开和反馈持久化也未做公网浏览器验收。扩展 `getTab` 绑定公网标签再次 30 秒超时；随后原生 Chrome Computer Use 无障碍树和语义点击正常，因此两种控制能力仍须分开判断。本轮没有截图，也没有处理 BSE 旧的 unknown/queued run。语音功能尚未验收完成，不提交/合并/打 tag；候选一对一回退目标仍为部署前的 `coke-grok-auth:candidate-browser-upload-20261113-r1`。
+
+#### 2026-11-14 语音挂断时长竞态修正与 r3 公网验证
+
+复核实时语音收尾代码时发现：挂断 handler 调用 `setElapsed` 后立刻用旧 render 闭包里的 `elapsed` 发保存请求，可能让持久化时长少一个计时 tick；保存失败后若重试，还可能把挂断后的等待时间继续计入。改为在首次挂断时计算并冻结秒数，UI 和 POST 共用该值，保存重试沿用冻结值。新增针对冻结、重试、负时间和未启动会话的回归用例；`npm run test:voice` 10/10、`npm run build:deployment` 通过。
+
+公网 Auth 已从 r2 一对一升级到 `coke-grok-auth:candidate-voice-audio-20261114-r3`，Deployment Ready 1/1；运行中 `/app/auth.cjs` 与本地 SHA-256 一致为 `e9dc9cf2769b814ebb790157c207a4d9e05f83701d5047a80f65a918dff97771`。只更新 Auth，没有更改 MySQL、Broker、Agent/Desktop Pod 或 PVC；即时回退镜像为 r2。已登录 Chrome 刷新后保留专用语音测试 Bot 和会话；点击 `Read aloud` 可观察到 `Generating speech…` 与 `Stop reading aloud`，随后恢复 `Read aloud`，无可见错误。这是公网朗读控件路径验收，不是上游模型追踪或实时通话验收。
+
+尚未获得新的麦克风采集授权，因此没有启动麦克风或发送环境音；dictation、Realtime 音频交换、通话中跨 Bot 导航、通话记录展开/反馈持久化仍未完成公网点击验收。本功能仍在唯一的 `codex/grok-bot-voice-audio` 分支，未提交、推送、合并或打 Tag。
+
+#### 2026-11-14 官方 Realtime ASR 事件流补齐与 r4 公网更新
+
+对照阿里云官方 [Realtime WebSocket 交互流程](https://help.aliyun.com/en/model-studio/audio-realtime-websocket-access) 和 [服务端事件定义](https://help.aliyun.com/en/model-studio/qwen-audio-realtime-server-events)，发现此前只处理最终 `conversation.item.input_audio_transcription.completed`，遗漏了语音进行中的 `conversation.item.input_audio_transcription.delta`。现把 `text` 与 `stash` 组合成同一条临时用户转写，并在最终 transcript 到达时替换；新的 VAD 语音轮次另起一条。该实现使用纯事件序列回归覆盖，不冒充真实麦克风验收。`npm run test:voice` 12/12、`npm run build:deployment` 通过。
+
+Auth 候选更新到 `coke-grok-auth:candidate-voice-audio-20261114-r4`，K3D Deployment Ready 1/1，`/app/auth.cjs` 与本地 bundle 的 SHA-256 都是 `e9dc9cf2769b814ebb790157c207a4d9e05f83701d5047a80f65a918dff97771`；image ID 为 `sha256:1086a35ef66fda7edf59ffc42c5a356b8d6734eb4ffe6efa0e1b32c387640cc4`。本次只替换 Auth，数据库、Broker、Agent/Desktop Pod 与 PVC 未动，直接回退镜像为 r3。签入 Chrome 刷新后专用 Bot、历史对话和朗读控件仍在；没有启动麦克风，因此 ASR 实时字幕、实时响应音频、通话保存/评价和通话中切 Bot 仍待公网真实验收。
+
+#### 2026-11-14 公网 dictation 交互验收未通过
+
+在已登录的公网 Chrome 中通过 Computer Use 打开现有语音测试 Bot。Chrome 站点麦克风权限原本已开启，本轮没有修改权限。用本机合成的 2.15 秒英文短句作测试音源，点击产品 `Start voice input` 后录制并停止：第一次出现通用转写失败；第二次 UI 显示 `Transcript added to the message. Review and send when ready.` 并回填文本，但回填内容与合成短句不匹配。没有发送消息；清空了未发送草稿并恢复公网桌面页面。
+
+能确认公网 UI 到草稿回填路径曾成功返回文本，但不能确认麦克风实际采到的音源，因此不能据此断定 Qwen ASR 或 WAV 转换本身有缺陷，也不能视为识别验收通过。下一步应在隔离浏览器中构建可验证的合成麦克风输入，先比对浏览器捕获 PCM 与测试 WAV，再走相同 UI 路径；不再重复采集真实环境麦克风。该问题与触发审批无关。候选仍未提交、推送、合并或打 Tag。
+
+#### 2026-11-14 公网语音继续核验与官方 UI 收敛
+
+只使用 xAI 官方演示逐帧留存的 `research/frames/v1-voice-chat-state-keyframes-20261106/frame-000.png` 和 `frame-005.png` 作视觉依据。原尺寸帧显示活动语音是无可见状态文字的紧凑胶囊条（绿色状态点与波形、设置、聊天、麦克风、红色 X）；结束后是居中的轻量 `Voice chat · MM:SS` 行，波形、时长、赞踩同排，没有大灰卡、反馈提示或展开箭头。当前功能分支本地 UI 已按此调整，并保留无障碍状态、转写折叠与反馈操作；`npm run test:voice` 12/12、`npm run build:deployment` 通过。改动尚未部署，公网仍为 r4。
+
+在用户明确同意的测试范围内，MacOS 输入和输出都临时设为 BlackHole 2ch。第一次操作时 Chrome 麦克风设置仍明确选着 `MacBook Air microphone (Built-in)`；只切换 CoreAudio 默认设备不会覆盖 Chrome 选定的物理麦克风，因此前两次浏览器实际采集了 MacBook 内置麦克风而非合成音源，音频已随 ASR 请求发往语音识别服务。没有发送聊天消息，草稿已清空，项目记录不保存该环境音或转写文本。之后在 Chrome 麦克风菜单显式选择 BlackHole 2ch，再通过公网 Chrome Computer Use 点击 Start/Stop voice input，已知合成短句得到精确转写（仅将 8:30 标准化）；此证据证明这次页面到 ASR 结果回填的链路成功，不评估不同口音或真实语音环境。测试完成后 Chrome 麦克风恢复为系统默认，CoreAudio 输入/输出恢复为 MacBook Air 麦克风/扬声器，临时标签和音频文件已清理。根因是 Chrome 保存了独立麦克风设备选择，不是已确认的 Qwen/WAV 缺陷。实时语音通话、通话历史/反馈和切换 Bot 仍未验收；候选未提交或打 Tag。
+
+#### 2026-11-14 公网 Realtime 语音通话点击验收
+
+在已登录的公网 Chrome 中用 Computer Use 操作专用 Bot `Voice E2E 20261114`。按用户授权显式将 Chrome 麦克风设为 BlackHole 2ch，并把本机合成的中文短句送入该设备。页面从 Connecting 进入 Listening，实时显示合成语音转写并返回 Bot 回复“遵命照办”。挂断后页面生成 `Voice chat · 00:49` 记录；展开后能看到通话转写，点 Good 后显示 `Thanks for the feedback` 且按钮为已选状态。这证明一个受控合成输入的公网实时会话、结果记录和反馈交互；没有提交聊天消息。没有独立验证用户是否听到回复音频，也没有验证上游模型身份、跨 Bot 通话切换或不同语音条件下的质量。
+
+同次测试中，早先的听写尝试发生了麦克风路由偏差：只修改 CoreAudio 默认输入不会更改 Chrome 独立保存的设备选择，Chrome 仍固定使用 MacBook 内置麦克风，因此两次实际录到的内置麦克风音频被发往 ASR。没有发送聊天消息，环境音和对应转写均未保留。之后显式选择 Chrome 的 BlackHole 设备，已知合成短句经页面 Start/Stop voice input 正确转写。测试结束后已恢复 Chrome System Default、MacBook Air 输入与输出，关闭临时设置页并删除合成音频与路由脚本。排查麦克风不匹配时要分别核验 Chrome 设备选择和 CoreAudio 默认设备。
+
+本次视觉参考只使用 xAI 官方 Grok Bot 演示帧。公网仍运行 Auth r4；活动/结束通话 UI 的本地调整尚未部署。`codex/grok-bot-voice-audio` 仍是唯一未完成分支，未提交、合并或打 Tag；Bot 间实时通话导航仍待验收。
+
+#### 2026-11-14 Auth r5 公网语音 UI 与跨 Bot 通话导航验收
+
+部署现有 K3D Auth Deployment 的镜像 `coke-grok-auth:candidate-voice-audio-20261114-r5`；只更新 Auth，没有触碰 MySQL、Broker、Agent/Desktop Pod 或 PVC。公网 Auth Pod 内 `/app/auth.cjs`、前端 JS 与 CSS 的 SHA-256 均与本机 `dist` 构建一致。r4 保留为即时镜像回退目标。
+
+已登录公网 Chrome 使用 Computer Use 完成跨 Bot 导航点击验收：在 `Voice E2E 20261114` 开始静音通话，切换到 `E2E Test Bot 1029` 后，全局浮动通话控件仍显示通话进行中和返回原 Bot 的操作；点击返回后原 Bot 仍处于 Listening；页面挂断后保存 `Voice chat · 00:50` 记录。该次静音用例只验证跨 Bot 状态保持/返回和保存时长，不代表实时音频响应。另一次合成语音通话的 `00:49` 记录、转写展开和 Good 反馈仍作为音频会话证据；未独立核实播放声音是否可听或服务端上游模型身份。
+
+Chrome 本轮临时麦克风设备显式选用 BlackHole 2ch，跨 Bot 用例本身保持静音；结束后 Chrome 设回 System Default 并关闭设置标签。Mac CoreAudio 输入/输出维持 MacBook Air 设备。`npm run test:voice` 12/12、`npm run test:runtime` 189/189、`npm run build:deployment` 与 `git diff --check` 通过。公网检查通过 Chrome 无障碍语义控件完成，没有使用截图或盲点坐标。
+
+改动继续留在唯一功能分支 `codex/grok-bot-voice-audio` 供用户最终验收；未合并 main、未打 checkpoint tag。大功能验收与发布目录 checkpoint 等用户确认后再做。

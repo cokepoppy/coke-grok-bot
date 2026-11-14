@@ -12,3 +12,4 @@ data:
   COKE_GROK_DESKTOP_PROXY_HOST_IP: 192.168.65.254
   COKE_GROK_MODEL_BASE_URL: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
   COKE_GROK_MODEL_ID: deepseek-v4.1-flash
+  COKE_GROK_AUDIO_BASE_URL: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1

@@ -19,13 +19,14 @@ import { BotMemoryBridge } from './bot-memory-bridge.ts';
 import { BotHandoffStore } from './bot-handoff-store.ts';
 import { BotRoutineBridge } from './bot-routine-bridge.ts';
 import { RoutineStore } from './routine-store.ts';
+import { VoiceGateway } from './voice-gateway.ts';
 
 function required(env:NodeJS.ProcessEnv,key:string):string { const value=env[key]?.trim();if(!value)throw new Error(`Missing ${key}`);return value; }
 async function privateFile(path:string):Promise<Buffer>{
  const metadata=await stat(path);if(!metadata.isFile()||(metadata.mode&0o077)!==0)throw new Error('Runtime secret file permissions are not private');
  const value=await readFile(path);if(!value.length||value.length>16384)throw new Error('Invalid runtime secret file');return value;
 }
-export interface PiRuntime { runs:RunStore; approvals:ApprovalStore; computer:UserComputer; files:WorkspaceFileStore; workspaceFiles:WorkspaceFileTransport; routines:RoutineStore; engine:'pi'|'dsh'; close():Promise<void> }
+export interface PiRuntime { runs:RunStore; approvals:ApprovalStore; computer:UserComputer; files:WorkspaceFileStore; workspaceFiles:WorkspaceFileTransport; routines:RoutineStore; voice:VoiceGateway; engine:'pi'|'dsh'; close():Promise<void> }
 /** Opt-in only. Caller supplies Kubernetes service account with separately audited permissions. */
 export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env):Promise<PiRuntime|null>{
  if(env.COKE_GROK_PI_ENABLED!=='1')return null;
@@ -66,6 +67,7 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  const memoryBridge=new BotMemoryBridge(memories);
  const routineBridge=new BotRoutineBridge(routines);
  const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals,bridge,memoryBridge,handoffs,routineBridge);
+ const voice=new VoiceGateway(providerKey,env.COKE_GROK_AUDIO_BASE_URL?.trim()||'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1');
  const executor=engine==='dsh'
   ? new DshExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories,handoffs,routines)
   : new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories,handoffs,routines);
@@ -75,5 +77,5 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  let routineTickInFlight=false;
  const timer=setInterval(()=>{if(routineTickInFlight)return;routineTickInFlight=true;void routines.dispatchDue().then(()=>scheduler.tick()).then(()=>handoffs.deliverReplies()).catch(()=>console.error('Pi scheduler polling failed.')).finally(()=>{routineTickInFlight=false})},2000);timer.unref();
  const screenshotCleanup=setInterval(()=>{void approvals.purgeExpiredScreenshots().catch(()=>console.error('Approval screenshot cleanup failed.'))},60000);screenshotCleanup.unref();
- return {runs,approvals,computer,files,workspaceFiles,routines,engine,async close(){clearInterval(timer);clearInterval(screenshotCleanup);await scheduler.stop();await executor.close();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
+ return {runs,approvals,computer,files,workspaceFiles,routines,voice,engine,async close(){clearInterval(timer);clearInterval(screenshotCleanup);await scheduler.stop();await executor.close();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
 }

@@ -14,6 +14,7 @@ import {safeDiagnosticMetadata} from './safe-diagnostics.ts';
 import {GroupRequestConflict,type GroupChatStore} from './group-chat-store.ts';
 import {RoutineRequestConflict,type RoutineStore,type RoutineSchedule} from './routine-store.ts';
 import {computerVncViewerHtml} from './computer-vnc-viewer.ts';
+import {VoiceGatewayError, type VoiceGatewayApi} from './voice-gateway.ts';
 
 function validatedNovncAsset(value:string):string|null{
  let path:string;try{path=decodeURIComponent(value)}catch{return null}
@@ -38,7 +39,7 @@ function proxyNovncAsset(endpoint:URL,asset:string,req:IncomingMessage,res:Serve
 
 function rejectUpgrade(socket:Duplex,status:number):void{
  if(socket.destroyed)return;
- const reason=status===401?'Unauthorized':status===403?'Forbidden':status===404?'Not Found':status===409?'Conflict':'Bad Gateway';
+ const reason=status===400?'Bad Request':status===401?'Unauthorized':status===403?'Forbidden':status===404?'Not Found':status===409?'Conflict':'Bad Gateway';
  socket.end(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
 }
 
@@ -69,7 +70,7 @@ async function proxyNovncSocket(endpoint:URL,req:IncomingMessage,client:Duplex,h
 }
 
 // Mount only behind a trusted proxy that preserves the configured Host.
-export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi', files?:WorkspaceFileStore, workspaceFiles?:WorkspaceFileTransportApi, groupChats?:GroupChatStore, routines?:RoutineStore) {
+export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi', files?:WorkspaceFileStore, workspaceFiles?:WorkspaceFileTransportApi, groupChats?:GroupChatStore, routines?:RoutineStore, voice?:VoiceGatewayApi) {
   const origin = parsePublicUrl(publicOrigin);
   const server=createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -86,9 +87,82 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         const session = await auth.session(req);
         if (!session) { res.writeHead(401, { 'Cache-Control': 'no-store' }); return res.end(); }
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-        return res.end(JSON.stringify({ agent: Boolean(runs), engine: runs ? agentEngine : null }));
+        return res.end(JSON.stringify({ agent: Boolean(runs), engine: runs ? agentEngine : null, voice: Boolean(voice) }));
       }
       if (req.method === 'POST' && url.pathname === `${origin.prefix}/api/auth/logout`) return await auth.logout(req, res);
+      const voiceDictationMatch=url.pathname.match(new RegExp(`^${origin.prefix}/api/bots/([0-9a-f-]{36})/voice/dictate$`,'i'));
+      if(voiceDictationMatch){
+        const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value))};
+        const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated'});
+        if(req.method!=='POST')return reply(405,{error:'Method not allowed'});
+        if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
+        if(!voice)return reply(503,{error:'Voice is unavailable'});
+        if(req.headers['content-type']!=='audio/wav')return reply(415,{error:'Expected PCM WAV audio'});
+        const botId=voiceDictationMatch[1];
+        const owned=runs?await runs.ownsBot(session,botId):bots?await bots.messages(session,botId)!==null:false;
+        if(!owned)return reply(404,{error:'Not found'});
+        let size=0;const chunks:Buffer[]=[];
+        for await(const chunk of req){size+=chunk.length;if(size>10*1024*1024)return reply(413,{error:'Audio exceeds the 10 MB limit'});chunks.push(Buffer.from(chunk))}
+        try{return reply(200,{text:await voice.transcribeWav(Buffer.concat(chunks),AbortSignal.timeout(120_000))})}
+        catch(error){if(error instanceof VoiceGatewayError)return reply(error.status,{error:error.code});return reply(502,{error:'Voice transcription failed'})}
+      }
+      const voiceSpeechMatch=url.pathname.match(new RegExp(`^${origin.prefix}/api/bots/([0-9a-f-]{36})/voice/speech$`,'i'));
+      if(voiceSpeechMatch){
+        const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value))};
+        const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated'});
+        if(req.method!=='POST')return reply(405,{error:'Method not allowed'});
+        if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
+        if(!voice)return reply(503,{error:'Voice is unavailable'});
+        if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return reply(415,{error:'Expected JSON'});
+        const botId=voiceSpeechMatch[1];
+        const owned=runs?await runs.ownsBot(session,botId):bots?await bots.messages(session,botId)!==null:false;
+        if(!owned)return reply(404,{error:'Not found'});
+        let size=0;const chunks:Buffer[]=[];
+        for await(const chunk of req){size+=chunk.length;if(size>12_000)return reply(413,{error:'Speech request is too large'});chunks.push(Buffer.from(chunk))}
+        let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return reply(400,{error:'Invalid JSON'})}
+        const text=body&&typeof body==='object'&&!Array.isArray(body)?(body as {text?:unknown}).text:null;
+        if(typeof text!=='string'||!text.trim()||text.length>3_000)return reply(400,{error:'Invalid speech text'});
+        try{
+          const audio=await voice.synthesizeSpeech(text,AbortSignal.timeout(120_000));
+          res.writeHead(200,{'Content-Type':'audio/mpeg','Content-Length':String(audio.length),'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+          return res.end(audio);
+        }catch(error){if(error instanceof VoiceGatewayError)return reply(error.status,{error:error.code});return reply(502,{error:'Speech synthesis failed'})}
+      }
+      const voiceTranscriptMatch=url.pathname.match(new RegExp(`^${origin.prefix}/api/bots/([0-9a-f-]{36})/voice/transcript$`,'i'));
+      const voiceFeedbackMatch=url.pathname.match(new RegExp(`^${origin.prefix}/api/bots/([0-9a-f-]{36})/voice/calls/([0-9a-f-]{36})/feedback$`,'i'));
+      if(voiceFeedbackMatch){
+        const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value))};
+        const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated'});
+        if(req.method!=='POST')return reply(405,{error:'Method not allowed'});
+        if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
+        if(!bots)return reply(503,{error:'Chat history is unavailable'});
+        if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return reply(415,{error:'Expected JSON'});
+        let size=0;const chunks:Buffer[]=[];for await(const chunk of req){size+=chunk.length;if(size>1024)return reply(413,{error:'Request is too large'});chunks.push(Buffer.from(chunk))}
+        let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return reply(400,{error:'Invalid JSON'})}
+        const feedback=body&&typeof body==='object'&&!Array.isArray(body)?(body as {feedback?:unknown}).feedback:null;
+        if(feedback!=='good'&&feedback!=='bad')return reply(400,{error:'Invalid voice feedback'});
+        try{return await bots.setVoiceCallFeedback(session,voiceFeedbackMatch[1],voiceFeedbackMatch[2],feedback)?reply(200,{ok:true,feedback}):reply(404,{error:'Not found'})}
+        catch{return reply(503,{error:'Voice feedback could not be saved'})}
+      }
+      if(voiceTranscriptMatch){
+        const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value))};
+        const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated'});
+        if(req.method!=='POST')return reply(405,{error:'Method not allowed'});
+        if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
+        if(!bots)return reply(503,{error:'Chat history is unavailable'});
+        if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return reply(415,{error:'Expected JSON'});
+        let size=0;const chunks:Buffer[]=[];
+        for await(const chunk of req){size+=chunk.length;if(size>45_000)return reply(413,{error:'Transcript is too large'});chunks.push(Buffer.from(chunk))}
+        let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return reply(400,{error:'Invalid JSON'})}
+        if(!body||typeof body!=='object'||Array.isArray(body)||!Array.isArray((body as {messages?:unknown}).messages))return reply(400,{error:'Invalid transcript'});
+        const raw=(body as {messages:unknown[]}).messages;
+        const durationSeconds=(body as {durationSeconds?:unknown}).durationSeconds;
+        if(!Number.isSafeInteger(durationSeconds)||Number(durationSeconds)<0||Number(durationSeconds)>36_000||raw.length>50||raw.some(message=>!message||typeof message!=='object'||Array.isArray(message)||!['user','bot'].includes(String((message as {role?:unknown}).role))||typeof (message as {text?:unknown}).text!=='string'))return reply(400,{error:'Invalid transcript'});
+        const messages=raw as Array<{role:'user'|'bot';text:string}>;
+        if(messages.some(message=>!message.text.trim()||message.text.length>10_000)||messages.reduce((total,message)=>total+message.text.length,0)>40_000)return reply(400,{error:'Invalid transcript'});
+        try{const saved=await bots.addVoiceCall(session,voiceTranscriptMatch[1],Number(durationSeconds),messages);return saved?reply(201,{message:saved}):reply(404,{error:'Not found'})}
+        catch(error){if(error instanceof Error&&error.message==='Invalid voice call')return reply(400,{error:'Invalid transcript'});return reply(503,{error:'Transcript could not be saved'})}
+      }
       const computerVncAssetMatch=url.pathname.match(new RegExp(`^${origin.prefix}/api/bots/([0-9a-f-]{36})/computer/vnc/(.+)$`,'i'));
       if(computer&&computerVncAssetMatch){
         if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405,{'Cache-Control':'no-store'});return res.end()}
@@ -437,15 +511,24 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
   });
   server.on('upgrade',(req,socket,head)=>{
     void (async()=>{
-      if(!computer||req.headers.host!==origin.host||req.headers.origin!==origin.origin||req.method!=='GET'||String(req.headers.upgrade||'').toLowerCase()!=='websocket'||req.headers['sec-websocket-version']!=='13'||typeof req.headers['sec-websocket-key']!=='string')return rejectUpgrade(socket,403);
+      if(req.headers.host!==origin.host||req.headers.origin!==origin.origin||req.method!=='GET'||String(req.headers.upgrade||'').toLowerCase()!=='websocket'||req.headers['sec-websocket-version']!=='13'||typeof req.headers['sec-websocket-key']!=='string')return rejectUpgrade(socket,403);
       let requestUrl:URL;try{requestUrl=new URL(req.url||'/',origin.origin)}catch{return rejectUpgrade(socket,404)}
+      const voiceMatch=requestUrl.pathname.match(new RegExp(`^${origin.prefix}/api/bots/([0-9a-f-]{36})/voice/realtime$`,'i'));
+      if(voiceMatch){
+        if(!voice)return rejectUpgrade(socket,409);
+        const session=await auth.session(req);if(!session)return rejectUpgrade(socket,401);
+        const botId=voiceMatch[1],owned=runs?await runs.ownsBot(session,botId):bots?await bots.messages(session,botId)!==null:false;
+        if(!owned)return rejectUpgrade(socket,404);
+        return await voice.upgradeRealtime(req,socket,head);
+      }
+      if(!computer)return rejectUpgrade(socket,404);
       const match=requestUrl.pathname.match(new RegExp(`^${origin.prefix}/api/bots/([0-9a-f-]{36})/computer/vnc/websockify$`,'i'));
       if(!match||requestUrl.search)return rejectUpgrade(socket,404);
       const session=await auth.session(req);if(!session)return rejectUpgrade(socket,401);
       const botId=match[1];if(!runs||!await runs.ownsBot(session,botId))return rejectUpgrade(socket,404);
       const endpoint=await computer.vncEndpoint(session,botId,AbortSignal.timeout(240_000));if(!endpoint)return rejectUpgrade(socket,409);
       await proxyNovncSocket(endpoint,req,socket,head);
-    })().catch(()=>rejectUpgrade(socket,502));
+    })().catch(error=>rejectUpgrade(socket,error instanceof VoiceGatewayError?error.status:502));
   });
   return server;
 }

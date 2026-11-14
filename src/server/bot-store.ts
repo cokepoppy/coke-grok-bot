@@ -4,7 +4,9 @@ import type { Session } from './tenant-store.ts';
 
 export type BotShape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle' | 'oval' | 'square' | 'pill' | 'spark' | 'heart' | 'flower' | 'pentagon' | 'star';
 export interface StoredBot { id: string; name: string; label: string; color: string; shape: BotShape; group: string; pinned: boolean; hidden: boolean; preview: string; lastActivityAt: string | null }
-export interface StoredMessage { id: string; role: 'user' | 'system'; text: string; createdAt: string }
+export type VoiceCallLine = { role: 'user' | 'bot'; text: string };
+export type VoiceCallData = { durationSeconds: number; transcript: VoiceCallLine[]; feedback: 'good' | 'bad' | null };
+export interface StoredMessage { id: string; role: 'user' | 'bot' | 'system' | 'voice'; text: string; createdAt: string; voiceCall?: VoiceCallData }
 export interface RenameResult { ok: boolean; event?: StoredMessage }
 const shapes = new Set<BotShape>(['cloud', 'drop', 'hex', 'round', 'triangle', 'oval', 'square', 'pill', 'spark', 'heart', 'flower', 'pentagon', 'star']);
 
@@ -35,6 +37,16 @@ export class BotStore {
     if (!new Set(messageColumns.map(column => String(column.COLUMN_NAME))).has('message_role')) {
       await this.pool.execute("ALTER TABLE bot_messages ADD COLUMN message_role ENUM('user','system') NOT NULL DEFAULT 'user' AFTER sequence");
     }
+    await this.pool.execute(`CREATE TABLE IF NOT EXISTS bot_voice_calls (
+      id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+      bot_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+      duration_seconds INT UNSIGNED NOT NULL,
+      transcript_json JSON NOT NULL,
+      feedback ENUM('good','bad') NULL,
+      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      KEY bot_voice_history (bot_id, created_at, id),
+      FOREIGN KEY (bot_id) REFERENCES bots(id)
+    ) ENGINE=InnoDB`);
     await this.pool.execute(`CREATE TABLE IF NOT EXISTS bot_sidebar_state (
       bot_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
       pinned BOOLEAN NOT NULL DEFAULT FALSE, hidden BOOLEAN NOT NULL DEFAULT FALSE,
@@ -45,7 +57,17 @@ export class BotStore {
     const [owners] = await this.pool.execute<RowDataPacket[]>('SELECT id FROM bots WHERE id=? AND tenant_id=? AND owner_id=?', [botId, session.tenantId, session.userId]);
     if (!owners.length) return null;
     const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT id,message_role AS role,message_text AS text,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt FROM bot_messages WHERE bot_id=? ORDER BY sequence", [botId]);
-    return rows as StoredMessage[];
+    const [calls] = await this.pool.execute<RowDataPacket[]>("SELECT id,duration_seconds AS durationSeconds,transcript_json AS transcript,feedback,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt FROM bot_voice_calls WHERE bot_id=? ORDER BY created_at,id", [botId]);
+    const voiceMessages:StoredMessage[]=calls.map(row=>{
+      let transcript:unknown=row.transcript;
+      if(typeof transcript==='string'){try{transcript=JSON.parse(transcript)}catch{transcript=[]}}
+      const rawTranscript:unknown[]=Array.isArray(transcript)?transcript as unknown[]:[];
+      const cleanTranscript=rawTranscript.filter((line:unknown):line is VoiceCallLine=>Boolean(line&&typeof line==='object'&&((line as VoiceCallLine).role==='user'||(line as VoiceCallLine).role==='bot')&&typeof (line as VoiceCallLine).text==='string')).slice(0,50).map((line:VoiceCallLine)=>({role:line.role,text:line.text.slice(0,10_000)}));
+      const durationSeconds=Number(row.durationSeconds);
+      const feedback=row.feedback==='good'||row.feedback==='bad'?row.feedback:null;
+      return{id:String(row.id),role:'voice',text:'',createdAt:String(row.createdAt),voiceCall:{durationSeconds:Number.isSafeInteger(durationSeconds)&&durationSeconds>=0&&durationSeconds<=36_000?durationSeconds:0,transcript:cleanTranscript,feedback}};
+    });
+    return [...rows as StoredMessage[],...voiceMessages].sort((a,b)=>Date.parse(a.createdAt)-Date.parse(b.createdAt)||a.id.localeCompare(b.id));
   }
   async addMessage(session: Session, botId: string, text: string): Promise<StoredMessage | null> {
     const clean = text.trim();
@@ -57,6 +79,24 @@ export class BotStore {
     if (!result.affectedRows) return null;
     const [rows] = await this.pool.execute<RowDataPacket[]>("SELECT id,message_role AS role,message_text AS text,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt FROM bot_messages WHERE id=?", [message.id]);
     return rows[0] as StoredMessage;
+  }
+  async addVoiceCall(session:Session,botId:string,durationSeconds:number,messages:VoiceCallLine[]):Promise<StoredMessage|null>{
+    if(!Number.isSafeInteger(durationSeconds)||durationSeconds<0||durationSeconds>36_000||!Array.isArray(messages)||messages.length>50||messages.some(message=>!message||!['user','bot'].includes(message.role)||typeof message.text!=='string'||!message.text.trim()||message.text.length>10_000)||messages.reduce((total,message)=>total+message.text.length,0)>40_000)throw new Error('Invalid voice call');
+    const id=randomUUID();
+    const [result]=await this.pool.execute<import('mysql2').ResultSetHeader>("INSERT INTO bot_voice_calls (id,bot_id,duration_seconds,transcript_json) SELECT ?,id,?,? FROM bots WHERE id=? AND tenant_id=? AND owner_id=?",[id,durationSeconds,JSON.stringify(messages.map(message=>({role:message.role,text:message.text.trim()}))),botId,session.tenantId,session.userId]);
+    if(!result.affectedRows)return null;
+    const [rows]=await this.pool.execute<RowDataPacket[]>("SELECT id,duration_seconds AS durationSeconds,transcript_json AS transcript,feedback,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt FROM bot_voice_calls WHERE id=? AND bot_id=?",[id,botId]);
+    if(!rows.length)return null;
+    const row=rows[0];
+    let transcript:unknown=row.transcript;if(typeof transcript==='string'){try{transcript=JSON.parse(transcript)}catch{transcript=[]}}
+    return{id:String(row.id),role:'voice',text:'',createdAt:String(row.createdAt),voiceCall:{durationSeconds:Number(row.durationSeconds),transcript:Array.isArray(transcript)?transcript as VoiceCallLine[]:[],feedback:null}};
+  }
+  async setVoiceCallFeedback(session:Session,botId:string,callId:string,feedback:'good'|'bad'):Promise<boolean>{
+    if(feedback!=='good'&&feedback!=='bad')throw new Error('Invalid voice feedback');
+    const [result]=await this.pool.execute<import('mysql2').ResultSetHeader>("UPDATE bot_voice_calls call_record JOIN bots b ON b.id=call_record.bot_id SET call_record.feedback=? WHERE call_record.id=? AND call_record.bot_id=? AND b.tenant_id=? AND b.owner_id=?",[feedback,callId,botId,session.tenantId,session.userId]);
+    if(result.affectedRows)return true;
+    const [rows]=await this.pool.execute<RowDataPacket[]>("SELECT call_record.id FROM bot_voice_calls call_record JOIN bots b ON b.id=call_record.bot_id WHERE call_record.id=? AND call_record.bot_id=? AND b.tenant_id=? AND b.owner_id=?",[callId,botId,session.tenantId,session.userId]);
+    return rows.length>0;
   }
   async list(session: Session, includeRuns = false): Promise<StoredBot[]> {
     const summaries = includeRuns

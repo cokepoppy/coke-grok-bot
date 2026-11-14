@@ -2,12 +2,13 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { avatarPaths } from './avatar-paths';
 import { WebsiteDemoApp } from './website-demo';
+import { VoiceCallCard, VoiceChatOverlay, type VoiceCallData } from './voice-chat';
 import {findGroupMentionQuery,groupMentionRecipientBotIds,groupRecipientBotIds,rebaseGroupMentionTokens,type GroupMentionQuery,type GroupMentionToken} from './group-mentions';
 import './shell.css';
 
 type Shape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle' | 'oval' | 'square' | 'pill' | 'spark' | 'heart' | 'flower' | 'pentagon' | 'star';
 type Bot = { id: string; name: string; label: string; color: string; shape: Shape; group: string; preview: string; lastActivityAt?: string | null; pinned?: boolean; hidden?: boolean };
-type Message = { id: string; role: 'user' | 'bot' | 'system'; text: string; createdAt?: string | null };
+type Message = { id: string; role: 'user' | 'bot' | 'system' | 'voice'; text: string; createdAt?: string | null; voiceCall?:VoiceCallData };
 type RunFile = { id: string; name: string; mimeType: string; size: number; sha256: string; kind: 'input' | 'output' };
 type ExecutionAudit = {engine:'pi'|'dsh';model:string;modelCompleted:boolean;calls:{tool:string;action:string|null;outcome:'succeeded'|'failed'|'unconfirmed'}[];truncated:boolean};
 type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; executionAudit?:ExecutionAudit|null; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: string | null };
@@ -58,6 +59,35 @@ const attachmentImageLimit = 25 * 1024 * 1024;
 const attachmentImagesTotalLimit = 200 * 1024 * 1024;
 const attachmentDocumentLimit = 250 * 1024 * 1024;
 const attachmentVideoLimit = 1024 * 1024 * 1024;
+async function audioBlobToPcmWav16k(blob: Blob): Promise<Blob> {
+  const context = new AudioContext();
+  try {
+    const decoded = await context.decodeAudioData(await blob.arrayBuffer());
+    if (!decoded.length || decoded.duration > 300) throw new Error('Audio must be five minutes or shorter.');
+    const sampleCount = Math.ceil(decoded.duration * 16_000);
+    const bytes = new ArrayBuffer(44 + sampleCount * 2);
+    const view = new DataView(bytes);
+    const write = (offset: number, text: string) => { for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i)); };
+    write(0, 'RIFF'); view.setUint32(4, bytes.byteLength - 8, true); write(8, 'WAVE'); write(12, 'fmt ');
+    view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, 16_000, true); view.setUint32(28, 32_000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+    write(36, 'data'); view.setUint32(40, sampleCount * 2, true);
+    const channels = Array.from({ length: decoded.numberOfChannels }, (_, index) => decoded.getChannelData(index));
+    for (let i = 0; i < sampleCount; i++) {
+      const sourceIndex = i * decoded.sampleRate / 16_000;
+      const left = Math.min(decoded.length - 1, Math.floor(sourceIndex));
+      const right = Math.min(decoded.length - 1, left + 1);
+      const fraction = sourceIndex - left;
+      let sample = 0;
+      for (const channel of channels) sample += channel[left] * (1 - fraction) + channel[right] * fraction;
+      sample /= channels.length;
+      const clipped = Math.max(-1, Math.min(1, sample));
+      view.setInt16(44 + i * 2, clipped < 0 ? clipped * 32768 : clipped * 32767, true);
+    }
+    if (bytes.byteLength > 10 * 1024 * 1024) throw new Error('Recording exceeds the 10 MB limit.');
+    return new Blob([bytes], { type: 'audio/wav' });
+  } finally { await context.close(); }
+}
 const previewVideoTypes = new Set(['video/mp4','video/webm','video/quicktime']);
 const previewAudioTypes = new Set(['audio/mpeg','audio/wav','audio/mp4','audio/ogg','audio/webm','audio/aac']);
 const previewImageTypes = new Set(['image/png','image/jpeg','image/webp','image/gif','image/avif']);
@@ -237,8 +267,8 @@ function runDiagnosticExplanation(code?: string | null): string | null {
   return null;
 }
 
-function IconButton({ name, label, onClick, className = '', buttonRef }: { name: IconName; label: string; onClick?: () => void; className?: string; buttonRef?: React.Ref<HTMLButtonElement> }) {
-  return <button ref={buttonRef} type="button" className={`icon-button ${className}`} aria-label={label} title={label} onClick={onClick}><Icon name={name} /></button>;
+function IconButton({ name, label, onClick, className = '', buttonRef, disabled = false }: { name: IconName; label: string; onClick?: () => void; className?: string; buttonRef?: React.Ref<HTMLButtonElement>; disabled?: boolean }) {
+  return <button ref={buttonRef} type="button" className={`icon-button ${className}`} aria-label={label} title={label} onClick={onClick} disabled={disabled}><Icon name={name} /></button>;
 }
 
 function BotMenuIcon({name}:{name:'pin'|'folder'|'unread'|'rename'|'copy'|'hide'|'delete'}) {
@@ -548,6 +578,21 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const filePicker = useRef<HTMLInputElement>(null);
   const [customAnswer, setCustomAnswer] = useState('');
   const [notice, setNotice] = useState(false);
+  const [voiceAvailable, setVoiceAvailable] = useState(false);
+  const [voiceTranscriptRefresh,setVoiceTranscriptRefresh]=useState(0);
+  const [speechMessageId,setSpeechMessageId]=useState('');
+  const speechRequestId=useRef(0);
+  const speechAudioRef=useRef<HTMLAudioElement|null>(null);
+  const speechObjectUrlRef=useRef('');
+  const [dictationState, setDictationState] = useState<'idle'|'recording'|'transcribing'>('idle');
+  const [dictationSeconds, setDictationSeconds] = useState(0);
+  const [dictationNotice, setDictationNotice] = useState('');
+  const dictationRecorder = useRef<MediaRecorder|null>(null);
+  const dictationStream = useRef<MediaStream|null>(null);
+  const dictationChunks = useRef<Blob[]>([]);
+  const dictationBotId = useRef('');
+  const dictationConversationKey = useRef('');
+  const [voiceChatBotId,setVoiceChatBotId]=useState<string|null>(null);
   const [agentFeature, setAgentFeature] = useState<'loading' | 'enabled' | 'disabled' | 'error'>(remote ? 'loading' : 'disabled');
   const [agentEngine, setAgentEngine] = useState<'pi' | 'dsh' | null>(null);
   const [runHistory, setRunHistory] = useState<{ id: string; status: 'loading' | 'ready' | 'error'; runs: AgentRun[] }>({ id: '', status: 'loading', runs: [] });
@@ -577,6 +622,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const labelQueue = useRef<Record<string, Promise<void>>>({});
   const active = state.bots.find(bot => bot.id === state.activeId) || state.bots[0];
   const activeGroup=groups.find(group=>group.id===selectedGroupId);
+  const activeConversationKeyRef=useRef('');
+  activeConversationKeyRef.current=activeGroup?`group:${activeGroup.id}`:`bot:${active?.id||''}`;
   const layoutSidebarWidth = account && panel && !panelSidebarExpanded ? PRODUCT_SIDEBAR_MIN : sidebarWidth;
   const botMentionCandidates:BotMentionCandidate[]=botMentionQuery?(()=>{
     const query=botMentionQuery.query.trim().toLowerCase();
@@ -603,6 +650,13 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const visibleConversationLength=activeGroup?(groupChat.id===activeGroup.id?groupChat.view?.messages.length||0:0):botTimeline.length;
   const activeConversationKey=activeGroup?`group:${activeGroup.id}`:`bot:${active?.id||''}`;
   const visibleConversationTailKey=activeGroup?(groupChat.id===activeGroup.id?groupChat.view?.messages.at(-1)?.id||'':''):botTimeline.at(-1)?.key||'';
+  useEffect(()=>{
+    stopSpeechPlayback();
+    return()=>{
+      speechAudioRef.current?.pause();
+      if(speechObjectUrlRef.current)URL.revokeObjectURL(speechObjectUrlRef.current);
+    };
+  },[activeConversationKey]);
   const filtered = state.bots.filter(bot => !(reference && newChat && bot.id === 'new') && `${bot.name} ${bot.label}`.toLowerCase().includes(query.toLowerCase()));
   const visibleBots = filtered.filter(bot=>!bot.hidden).sort((a,b)=>Number(Boolean(b.pinned))-Number(Boolean(a.pinned)));
   const hiddenBots = filtered.filter(bot=>bot.hidden);
@@ -678,9 +732,10 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     if (!remote) return;
     const controller = new AbortController();
     fetch(`${import.meta.env.BASE_URL}api/auth/features`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
-      .then(async response => { if (response.status === 404) return { agent: false, engine: null }; if (!response.ok) throw new Error('features unavailable'); return response.json() as Promise<{ agent: boolean; engine: unknown }>; })
+      .then(async response => { if (response.status === 404) return { agent: false, engine: null, voice: false }; if (!response.ok) throw new Error('features unavailable'); return response.json() as Promise<{ agent: boolean; engine: unknown; voice?: boolean }>; })
       .then(value => {
         if (typeof value.agent !== 'boolean' || (value.agent && value.engine !== 'pi' && value.engine !== 'dsh') || (!value.agent && value.engine !== null)) throw new Error('invalid features');
+        setVoiceAvailable(value.voice === true);
         setAgentEngine(value.agent ? value.engine as 'pi' | 'dsh' : null);
         setAgentFeature(value.agent ? 'enabled' : 'disabled');
       })
@@ -736,8 +791,18 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         setHistory({ id, status: 'ready' });
       }).catch(error => { if (error.name !== 'AbortError') setHistory({ id, status: 'error' }); });
     return () => controller.abort();
-  }, [remote, active?.id, activeGroup?.id]);
-  useEffect(() => { setDraft(''); setCustomAnswer(''); setNotice(false);setGroupError(''); }, [state.activeId,selectedGroupId]);
+  }, [remote, active?.id, activeGroup?.id, voiceTranscriptRefresh]);
+  useEffect(() => { setDraft(''); setCustomAnswer(''); setNotice(false);setGroupError('');setDictationNotice('');if(dictationRecorder.current?.state==='recording'){dictationRecorder.current.ondataavailable=null;dictationRecorder.current.onstop=null;dictationRecorder.current.stop()}dictationStream.current?.getTracks().forEach(track=>track.stop());dictationStream.current=null;dictationRecorder.current=null;dictationChunks.current=[];setDictationState('idle');setDictationSeconds(0); }, [state.activeId,selectedGroupId]);
+  useEffect(() => {
+    if(dictationState!=='recording')return;
+    const started=Date.now();
+    const timer=setInterval(()=>{
+      const elapsed=Math.floor((Date.now()-started)/1000);setDictationSeconds(elapsed);
+      if(elapsed>=290&&dictationRecorder.current?.state==='recording'){setDictationNotice('Five minute limit reached. Transcribing your recording…');setDictationState('transcribing');dictationRecorder.current.stop()}
+    },1000);
+    return()=>clearInterval(timer);
+  },[dictationState]);
+  useEffect(()=>()=>{if(dictationRecorder.current?.state==='recording')dictationRecorder.current.stop();dictationStream.current?.getTracks().forEach(track=>track.stop());},[]);
   useEffect(() => { avatarEditorRef.current=null; setAvatarEditor(null); }, [state.activeId]);
   useEffect(() => { if (avatarEditor) avatarDialog.current?.focus(); }, [avatarEditor?.id]);
   useEffect(() => { if(newChat) recipientInput.current?.focus(); }, [newChat]);
@@ -975,7 +1040,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     if(entry.kind==='message'){
       const message=entry.message;
       if(message.role==='system')return <div key={entry.key} className="system-event-line" role="status">{message.text}</div>;
-      return <div key={entry.key} className={`message-line ${message.role}`}><div className="message-bubble">{message.text}</div>{message.role==='bot'&&<div className="message-actions"><Icon name="smile"/><Icon name="reply"/><Icon name="more"/></div>}</div>;
+      if(message.role==='voice'&&message.voiceCall)return <div key={entry.key} className="message-line voice-call-line"><VoiceCallCard botName={active?.name||'Bot'} messageId={message.id} call={message.voiceCall} onFeedback={(callId,value)=>saveVoiceCallFeedback(active?.id||'',callId,value)}/></div>;
+      return <div key={entry.key} className={`message-line ${message.role}`}><div className="message-bubble">{message.text}</div>{message.role==='bot'&&<div className="message-actions">{voiceAvailable&&remote&&active&&<button type="button" className="message-speech-button" aria-label={speechMessageId===message.id?'Stop reading aloud':'Read aloud'} title={speechMessageId===message.id?'Stop reading aloud':'Read aloud'} onClick={()=>void speakMessageAloud(active.id,message.id,message.text)}><Icon name="sound"/></button>}<Icon name="smile"/><Icon name="reply"/><Icon name="more"/></div>}</div>;
     }
     if(!active)return null;
     const run=entry.run;
@@ -988,10 +1054,17 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     return <div key={entry.key} className={`message-line bot${run.computerUsed?' computer-followup':''}`}><div className="message-bubble">
       {!run.computerUsed&&run.status!=='completed'&&<span className="run-status">{run.status==='unknown'&&run.recoveryState==='acknowledged'?'Outcome unknown · reviewed; queue resumed':run.status==='unknown'&&run.recoveryState==='retried'?'Outcome unknown · explicit retry recorded':({queued:'Queued · waiting for your computer',running:'Working on your computer',failed:'Failed',unknown:'Outcome unknown · check before retrying'} as const)[run.status]}</span>}
       {run.result&&!genericDone&&<p>{run.result}</p>}
+      {run.status==='completed'&&Boolean(run.result?.trim())&&!genericDone&&voiceAvailable&&remote&&active&&<div className="message-actions"><button type="button" className="message-speech-button" aria-label={speechMessageId===run.id?'Stop reading aloud':'Read aloud'} title={speechMessageId===run.id?'Stop reading aloud':'Read aloud'} onClick={()=>void speakMessageAloud(active.id,run.id,run.result||'')}><Icon name="sound"/></button></div>}
       <RunFileCards files={outputFiles} onPreview={setPreviewFile} onReuse={reuseRunFile}/>
       {showRecovery&&<section className="run-recovery" aria-label="Review uncertain task outcome"><p>{runDiagnosticExplanation(run.diagnosticCode)||'The previous task may have run even though its result was not saved. Review the computer before deciding.'}</p><div><button type="button" disabled={Boolean(resolvingRun)||runHistory.status!=='ready'} onClick={()=>void recoverRun(run,'acknowledge')}>{resolvingRun===run.id?'Saving…':'I checked · continue'}</button><button type="button" disabled={Boolean(resolvingRun)||runHistory.status!=='ready'} onClick={()=>void recoverRun(run,'retry')}>{resolvingRun===run.id?'Saving…':'Retry as a new task'}</button></div></section>}
       {showRetryNote&&<p className="run-recovery-note">A separate queued task was created; the original outcome remains in history.</p>}
     </div></div>;
+  }
+  async function saveVoiceCallFeedback(botId:string,callId:string,feedback:'good'|'bad'){
+    if(!botId)throw new Error('Bot is unavailable');
+    const response=await fetch(`${import.meta.env.BASE_URL}api/bots/${encodeURIComponent(botId)}/voice/calls/${encodeURIComponent(callId)}/feedback`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({feedback})});
+    if(!response.ok)throw new Error('Voice feedback could not be saved');
+    setState(current=>({...current,messages:{...current.messages,[botId]:(current.messages[botId]||[]).map(message=>message.id===callId&&message.voiceCall?{...message,voiceCall:{...message.voiceCall,feedback}}:message)}}));
   }
   function updateBotMentionDraft(value:string,caret:number){
     setDraft(value);
@@ -1017,6 +1090,85 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();selectBotMention(botMentionCandidates[botMentionActiveIndex]||botMentionCandidates[0]);return}
     }
     if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();void addMessage(draft)}
+  }
+  function stopSpeechPlayback(){
+    speechRequestId.current++;
+    const audio=speechAudioRef.current;
+    if(audio){audio.pause();audio.removeAttribute('src');audio.load();speechAudioRef.current=null}
+    if(speechObjectUrlRef.current){URL.revokeObjectURL(speechObjectUrlRef.current);speechObjectUrlRef.current=''}
+    setSpeechMessageId('');
+  }
+  async function speakMessageAloud(botId:string,messageId:string,text:string){
+    if(speechMessageId===messageId){stopSpeechPlayback();return}
+    stopSpeechPlayback();
+    if(!remote||!voiceAvailable||!text.trim())return;
+    const requestId=speechRequestId.current;
+    const conversationKey=activeConversationKeyRef.current;
+    setDictationNotice('Generating speech…');setSpeechMessageId(messageId);
+    try{
+      const response=await fetch(`${import.meta.env.BASE_URL}api/bots/${encodeURIComponent(botId)}/voice/speech`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+      if(speechRequestId.current!==requestId)return;
+      if(!response.ok)throw new Error('Speech playback is unavailable. Try again.');
+      const audioBlob=await response.blob();
+      if(speechRequestId.current!==requestId)return;
+      if(activeConversationKeyRef.current!==conversationKey){setSpeechMessageId('');return}
+      const objectUrl=URL.createObjectURL(audioBlob);speechObjectUrlRef.current=objectUrl;
+      const audio=new Audio(objectUrl);speechAudioRef.current=audio;
+      const finish=()=>{if(speechAudioRef.current===audio)stopSpeechPlayback();setDictationNotice('')};
+      audio.onended=finish;audio.onerror=()=>{finish();setDictationNotice('Speech playback failed. Try again.')};
+      await audio.play();setDictationNotice('');
+    }catch(error){stopSpeechPlayback();setDictationNotice(error instanceof Error?error.message:'Speech playback is unavailable. Try again.')}
+  }
+  async function toggleVoiceInput(){
+    if(dictationState==='recording'){
+      setDictationState('transcribing');dictationRecorder.current?.stop();return;
+    }
+    if(dictationState==='transcribing')return;
+    if(!remote||!voiceAvailable||agentFeature!=='enabled'){
+      setDictationNotice('Voice input is unavailable until the Agent runtime is connected.');return;
+    }
+    if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined'){
+      setDictationNotice('This browser does not support microphone recording.');return;
+    }
+    try{
+      const media=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+      const types=['audio/webm;codecs=opus','audio/mp4'];
+      const mimeType=types.find(type=>MediaRecorder.isTypeSupported(type));
+      const recorder=new MediaRecorder(media,mimeType?{mimeType}:undefined);
+      dictationBotId.current=activeGroup?.members[0]?.id||active?.id||'';
+      dictationConversationKey.current=activeConversationKeyRef.current;
+      dictationStream.current=media;dictationRecorder.current=recorder;dictationChunks.current=[];setDictationSeconds(0);setDictationNotice('');
+      recorder.ondataavailable=event=>{if(event.data.size)dictationChunks.current.push(event.data)};
+      recorder.onerror=()=>{setDictationNotice('Microphone recording failed. Try again.');setDictationState('idle')};
+      recorder.onstop=()=>{
+        const recorded=new Blob(dictationChunks.current,{type:recorder.mimeType||'audio/webm'});dictationChunks.current=[];
+        media.getTracks().forEach(track=>track.stop());if(dictationStream.current===media)dictationStream.current=null;
+        if(dictationRecorder.current===recorder)dictationRecorder.current=null;
+        if(recorded.size===0){setDictationNotice('No speech was recorded. Try again.');setDictationState('idle');return}
+        setDictationState('transcribing');setDictationNotice('Transcribing…');
+        void (async()=>{
+          try{
+            const wav=await audioBlobToPcmWav16k(recorded);
+            const response=await fetch(`${import.meta.env.BASE_URL}api/bots/${dictationBotId.current}/voice/dictate`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'audio/wav'},body:wav});
+            if(!response.ok)throw new Error(response.status===401?'Sign in again to use voice input.':response.status===413?'Recording exceeds the 10 MB limit.':'Transcription could not be completed.');
+            const value=await response.json() as {text?:unknown};
+            if(typeof value.text!=='string'||!value.text.trim())throw new Error('No speech was recognized. Try again.');
+            if(activeConversationKeyRef.current===dictationConversationKey.current){
+              setDraft(current=>`${current}${current.trim()?' ':''}${value.text as string}`);
+              botMentionTokensRef.current=[];setBotMentionTokens([]);setBotMentionQuery(null);
+              requestAnimationFrame(()=>{(activeGroup?groupComposer:composerInput).current?.focus()});
+              setDictationNotice('Transcript added to the message. Review and send when ready.');
+            }else setDictationNotice('Transcript is ready. Reopen the original chat to continue.');
+          }catch(error){setDictationNotice(error instanceof Error?error.message:'Transcription could not be completed.')}
+          finally{setDictationState('idle')}
+        })();
+      };
+      recorder.start(250);setDictationState('recording');
+    }catch(error){
+      const name=error instanceof DOMException?error.name:'';
+      setDictationNotice(name==='NotAllowedError'?'Allow microphone access in your browser, then try again.':name==='NotFoundError'?'No microphone was found.':'Could not start voice input.');
+      dictationStream.current?.getTracks().forEach(track=>track.stop());dictationStream.current=null;setDictationState('idle');
+    }
   }
   async function addMessage(text: string) {
     if(remote&&selectedGroupId){
@@ -1467,12 +1619,20 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
             {activeGroup&&remote&&agentFeature==='enabled'&&((pendingGroupFiles[activeGroup.id]||[]).length+(pendingGroupRunFiles[activeGroup.id]||[]).length)>0&&<div className="pending-files" aria-label="Files to attach">{(pendingGroupRunFiles[activeGroup.id]||[]).map((file,index)=><span className="pending-file" key={`run:${file.id}`}><span>{file.name}</span><button type="button" aria-label={`Remove reused ${file.name}`} disabled={groupSending} onClick={()=>setPendingGroupRunFiles(current=>({...current,[activeGroup.id]:(current[activeGroup.id]||[]).filter((_,itemIndex)=>itemIndex!==index)}))}>×</button></span>)}{(pendingGroupFiles[activeGroup.id]||[]).map(item=><span className="pending-file" key={item.key}><span>{item.file.name}{item.uploadedId?' · Ready':''}</span><button type="button" aria-label={`Remove ${item.file.name}`} disabled={groupSending} onClick={()=>setPendingGroupFiles(current=>({...current,[activeGroup.id]:(current[activeGroup.id]||[]).filter(file=>file.key!==item.key)}))}>×</button></span>)}</div>}
             {remote && agentFeature === 'enabled' && ((pendingFiles[active.id]||[]).length+(pendingRunFiles[active.id]||[]).length)>0 && <div className="pending-files" aria-label="Files to attach">{(pendingRunFiles[active.id]||[]).map((file,index)=><span className="pending-file" key={`run:${file.id}`}><span>{file.name}</span><button type="button" aria-label={`Remove reused ${file.name}`} onClick={()=>setPendingRunFiles(current=>({...current,[active.id]:(current[active.id]||[]).filter((_,itemIndex)=>itemIndex!==index)}))}>×</button></span>)}{(pendingFiles[active.id]||[]).map((file,index)=><span className="pending-file" key={`local:${file.name}:${file.lastModified}:${index}`}><span>{file.name}</span><button type="button" aria-label={`Remove ${file.name}`} onClick={()=>setPendingFiles(current=>({...current,[active.id]:(current[active.id]||[]).filter((_,itemIndex)=>itemIndex!==index)}))}>×</button></span>)}</div>}
             {botMentionQuery&&botMentionCandidates.length>0&&<div id="bot-mention-list" className="group-mention-menu" role="listbox" aria-label={activeGroup?'Mention a Bot or everyone':'Mention a Bot'}>{botMentionCandidates.map((candidate,index)=><button id={`bot-mention-option-${candidate.id}`} key={candidate.id} type="button" role="option" aria-selected={index===botMentionActiveIndex} onMouseDown={event=>event.preventDefault()} onClick={()=>selectBotMention(candidate)}>{candidate.kind==='everyone'?<span className="everyone-mention-avatar" aria-hidden="true">@</span>:<Avatar bot={candidate.bot} size={25}/>}<span><strong>{candidate.kind==='everyone'?'@everyone':candidate.bot.name}</strong>{candidate.kind==='everyone'?<small>Message every Bot in this group</small>:candidate.bot.label&&<small>{candidate.bot.label}</small>}</span><small>{candidate.kind==='everyone'?'Group':'Bot'}</small></button>)}</div>}
-            <form className="composer" onSubmit={event=>{event.preventDefault();void addMessage(draft)}}><IconButton name="plus" label="Add attachment" onClick={()=>remote&&agentFeature==='enabled'?filePicker.current?.click():setNotice(true)}/><textarea ref={activeGroup?groupComposer:composerInput} aria-label={`Message ${activeGroup?.name||active.name}`} placeholder={`Message ${activeGroup?.name||active.name}`} value={draft} rows={1} disabled={composerDisabled} aria-autocomplete={botMentionQuery?'list':undefined} aria-expanded={botMentionQuery?Boolean(botMentionCandidates.length):undefined} aria-controls={botMentionQuery&&botMentionCandidates.length?'bot-mention-list':undefined} aria-activedescendant={botMentionQuery&&botMentionCandidates[botMentionActiveIndex]?`bot-mention-option-${botMentionCandidates[botMentionActiveIndex].id}`:undefined} onChange={event=>updateBotMentionDraft(event.currentTarget.value,event.currentTarget.selectionStart)} onPaste={event=>{if(!remote||agentFeature!=='enabled')return;const pasted=Array.from(event.clipboardData.files||[]);if(!pasted.length)return;event.preventDefault();activeGroup?stageGroupFiles(pasted):stageFiles(pasted)}} onKeyDown={handleComposerKeyDown}/><IconButton name="mic" label="Voice input" onClick={()=>setNotice(true)}/>{draft.trim()||(activeGroup?((pendingGroupFiles[activeGroup.id]||[]).length+(pendingGroupRunFiles[activeGroup.id]||[]).length)>0:((pendingFiles[active.id]||[]).length+(pendingRunFiles[active.id]||[]).length)>0)?<button type="submit" className="send-button" disabled={composerDisabled} aria-label={remote?'Send task':'Save local message'}><Icon name="arrow"/></button>:<IconButton name="sound" label="Start voice chat" className="voice-button" onClick={()=>setNotice(true)}/>}</form>
+            {dictationNotice&&<div className="dictation-status" role="status">{dictationNotice}</div>}
+            <form className={`composer ${dictationState==='recording'?'is-listening':''}`} onSubmit={event=>{event.preventDefault();void addMessage(draft)}}>
+              <IconButton name="plus" label="Add attachment" onClick={()=>remote&&agentFeature==='enabled'?filePicker.current?.click():setNotice(true)}/>
+              <textarea ref={activeGroup?groupComposer:composerInput} aria-label={`Message ${activeGroup?.name||active.name}`} placeholder={`Message ${activeGroup?.name||active.name}`} value={draft} rows={1} disabled={composerDisabled||dictationState!=='idle'} aria-autocomplete={botMentionQuery?'list':undefined} aria-expanded={botMentionQuery?Boolean(botMentionCandidates.length):undefined} aria-controls={botMentionQuery&&botMentionCandidates.length?'bot-mention-list':undefined} aria-activedescendant={botMentionQuery&&botMentionCandidates[botMentionActiveIndex]?`bot-mention-option-${botMentionCandidates[botMentionActiveIndex].id}`:undefined} onChange={event=>updateBotMentionDraft(event.currentTarget.value,event.currentTarget.selectionStart)} onPaste={event=>{if(!remote||agentFeature!=='enabled')return;const pasted=Array.from(event.clipboardData.files||[]);if(!pasted.length)return;event.preventDefault();activeGroup?stageGroupFiles(pasted):stageFiles(pasted)}} onKeyDown={handleComposerKeyDown}/>
+              {dictationState==='recording'&&<span className="dictation-live" aria-live="polite">Listening… {String(Math.floor(dictationSeconds/60)).padStart(2,'0')}:{String(dictationSeconds%60).padStart(2,'0')}</span>}
+              <button type="button" className={`icon-button dictation-button ${dictationState==='recording'?'recording':''}`} aria-label={dictationState==='recording'?'Stop voice input':'Start voice input'} title={dictationState==='recording'?'Stop voice input':'Start voice input'} disabled={dictationState==='transcribing'||(dictationState==='idle'&&composerDisabled)} onClick={()=>void toggleVoiceInput()}><Icon name="mic"/></button>
+              {draft.trim()||(activeGroup?((pendingGroupFiles[activeGroup.id]||[]).length+(pendingGroupRunFiles[activeGroup.id]||[]).length)>0:((pendingFiles[active.id]||[]).length+(pendingRunFiles[active.id]||[]).length)>0)?<button type="submit" className="send-button" disabled={composerDisabled||dictationState!=='idle'} aria-label={remote?'Send task':'Save local message'}><Icon name="arrow"/></button>:<IconButton name="sound" label="Start voice chat" className="voice-button" disabled={dictationState!=='idle'||composerDisabled||Boolean(activeGroup)||!remote||agentFeature!=='enabled'||!voiceAvailable} onClick={()=>{if(active&&remote&&agentFeature==='enabled'&&voiceAvailable&&!activeGroup)setVoiceChatBotId(active.id);else setNotice(true)}}/>}
+            </form>
           </section>
           {account && panel && <div className="computer-panel-resize-handle" role="separator" aria-label="Resize computer panel" aria-orientation="vertical" aria-valuemin={productPanelMin()} aria-valuemax={productPanelMax(layoutSidebarWidth)} aria-valuenow={Math.round(computerPanelWidth)} aria-valuetext={`${Math.round(computerPanelWidth)} pixels`} tabIndex={0} onPointerDown={startComputerPanelResize} onPointerMove={moveComputerPanelResize} onPointerUp={finishComputerPanelResize} onPointerCancel={finishComputerPanelResize} onKeyDown={adjustComputerPanelResize} onDoubleClick={() => setComputerPanelWidth(initialProductPanelWidth('', layoutSidebarWidth, ''))} />}
           {panel && (activeGroup?<aside className="details-panel group-details-panel" aria-label="Group details"><GroupAvatar members={activeGroup.members} size={80}/><div className="group-panel-name">{activeGroup.name}</div><div className="group-panel-count">{activeGroup.members.length} Bots</div><div className="tabs"><button type="button" className={tab==='Details'?'active':''} onClick={()=>setTab('Details')}>Details</button><button type="button" className={tab==='Computer'?'active':''} onClick={()=>setTab('Computer')}>Computer</button></div>{tab==='Computer'?remote&&agentFeature==='enabled'?<ComputerPanel name={activeGroup.members.find(member=>member.id===groupComputerBotId)?.name||activeGroup.members[0].name} botId={groupComputerBotId||activeGroup.members[0].id}/>:<div className="computer-preview"><Icon name="screen"/><span>Computer not connected</span></div>:<div className="group-member-list" aria-label="Group members">{activeGroup.members.map(member=><div className="group-member" key={member.id}><Avatar bot={member} size={30}/><span><strong>{member.name}</strong>{member.label&&<small>{member.label}</small>}</span><button type="button" onClick={()=>{setGroupComputerBotId(member.id);setTab('Computer')}}>Computer</button></div>)}</div>}</aside>:<aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" ref={avatarButton} aria-label="Change Bot picture" onClick={openAvatar}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => saveBotName(active.id,active.name)} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && agentFeature === 'enabled' ? <ComputerPanel name={active.name} botId={active.id} official bot={active} onClose={()=>setPanel(false)} onRename={renameBot} onSaveName={()=>saveBotName(active.id,active.name)} onLabelChange={label=>setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))} onSaveLabel={saveBotLabel} onChangeAvatar={openAvatar} onEditRoutine={name=>{setDraft(`Edit your routine: ${name}`);setPanel(false);requestAnimationFrame(()=>composerInput.current?.focus())}} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>)}
         </div>
       </>}
+      {voiceChatBotId&&<VoiceChatOverlay botId={voiceChatBotId} botName={state.bots.find(bot=>bot.id===voiceChatBotId)?.name||'Bot'} isActiveBot={active?.id===voiceChatBotId&&!activeGroup&&!newChat} onReturnToBot={()=>selectBot(voiceChatBotId)} onSaved={()=>setVoiceTranscriptRefresh(value=>value+1)} onClose={()=>setVoiceChatBotId(null)}/>}
       {groupCreateDialog&&<div className="create-overlay" onMouseDown={event=>{if(event.target===event.currentTarget&&!groupSaving)setGroupCreateDialog(null)}}><form className="group-create-dialog" role="dialog" aria-modal="true" aria-labelledby="group-create-title" onSubmit={event=>{event.preventDefault();void createGroup()}} onKeyDown={event=>{if(event.key==='Escape'&&!groupSaving){event.preventDefault();setGroupCreateDialog(null)}else if(event.key==='Tab'){const choices=Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled)'));const first=choices[0],last=choices.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}}}}>
         <header><div><strong id="group-create-title">Create group chat</strong><span>Select 2 to 6 of your Bots</span></div><IconButton name="close" label="Close group chat" onClick={()=>{if(!groupSaving)setGroupCreateDialog(null)}} /></header>
         <label className="group-name-field">Group name<input autoFocus maxLength={60} placeholder="Name this group" value={groupCreateDialog.name} disabled={groupSaving} onChange={event=>setGroupCreateDialog(current=>current?{...current,name:event.target.value,requestId:crypto.randomUUID()}:null)} /></label>
