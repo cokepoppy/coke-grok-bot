@@ -5554,3 +5554,9 @@ PTS 774960（12:54.960）仍显示该 Google Slides 编辑页；PTS 775000（12:
 连续审阅 13:00、13:05、13:10 三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧；15 张 5×5 联系图逐张检查。独立从完整 MKV 重解码后，375/375 帧的源 PTS、`yuv420p` 像素字节数/SHA-256、15/15 联系图 SHA-256 均与原 manifest 一致。PTS 范围 780000–794960，完整源视频 SHA-256 为 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。窗口及逐帧 manifest 位于 `research/frames/grok-201-1300-1305-compact-audit-20261114/`、`grok-201-1305-1310-compact-audit-20261114/`、`grok-201-1310-1315-compact-audit-20261114/`。
 
 PTS 781080（13:01.080）仍是黑色 `Loading…` 画面；PTS 781120（13:01.120）首次重新显示完整的 Google Slides 第 9 页 `Meet the team`，两帧相隔 40 ms。重现后的幻灯片列出 Dex（Designer）、Lew（Fullstack）、Sam（UI/UX）及对应团队职责；至 PTS 794960（13:14.960）持续停留在该页。加载结束转场的三张相邻原尺寸帧与哈希见 `research/frames/grok-201-1301-loading-return-keyframes-20261114/manifest.json`。本窗口没有回到 Grok Bot 聊天或展示可辨认的 Agent 任务结果；不把演示幻灯片当成运行时完成证据。V2 连续逐帧覆盖延至 13:14.960（19,875 帧），下一窗口从 13:15.000 开始。
+
+### Grok Bot 201 逐帧续审：13:15.000–13:29.960（2026-11-14）
+
+连续审阅 13:15、13:20、13:25 三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧；15 张 5×5 联系图逐张检查。独立从完整 MKV 重解码后，375/375 帧的源 PTS、`yuv420p` 像素字节数/SHA-256、15/15 联系图 SHA-256 均与原 manifest 一致。PTS 范围 795000–809960，完整源视频 SHA-256 为 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。窗口及逐帧 manifest 位于 `research/frames/grok-201-1315-1320-compact-audit-20261114/`、`research/frames/grok-201-1320-1325-compact-audit-20261114/`、`research/frames/grok-201-1325-1330-compact-audit-20261114/`。
+
+13:15.000–13:29.960 持续显示 Google Slides 第 9 页 `Meet the team`，画面中的三位角色及文字没有明显变化，只有讲者画中画自然变化；没有观察到回到 Grok Bot、聊天消息、Computer 操作或 Agent 任务状态变化。仅记录演示中持续停留的画面，不从静止幻灯片推断后台执行。V2 连续逐帧覆盖延至 13:29.960（20,250 帧），下一窗口从 13:30.000 开始。
