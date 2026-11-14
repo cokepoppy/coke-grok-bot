@@ -2877,3 +2877,9 @@ ChatGPT 重启后，Browser Use 扩展仍能枚举 Chrome 中的 Grok Bot 与北
 #### 2026-11-14 官方 Grok Bot 201 逐帧续审（9:30.000–9:44.960）
 
 375 个源帧与 15 张逐秒 5×5 联系图已逐张审核；PTS、源像素 SHA-256/字节数和联系图哈希独立校验通过。9:32 左右切到 Chrome 中的 Google Slides `Meet the team`。PTS 576000 的地址建议已出现 `Grok Bot Stickers — gb-sticker-shop.vercel.app`；PTS 579320 仍是新标签页加载状态，579360 首次显示贴纸商店内容。9:39.920 后能看到完整 `one bot, one persona.` 购物袋和贴纸装饰，维持至 9:44.960。这是演示中构建的站点产物而非官方 Grok Bot 工作区，也没有 Bot/Computer 运行证据。8 张全尺寸帧及 RGB/YUV 校验见 `research/README.md`。连续覆盖至 9:44.960（14,625 帧），下一段从 9:45.000 开始。
+
+#### 2026-11-14 Pi / DeepSeek Harness 群聊 K3D 浏览器回归
+
+在隔离的本机 Vite 页面、临时 MySQL schema 和临时 K3D 用户 namespace 中，用真实 Chromium 页面交互提交任务；Desktop 使用固定镜像 `coke-grok-desktop:candidate-browser-upload-20261113-r1`，模型请求到已配置的 `deepseek-v4.1-flash` 兼容端点。完整运行通过：Pi 读取上传附件并生成可下载、内容精确的结果文件；页面创建两 Bot 群聊，通过 `@everyone` 给两名成员分别排队；两个 Bot 的 Pi/DeepSeek 运行均完成，刷新后群消息与状态仍存在；之后 DeepSeek Harness 也完成并在刷新后保留结果。共观察到 7 个模型上游 HTTP 200；无逐步审批 API 请求或审批卡。`COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:runtime-mysql` 18/18、`COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:run-browser` 通过、`npm exec tsc -- --noEmit` 与 `git diff --check` 通过。只复用现有测试 MySQL `coke-grok-test-mysql-cf95778`，没有新建容器；E2E 脚本清理了随机 schema 和临时 namespace，两个既有个人 namespace 未动。
+
+本次修正了两个测试假设：Pi 任务结果协议要求最终 JSON，先前群聊提示却要求裸文本标记，和协议冲突；该次失败没有保留适配器安全诊断正文，故这是最有证据支持的原因而非已直接观察的错误文本。改成要求 JSON 的 `message` 精确包含标记后，完整运行通过。DSH 结果同时出现在 Bot 侧栏摘要和聊天正文，Playwright 的全页精确文本选择器会 strict-mode 失败；结果断言现限定在 `.conversation`。该结果只证明隔离 K3D 运行链和本地 UI 回归，不证明公网已登录 Chrome 的 Computer Use，也不是主管、调研、开发、测试、运维多个真实 Bot 完成北交所交付的连续端到端验收；北交所项目仍以本节前述公网观察为准。
