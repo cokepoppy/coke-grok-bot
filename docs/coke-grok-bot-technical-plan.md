@@ -3056,4 +3056,10 @@ MySQL 回归新增同一作者跨 Alpha/Beta 发布、两个团队独立启用�
 
 点击该 Routine 进入详情可见 When to run、时区、Instruction、Run history 及 Edit/Resume/Test/Delete routine 控件。对暂停状态的合成 Routine 点击 Test 后，公网聊天收到精确结果 `ROUTINE_UI_E2E_OK`，详情 Run history 显示 `Succeeded`；测试后状态仍为 Paused。此为一次手动 Test，不是定时调度触发验收。测试 Routine 留在该测试 Bot 且保持暂停。
 
-这证明当前候选的公网 Routine 行展示、详情、手动 Test、暂停和刷新持久化通过；Agent 工具无法在创建时直接设为暂停仍是观测到的限制，具体失败调用未能从公开 UI 追溯。定时调度、事件触发和运行时区跨日行为仍待分别验收。验收通过原生 Computer Use 语义控件，无截图或坐标操作。代码候选与发布记录位于 `releases/candidate-grok-bot-routine-panel-2026-11-15-r1/`；用户最终体验验收仍待进行。
+这证明当前候选的公网 Routine 行展示、详情、手动 Test、暂停和刷新持久化通过；Agent 工具无法在创建时直接设为暂停仍是观测到的限制，具体失败调用未能从公开 UI 追溯。验收通过原生 Computer Use 语义控件，无截图或坐标操作。代码候选与发布记录位于 `releases/candidate-grok-bot-routine-panel-2026-11-15-r1/`；用户最终体验验收仍待进行。
+
+#### 2026-11-15 Routine 定时调度公网验收
+
+对同一合成 Routine `Routine UI E2E 20261115` 做一次真实定时触发验证。先通过 Routine 的 Edit 流程只把排期改为 `Every 5 minutes`、时区保持 `Asia/Shanghai`，不改名称或指令；详情页显示下一次运行时间为 2026-11-15 03:40。恢复 Routine 后，公网聊天在 03:40 出现 `Scheduled routine: Routine UI E2E 20261115`，结果为精确标记 `ROUTINE_UI_E2E_OK`；详情 Run history 记为 `Succeeded`、时间 03:40。随即暂停 Routine，最终详情状态显示 `Paused`，运行历史含 03:40 定时成功和 03:27 手动 Test 成功两条记录；后续周期已停止。
+
+这证明候选版的 MySQL 持久排期经 Auth 调度轮询后，至少完成一次真实公网定时触发、Pi 任务结果写入聊天和成功历史呈现。执行指令明确禁止网页、工具、文件修改和消息发送，未产生外部副作用。事件触发、DST 跨时区、失败重试和多 Routine 并发仍待验收；官方文档说明周期最低间隔为五分钟，此次使用该最小间隔。排期测试结束后已暂停，不应把聊天标记单独视作成功证明，需同时核对详情 Run history。
