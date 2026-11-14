@@ -5450,3 +5450,11 @@ PTS 554240（9:14.240）仍显示 `Reading...`，还没有新的 Dex 回复；PT
 9:15–9:28.960 持续显示 `Joseph, Martin` 群聊、红色大水滴与青绿色小伙伴，以及 `On it, a very happy blue one coming up.` / `Handling it...` 状态；没有看到蓝色成品或新群聊消息。PTS 569000（9:29.000）仍为 Grok Bot 全屏窗口；PTS 569040（9:29.040）首次出现后方 Cursor 工作区与前景 Grok Bot 群聊窗口叠放；PTS 569120（9:29.120）首次可见 macOS `Desktop 1`–`Desktop 5` 桌面概览，此后至 PTS 569960（9:29.960）仍保持并排窗口状态。Cursor 工作区可读到 `Grok Bot sticker shop landing` 任务和 `data.ts`、`App.tsx`、`index.css` 三个改动文件；这里只记录演示屏幕上可见内容，不推断代码质量、任务完成或真实发布。前景 Grok Bot 仍是 Joseph/Martin 群聊，右侧为 Details/Library/Members，没有 Computer 视图或电脑任务证据。
 
 仅保存 8 张全尺寸转场/稳定状态帧，PTS 为 569000、569040、569080、569120、569160、569560、569600、569960；其 PNG 哈希、字节数及源 `yuv420p` 像素哈希见 `research/frames/grok-201-0929-desktop-transition-keyframes-20261114/manifest.json`。逐帧审阅现覆盖至 9:29.960（14,250 帧），下一窗口从 9:30.000 开始；视频观察是 UI/交互参考，不代表本项目功能或 Agent/Computer runtime 验收。
+
+### Grok Bot 201 逐帧续审：9:30.000–9:44.960（2026-11-14）
+
+连续检查 9:30、9:35、9:40 三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧。每一秒的 25 帧均按连续源帧排入 5×5 联系图，15 张联系图逐张检查。完整 MKV SHA-256、375/375 源 PTS 与 `yuv420p` 像素字节数/SHA-256、15/15 联系图 SHA-256 独立复核通过。窗口目录：`research/frames/grok-201-0930-0935-compact-audit-20261114/`、`grok-201-0935-0940-compact-audit-20261114/`、`grok-201-0940-0945-compact-audit-20261114/`。
+
+9:30–9:31 延续 macOS 桌面概览中的 Cursor 工作区与 Grok Bot 群聊窗口；约 9:32 切至 Chrome 中的 Google Slides `Meet the team` 幻灯片。PTS 575320（9:35.320）新建标签页显示 Google 新标签页；PTS 576000（9:36.000）地址栏正在输入 `stic`，自动建议中出现 `Grok Bot Stickers — gb-sticker-shop.vercel.app`、Party 路径和 Cursor PR。PTS 578000（9:38.000）仍显示 `stick` 搜索建议；PTS 579320（9:39.320）地址栏已是 `gb-sticker-shop.vercel.app`，页面仍处在新标签页/加载状态；相邻 PTS 579360（9:39.360）首次出现 `Grok Bot Stickers` 页面内容，精确到 40 ms 源帧间隔。至 PTS 579920（9:39.920）中心购物袋、`one bot, one persona.` 标题与周围贴纸完整可见，之后至 9:44.960 维持此页面。它是演示中构建的贴纸商店产物，不是 xAI 官方 Bot 工作区界面；此段没有 Bot/Computer 执行或商品购买证据。
+
+8 张全尺寸状态帧及 PNG/源 RGB/源 YUV 像素校验见 `research/frames/grok-201-0935-website-transition-keyframes-20261114/manifest.json`。V2 连续逐帧覆盖延至 9:44.960（14,625 帧），下一窗口从 9:45.000 开始；演示产物截图仅作为团队任务输出与浏览器切换参考，不算本项目端到端验收。
