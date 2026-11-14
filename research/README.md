@@ -5627,6 +5627,12 @@ compact 模式提取并逐张查看五张 5×5 联系图，覆盖 125 个连续 
 
 该段从已有群聊和 Computer 预览切换到创建聊天状态：PTS 1,362,000（22:42.000）出现 “To: Start a chat with...” 和侧栏 “New Bot / Creating...” 状态；PTS 1,364,960（22:44.960）显示新建的橙色头像 New Bot、聊天状态 “Handling it” 和右侧 Computer 屏幕占位预览，输入框仍在聊天列底部。关键帧及 PNG/源像素哈希分别记录于 research/frames/grok-201-2242-000-new-chat-creation-keyframe-20261115/manifest.json 与 research/frames/grok-201-2244-960-new-bot-computer-keyframe-20261115/manifest.json；PNG SHA-256 依次为 3104fb476669470c2f58905d30ad4ada7ff4542d568ed8ace07ec41d4ba288b1、db86eda52e6f554cc69809ff9869c4401fe6eb14e4f7e7868c3d97b5a5c80b5d；源像素 SHA-256 依次为 01950e933eca939860962d1f4545ad8141cccd9672c061cde05b4ae4bc0c1f11、aac9e44ab016e5a801981dc3499574e3526f8d7cbd2d74e468ea907941b7b381。画面仅证明可见流程和布局，不证明后台创建或电脑连接已完成。V2 连续逐帧覆盖延至 22:44.960（34,125 帧）；下一窗口从 22:45.000 开始。
 
+### Grok Bot 201 V2 连续逐帧续审：22:45.000–22:54.960（2026-11-15）
+
+连续审阅 `research/frames/grok-201-2245-2250-compact-audit-20261115/` 与 `grok-201-2250-2255-compact-audit-20261115/`，共 250 个连续 1920×1080、25 fps 源帧和 10 张 5×5 联系图。独立 FFmpeg 重解码核验两段源视频 SHA-256、PTS、`yuv420p` 像素字节数/哈希以及 10/10 张联系图 SHA-256，全部与 manifest 匹配；PTS 范围为 1,365,000–1,374,960。
+
+PTS 1,369,960（22:49.960）已显示橙色头像 `full stack` Bot，聊天区有 `Handling it` 状态，右侧 `Computer` 标签选中且屏幕为灰色占位。至 PTS 1,371,960（22:51.960），聊天显示 New Bot 的欢迎语和偏好引导卡：标题为 `What would you like me to take off your plate first?`，提供 Meetings、Slack catch-up、Projects and tickets、Code and deploys 四个建议，以及 `Type your own answer` 输入项和关闭按钮。右侧仍是 Computer 占位画面，底部消息输入框保留在聊天列。欢迎语中关于已连接应用的文字仅是画面文案，不能证明连接器状态或任务已执行；灰色屏幕也不能证明云电脑已连接。两张原尺寸关键帧、源 PTS/像素哈希和 PNG 哈希见 `research/frames/grok-201-2249-960-2251-960-onboarding-keyframes-20261115/manifest.json`，PNG SHA-256 为 `883881028f56a856a93b345090bd1d358195d7c5ecc1fbdac7c4e6c14132c0f3` 与 `9d85375fb79b11e4882852737aab7c54c5062bfd3947cfa0a1d3968ad1e6c14a`。V2 连续逐帧哈希覆盖延至 22:54.960（34,375 帧）；下一窗口从 22:55.000 开始。
+
 ### x.ai/bot 官方首页文本复核（2026-11-15）
 
 官方页面当前文本层包含 `Work with Bots like teammates` 区域及 `Play` 控件，`Every Bot has its own computer` 示例显示 `Computer`、`You're in control`、`Working` 与 Zendesk 登录表单；`Show a Bot how it's done` 区域显示 `Teach a task`。这些是 [x.ai/bot](https://x.ai/bot) 页面当前可提取的文案证据，不是对动画结构、时间序列或像素的判断。
