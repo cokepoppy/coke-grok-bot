@@ -584,10 +584,10 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
       <div className="screen-label" title={diagnostic||undefined}>{name || 'Bot'}’s screen</div>
       <section className="computer-routines" aria-label="Routines">
         <header><h2>Routines</h2></header>
-        {routineState==='loading'?<p>Loading routines…</p>:routineState==='error'?<p>Routines are unavailable right now.</p>:routines.length?routines.map(routine=><div className="computer-routine-row" key={routine.id}>
+        {routineState==='loading'?<p>Loading routines…</p>:routineState==='error'?<p>Routines are unavailable right now.</p>:routines.length?<div className="computer-routine-list">{routines.map(routine=><div className="computer-routine-row" key={routine.id}>
           <button type="button" className="computer-routine-open" aria-label={`${routine.name}, ${routine.paused?'Paused':routine.when}`} onClick={()=>setRoutineDetailId(routine.id)}><Icon name="clock" /><span><strong>{routine.name}</strong><small>{routine.paused?'Paused':routine.when}</small></span></button>
           <button type="button" role="switch" aria-checked={!routine.paused} aria-label={`${routine.paused?'Resume':'Pause'} ${routine.name}`} disabled={routineBusy} onClick={()=>void toggleRoutine(routine)}><span /></button>
-        </div>):<p>Ask in chat to set a routine.</p>}
+        </div>)}</div>:<p>Ask in chat to set a routine.</p>}
         {routineError&&<p className="routine-error" role="alert">{routineError}</p>}
       </section>
       <span className="sr-only" role="status" aria-live="polite">{diagnostic}</span>

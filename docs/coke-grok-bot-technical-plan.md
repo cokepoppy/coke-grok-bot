@@ -3043,3 +3043,9 @@ MySQL 回归新增同一作者跨 Alpha/Beta 发布、两个团队独立启用�
 通过同一个 Bot 的 Pi 对话编辑原 Skill，没有创建副本；Connect apps 显示新描述和 `Changes not synced`。点击 Sync 后页面确认同步；刷新后不同步提示消失，Bot 调用这个 Skill 返回精确标记 `SKILL_SHARE_E2E_20261115_UPDATED`。最后点击 Unpublish；刷新后 Private Skill 仍保留且 Publish 按钮恢复，Team skills 显示 0 个已启用且没有已发布 Skill，证明撤回状态持久化。
 
 点击验收使用原生 Computer Use 无障碍控件，没有截图/坐标操作；任务未打开第三方网站或产生外部副作用。团队只有 1 名成员，故验证作者在一人团队内的 Publish/Sync/Unpublish，未验证第二个已登录身份接收和启用团队 Skill，也未验证多成员权限边界。完整源码快照、镜像、脚本和操作记录位于 `releases/candidate-grok-bot-skill-library-2026-11-15-r2/`；用户最终验收尚待进行。
+
+#### 2026-11-15 Routine 列表视觉差异修正
+
+官方 Grok Bot 101 的 16:32.000（PTS 992000）Details 关键帧 `research/frames/v1-992000-details-routines-keyframe-20261109.png` 显示 Routine 列表置于带圆角浅色边框的白卡中；每项标题与运行时间分两行，右侧暂停/恢复开关常驻可见，启用态为深色。官方 [Skills and routines](https://docs.x.ai/grok-bot/skills-routines-and-automations) 说明每行显示名称与运行时间（或 Paused），通过行内开关暂停/恢复。
+
+原实现把时间挤在标题同一行并限制 76px，且仅 hover 时显示绿色开关，与该官方状态不符。当前分支已改为卡片列表、标题/时间分行、常驻开关和深色启用态。该视频帧用于布局参考；压缩录屏不能证明绝对像素差异，公网页面真实布局和开关操作仍待 Computer Use 验收。
