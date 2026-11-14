@@ -3049,3 +3049,9 @@ MySQL 回归新增同一作者跨 Alpha/Beta 发布、两个团队独立启用�
 官方 Grok Bot 101 的 16:32.000（PTS 992000）Details 关键帧 `research/frames/v1-992000-details-routines-keyframe-20261109.png` 显示 Routine 列表置于带圆角浅色边框的白卡中；每项标题与运行时间分两行，右侧暂停/恢复开关常驻可见，启用态为深色。官方 [Skills and routines](https://docs.x.ai/grok-bot/skills-routines-and-automations) 说明每行显示名称与运行时间（或 Paused），通过行内开关暂停/恢复。
 
 原实现把时间挤在标题同一行并限制 76px，且仅 hover 时显示绿色开关，与该官方状态不符。当前分支已改为卡片列表、标题/时间分行、常驻开关和深色启用态。该视频帧用于布局参考；压缩录屏不能证明绝对像素差异，公网页面真实布局和开关操作仍待 Computer Use 验收。
+
+#### 2026-11-15 Routine 列表公网 Computer Use 验收
+
+已在公网候选 `https://codex.cokeagent.com/grok-bot/` 使用原生 Computer Use 无障碍控件创建合成 Routine `Routine UI E2E 20261115`，计划为每周日 23:59（Asia/Shanghai），任务只返回测试标记且不访问网站、不使用工具、不发送消息。执行详情显示 Pi 使用 `deepseek-v4.1-flash`，Bot routines 两次 succeeded、一次 failed，Browser User inspect succeeded；页面没有 Approval 卡。Agent 回复称 Routine 工具不支持创建时设置 paused，具体失败子调用未展开；随后通过行内 Pause 开关成功暂停。启用态可见 `Sundays at 11:59 PM` 和常驻开关；暂停态显示 `Paused` 与关闭开关。刷新并重新打开 Details 后仍显示 Paused。测试 Routine 留在该测试 Bot 且保持暂停。
+
+这证明当前候选的公网 Routine 行展示、手动暂停和刷新持久化通过；Agent 工具无法在创建时直接设为暂停仍需另行处理。验收通过原生 Computer Use 语义控件，无截图或坐标操作。代码候选与发布记录位于 `releases/candidate-grok-bot-routine-panel-2026-11-15-r1/`；用户最终体验验收仍待进行。
