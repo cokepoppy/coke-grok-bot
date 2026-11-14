@@ -5518,3 +5518,11 @@ PTS 554240（9:14.240）仍显示 `Reading...`，还没有新的 Dex 回复；PT
 PTS 715000（11:55.000）收件人输入框显示键入中的 `jac`，候选为 `Create "jac" Bot` 与 `Team Bots`，代表输入/过滤状态，不能据此认定已选择对象。PTS 719880（11:59.880）可见输入 `j`；至 PTS 719960（11:59.960）输入已清空，完整候选菜单再次显示。代表帧分别保存在 `research/frames/grok-201-1155-recipient-search-keyframe-20261114/` 和 `research/frames/grok-201-1159-recipient-picker-keyframe-20261114/`。截至本段末尾仍没有群组已创建、已发送消息或 Bot 执行结果的可见证据。以上仅记视频中可见状态，不推断输入由谁触发，也不把候选菜单当成完成协作。
 
 V2 连续逐帧覆盖延至 11:59.960（18,000 帧），下一窗口从 12:00.000 开始。
+
+### Grok Bot 201 逐帧续审：12:00.000–12:14.960（2026-11-14）
+
+连续审阅 12:00、12:05、12:10 三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧；15 张原始 5×5 联系图逐张检查。独立重解码后，完整 MKV SHA-256、375/375 帧的源 PTS/`yuv420p` 像素字节数与 SHA-256、15/15 联系图 SHA-256 全部一致。复核区间 PTS 为 720000–734960，源视频 SHA-256 为 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。联系图与逐帧 manifest 位于 `research/frames/grok-201-1200-1205-compact-audit-20261114/`、`grok-201-1205-1210-compact-audit-20261114/`、`grok-201-1210-1215-compact-audit-20261114/`。
+
+12:00–12:04.960 持续显示新聊天的完整收件人候选菜单。PTS 724960（12:04.960）已选择 `dex`，输入框为 `mart`，建议项包括 Bot `Marketing Project Manager`、`Mattermost Eng` 和联系人 `Martin`、`Mark Wright`、`Marco Sabotinski` 等；原尺寸帧保存在 `research/frames/grok-201-1204-recipient-search-keyframe-20261114/`。到 PTS 729960（12:09.960），收件人栏显示 `dex` 与 `Martin` 两个对象，候选区提示 `Only shared Bots can join group chats`，可见 Bot 候选包括 `sr swe`、`X`、`roy`、`sam`、`ed`、`lew`、`gen`、`swe 0`、`swe 1`，底部有 `Team Bots` 展开项；该状态帧保存在 `research/frames/grok-201-1209-group-recipient-keyframe-20261114/`。
+
+12:10.000–12:14.960 仍是收件人选择器，末帧 PTS 734960 仍显示 `dex`、`Martin` 和共享 Bot 候选菜单，底部输入提示为 `Message dex and Martin`。区间内没有看到选择 Bot 后完成建群、发送消息或 Bot 运行结果；因此只记录了选择中的收件人界面，不能认定协作群聊已创建。V2 连续逐帧覆盖延至 12:14.960（18,375 帧），下一窗口从 12:15.000 开始。
