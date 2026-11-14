@@ -5526,3 +5526,11 @@ V2 连续逐帧覆盖延至 11:59.960（18,000 帧），下一窗口从 12:00.00
 12:00–12:04.960 持续显示新聊天的完整收件人候选菜单。PTS 724960（12:04.960）已选择 `dex`，输入框为 `mart`，建议项包括 Bot `Marketing Project Manager`、`Mattermost Eng` 和联系人 `Martin`、`Mark Wright`、`Marco Sabotinski` 等；原尺寸帧保存在 `research/frames/grok-201-1204-recipient-search-keyframe-20261114/`。到 PTS 729960（12:09.960），收件人栏显示 `dex` 与 `Martin` 两个对象，候选区提示 `Only shared Bots can join group chats`，可见 Bot 候选包括 `sr swe`、`X`、`roy`、`sam`、`ed`、`lew`、`gen`、`swe 0`、`swe 1`，底部有 `Team Bots` 展开项；该状态帧保存在 `research/frames/grok-201-1209-group-recipient-keyframe-20261114/`。
 
 12:10.000–12:14.960 仍是收件人选择器，末帧 PTS 734960 仍显示 `dex`、`Martin` 和共享 Bot 候选菜单，底部输入提示为 `Message dex and Martin`。区间内没有看到选择 Bot 后完成建群、发送消息或 Bot 运行结果；因此只记录了选择中的收件人界面，不能认定协作群聊已创建。V2 连续逐帧覆盖延至 12:14.960（18,375 帧），下一窗口从 12:15.000 开始。
+
+### Grok Bot 201 逐帧续审：12:15.000–12:29.960（2026-11-14）
+
+连续审阅 12:15、12:20、12:25 三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧和 15 张 5×5 联系图；联系图逐张查看。独立从完整 MKV 重解码核验源视频 SHA-256、375/375 帧 PTS 与 `yuv420p` 像素字节数/SHA-256、15/15 联系图 SHA-256，全部与原 manifest 一致。源 MKV SHA-256：`2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。窗口目录为 `research/frames/grok-201-1215-1220-compact-audit-20261114/`、`grok-201-1220-1225-compact-audit-20261114/`、`grok-201-1225-1230-compact-audit-20261114/`。
+
+PTS 737240（12:17.240）仍显示新聊天收件人栏中的 `dex`、`Martin`，以及“Only shared Bots can join group chats”候选菜单；画面左侧已经存在 `Joseph, Martin` 群聊条目，指针停在该条目附近。PTS 737280（12:17.280）首次显示 `Joseph, Martin` 群聊正文，转场定位在 40 ms 源帧间隔内。因此这组帧记录的是打开一个已列出的群聊，不能作为这 40 ms 内新建群聊的证据。相邻原尺寸帧和 PNG/源像素哈希保存在 `research/frames/grok-201-1217-existing-group-open-transition-keyframes-20261114/`。
+
+切入后可见带 `dex` 与 `Martin` 提及的用户消息：让 Dex 做一款“very happy blue one”，并询问 Martin 的看法。Dex 回复正在制作，随后描述蓝色、举手欢呼、咧嘴笑并带闪光的贴纸，附有蓝色角色图片；Martin 回复“Joseph, yes and yes”，下方可见爱心反应。12:20–12:29.960 联系图持续显示同一既有群聊，没有其他明显状态变化。视频能证明这些 UI 消息与图片在演示画面中可见；它本身不能验证生成图片的后端、模型/runtime 调用或真实云电脑执行。V2 连续逐帧覆盖推进至 12:29.960（18,750 帧），下一窗口从 12:30.000 开始。
