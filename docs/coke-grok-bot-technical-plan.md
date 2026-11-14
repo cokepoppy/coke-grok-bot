@@ -3063,3 +3063,9 @@ MySQL 回归新增同一作者跨 Alpha/Beta 发布、两个团队独立启用�
 对同一合成 Routine `Routine UI E2E 20261115` 做一次真实定时触发验证。先通过 Routine 的 Edit 流程只把排期改为 `Every 5 minutes`、时区保持 `Asia/Shanghai`，不改名称或指令；详情页显示下一次运行时间为 2026-11-15 03:40。恢复 Routine 后，公网聊天在 03:40 出现 `Scheduled routine: Routine UI E2E 20261115`，结果为精确标记 `ROUTINE_UI_E2E_OK`；详情 Run history 记为 `Succeeded`、时间 03:40。随即暂停 Routine，最终详情状态显示 `Paused`，运行历史含 03:40 定时成功和 03:27 手动 Test 成功两条记录；后续周期已停止。
 
 这证明候选版的 MySQL 持久排期经 Auth 调度轮询后，至少完成一次真实公网定时触发、Pi 任务结果写入聊天和成功历史呈现。执行指令明确禁止网页、工具、文件修改和消息发送，未产生外部副作用。事件触发、DST 跨时区、失败重试和多 Routine 并发仍待验收；官方文档说明周期最低间隔为五分钟，此次使用该最小间隔。排期测试结束后已暂停，不应把聊天标记单独视作成功证明，需同时核对详情 Run history。
+
+#### 2026-11-15 公网合成听写近似匹配复测
+
+在用户批准的测试范围内，明确将 Chrome 麦克风和 macOS 输入/输出都切到 BlackHole 2ch，使用公网页面 `Start voice input` / `Stop voice input` 控件播放本机合成的 2.14 秒、22.05 kHz 单声道句子 `Grok Bot voice input verification.`。页面将 `Grog Bot Voice Input Verification.` 回填到未发送草稿，说明受控路由下这次公网 UI 写入了转写，但专有词不匹配。未发送消息；草稿已清空并核验为空；Chrome 与 macOS 音频设备恢复到 MacBook Air 系统默认状态，扬声器音量 38% 且静音保持，临时设置标签与合成音频已清理。
+
+Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无障碍树完成语义操作。浏览器实际 MediaStream PCM 未单独检查，因此不能把错字归因于输入样本、浏览器转换或识别服务。此前 16 kHz WAV 精确匹配是独立的一次成功样本；这两次都不足以代表一般 ASR 准确率或证明此前问题的根因。后续同类扩展绑定超时应切换到原生 Computer Use 一次，不重复同一绑定请求，也不以截图/坐标操作替代。
