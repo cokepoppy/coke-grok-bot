@@ -2883,3 +2883,7 @@ ChatGPT 重启后，Browser Use 扩展仍能枚举 Chrome 中的 Grok Bot 与北
 在隔离的本机 Vite 页面、临时 MySQL schema 和临时 K3D 用户 namespace 中，用真实 Chromium 页面交互提交任务；Desktop 使用固定镜像 `coke-grok-desktop:candidate-browser-upload-20261113-r1`，模型请求到已配置的 `deepseek-v4.1-flash` 兼容端点。完整运行通过：Pi 读取上传附件并生成可下载、内容精确的结果文件；页面创建两 Bot 群聊，通过 `@everyone` 给两名成员分别排队；两个 Bot 的 Pi/DeepSeek 运行均完成，刷新后群消息与状态仍存在；之后 DeepSeek Harness 也完成并在刷新后保留结果。共观察到 7 个模型上游 HTTP 200；无逐步审批 API 请求或审批卡。`COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:runtime-mysql` 18/18、`COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:run-browser` 通过、`npm exec tsc -- --noEmit` 与 `git diff --check` 通过。只复用现有测试 MySQL `coke-grok-test-mysql-cf95778`，没有新建容器；E2E 脚本清理了随机 schema 和临时 namespace，两个既有个人 namespace 未动。
 
 本次修正了两个测试假设：Pi 任务结果协议要求最终 JSON，先前群聊提示却要求裸文本标记，和协议冲突；该次失败没有保留适配器安全诊断正文，故这是最有证据支持的原因而非已直接观察的错误文本。改成要求 JSON 的 `message` 精确包含标记后，完整运行通过。DSH 结果同时出现在 Bot 侧栏摘要和聊天正文，Playwright 的全页精确文本选择器会 strict-mode 失败；结果断言现限定在 `.conversation`。该结果只证明隔离 K3D 运行链和本地 UI 回归，不证明公网已登录 Chrome 的 Computer Use，也不是主管、调研、开发、测试、运维多个真实 Bot 完成北交所交付的连续端到端验收；北交所项目仍以本节前述公网观察为准。
+
+#### 2026-11-14 官方 Grok Bot 201 逐帧补缺（14:15.000–14:19.960）
+
+对原官方 MKV 的 125 个连续源帧逐张审阅五张 5×5 联系图。重新核对视频 SHA-256，并独立 FFmpeg 重解码逐项比对 125/125 帧的源 PTS、`yuv420p` 像素 SHA-256/字节数和 5/5 联系图文件哈希，全部与 manifest 一致。该段持续显示 `Joseph, Martin` 群聊；未见产品布局或状态转场、Computer 操作或新任务结果。它补上 14:14.960–14:20.000 的连续记录缺口，使该官方演示已有 0:00.000–21:34.960 的连续逐帧覆盖（32,375 帧）；21:35.000 以后尚未连续审阅，且 20:50 后已转入第三方 Cursor 内容，不能用作 Grok Bot UI 证据。完整清单、时间线与证据边界见 `research/README.md`。
