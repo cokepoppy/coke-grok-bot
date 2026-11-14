@@ -5458,3 +5458,9 @@ PTS 554240（9:14.240）仍显示 `Reading...`，还没有新的 Dex 回复；PT
 9:30–9:31 延续 macOS 桌面概览中的 Cursor 工作区与 Grok Bot 群聊窗口；约 9:32 切至 Chrome 中的 Google Slides `Meet the team` 幻灯片。PTS 575320（9:35.320）新建标签页显示 Google 新标签页；PTS 576000（9:36.000）地址栏正在输入 `stic`，自动建议中出现 `Grok Bot Stickers — gb-sticker-shop.vercel.app`、Party 路径和 Cursor PR。PTS 578000（9:38.000）仍显示 `stick` 搜索建议；PTS 579320（9:39.320）地址栏已是 `gb-sticker-shop.vercel.app`，页面仍处在新标签页/加载状态；相邻 PTS 579360（9:39.360）首次出现 `Grok Bot Stickers` 页面内容，精确到 40 ms 源帧间隔。至 PTS 579920（9:39.920）中心购物袋、`one bot, one persona.` 标题与周围贴纸完整可见，之后至 9:44.960 维持此页面。它是演示中构建的贴纸商店产物，不是 xAI 官方 Bot 工作区界面；此段没有 Bot/Computer 执行或商品购买证据。
 
 8 张全尺寸状态帧及 PNG/源 RGB/源 YUV 像素校验见 `research/frames/grok-201-0935-website-transition-keyframes-20261114/manifest.json`。V2 连续逐帧覆盖延至 9:44.960（14,625 帧），下一窗口从 9:45.000 开始；演示产物截图仅作为团队任务输出与浏览器切换参考，不算本项目端到端验收。
+
+### Grok Bot 201 逐帧续审：9:45.000–9:59.960（2026-11-14）
+
+连续审阅 9:45、9:50、9:55 三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧。每秒 25 帧按连续源帧排入 5×5 联系图，15 张联系图逐张检查。完整 MKV SHA-256、独立重解码的 375/375 源 PTS（585000–599960）、`yuv420p` 像素 SHA-256/字节数及 15/15 联系图 SHA-256 均匹配。忽略目录为 `research/frames/grok-201-0945-0950-compact-audit-20261114/`、`grok-201-0950-0955-compact-audit-20261114/`、`grok-201-0955-1000-compact-audit-20261114/`。
+
+9:45–9:59.960 持续显示演示中制作的 `Grok Bot Stickers` 页面：中央购物袋写着 `one bot, one persona.`，周围分布彩色贴纸；没有新的页面导航、Bot 对话或可见操作状态变化，只有指针/录屏画面的细小变化。该页面是团队演示产物，不是 xAI Grok Bot 工作区；本段不提供 Agent、Computer 或发布成功的证据。V2 连续逐帧覆盖延至 9:59.960（15,000 帧），下一窗口从 10:00.000 开始。
