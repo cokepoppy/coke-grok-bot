@@ -10,13 +10,15 @@ import type { BotMemoryBridge, BotMemoryRunScope } from './bot-memory-bridge.ts'
 import type { BotHandoffStore, BotHandoffScope } from './bot-handoff-store.ts';
 import type { BotRoutineBridge, BotRoutineScope } from './bot-routine-bridge.ts';
 import type { RoutineEditInput } from './routine-store.ts';
+import type { BotSkillBridge } from './bot-skill-bridge.ts';
+import type { BotSkillInput, BotSkillScope } from './bot-skill-store.ts';
 import { safeDiagnosticMetadata } from './safe-diagnostics.ts';
 
 /**
  * A run receives a short-lived capability; the upstream credential stays in
  * the control process. Never attach this server to the public ingress.
  */
-type Grant = { expires: number; remaining: number; memoryRemaining:number; handoffRemaining:number; routineRemaining:number; abort: AbortController; timer: NodeJS.Timeout; scope?:{runId:string;leaseId:string;botId?:string;owner?:RunOwner;requestedNavigationOrigins?:string[];signInHandoff?:boolean;continuedSignInHandoff?:boolean;gmailReadDraftWorkflow?:boolean;browserTask?:boolean}; modelRateLimit?:{retryAfterSeconds?:number} };
+type Grant = { expires: number; remaining: number; memoryRemaining:number; handoffRemaining:number; routineRemaining:number; skillRemaining:number; abort: AbortController; timer: NodeJS.Timeout; scope?:{runId:string;leaseId:string;botId?:string;owner?:RunOwner;requestedNavigationOrigins?:string[];signInHandoff?:boolean;continuedSignInHandoff?:boolean;gmailReadDraftWorkflow?:boolean;browserTask?:boolean;skillMutations?:{create:boolean;update:boolean;delete:boolean}}; modelRateLimit?:{retryAfterSeconds?:number} };
 type UpstreamModelResponse = {response?:Response;retryAfterSeconds?:number};
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function retryAfterSeconds(value:string|null,now=Date.now()):number|undefined {
@@ -52,13 +54,13 @@ export class ModelGateway {
   private providerAvailable=false;
   private rateLimitGeneration=0;
   private upstreamRequestTail:Promise<void>=Promise.resolve();
-  constructor(private readonly apiKey: string, upstream: string, private readonly model: string, private readonly request: typeof fetch = fetch, _legacyApprovals?:ApprovalStore, private readonly computer?:ComputerBridge, private readonly memories?:BotMemoryBridge, private readonly handoffs?:BotHandoffStore, private readonly routines?:BotRoutineBridge) {
+  constructor(private readonly apiKey: string, upstream: string, private readonly model: string, private readonly request: typeof fetch = fetch, _legacyApprovals?:ApprovalStore, private readonly computer?:ComputerBridge, private readonly memories?:BotMemoryBridge, private readonly handoffs?:BotHandoffStore, private readonly routines?:BotRoutineBridge, private readonly skills?:BotSkillBridge) {
     this.upstream = new URL(upstream);
     const deepSeekOfficial=this.upstream.origin==='https://api.deepseek.com'&&this.upstream.pathname==='/';
     if (this.upstream.protocol !== 'https:' || this.upstream.username || this.upstream.password || this.upstream.search || this.upstream.hash || (!deepSeekOfficial&&!this.upstream.pathname.endsWith('/compatible-mode/v1'))) throw new Error('Invalid model endpoint');
     if (!apiKey || apiKey.length > 4096 || /[\r\n]/.test(apiKey) || !model) throw new Error('Invalid model configuration');
   }
-  issue(options: { ttlMs: number; calls: number; scope?:{runId:string;leaseId:string;botId?:string;owner?:RunOwner;requestedNavigationOrigins?:readonly string[];signInHandoff?:boolean;continuedSignInHandoff?:boolean;gmailReadDraftWorkflow?:boolean;browserTask?:boolean} }): string {
+  issue(options: { ttlMs: number; calls: number; scope?:{runId:string;leaseId:string;botId?:string;owner?:RunOwner;requestedNavigationOrigins?:readonly string[];signInHandoff?:boolean;continuedSignInHandoff?:boolean;gmailReadDraftWorkflow?:boolean;browserTask?:boolean;skillMutations?:{create:boolean;update:boolean;delete:boolean}} }): string {
     if (!Number.isSafeInteger(options.ttlMs) || options.ttlMs < 1 || options.ttlMs > 15 * 60_000 || !Number.isSafeInteger(options.calls) || options.calls < 1 || options.calls > 100) throw new Error('Invalid capability limits');
     if(options.scope && (!uuid.test(options.scope.runId) || !uuid.test(options.scope.leaseId) || (options.scope.botId && !uuid.test(options.scope.botId)) || (options.scope.owner && (!uuid.test(options.scope.owner.tenantId)||!uuid.test(options.scope.owner.userId))))) throw new Error('Invalid capability scope');
     const navigationOrigins=options.scope?.requestedNavigationOrigins;
@@ -67,10 +69,11 @@ export class ModelGateway {
     if(options.scope?.continuedSignInHandoff!==undefined&&typeof options.scope.continuedSignInHandoff!=='boolean')throw new Error('Invalid capability continued sign-in handoff scope');
     if(options.scope?.gmailReadDraftWorkflow!==undefined&&typeof options.scope.gmailReadDraftWorkflow!=='boolean')throw new Error('Invalid capability Gmail workflow scope');
     if(options.scope?.browserTask!==undefined&&typeof options.scope.browserTask!=='boolean')throw new Error('Invalid capability browser task scope');
+    if(options.scope?.skillMutations&&Object.values(options.scope.skillMutations).some(value=>typeof value!=='boolean'))throw new Error('Invalid capability Skill mutation scope');
     const token = randomBytes(32).toString('base64url');
     const timer = setTimeout(() => this.revoke(token), options.ttlMs); timer.unref();
     const scope=options.scope ? { ...options.scope, ...(options.scope.owner ? {owner:{...options.scope.owner}} : {}), requestedNavigationOrigins:navigationOrigins?[...navigationOrigins]:undefined } : undefined;
-    this.grants.set(token, { expires: Date.now() + options.ttlMs, remaining: options.calls, memoryRemaining:100, handoffRemaining:8, routineRemaining:20, abort: new AbortController(), timer, scope });
+    this.grants.set(token, { expires: Date.now() + options.ttlMs, remaining: options.calls, memoryRemaining:100, handoffRemaining:8, routineRemaining:20, skillRemaining:100, abort: new AbortController(), timer, scope });
     return token;
   }
   revoke(token: string): void {
@@ -128,15 +131,57 @@ export class ModelGateway {
       const handoffRoute=req.url==='/v1/bot-handoffs';
       const routineMatch=req.url?.match(/^\/v1\/bot-routines(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}))?$/i);
       const routineRoute=Boolean(routineMatch);
+      const skillMatch=req.url?.match(/^\/v1\/bot-skills(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}))?$/i);
+      const skillRoute=Boolean(skillMatch);
       const computerMatch=req.url?.match(/^\/v1\/computer\/actions\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(\/execute)?$/i);
       const computerRoute=req.url==='/v1/computer/control'||req.url==='/v1/computer/inspect'||req.url==='/v1/computer/screenshot'||req.url==='/v1/computer/actions'||Boolean(computerMatch);
       const modelRoute=req.method === 'POST' && req.url === '/v1/chat/completions';
-      if (!approvalRoute && !computerRoute && !memoryRoute && !handoffRoute && !routineRoute && !modelRoute) return fail(404);
+      if (!approvalRoute && !computerRoute && !memoryRoute && !handoffRoute && !routineRoute && !skillRoute && !modelRoute) return fail(404);
       const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization || '')?.[1];
       const grant = token && this.grants.get(token);
-      if (!grant || grant.expires <= Date.now() || (memoryRoute && grant.memoryRemaining <= 0) || (handoffRoute && req.method==='POST' && grant.handoffRemaining <= 0) || (routineRoute && grant.routineRemaining <= 0)) { if (token && grant) this.revoke(token); return fail(401); }
+      if (!grant || grant.expires <= Date.now() || (memoryRoute && grant.memoryRemaining <= 0) || (handoffRoute && req.method==='POST' && grant.handoffRemaining <= 0) || (routineRoute && grant.routineRemaining <= 0) || (skillRoute && grant.skillRemaining <= 0)) { if (token && grant) this.revoke(token); return fail(401); }
       if(modelRoute&&grant.modelRateLimit)return replyRateLimited(res,grant.modelRateLimit.retryAfterSeconds);
       if(approvalRoute)return fail(410);
+      if(skillRoute){
+        const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value))};
+        if(!this.skills||!grant.scope?.owner||!grant.scope.botId)return fail(404);
+        grant.skillRemaining--;
+        const scope:BotSkillScope={owner:grant.scope.owner,botId:grant.scope.botId,runId:grant.scope.runId,leaseId:grant.scope.leaseId};
+        const disconnected=new AbortController();res.once('close',()=>disconnected.abort());
+        const signal=AbortSignal.any([grant.abort.signal,disconnected.signal,AbortSignal.timeout(10_000)]);
+        try{
+          if(req.method==='GET'&&!skillMatch?.[1]){
+            const skills=await this.skills.list(scope,signal);
+            return skills?reply(200,{skills}):fail(409);
+          }
+          if((req.method==='POST'&&!skillMatch?.[1])||(req.method==='PATCH'&&skillMatch?.[1])){
+            if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return fail(415);
+            const chunks:Buffer[]=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>16_384)return fail(413);chunks.push(Buffer.from(chunk))}
+            let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return fail(400)}
+            if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).sort().join(',')!=='action,skill')return fail(400);
+            const value=body as {action?:unknown;skill?:BotSkillInput};
+            if(req.method==='POST'&&value.action==='create'){
+              const skill=await this.skills.create(scope,value.skill as BotSkillInput,grant.scope.skillMutations?.create===true,signal);
+              return skill?reply(201,{skill}):fail(409);
+            }
+            if(req.method==='PATCH'&&value.action==='update'){
+              const skill=await this.skills.update(scope,skillMatch![1],value.skill as BotSkillInput,grant.scope.skillMutations?.update===true,signal);
+              return skill?reply(200,{skill}):fail(409);
+            }
+            return reply(400,{error:'Invalid Skill operation'});
+          }
+          if(req.method==='DELETE'&&skillMatch?.[1]){
+            if(new Set(Object.keys(req.headers)).has('content-length')&&Number(req.headers['content-length'])>0)return fail(400);
+            const removed=await this.skills.remove(scope,skillMatch[1],grant.scope.skillMutations?.delete===true,signal);
+            return removed===null?fail(409):removed?reply(200,{removed:true}):fail(404);
+          }
+          return fail(405);
+        }catch(error){
+          if(error instanceof Error&&/^Invalid Skill/.test(error.message))return reply(400,{error:'Invalid Skill'});
+          if(error instanceof Error&&/^The user must directly ask/.test(error.message))return reply(403,{error:'The current user message did not authorize this Skill change.'});
+          return fail(409);
+        }
+      }
       if (routineRoute) {
         const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
         if(!this.routines||!grant.scope?.owner||!grant.scope.botId)return fail(404);

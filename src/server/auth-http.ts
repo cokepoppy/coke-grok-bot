@@ -15,6 +15,7 @@ import {GroupRequestConflict,type GroupChatStore} from './group-chat-store.ts';
 import {RoutineRequestConflict,type RoutineStore,type RoutineSchedule} from './routine-store.ts';
 import {computerVncViewerHtml} from './computer-vnc-viewer.ts';
 import {VoiceGatewayError, type VoiceGatewayApi} from './voice-gateway.ts';
+import type {BotSkillStore} from './bot-skill-store.ts';
 
 function validatedNovncAsset(value:string):string|null{
  let path:string;try{path=decodeURIComponent(value)}catch{return null}
@@ -41,6 +42,16 @@ function rejectUpgrade(socket:Duplex,status:number):void{
  if(socket.destroyed)return;
  const reason=status===400?'Bad Request':status===401?'Unauthorized':status===403?'Forbidden':status===404?'Not Found':status===409?'Conflict':'Bad Gateway';
  socket.end(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+}
+
+function replyJson(res:ServerResponse,status:number,value:unknown):void{
+ res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));
+}
+async function readJsonBody(req:IncomingMessage,maxBytes:number):Promise<{ok:true;value:unknown}|{ok:false;status:400|413|415}>{
+ if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return {ok:false,status:415};
+ const chunks:Buffer[]=[];let size=0;
+ for await(const chunk of req){size+=chunk.length;if(size>maxBytes)return {ok:false,status:413};chunks.push(Buffer.from(chunk));}
+ try{return {ok:true,value:JSON.parse(Buffer.concat(chunks).toString('utf8'))}}catch{return {ok:false,status:400}}
 }
 
 async function proxyNovncSocket(endpoint:URL,req:IncomingMessage,client:Duplex,head:Buffer):Promise<void>{
@@ -70,7 +81,7 @@ async function proxyNovncSocket(endpoint:URL,req:IncomingMessage,client:Duplex,h
 }
 
 // Mount only behind a trusted proxy that preserves the configured Host.
-export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi', files?:WorkspaceFileStore, workspaceFiles?:WorkspaceFileTransportApi, groupChats?:GroupChatStore, routines?:RoutineStore, voice?:VoiceGatewayApi) {
+export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi', files?:WorkspaceFileStore, workspaceFiles?:WorkspaceFileTransportApi, groupChats?:GroupChatStore, routines?:RoutineStore, voice?:VoiceGatewayApi, skills?:BotSkillStore) {
   const origin = parsePublicUrl(publicOrigin);
   const server=createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -88,6 +99,70 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         if (!session) { res.writeHead(401, { 'Cache-Control': 'no-store' }); return res.end(); }
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
         return res.end(JSON.stringify({ agent: Boolean(runs), engine: runs ? agentEngine : null, voice: Boolean(voice) }));
+      }
+      if(url.pathname===`${origin.prefix}/api/auth/workspaces/create`){
+        if(req.method!=='POST')return replyJson(res,405,{error:'Method not allowed'});
+        const session=await auth.session(req);if(!session)return replyJson(res,401,{error:'Unauthenticated'});
+        if(req.headers.origin!==origin.origin)return replyJson(res,403,{error:'Invalid origin'});
+        const parsed=await readJsonBody(req,2048);if(!parsed.ok)return replyJson(res,parsed.status,{error:'Invalid workspace name'});const body=parsed.value;
+        if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||typeof (body as {name?:unknown}).name!=='string')return replyJson(res,400,{error:'Invalid workspace name'});
+        try{return replyJson(res,201,{tenantId:await auth.createTeamWorkspace(req,(body as {name:string}).name)})}
+        catch(error){
+          const code=error instanceof Error?error.message:'';
+          const status=code==='invalid-name'?400:code==='not-authorized'?403:code==='personal-workspace-required'?409:code==='session-expired'?401:500;
+          return replyJson(res,status,{error:({ 'invalid-name':'Enter a workspace name up to 120 characters.','not-authorized':'Only a personal workspace owner can create a team workspace.','personal-workspace-required':'Create a team workspace from your personal workspace.','session-expired':'Your session expired. Sign in again.'} as Record<string,string>)[code]||'Could not create workspace.'});
+        }
+      }
+      if(url.pathname===`${origin.prefix}/api/auth/workspaces`){
+        const session=await auth.session(req);if(!session){res.writeHead(401,{'Cache-Control':'no-store'});return res.end()}
+        if(req.method==='GET'){
+          const value=await auth.workspaces(req);res.writeHead(value?200:401,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});return res.end(JSON.stringify(value||{error:'Unauthenticated'}));
+        }
+        if(req.method==='POST'){
+          if(req.headers.origin!==origin.origin)return replyJson(res,403,{error:'Invalid origin'});
+          const parsed=await readJsonBody(req,1024);if(!parsed.ok)return replyJson(res,parsed.status,{error:'Invalid workspace'});const body=parsed.value;
+          if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||typeof (body as {tenantId?:unknown}).tenantId!=='string')return replyJson(res,400,{error:'Invalid workspace'});
+          return await auth.switchWorkspace(req,(body as {tenantId:string}).tenantId)?replyJson(res,200,{ok:true}):replyJson(res,404,{error:'Workspace not found'});
+        }
+        return replyJson(res,405,{error:'Method not allowed'});
+      }
+      if(url.pathname===`${origin.prefix}/api/team/invitations`){
+        const session=await auth.session(req);if(!session)return replyJson(res,401,{error:'Unauthenticated'});
+        if(req.method==='GET'){
+          const invitations=await auth.listTeamInvitations(req);return invitations?replyJson(res,200,{invitations}):replyJson(res,403,{error:'Workspace admin required'});
+        }
+        if(req.method==='POST'){
+          if(req.headers.origin!==origin.origin)return replyJson(res,403,{error:'Invalid origin'});
+          const parsed=await readJsonBody(req,2048);if(!parsed.ok)return replyJson(res,parsed.status,{error:'Invalid invitation'});const body=parsed.value;
+          if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||typeof (body as {email?:unknown}).email!=='string')return replyJson(res,400,{error:'Invalid invitation'});
+          try{return replyJson(res,201,await auth.createTeamInvitation(req,(body as {email:string}).email))}
+          catch(error){
+            const code=error instanceof Error?error.message:'';
+            const status=code==='invalid-email'?400:code==='not-authorized'?403:['already-member','already-invited','too-many-pending','team-workspace-required'].includes(code)?409:500;
+            return replyJson(res,status,{error:({ 'invalid-email':'Enter a valid email address.','not-authorized':'Workspace admin required.','already-member':'This person is already in the workspace.','already-invited':'An active invitation already exists for this email.','too-many-pending':'This workspace has reached its pending invitation limit.','team-workspace-required':'Create a team workspace before inviting people.'} as Record<string,string>)[code]||'Could not create invitation.'});
+          }
+        }
+        return replyJson(res,405,{error:'Method not allowed'});
+      }
+      const invitationIdMatch=url.pathname.match(new RegExp(`^${origin.prefix}/api/team/invitations/([0-9a-f-]{36})$`,'i'));
+      if(invitationIdMatch){
+        if(req.method!=='DELETE')return replyJson(res,405,{error:'Method not allowed'});
+        const session=await auth.session(req);if(!session)return replyJson(res,401,{error:'Unauthenticated'});
+        if(req.headers.origin!==origin.origin)return replyJson(res,403,{error:'Invalid origin'});
+        return await auth.revokeTeamInvitation(req,invitationIdMatch[1])?replyJson(res,200,{revoked:true}):replyJson(res,404,{error:'Invitation not found'});
+      }
+      if(url.pathname===`${origin.prefix}/api/team/invitations/accept`){
+        if(req.method!=='POST')return replyJson(res,405,{error:'Method not allowed'});
+        const session=await auth.session(req);if(!session)return replyJson(res,401,{error:'Unauthenticated'});
+        if(req.headers.origin!==origin.origin)return replyJson(res,403,{error:'Invalid origin'});
+        const parsed=await readJsonBody(req,1024);if(!parsed.ok)return replyJson(res,parsed.status,{error:'Invalid invitation'});const body=parsed.value;
+        if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||typeof (body as {token?:unknown}).token!=='string')return replyJson(res,400,{error:'Invalid invitation'});
+        try{return replyJson(res,200,await auth.acceptTeamInvitation(req,(body as {token:string}).token))}
+        catch(error){
+          const code=error instanceof Error?error.message:'';
+          const status=code==='email-mismatch'?403:code==='expired'||code==='revoked'?410:code==='session-expired'?401:code==='invalid'?404:500;
+          return replyJson(res,status,{error:({ 'email-mismatch':'This invitation belongs to a different Google account.','expired':'This invitation has expired.','revoked':'This invitation was revoked.','session-expired':'Sign in again to accept this invitation.','invalid':'Invitation not found or already used.'} as Record<string,string>)[code]||'Could not accept invitation.'});
+        }
       }
       if (req.method === 'POST' && url.pathname === `${origin.prefix}/api/auth/logout`) return await auth.logout(req, res);
       const voiceDictationMatch=url.pathname.match(new RegExp(`^${origin.prefix}/api/bots/([0-9a-f-]{36})/voice/dictate$`,'i'));
@@ -206,6 +281,49 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         try{await computer.action(session,botId,action,signal);return reply(200,{ok:true})}catch(error){const diagnostic=safeDiagnosticMetadata(error);console.error('Computer request failed',{operation:'action',...diagnostic});return reply(503,{error:'Service unavailable',diagnostic})}
       }
       const botPath = `${origin.prefix}/api/bots`;
+      const skillCollectionMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/skills$`,'i'));
+      const skillItemMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/skills/([0-9a-f-]{36})$`,'i'));
+      const skillPublicationMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/skills/([0-9a-f-]{36})/publication$`,'i'));
+      if(skills&&(skillCollectionMatch||skillItemMatch||skillPublicationMatch)){
+        const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value))};
+        const session=await auth.session(req);if(!session)return reply(401,{error:'Unauthenticated'});
+        if(req.method==='GET'&&skillCollectionMatch){
+          const items=await skills.listForBot(session,skillCollectionMatch[1]);
+          return items?reply(200,{skills:items,currentTenantId:session.tenantId,publishTargets:await skills.teamShareTargets(session)}):reply(404,{error:'Not found'});
+        }
+        if(req.method==='PATCH'&&skillItemMatch){
+          if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
+          if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return reply(415,{error:'Expected JSON'});
+          let size=0;const chunks:Buffer[]=[];for await(const chunk of req){size+=chunk.length;if(size>2048)return reply(413,{error:'Request too large'});chunks.push(Buffer.from(chunk))}
+          let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return reply(400,{error:'Invalid JSON'})}
+          if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||typeof (body as {enabled?:unknown}).enabled!=='boolean')return reply(400,{error:'Invalid Skill access setting'});
+          const enabled=await skills.setEnabledForBot(session,skillItemMatch[1],skillItemMatch[2],(body as {enabled:boolean}).enabled);
+          return enabled===null?reply(404,{error:'Not found'}):reply(200,{enabled});
+        }
+        if(skillPublicationMatch&&(req.method==='POST'||req.method==='DELETE')){
+          if(req.headers.origin!==origin.origin)return reply(403,{error:'Invalid origin'});
+          const skillId=skillPublicationMatch[2];
+          if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return reply(415,{error:'Expected JSON'});
+          let size=0;const chunks:Buffer[]=[];for await(const chunk of req){size+=chunk.length;if(size>1024)return reply(413,{error:'Request too large'});chunks.push(Buffer.from(chunk))}
+          let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return reply(400,{error:'Invalid JSON'})}
+          const value=body&&typeof body==='object'&&!Array.isArray(body)?body as Record<string,unknown>:null;
+          const targetTenantId=value?.targetTenantId;
+          if(typeof targetTenantId!=='string'||! /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetTenantId))return reply(400,{error:'Invalid Skill publication target'});
+          if(req.method==='DELETE'){
+            if(Object.keys(value||{}).length!==1)return reply(400,{error:'Invalid Skill publication target'});
+            return await skills.unpublishForUser(session,skillId,targetTenantId)?reply(200,{published:false,targetTenantId}):reply(404,{error:'Not found'});
+          }
+          if(Object.keys(value||{}).length!==2||!['publish','sync'].includes(String(value?.action)))return reply(400,{error:'Invalid Skill publication action'});
+          const action=value!.action as 'publish'|'sync';
+          if(action==='sync')return await skills.syncForUser(session,skillId,targetTenantId)?reply(200,{published:true,synced:true,targetTenantId}):reply(404,{error:'Published Skill not found'});
+          const result=await skills.publishForUser(session,skillId,targetTenantId);
+          if(result==='published'||result==='already-published')return reply(200,{published:true,created:result==='published'});
+          if(result==='team-required')return reply(409,{error:'Team publishing requires a team workspace.'});
+          if(result==='not-publishable')return reply(409,{error:'Bot-only Skills cannot be published to a team.'});
+          return reply(404,{error:'Skill not found'});
+        }
+        return reply(405,{error:'Method not allowed'});
+      }
       const routineCollectionMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/routines$`,'i'));
       const routineTestMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/routines/([0-9a-f-]{36})/test$`,'i'));
       const routineItemMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/routines/([0-9a-f-]{36})$`,'i'));

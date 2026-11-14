@@ -2943,3 +2943,103 @@ Auth 候选更新到 `coke-grok-auth:candidate-voice-audio-20261114-r4`，K3D De
 Chrome 本轮临时麦克风设备显式选用 BlackHole 2ch，跨 Bot 用例本身保持静音；结束后 Chrome 设回 System Default 并关闭设置标签。Mac CoreAudio 输入/输出维持 MacBook Air 设备。`npm run test:voice` 12/12、`npm run test:runtime` 189/189、`npm run build:deployment` 与 `git diff --check` 通过。公网检查通过 Chrome 无障碍语义控件完成，没有使用截图或盲点坐标。
 
 改动继续留在唯一功能分支 `codex/grok-bot-voice-audio` 供用户最终验收；未合并 main、未打 checkpoint tag。大功能验收与发布目录 checkpoint 等用户确认后再做。
+
+#### 2026-11-14 Skills 库本地候选与北交所公网状态复核
+
+当前工作分支是 `codex/grok-bot-skill-library`，HEAD `b5f21e6` 与远端 `main` 一致，Skill 库代码仍是本地未提交改动。实现参考 [xAI Skills and routines 官方文档](https://docs.x.ai/grok-bot/skills-routines-and-automations)：MySQL 持久化个人私有 Skill 库和 Bot 专属 Skill；Pi/DSH 只在有效 run lease 内列出或修改 Skill，持久化新增/编辑/删除还需用户当前消息直接表达意图；Connect apps 只在 Private skills 区展示共享库并按 Bot 启用。DSH Skill 插件已加入桌面镜像构建上下文。
+
+本地验证通过：`npm run test:runtime` 195/195、`COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:runtime-mysql` 19/19、`npm run build:deployment`，以及 `docker buildx build --check -f deploy/desktop/Dockerfile deploy/desktop`。测试 MySQL 使用既有 `coke-grok-test-mysql-cf95778` 并恢复停止；没有重建容器。Skill 分支尚未部署或提交，因尚缺公网该功能的登录态 UI/运行时验收；其共享 Auth 与 owner Agent/Desktop 更新前须复核任务租约，避免打断队列。此次浏览器只读复核显示 BSE 官方调研、开发、Tester、PR #1 合并和 Pages 最终页面检查均有完成记录；同时旧 Bot 侧栏仍有 `Queued` 与 `Outcome unknown` 条目。它们保持原状，不做批量清理或重试。
+
+#### 2026-11-14 公网 dictation BlackHole 复测
+
+Chrome Browser Use 扩展的标签绑定与状态接口再次超时，改用原生 Computer Use `cua.getApp("Google Chrome")` 后恢复了已登录页面的无障碍控件。Chrome 站点麦克风权限已允许；本次临时将 Chrome 采集设备及 macOS 输入/输出切到 BlackHole 2ch，播放本机合成短句 `Grok Bot audio test.`。公网 `Start voice input` / `Stop voice input` 把预期文本 `GrokBot audio test.` 回填到消息草稿。没有发送；草稿已清空。随后恢复 Chrome 麦克风为 MacBook Air 系统默认、macOS 输入为 MacBook Air 麦克风、输出为 MacBook Air 扬声器（原 38% 音量与静音状态保留），关闭临时设置页并删除合成文件。
+
+限制：同步的 FFmpeg/AVFoundation BlackHole 录音结果为静音（-91 dB），与网页成功转写不一致，因此本轮只能证明一个真实公网页面 dictation 草稿回填，不能证明独立 PCM 与合成 WAV 一致。采集原因未查明，不归因于 ASR 提供方。后续要通过浏览器 `MediaStreamTrack` 或具备麦克风权限的隔离采集路径核对 PCM；保留文本在未发送草稿态。此测试没有使用截图或坐标操作。
+
+#### 2026-11-14 Skills 团队发布与同步候选
+
+继续唯一功能分支 `codex/grok-bot-skill-library`，在原有个人私有/Bot 专属 Skills 之上补齐 xAI 官方 [Skills and routines 文档](https://docs.x.ai/grok-bot/skills-routines-and-automations)要求的团队发布生命周期：Connect apps 展示团队已发布 Skill；作者可 Publish、将本地修改显式 Sync 到团队快照、Unpublish 并撤销其他成员 Bot 的运行访问；团队成员可按自己的 Bot 启用发布快照并复制可打开 Connect apps 的链接。团队成员不能改写或撤回他人 Skill；Bot-only Skill 不能发布；未同步修改不会泄漏给团队。只有工作区有至少两名成员时才允许发布。
+
+数据库新增 `bot_skill_publications` 快照表，Pi/DSH 只能读取当前 Bot 已启用的内容；直接编辑/删除的现有限制保留，团队发布操作只在 Connect apps 执行。Connect apps 增加 Private skills、Bot-only skills 与 Team skills 区域。集成 MySQL 回归通过：个人/团队隔离、发布快照、作者更新后的 out-of-sync、Sync、Bot 开关、Unpublish 后立即从团队列表和 runtime 移除、跨租户保护，以及 HTTP session/Origin/作者权限边界（1/1 集成用例）；`npm run build` 通过。测试只启动既有 `coke-grok-test-mysql-cf95778`，完成后恢复停止，没有新建容器。
+
+当前仓库仍在唯一分支，改动尚未提交或部署；公开 Connect apps 点击验收还未完成。Google 登录默认创建个人 workspace；团队成员通过 Workspaces & team 创建七天有效、绑定邮箱的一次性邀请链接，受邀者登录后显式接受，再切换到团队 workspace。已有的 BSE 旧 `Queued` / `Outcome unknown` 项保持原状，不因本地构建而触发 Agent 重放或滚动替换。
+
+后续发布构建、`npm run test:runtime`（195/195）和固定测试 MySQL 的 `npm run test:runtime-mysql`（19/19）均通过；测试 MySQL 容器已恢复停止。`npm run test:ui` 也通过，但脚本内置 25 次 Playwright 截图，本轮因此在忽略目录 `artifacts/ui/` 写入/覆盖了 25 个 PNG（合计 9.89 MiB）。本地工具安全规则拒绝删除该批输出，所以暂时保留原位；避免把这个测试脚本用于后续无截图验收，公开页面仍需使用原生 Computer Use 语义控件操作。
+
+#### 2026-11-14 团队邀请与工作区切换实现候选
+
+依据 xAI 官方 [Skills and routines](https://docs.x.ai/grok-bot/skills-routines-and-automations)（团队成员先加入团队再发布）与 [Team Bots](https://docs.x.ai/grok-bot/team-bots)（团队邀请与访问范围），在仍唯一的 `codex/grok-bot-skill-library` 分支补上成员路径：MySQL `tenant_invitations` 只保存随机链接 token 的 SHA-256；邀请仅限 owner/admin、邮箱绑定、七天过期、每租户最多 20 个待处理邀请；受邀 Google 身份必须匹配邮箱，并在确认加入后更新当前会话到团队租户。成员可以在个人与已加入团队工作区间切换；邀请链接放在 URL fragment，登录后保留在 `sessionStorage`，用户需显式点 Join 才会接受。账号菜单增加 Workspaces & team 管理及邀请 UI。
+
+本地验证：`npm run build` 通过，`npm run test:runtime` 195/195，`COKE_GROK_TEST_MYSQL_PORT=13317 node --import tsx --test tests/bot-skill-store.test.ts` 1/1，`COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:runtime-mysql` 19/19，`git diff --check` 通过。测试复用既有 `coke-grok-test-mysql-cf95778`，本次从原停止态启动并已恢复停止；每个集成测试库在 finally 中删除。没有运行会产生截图的 `test:ui`。
+
+尚未完成：公网候选部署、已登录 Chrome 上邀请创建/接受与 Team Skill Publish/Sync/Unpublish 的真实点击验收，以及 Agent/桌面镜像同版本部署验收。远端 `main` 的即时 `git ls-remote` 在本轮网络连接中无响应；本地 `origin/main` 仍指向 `b5f21e6`，因此未推送或合并。部署前须重新确认远端分支和活跃任务租约；不重放旧 Queued/Outcome unknown 记录，也不重启用户云电脑。
+
+#### 2026-11-14 个人/团队 workspace 类型修正
+
+复核官方工作区语义后发现此前把“邀请成员”直接用于个人 workspace，且缺少创建团队 workspace 的入口。当前同一功能分支已补充 `tenant_type`、可重复运行的旧 schema 迁移、每位用户唯一的个人 workspace 与多个团队 workspace；既有多成员租户或已有邀请的租户迁移为团队。创建团队仅允许从本人个人 workspace 发起并切换当前会话。团队邀请、邀请接受、团队 Skill 分享都检查 workspace 类型，Skill 发布还要求至少两名成员。Workspaces & team UI 增加创建团队入口，并仅在团队 workspace 显示邀请管理。
+
+迁移保留 `owner_id` 外键所需索引：旧版 `personal_owner(owner_id)` 不能直接删除，先建立普通 `tenant_owner(owner_id)` 再替换为生成列上的唯一个人所有者索引。个人 workspace 创建沿用唯一索引上的原子 upsert，避免并发登录对缺失 owner 范围加间隙锁导致死锁。针对新 schema、重复迁移、旧多成员租户、旧待邀请租户、多团队创建、会话切换和个人空间隔离的 MySQL 测试已加入；`npm run build` 与 `npm run test:runtime-mysql`（19/19）通过，定向 `npm run test:mysql`（2/2）通过。当前仍为本地候选，未部署、未提交/推送，也未完成公网 UI 点击验收；未触碰 K3D 运行中的 Agent/Desktop。
+
+#### 2026-11-14 个人 Skills 全局库与多团队发布
+
+对照 xAI 官方 [Skills and routines](https://docs.x.ai/grok-bot/skills-routines-and-automations)：个人私有 Skill 属于用户库，可供该用户自己的各 Bot 使用；发布时由用户选择一个已加入的团队，每个团队保有独立发布快照。当前候选据此让个人私有 Skills 跨同一用户的 personal/team workspace 列出，但仍要逐个 Bot 开启；发布、同步和撤销均显式携带目标团队 ID。`bot_skill_publications` 主键改为 `(skill_id, tenant_id)`，兼容旧的单团队主键迁移。编辑源 Skill 后，各团队快照分别标记不同步；Sync 只更新所选团队，Unpublish 只撤销所选团队其他成员 Bot 的访问，不删除作者自己的访问或其他团队发布。
+
+MySQL 回归新增同一作者跨 Alpha/Beta 发布、两个团队独立启用、修改后分别 out-of-sync、按团队同步、只撤销 Alpha 保留 Beta、非成员看不到 Beta 快照，以及 HTTP 多团队目标和作者/Origin 校验。`npm run build`、`npm run test:runtime`（195/195）、`COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:runtime-mysql`（19/19）、`COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:mysql`（2/2）和 `git diff --check` 均通过。只复用既有 `coke-grok-test-mysql-cf95778`；本轮将它从停止态启动，测试后恢复停止；没有新建容器或重启 K3D 工作负载。
+
+这仍只是本地实现与自动化回归证据，尚未做 Connect apps 的公网语义点击验收，也未部署、提交、推送或合并。此前 Chrome 控制入口连续超时，本轮没有改用截图或坐标作为验收证据；下一步先恢复可见 Computer Use，再在同一候选版本上走真实登录态的跨团队 UI/接口/持久化检查。
+
+
+#### 2026-11-15 Skills 候选公网 Browser User 与持久化验收
+
+在唯一功能分支 `codex/grok-bot-skill-library` 的公网候选上，以已登录 Chrome 原生 Computer Use 无障碍控件完成真实点击验收，没有截图或坐标操作。创建 Bot-only Skill 后刷新页面，确认 Skill 仍存在且对该 Bot 启用；再用真实 Pi/DeepSeek 任务调用该 Skill，结果精确匹配合成验收短语。随后提交真实云电脑 Browser User 只读任务：打开 IANA Example Domains 帮助页并检查标题和 H1。公开执行详情确认 Pi 使用 `deepseek-v4.1-flash`，Browser User `navigate` 与 `inspect` 均成功，且没有逐步 Approval 卡。
+
+同时创建临时测试团队工作区、切回原个人工作区并确认其为 Current；创建的合成不可投递邀请已撤销，没有发送邮件，也没有把邀请链接写入记录。公网候选部署校验 `scripts/verify.sh candidate` 通过，Auth、Broker 和动态租户资源/pin、PVC UID 与队列 cutoff 一致。MySQL 没有被更新；当前 Docker 运行列表只见应用 MySQL 与 K3D 容器，固定测试 MySQL 已停止。自动化证据为 `npm run test:runtime` 198/198、固定测试 MySQL 的运行时测试 20/20 与租户测试 2/2、部署构建及 `git diff --check` 通过。
+
+限制：没有第二个已登录身份，因此邀请接受与第二成员的团队 Skill 发布/同步生命周期仍未做公网 E2E；用户最终体验验收仍待用户本人。分支改动仍未提交/推送/合并或打 tag。
+
+#### 2026-11-15 电脑桥接恢复与 MySQL 探针排查记忆
+
+某租户候选 Desktop 部署失败的确认原因不是桌面 Pod 重启或用户接管，而是该租户缺少 `activeTabBridge`、`activeTabBridgeConfig` 与不可变 `desktop-image-pin`；Broker 会按 owner namespace、Deployment 规格和 pin 做严格匹配。候选 Desktop 还要求 Bridge token 的 env 与配置挂载同时存在。恢复时只对确属缺失的 owner 写入独立随机 token/配置，按租户协调 Broker 与 Agent/Desktop 候选版本，保留现有 PVC、浏览器 Profile 和登录态；部署后逐租户核对 pin、bridge 引用、PVC UID，并以公网 Computer Use 新任务验收。通用 `Computer not connected` 只描述结果，不能单独推断原因；Pod Ready 也不是电脑可控的证据。
+
+另一个测试误判来自 Mac 未安装 `mysqladmin`：命令不存在不代表测试 MySQL 未就绪。后续复用既有固定测试容器，通过 Node `mysql2` 无输出 ping 检查可用性，运行后恢复容器原来的停止状态；不要每次建新 MySQL 容器，不要把此探针问题与应用 MySQL 或 K3D 混为一谈。
+
+
+#### 2026-11-15 用户授权的 BlackHole 合成听写复测未通过
+
+在公网页面使用用户批准的 BlackHole 合成音频进行听写，返回文本与预期短句不匹配；没有发送消息，未发送草稿已清空，Chrome 与 macOS 输入/输出设备恢复到测试前状态。未取得浏览器实际提交给 ASR 的同一段 PCM，因此无法确认是浏览器采集/路由还是识别端造成，不归因于模型或服务商。后续先分别核实 Chrome 的设备选择，再用浏览器实际 MediaStream 音频与已知测试音源比对；不采集房间环境音，不重复盲目重试。该失败独立于已通过的公网 Bot-only Skill 与 Browser User E2E。
+
+
+#### 2026-11-15 ASR 服务端基线隔离
+
+为隔离未通过的公网麦克风听写，在不启动麦克风、不改变音频设备的情况下，用 macOS `say` 生成简单英文短句，转换为有声的 16 kHz 单声道 PCM WAV，经项目 `VoiceGateway` 与 Token Plan 的 `qwen-audio-3.0-asr-flash` 请求。模型对简单常见英文句在不带语言提示和显式 `language_hints=["en"]` 两种请求中都返回精确转写；临时音频文件自动清理，未输出或记录 API Key。该结果说明服务端 API/端点/格式在干净样本上可用，但没有验证此前公网 Chrome 实际采集并上传的音频字节，不能因此把网页听写判定为通过。下一步若继续处理，应在受控合成输入下核对浏览器实际 MediaStream/MediaRecorder 输出，再决定是否修复采集路由或音频转换；不反复请求模型或采集环境音。官方接口参数与本实现一致，参见 [Qwen Audio ASR HTTP API](https://help.aliyun.com/en/model-studio/qwen-audio-asr-http-api) 和 [Token Plan Speech Recognition](https://help.aliyun.com/en/model-studio/token-plan-speech-recognition)。
+
+
+#### 2026-11-15 公网合成听写精确复测
+
+此前的公网听写错字复测中，Chrome 曾固定选用 MacBook Air 内建麦克风；仅切换 macOS 默认设备不会覆盖 Chrome 自己的输入选择。为排除这个边界，在用户批准的合成测试中，先确认 Chrome 与 CoreAudio 输入/输出均明确路由到 BlackHole 2ch，再由 QuickTime 播放本机生成的 16 kHz 单声道 PCM 短音频，同时在公网 Grok Bot 点按 `Start voice input`。草稿返回与源句完全一致的 `The quick brown fox jumps over the lazy dog.`；没有发送，随后清空草稿。结束后确认 macOS 输入/输出恢复为 MacBook Air 麦克风/扬声器（扬声器 38% 且静音），Chrome 恢复 MacBook Air 系统默认麦克风，临时音频文件已清理。
+
+这证明显式设置 Chrome 设备并走公网 UI 的一次合成听写闭环成功；没有独立读取同一条 Chrome MediaStream PCM，不能据此证明浏览器上传字节，也不能断言此前错字的唯一根因。ASR 服务商不应被归责；后续任何音频测试继续先验证 Chrome 独立设备选择、仅使用合成输入、不发送草稿并恢复环境。
+
+#### 2026-11-15 修正 Skill 团队发布成员门槛
+
+复核 xAI 官方 Skills 文档后，删除“团队必须至少两名成员才可发布 Skill”的自设限制。官方 Skills 页面说明：用户属于团队即可发布私有 Skill；发布被拒时可能是尚未加入团队，或团队管理员关闭了成员发布。官方 Team Bot 的另一条“两人团队”要求属于 Bot 分享，不应套到 Skill 发布上。该解释基于文档分别陈述的行为；文档没有说明 Skill 发布的最低成员数。
+
+实现因此改为显示用户实际所属的所有团队作为发布目标，并仅在目标不是团队或用户不属于该目标时拒绝发布；团队人数仍作为 UI 信息显示，不影响权限。Connect apps 的空态和提示文案同步调整。定向固定 MySQL 集成回归覆盖一人团队发布、重复发布、个人工作区拒绝、切换回个人工作区仍保留团队成员资格、团队发布/同步/撤回和现有跨租户约束，1/1 通过；`npm run build` 与 `git diff --check` 通过。
+
+公网候选仍需用真实 Computer Use 完成一人团队的 Publish、编辑后 Sync、Unpublish 点击闭环，再更新发布目录并复核页面持久化；本次代码变更尚未部署、提交或推送。测试复用了原有 `coke-grok-test-mysql-cf95778`，已在测试后恢复停止；没有新增容器、修改应用 MySQL、重启云电脑或触碰 PVC。
+
+#### 2026-11-15 云电脑首次接入 503 根因
+
+团队 Bot 首次打开云电脑时，公网显示 `Computer status request: HTTP 503 · upstream 503`。Broker 的 owner-scoped `/v1/personal-computer` 日志为 `KUBERNETES_READ_FAILED`。K3D 中确认第二个 owner namespace 缺少 `desktop-provisioner` RoleBinding，而 Broker 服务账号只能读取已有授权的 namespace。代码审查确认顺序错误：`DesktopProvisioner.connect()` 在调用 Namespace Bootstrap 前先读取该 owner 的 `desktop-runtime` Secret，因此当 namespace 尚未有 Broker RoleBinding 时，首次 Secret GET 先被 Kubernetes 拒绝，Bootstrap 无法运行来补建该租户限定的 RoleBinding。
+
+已修正顺序：先通过 Namespace Bootstrap 校验/创建 owner namespace 与其最小 RoleBinding，再读取 owner Secret 和其他资源；新回归测试在 Bootstrap 完成前拒绝 owner namespace 读写，验证初始化之后才继续。`tests/desktop-provisioner.test.ts` 12/12 与 `npm run test:runtime` 199/199 通过，部署构建通过。后续只需更新共享 Broker；保留 Auth、Agent/Desktop、MySQL、PVC、浏览器 Profile 和现有电脑 Pod。部署后先用公网 Computer Use 打开屏幕确认 503 消失，再检查并处理不确定运行；不能直接重放 `Outcome unknown` 任务。该功能还没有完成公网恢复验收。
+
+修复已部署为 `coke-grok-desktop-broker:candidate-skill-library-20261115-r2`。公网登录 Chrome 的团队 Bot 屏幕恢复为 `Bot is in control` 并可打开全屏 Computer；部署前后 Auth 镜像、两套 owner Agent/Desktop 镜像及 workspace PVC UID 一致。
+
+#### 2026-11-15 单人团队 Skill 公网生命周期验收
+
+在公网登录态 Chrome 用 Computer Use 创建合成私有 Skill `Team Share E2E 20261115`。Connect apps 显示 1 个 Private Skill、当前 Bot 已启用；选择 `Grok Skills E2E 20261115 · 1 members` 并点 Publish 后页面确认已发布。刷新后仍显示发布状态。
+
+通过同一个 Bot 的 Pi 对话编辑原 Skill，没有创建副本；Connect apps 显示新描述和 `Changes not synced`。点击 Sync 后页面确认同步；刷新后不同步提示消失，Bot 调用这个 Skill 返回精确标记 `SKILL_SHARE_E2E_20261115_UPDATED`。最后点击 Unpublish；刷新后 Private Skill 仍保留且 Publish 按钮恢复，Team skills 显示 0 个已启用且没有已发布 Skill，证明撤回状态持久化。
+
+点击验收使用原生 Computer Use 无障碍控件，没有截图/坐标操作；任务未打开第三方网站或产生外部副作用。团队只有 1 名成员，故验证作者在一人团队内的 Publish/Sync/Unpublish，未验证第二个已登录身份接收和启用团队 Skill，也未验证多成员权限边界。完整源码快照、镜像、脚本和操作记录位于 `releases/candidate-grok-bot-skill-library-2026-11-15-r2/`；用户最终验收尚待进行。

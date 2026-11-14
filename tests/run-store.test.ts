@@ -157,3 +157,31 @@ test('separate Bot screens can be leased in parallel while each Bot queue remain
     assert.equal(await runs.finish(nextA!.run.id,nextA!.leaseId,'completed','A second finished'),true);
   }finally{await pool.end();await admin.query(`DROP DATABASE \`${database}\``);await admin.end()}
 });
+
+test('queue cutoff skips legacy queued work without removing it',async()=>{
+  const database=`grok_queue_cutoff_${randomUUID().replaceAll('-','')}`,admin=await mysql.createConnection(mysqlCredentials);
+  await admin.query(`CREATE DATABASE \`${database}\``);
+  const pool=mysql.createPool({...mysqlCredentials,database,timezone:'Z',connectionLimit:6});
+  try{
+    const identities=new TenantStore(pool);await identities.migrate();
+    const bots=new BotStore(pool);await bots.migrate();
+    const runs=new RunStore(pool);await runs.migrate();
+    const identity=await identities.signInGoogle({subject:'queue-cutoff',email:'queue-cutoff@example.test',name:'Queue Cutoff'});
+    const session:Session={...identity,email:'queue-cutoff@example.test',name:'Queue Cutoff',role:'owner'};
+    const bot=await bots.create(session,{name:'Cutoff',shape:'hex',color:'#abcdef'});
+    const oldRun=await runs.create(session,bot.id,randomUUID(),'legacy task');
+    const newRun=await runs.create(session,bot.id,randomUUID(),'new acceptance task');
+    assert.ok(oldRun&&newRun);
+    const cutoff=new Date('2035-01-01T00:00:00.000Z');
+    await pool.execute('UPDATE agent_runs SET created_at=? WHERE id=?',[new Date(cutoff.getTime()-1),oldRun.id]);
+    await pool.execute('UPDATE agent_runs SET created_at=? WHERE id=?',[new Date(cutoff.getTime()+1),newRun.id]);
+    const screen={tenantId:session.tenantId,userId:session.userId,botId:bot.id};
+    assert.deepEqual((await runs.queuedScreens(10,cutoff)).map(item=>item.botId),[bot.id]);
+    const claim=await runs.claimNext(screen,30,cutoff);
+    assert.equal(claim?.run.id,newRun.id,'the oldest eligible post-cutoff run should be claimed');
+    assert.equal(await runs.finish(newRun.id,claim!.leaseId,'completed','accepted'),true);
+    assert.equal((await runs.list(session,bot.id))?.find(item=>item.id===oldRun.id)?.status,'queued','pre-cutoff task must remain unchanged');
+    assert.deepEqual(await runs.queuedScreens(10,cutoff),[],'pre-cutoff work must remain excluded from future scheduler ticks');
+    assert.deepEqual((await runs.queuedScreens(10)).map(item=>item.botId),[bot.id],'removing the cutover filter makes the preserved task visible again');
+  }finally{await pool.end();await admin.query(`DROP DATABASE \`${database}\``);await admin.end()}
+});

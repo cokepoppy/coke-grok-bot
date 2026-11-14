@@ -4,8 +4,8 @@ import { RunDiagnosticError, safeRunDiagnosticCode, type RunDiagnosticCode } fro
 
 export interface SchedulerStore {
   markExpiredUnknown(): Promise<number>;
-  queuedScreens(limit: number): Promise<RunScreenScope[]>;
-  claimNext(screen: RunScreenScope, leaseSeconds: number): Promise<{run:AgentRun;leaseId:string}|null>;
+  queuedScreens(limit: number, queueCreatedAfter?: Date): Promise<RunScreenScope[]>;
+  claimNext(screen: RunScreenScope, leaseSeconds: number, queueCreatedAfter?: Date): Promise<{run:AgentRun;leaseId:string}|null>;
   renew(runId:string, leaseId:string, leaseSeconds:number): Promise<boolean>;
   finish(runId:string, leaseId:string, status:'completed'|'failed', result:string, artifacts?:unknown, executionAudit?:unknown): Promise<boolean>;
   markUnknown(runId:string, leaseId:string, diagnosticCode?:RunDiagnosticCode, executionAudit?:unknown): Promise<boolean>;
@@ -21,8 +21,9 @@ export class RunScheduler {
   private readonly active = new Map<string,{ abort:AbortController; done:Promise<void> }>();
   private stopped = false;
   private tickInFlight: Promise<void> | null = null;
-  constructor(private readonly store:SchedulerStore, private readonly executor:RunExecutor, private readonly options: {concurrency:number;leaseSeconds:number}) {
+  constructor(private readonly store:SchedulerStore, private readonly executor:RunExecutor, private readonly options: {concurrency:number;leaseSeconds:number;queueCreatedAfter?:Date}) {
     if (!Number.isSafeInteger(options.concurrency) || options.concurrency < 1 || options.concurrency > 32 || !Number.isSafeInteger(options.leaseSeconds) || options.leaseSeconds < 3 || options.leaseSeconds > 900) throw new Error('Invalid scheduler configuration');
+    if (options.queueCreatedAfter && (!Number.isFinite(options.queueCreatedAfter.getTime()))) throw new Error('Invalid queue creation cutoff');
   }
   async tick():Promise<void> {
     if (this.stopped) return;
@@ -34,12 +35,12 @@ export class RunScheduler {
     await this.store.markExpiredUnknown();
     const remaining = this.options.concurrency - this.active.size;
     if (remaining <= 0 || this.stopped) return;
-    const screens = await this.store.queuedScreens(Math.min(100, this.options.concurrency * 4));
+    const screens = await this.store.queuedScreens(Math.min(100, this.options.concurrency * 4),this.options.queueCreatedAfter);
     for (const screen of screens) {
       if (this.stopped || this.active.size >= this.options.concurrency) break;
       const key = `${screen.tenantId}:${screen.userId}:${screen.botId}`;
       if (this.active.has(key)) continue;
-      const claim = await this.store.claimNext(screen,this.options.leaseSeconds);
+      const claim = await this.store.claimNext(screen,this.options.leaseSeconds,this.options.queueCreatedAfter);
       if (!claim) continue;
       const abort = new AbortController();
       // Reserve before the executor is invoked, even when its Promise resolves synchronously.

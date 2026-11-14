@@ -17,13 +17,16 @@ export class DesktopProvisioner implements DesktopConnections {
   constructor(private readonly kube:DesktopKubernetes,private readonly signingKey:Buffer,private readonly options:{image:string;agentImage?:string;controlNamespace:string;gatewayCA:string;split?:boolean;bootstrap?:NamespaceBootstrapConnection}&DesktopProxyOptions) {}
   async connect(owner:RunOwner,signal:AbortSignal):Promise<DesktopConnection> {
     if(signal.aborted) throw new Error('Desktop provisioning cancelled');
-    const identity=desktopIdentity(owner,this.signingKey);
+    let identity=desktopIdentity(owner,this.signingKey);
     if(this.options.bootstrap) {
       let namespace:string;
       try { namespace=await this.options.bootstrap.ensure(owner,signal); }
       catch(error) { if(error instanceof SafeDiagnosticError)throw error;throw new SafeDiagnosticError('NAMESPACE_BOOTSTRAP_FAILED'); }
       if(namespace!==identity.namespace)throw new SafeDiagnosticError('OWNER_BINDING_MISMATCH');
     }
+    // Bootstrap creates the per-owner RoleBinding needed for Kubernetes reads.
+    // Read the existing runtime Secret only after that scoped access is in place.
+    identity=await this.adoptStoredActiveTabBridgeIdentity(identity,signal);
     const pins=await this.resolveImagePins(identity,signal);
     const resources=this.options.split
       ? splitDesktopResources(identity,{...this.options,image:pins.desktopImage,agentImage:pins.agentImage})
@@ -67,6 +70,18 @@ export class DesktopProvisioner implements DesktopConnections {
     } catch { throw new SafeDiagnosticError('DESKTOP_NOT_READY'); }
     return {agentUrl:new URL(`http://${this.options.split?'agent':'desktop'}.${identity.namespace}.svc.cluster.local:8083/`),agentToken:identity.agentToken};
   }
+  private async adoptStoredActiveTabBridgeIdentity(identity:ReturnType<typeof desktopIdentity>,signal:AbortSignal):Promise<ReturnType<typeof desktopIdentity>> {
+    let secret:KubernetesObject|null;
+    try{secret=await this.kube.get('Secret',identity.namespace,'desktop-runtime',signal)}catch{throw new SafeDiagnosticError('KUBERNETES_READ_FAILED')}
+    if(!secret)return identity;
+    const labels={'app.kubernetes.io/managed-by':'coke-grok-bot','coke-grok-bot.io/owner-hash':identity.ownerHash};
+    const coreSecret:KubernetesObject={apiVersion:'v1',kind:'Secret',metadata:{name:'desktop-runtime',namespace:identity.namespace,labels},type:'Opaque',stringData:{worker:identity.workerToken,agent:identity.agentToken,control:identity.controlToken}};
+    if(!matchesExpectedResource(coreSecret,secret))return identity;
+    const data=secret.data as Record<string,unknown>|undefined;
+    const token=decodeSecretText(data?.activeTabBridge),config=decodeSecretText(data?.activeTabBridgeConfig);
+    if(!token||!config||!/^[A-Za-z0-9_-]{43}$/.test(token)||config!==`self.COKE_GROK_ACTIVE_TAB_BRIDGE_TOKEN=${JSON.stringify(token)};`||new Set([identity.workerToken,identity.agentToken,identity.controlToken,token]).size!==4)return identity;
+    return token===identity.activeTabBridgeToken?identity:{...identity,activeTabBridgeToken:token};
+  }
   private async resolveImagePins(identity:ReturnType<typeof desktopIdentity>,signal:AbortSignal):Promise<{desktopImage:string;agentImage:string}> {
     const pinName='desktop-image-pin';
     let pin:KubernetesObject|null;
@@ -88,6 +103,12 @@ export class DesktopProvisioner implements DesktopConnections {
     if(!isValidDesktopImageRef(desktopImage)||!isValidDesktopImageRef(agentImage))throw new SafeDiagnosticError('RESOURCE_MISMATCH');
     return {desktopImage,agentImage};
   }
+}
+
+function decodeSecretText(value:unknown):string|null {
+  if(typeof value!=='string'||!value||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value))return null;
+  const decoded=Buffer.from(value,'base64');
+  return decoded.toString('base64')===value?decoded.toString('utf8'):null;
 }
 
 function parseImagePins(resource:KubernetesObject,namespace:string,ownerHash:string):{desktopImage:string;agentImage:string}{

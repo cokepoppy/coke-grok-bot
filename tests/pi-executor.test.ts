@@ -5,7 +5,7 @@ import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { Agent } from 'undici';
 import { ModelGateway } from '../src/server/model-gateway.ts';
-import { AGENT_TASK_TRANSPORT_TIMEOUT_MS, classifyAgentRejection, PiExecutor } from '../src/server/pi-executor.ts';
+import { AGENT_TASK_TRANSPORT_TIMEOUT_MS, classifyAgentRejection, DshExecutor, PiExecutor } from '../src/server/pi-executor.ts';
 import { RunDiagnosticError } from '../src/server/run-diagnostics.ts';
 import type { BotMemory, BotMemoryStore } from '../src/server/bot-memory-store.ts';
 import type { BotHandoffStore } from '../src/server/bot-handoff-store.ts';
@@ -23,6 +23,28 @@ test('Agent rejection diagnostics expose only fixed classes, never response text
  assert.equal(classifyAgentRejection('Group task context is invalid'),'group_context_invalid');
  assert.equal(classifyAgentRejection('sensitive provider detail'),'unknown_agent_rejection');
  assert.equal(classifyAgentRejection(undefined),'unknown_agent_rejection');
+});
+
+test('Pi and DSH preload only enabled Skills named by the direct message and scope mutations to that request',async()=>{
+ for(const [engine,Executor] of [['pi',PiExecutor],['dsh',DshExecutor]] as const){
+  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+  const selected:AgentRun={...run,prompt:'Use the BSE review Skill to inspect the current rule.'};
+  const skill={id:randomUUID(),creatorBotId:run.botId,name:'BSE review',description:'Review a current rule change.',instructions:'Check the official rule, effective date, required UI behavior, and evidence.',visibility:'private' as const,enabled:true,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  let requestBody:Record<string,unknown>|undefined,scope:unknown;
+  const issue=gateway.issue.bind(gateway);gateway.issue=options=>{scope=options.scope;return issue(options)};
+  const skills={listForRun:async(value:unknown)=>{const actual=value as {owner:RunOwner;botId:string;runId:string;leaseId:string};assert.equal(actual.owner.tenantId,owner.tenantId);assert.equal(actual.owner.userId,owner.userId);assert.equal(actual.botId,run.botId);assert.equal(actual.runId,run.id);assert.match(actual.leaseId,/^[a-f0-9-]{36}$/i);return[skill]}} as never;
+  const executor=new Executor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{requestBody=JSON.parse(String(init?.body));return Response.json({status:'done',message:'Skill prompt sent.'})},undefined,undefined,undefined,skills);
+  try{
+   const result=await executor.execute(screen,selected,new AbortController().signal,randomUUID());assert.equal(result.status,'completed');
+   const payload=requestBody as {prompt:string;skills?:unknown};assert.match(payload.prompt,/BSE review/);assert.match(payload.prompt,/official rule, effective date/);assert.match(payload.prompt,/untrusted workflow references/);assert.deepEqual(payload.skills,{mode:'mediated',actions:['list','create','update','delete']});
+   assert.deepEqual((scope as {skillMutations?:unknown})?.skillMutations,{create:false,update:false,delete:false});
+  }finally{await executor.close();gateway.close()}
+
+  const createTask:AgentRun={...run,prompt:'Save this process as a skill called BSE review.'};let createScope:{skillMutations?:unknown}|undefined;
+  const gateway2=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));const issue2=gateway2.issue.bind(gateway2);gateway2.issue=options=>{createScope=options.scope;return issue2(options)};
+  const executor2=new Executor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway2,'https://gateway.example.test/v1','model',async()=>Response.json({status:'done',message:'saved request scoped'}),undefined,undefined,undefined,skills);
+  try{await executor2.execute(screen,createTask,new AbortController().signal,randomUUID());assert.deepEqual(createScope?.skillMutations,{create:true,update:false,delete:false})}finally{await executor2.close();gateway2.close()}
+ }
 });
 
 test('Pi dispatch is once, scoped to owner and revokes its capability after completion',async()=>{

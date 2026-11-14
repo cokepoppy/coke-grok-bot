@@ -15,6 +15,7 @@ COPY --chmod=0644 deploy/desktop/cloud-kernel-adapter.mjs /opt/coke-dots/grok-ke
 COPY --chmod=0644 deploy/desktop/computer-tools.mjs /opt/coke-dots/computer-tools.mjs
 COPY --chmod=0644 deploy/desktop/dsh-computer-plugin.mjs /opt/coke-dots/dsh-computer-plugin.mjs
 COPY --chmod=0644 deploy/desktop/dsh-memory-plugin.mjs /opt/coke-dots/dsh-memory-plugin.mjs
+COPY --chmod=0644 deploy/desktop/dsh-skill-plugin.mjs /opt/coke-dots/dsh-skill-plugin.mjs
 COPY --chmod=0644 deploy/desktop/dsh-handoff-plugin.mjs /opt/coke-dots/dsh-handoff-plugin.mjs
 COPY --chmod=0644 deploy/desktop/dsh-routine-plugin.mjs /opt/coke-dots/dsh-routine-plugin.mjs
 COPY --chmod=0644 deploy/desktop/computer-worker.mjs /opt/coke-dots/grok-computer-worker.mjs

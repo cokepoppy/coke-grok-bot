@@ -19,6 +19,8 @@ type GroupReplacementRun = { id:string; status:AgentRun['status']; result:string
 type GroupMessage = { id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;runId:string|null;status:AgentRun['status']|null;recoveryState:AgentRun['recoveryState']|null;replacementRunId:string|null;replacementRun:GroupReplacementRun|null;computerUsed:boolean;executionAudit?:ExecutionAudit|null;updatedAt:string|null;diagnosticCode?:string|null;targetBotIds?:string[];files?:RunFile[] };
 type GroupChatView = { group: GroupChat; messages: GroupMessage[] };
 type Routine = { id:string; name:string; instruction:string; schedule:{kind:'weekly';weekday:number;hour:number;minute:number}|{kind:'interval';minutes:number}; timezone:string; paused:boolean; when:string; nextRunAt:string; runs:{id:string;status:string;scheduledFor:string;result:string|null}[] };
+type PrivateSkill = {id:string;creatorBotId:string|null;name:string;description:string;instructions:string;visibility:'private'|'bot';enabled:boolean;published:boolean;publishedTenantIds:string[];outOfSyncTenantIds:string[];isOwner:boolean;sharedBy:string|null;outOfSync:boolean;createdAt:string;updatedAt:string};
+type SkillPublishTarget = {tenantId:string;name:string;memberCount:number};
 type PreviewState = { bots: Bot[]; activeId: string; messages: Record<string, Message[]>; showOnboarding: Record<string, boolean> };
 type IconName = 'search' | 'plus' | 'mic' | 'sound' | 'close' | 'panel' | 'share' | 'screen' | 'arrow' | 'smile' | 'reply' | 'more' | 'gear' | 'back' | 'clock';
 const avatarShapes:Shape[]=['round','oval','square','pill','triangle','hex','cloud','drop'];
@@ -285,6 +287,144 @@ function BotMenuIcon({name}:{name:'pin'|'folder'|'unread'|'rename'|'copy'|'hide'
 }
 
 type Account = { userId: string; tenantId: string; email: string; name: string; role: string };
+type WorkspaceInfo={tenantId:string;name:string;tenantType:'personal'|'team';role:string;memberCount:number};
+type TeamInvitationInfo={id:string;email:string;createdAt:string;expiresAt:string;status:'pending'|'expired'|'accepted'|'revoked'};
+
+function TeamWorkspaceDialog({account,onClose,onWorkspaceChanged}:{account:Account;onClose:()=>void;onWorkspaceChanged:()=>void}){
+  const [workspaces,setWorkspaces]=useState<WorkspaceInfo[]>([]),[invitations,setInvitations]=useState<TeamInvitationInfo[]>([]),[status,setStatus]=useState<'loading'|'ready'|'error'>('loading');
+  const [email,setEmail]=useState(''),[inviteLink,setInviteLink]=useState(''),[teamName,setTeamName]=useState(''),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState('');
+  const dialog=useRef<HTMLElement>(null),closeButton=useRef<HTMLButtonElement>(null);
+  const currentWorkspace=workspaces.find(workspace=>workspace.tenantId===account.tenantId);
+  const canInvite=currentWorkspace?.tenantType==='team'&&(account.role==='owner'||account.role==='admin');
+  async function refresh(signal?:AbortSignal){
+    setStatus('loading');
+    try{
+      const response=await fetch(`${import.meta.env.BASE_URL}api/auth/workspaces`,{credentials:'same-origin',cache:'no-store',signal});
+      if(!response.ok)throw new Error('Workspaces are unavailable.');
+      const value=await response.json() as {workspaces?:WorkspaceInfo[]};if(!Array.isArray(value.workspaces))throw new Error('Workspaces are unavailable.');setWorkspaces(value.workspaces);
+      const current=value.workspaces.find(workspace=>workspace.tenantId===account.tenantId),mayManageInvitations=current?.tenantType==='team'&&(account.role==='owner'||account.role==='admin');
+      if(mayManageInvitations){const invitesResponse=await fetch(`${import.meta.env.BASE_URL}api/team/invitations`,{credentials:'same-origin',cache:'no-store',signal});if(!invitesResponse.ok)throw new Error('Team invitations are unavailable.');const inviteValue=await invitesResponse.json() as {invitations?:TeamInvitationInfo[]};setInvitations(Array.isArray(inviteValue.invitations)?inviteValue.invitations:[])}else setInvitations([]);
+      setStatus('ready');
+    }catch(cause){if(!signal?.aborted){setStatus('error');setError(cause instanceof Error?cause.message:'Workspaces are unavailable.')}}
+  }
+  useEffect(()=>{const controller=new AbortController();void refresh(controller.signal);requestAnimationFrame(()=>closeButton.current?.focus());return()=>controller.abort()},[]);
+  async function createInvite(event:React.FormEvent){
+    event.preventDefault();if(busy)return;setBusy('invite');setError('');setNotice('');setInviteLink('');
+    try{
+      const response=await fetch(`${import.meta.env.BASE_URL}api/team/invitations`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({email})});
+      const value=await response.json() as {id?:string;token?:string;email?:string;error?:string};if(!response.ok||!value.token)throw new Error(value.error||'Could not create invitation.');
+      const link=new URL(import.meta.env.BASE_URL,window.location.origin);link.hash=`invite=${value.token}`;setInviteLink(link.toString());setEmail('');setNotice(`Invitation created for ${value.email||'your teammate'}.`);await refresh();
+    }catch(cause){setError(cause instanceof Error?cause.message:'Could not create invitation.')}finally{setBusy('')}
+  }
+  async function createTeamWorkspace(event:React.FormEvent){
+    event.preventDefault();if(busy)return;setBusy('workspace');setError('');setNotice('');
+    try{const response=await fetch(`${import.meta.env.BASE_URL}api/auth/workspaces/create`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({name:teamName})});const value=await response.json() as {tenantId?:string;error?:string};if(!response.ok||!value.tenantId)throw new Error(value.error||'Could not create team workspace.');onWorkspaceChanged()}
+    catch(cause){setError(cause instanceof Error?cause.message:'Could not create team workspace.')}finally{setBusy('')}
+  }
+  async function copyInvite(){try{await navigator.clipboard.writeText(inviteLink);setNotice('Invitation link copied.')}catch{setError('Could not copy the invitation link.')}}
+  async function revokeInvitation(invitation:TeamInvitationInfo){
+    if(busy)return;setBusy(invitation.id);setError('');setNotice('');
+    try{const response=await fetch(`${import.meta.env.BASE_URL}api/team/invitations/${encodeURIComponent(invitation.id)}`,{method:'DELETE',credentials:'same-origin'});if(!response.ok)throw new Error('Could not revoke invitation.');setInvitations(items=>items.map(item=>item.id===invitation.id?{...item,status:'revoked'}:item));setNotice('Invitation revoked.')}catch(cause){setError(cause instanceof Error?cause.message:'Could not revoke invitation.')}finally{setBusy('')}
+  }
+  async function switchWorkspace(workspace:WorkspaceInfo){
+    if(workspace.tenantId===account.tenantId||busy)return;setBusy(workspace.tenantId);setError('');
+    try{const response=await fetch(`${import.meta.env.BASE_URL}api/auth/workspaces`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({tenantId:workspace.tenantId})});if(!response.ok)throw new Error('Could not switch workspace.');onWorkspaceChanged()}catch(cause){setError(cause instanceof Error?cause.message:'Could not switch workspace.')}finally{setBusy('')}
+  }
+  return <div className="connect-apps-overlay" onMouseDown={event=>{if(event.target===event.currentTarget&&!busy)onClose()}}><section ref={dialog} className="connect-apps-dialog team-workspace-dialog" role="dialog" aria-modal="true" aria-labelledby="team-workspace-title" tabIndex={-1} onKeyDown={event=>{if(event.key==='Escape'&&!busy)onClose()}}>
+    <header><div><strong id="team-workspace-title">Workspaces & team</strong><small>{account.email}</small></div><button ref={closeButton} type="button" aria-label="Close workspaces" onClick={onClose}>×</button></header>
+    <div className="connect-apps-skills team-workspace-content">
+      <div className="connect-apps-section-heading"><h2>Workspaces</h2><span>{workspaces.length}</span></div>
+      <p>Choose which workspace this Bot uses. Bot conversations remain private to their owner.</p>
+      {status==='loading'?<div className="connect-apps-empty">Loading workspaces…</div>:status==='error'?<div className="connect-apps-empty" role="alert">Workspaces are unavailable.</div>:<div className="team-workspace-list">{workspaces.map(workspace=><article className="team-workspace-row" key={workspace.tenantId}><div><strong>{workspace.name}</strong><small>{workspace.tenantType==='team'?'Team workspace':'Personal workspace'} · {workspace.role} · {workspace.memberCount} {workspace.memberCount===1?'member':'members'}</small></div>{workspace.tenantId===account.tenantId?<span className="team-workspace-current">Current</span>:<button type="button" disabled={Boolean(busy)} onClick={()=>void switchWorkspace(workspace)}>Switch</button>}</article>)}</div>}
+      {status==='ready'&&currentWorkspace?.tenantType==='personal'&&account.role==='owner'&&<>
+        <div className="connect-apps-section-heading connect-apps-subheading"><h2>Create a team workspace</h2></div>
+        <p>Keep your personal workspace private and create a separate shared space for teammates and published Skills.</p>
+        <form className="team-invite-form" onSubmit={event=>void createTeamWorkspace(event)}><label htmlFor="team-workspace-name">Team workspace name</label><div><input id="team-workspace-name" type="text" value={teamName} maxLength={120} required onChange={event=>setTeamName(event.target.value)} placeholder="Product team"/><button type="submit" disabled={Boolean(busy)||!teamName.trim()}>{busy==='workspace'?'Creating…':'Create workspace'}</button></div></form>
+      </>}
+      {canInvite&&<>
+        <div className="connect-apps-section-heading connect-apps-subheading"><h2>Invite a teammate</h2></div>
+        <p>Invite links are tied to the email address and expire after seven days. The invited person must sign in with that Google account.</p>
+        <form className="team-invite-form" onSubmit={event=>void createInvite(event)}><label htmlFor="team-invite-email">Email address</label><div><input id="team-invite-email" type="email" value={email} maxLength={320} required autoComplete="email" onChange={event=>setEmail(event.target.value)} placeholder="teammate@example.com"/><button type="submit" disabled={Boolean(busy)||!email.trim()}>{busy==='invite'?'Creating…':'Create invite'}</button></div></form>
+        {inviteLink&&<div className="team-invite-link"><input aria-label="Invitation link" readOnly value={inviteLink}/><button type="button" onClick={()=>void copyInvite()}>Copy link</button></div>}
+        <div className="connect-apps-section-heading connect-apps-subheading"><h2>Invitations</h2><span>{invitations.filter(item=>item.status==='pending').length} pending</span></div>
+        {invitations.length?<div className="team-invitation-list">{invitations.map(invitation=><article className="team-workspace-row" key={invitation.id}><div><strong>{invitation.email}</strong><small>{invitation.status} · expires {new Date(invitation.expiresAt).toLocaleDateString()}</small></div>{invitation.status==='pending'&&<button type="button" disabled={Boolean(busy)} onClick={()=>void revokeInvitation(invitation)}>Revoke</button>}</article>)}</div>:<div className="connect-apps-empty">No invitations yet.</div>}
+      </>}
+      {error&&<p className="connect-apps-error" role="alert">{error}</p>}{notice&&<p className="connect-apps-notice" role="status">{notice}</p>}
+    </div>
+  </section></div>;
+}
+
+function ConnectAppsDialog({botId,botName,focusSkillId,onClose}:{botId:string;botName:string;focusSkillId:string;onClose:()=>void}){
+  const [skills,setSkills]=useState<PrivateSkill[]>([]),[state,setState]=useState<'loading'|'ready'|'error'>('loading'),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[publishTargets,setPublishTargets]=useState<SkillPublishTarget[]>([]),[currentTenantId,setCurrentTenantId]=useState(''),[selectedTargetId,setSelectedTargetId]=useState('');
+  const dialog=useRef<HTMLElement>(null),closeButton=useRef<HTMLButtonElement>(null);
+  const url=`${import.meta.env.BASE_URL}api/bots/${encodeURIComponent(botId)}/skills`;
+  useEffect(()=>{
+    const controller=new AbortController();setState('loading');setSkills([]);setError('');setNotice('');
+    void fetch(url,{credentials:'same-origin',cache:'no-store',signal:controller.signal}).then(async response=>{if(!response.ok)throw new Error();const value=await response.json() as {skills?:unknown;currentTenantId?:unknown;publishTargets?:unknown};if(!Array.isArray(value.skills)||!Array.isArray(value.publishTargets)||typeof value.currentTenantId!=='string')throw new Error();const targets=value.publishTargets.filter((item):item is SkillPublishTarget=>Boolean(item&&typeof item==='object'&&typeof (item as SkillPublishTarget).tenantId==='string'&&typeof (item as SkillPublishTarget).name==='string'&&typeof (item as SkillPublishTarget).memberCount==='number'));setSkills(value.skills as PrivateSkill[]);setPublishTargets(targets);setCurrentTenantId(value.currentTenantId);setSelectedTargetId(current=>current&&targets.some(target=>target.tenantId===current)?current:targets.find(target=>target.tenantId===value.currentTenantId)?.tenantId||targets[0]?.tenantId||'');setState('ready')}).catch(()=>{if(!controller.signal.aborted)setState('error')});
+    requestAnimationFrame(()=>closeButton.current?.focus());return()=>controller.abort();
+  },[url]);
+  useEffect(()=>{if(state!=='ready'||!focusSkillId)return;const target=dialog.current?.querySelector<HTMLElement>(`[data-skill-id="${focusSkillId}"]`);if(target)target.scrollIntoView({block:'center',behavior:'smooth'});else setNotice('This Skill is not published to the current workspace.')},[state,focusSkillId]);
+  const onKeyDown=(event:React.KeyboardEvent<HTMLElement>)=>{
+    if(event.key==='Escape'){event.stopPropagation();onClose();return}
+    if(event.key!=='Tab')return;
+    const choices=Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled),[role="switch"]:not(:disabled)'));
+    const first=choices[0],last=choices.at(-1);
+    if(event.shiftKey&&(document.activeElement===first||document.activeElement===event.currentTarget)){event.preventDefault();last?.focus()}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}
+  };
+  const toggle=async(skill:PrivateSkill)=>{
+    if(busy)return;setBusy(skill.id);setError('');
+    try{
+      const response=await fetch(`${url}/${encodeURIComponent(skill.id)}`,{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:!skill.enabled})});
+      if(!response.ok)throw new Error();const value=await response.json() as {enabled?:unknown};if(typeof value.enabled!=='boolean')throw new Error();setSkills(current=>current.map(item=>item.id===skill.id?{...item,enabled:value.enabled as boolean}:item));
+    }catch{setError('Could not update this Skill for the current Bot.')}finally{setBusy('')}
+  };
+  const publication=async(skill:PrivateSkill,action:'publish'|'sync'|'unpublish')=>{
+    if(busy||!selectedTargetId)return;setBusy(skill.id);setError('');setNotice('');
+    try{
+      const response=await fetch(`${url}/${encodeURIComponent(skill.id)}/publication`,{method:action==='unpublish'?'DELETE':'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(action==='unpublish'?{targetTenantId:selectedTargetId}:{action,targetTenantId:selectedTargetId})});
+      const value=await response.json().catch(()=>({})) as {error?:unknown};if(!response.ok)throw new Error(typeof value.error==='string'?value.error:'Could not update team sharing.');
+      setSkills(current=>current.map(item=>{if(item.id!==skill.id)return item;const publishedTenantIds=new Set(item.publishedTenantIds||[]),outOfSyncTenantIds=new Set(item.outOfSyncTenantIds||[]);if(action==='unpublish')publishedTenantIds.delete(selectedTargetId);else publishedTenantIds.add(selectedTargetId);outOfSyncTenantIds.delete(selectedTargetId);return {...item,publishedTenantIds:[...publishedTenantIds],outOfSyncTenantIds:[...outOfSyncTenantIds],published:selectedTargetId===currentTenantId?action!=='unpublish':item.published,outOfSync:selectedTargetId===currentTenantId?false:item.outOfSync}}));
+      const teamName=publishTargets.find(target=>target.tenantId===selectedTargetId)?.name||'team';setNotice(action==='publish'?`Skill published to ${teamName}.`:action==='sync'?`Skill synced to ${teamName}.`:`Skill unpublished from ${teamName}.`);
+    }catch(cause){setError(cause instanceof Error?cause.message:'Could not update team sharing.')}finally{setBusy('')}
+  };
+  const copyLink=async(skill:PrivateSkill)=>{
+    if(busy)return;setBusy(skill.id);setError('');setNotice('');
+    try{const link=new URL(`${window.location.origin}${window.location.pathname}`);link.searchParams.set('skill',skill.id);await navigator.clipboard.writeText(link.toString());setNotice('Skill link copied. Team members can open it and enable the Skill for a Bot.')}catch{setError('Could not copy the Skill link.')}finally{setBusy('')}
+  };
+  const privateSkills=skills.filter(skill=>skill.isOwner!==false&&skill.visibility==='private');
+  const botOnlySkills=skills.filter(skill=>skill.isOwner!==false&&skill.visibility==='bot');
+  const teamSkills=skills.filter(skill=>skill.isOwner===false);
+  const selectedTarget=publishTargets.find(target=>target.tenantId===selectedTargetId);
+  const skillCard=(skill:PrivateSkill,scope:'private'|'bot'|'team')=>{const publishedToSelected=(skill.publishedTenantIds||[]).includes(selectedTargetId)||(skill.published&&selectedTargetId===currentTenantId),outOfSyncForSelected=(skill.outOfSyncTenantIds||[]).includes(selectedTargetId)||(skill.outOfSync&&selectedTargetId===currentTenantId);return <article className="connect-apps-skill" key={skill.id} data-skill-id={skill.id}>
+    <div className="connect-apps-skill-icon" aria-hidden="true">✦</div><div className="connect-apps-skill-copy"><strong>{skill.name}</strong><p>{scope==='team'&&skill.sharedBy?`Shared by ${skill.sharedBy} · `:''}{skill.description}</p>
+      {scope==='private'&&publishedToSelected&&<small className={outOfSyncForSelected?'out-of-sync':''}>{outOfSyncForSelected?`Changes not synced to ${selectedTarget?.name||'team'}`:`Published to ${selectedTarget?.name||'team'}`}</small>}
+      {scope==='bot'&&<small>Only available to {botName}</small>}
+    </div>
+    <div className="connect-apps-skill-actions">
+      <button type="button" role="switch" aria-checked={skill.enabled} aria-label={`${skill.enabled?'Disable':'Enable'} ${skill.name} for ${botName}`} disabled={Boolean(busy)} onClick={()=>void toggle(skill)}><span /></button>
+      {scope==='private'&&!publishedToSelected&&<button type="button" className="connect-apps-action" disabled={Boolean(busy)||!selectedTarget} title={!selectedTarget?'Join a team workspace to publish Skills.':undefined} onClick={()=>void publication(skill,'publish')}>Publish</button>}
+      {scope==='private'&&publishedToSelected&&<>
+        {outOfSyncForSelected&&<button type="button" className="connect-apps-action" disabled={Boolean(busy)} onClick={()=>void publication(skill,'sync')}>Sync</button>}
+        <button type="button" className="connect-apps-action" disabled={Boolean(busy)} onClick={()=>void publication(skill,'unpublish')}>Unpublish</button>
+      </>}
+      {scope==='private'&&publishedToSelected&&<button type="button" className="connect-apps-action" disabled={Boolean(busy)} onClick={()=>void copyLink(skill)}>Copy link</button>}
+    </div>
+  </article>};
+  return <div className="connect-apps-overlay" onMouseDown={event=>{if(event.target===event.currentTarget&&!busy)onClose()}}><section ref={dialog} className="connect-apps-dialog" role="dialog" aria-modal="true" aria-labelledby="connect-apps-title" tabIndex={-1} onKeyDown={onKeyDown}>
+    <header><div><strong id="connect-apps-title">Connect apps</strong><small>{botName}</small></div><button ref={closeButton} type="button" aria-label="Close Connect apps" onClick={onClose}>×</button></header>
+    <section className="connect-apps-skills" aria-labelledby="private-skills-title">
+      <div className="connect-apps-section-heading"><h2 id="private-skills-title">Private skills</h2><span>{privateSkills.filter(skill=>skill.enabled).length} enabled</span></div>
+      <p>Enable a Skill for this Bot. Your private Skills are shared across your Bots and can be enabled separately.</p>
+      {state==='ready'&&publishTargets.length>0&&<label className="connect-apps-publish-target">Publish to <select aria-label="Publish to team" value={selectedTargetId} onChange={event=>setSelectedTargetId(event.target.value)}>{publishTargets.map(target=><option key={target.tenantId} value={target.tenantId}>{target.name} · {target.memberCount} members</option>)}</select></label>}
+      {state==='ready'&&publishTargets.length===0&&<p className="connect-apps-share-note">Join a team workspace to publish Skills.</p>}
+      {state==='loading'?<div className="connect-apps-empty">Loading Skills…</div>:state==='error'?<div className="connect-apps-empty" role="alert">Skills are unavailable right now.</div>:privateSkills.length? <div className="connect-apps-skill-list">{privateSkills.map(skill=>skillCard(skill,'private'))}</div>:<div className="connect-apps-empty">No Skills in your library yet. Ask a Bot to save a completed process as a Skill.</div>}
+      {state==='ready'&&botOnlySkills.length>0&&<><div className="connect-apps-section-heading connect-apps-subheading"><h2>Bot-only skills</h2><span>{botOnlySkills.length}</span></div><div className="connect-apps-skill-list">{botOnlySkills.map(skill=>skillCard(skill,'bot'))}</div></>}
+      {state==='ready'&&<><div className="connect-apps-section-heading connect-apps-subheading"><h2>Team skills</h2><span>{teamSkills.filter(skill=>skill.enabled).length} enabled</span></div><p>Published Skills from your team. Enable one to make it available to this Bot.</p>{teamSkills.length?<div className="connect-apps-skill-list">{teamSkills.map(skill=>skillCard(skill,'team'))}</div>:<div className="connect-apps-empty">No Skills have been published to this workspace.</div>}</>}
+      {error&&<p className="connect-apps-error" role="alert">{error}</p>}{notice&&<p className="connect-apps-notice" role="status">{notice}</p>}
+    </section>
+  </section></div>;
+}
 
 function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveName,onLabelChange,onSaveLabel,onChangeAvatar,onEditRoutine}:{name:string;botId:string;official?:boolean;bot?:Bot;onClose?:()=>void;onRename?:(value:string)=>void;onSaveName?:()=>void;onLabelChange?:(value:string)=>void;onSaveLabel?:()=>void;onChangeAvatar?:()=>void;onEditRoutine?:(name:string)=>void}) {
   const [owner,setOwner]=useState<'agent'|'user'|null>(null),[image,setImage]=useState(''),[error,setError]=useState(''),[diagnostic,setDiagnostic]=useState(''),[busy,setBusy]=useState(false),[text,setText]=useState('');
@@ -507,6 +647,7 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
 
 function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () => void }) {
   const reference = new URLSearchParams(window.location.search).get('reference') === '101-new-bot';
+  const linkedSkillId = new URLSearchParams(window.location.search).get('skill') || '';
   const remote = Boolean(account) && !reference;
   const storageKey = account ? `${STORAGE_KEY}:${account.tenantId}:${account.userId}${remote ? ':server-chat-v1' : ''}` : STORAGE_KEY;
   const sidebarPreferenceKey = account ? `coke-grok-bot:sidebar-width:v1:${account.tenantId}:${account.userId}` : '';
@@ -552,6 +693,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [panel, setPanel] = useState(false);
   const [panelSidebarExpanded, setPanelSidebarExpanded] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [connectAppsOpen,setConnectAppsOpen]=useState(false);
+  const [teamDialogOpen,setTeamDialogOpen]=useState(false);
   const [hiddenOpen,setHiddenOpen]=useState(false);
   const sidebarQueue=useRef<Record<string,Promise<void>>>({});
   const sidebarSequence=useRef<Record<string,number>>({});
@@ -621,6 +764,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const savedLabels = useRef<Record<string, string>>({});
   const labelQueue = useRef<Record<string, Promise<void>>>({});
   const active = state.bots.find(bot => bot.id === state.activeId) || state.bots[0];
+  useEffect(()=>{if(remote&&botStatus==='ready'&&account&&active&&/^[0-9a-f-]{36}$/i.test(linkedSkillId))setConnectAppsOpen(true)},[remote,botStatus,account?.userId,active?.id,linkedSkillId]);
+  function closeConnectApps(){setConnectAppsOpen(false);if(linkedSkillId){const url=new URL(window.location.href);url.searchParams.delete('skill');window.history.replaceState(window.history.state,'',url.pathname+url.search+url.hash)}}
   const activeGroup=groups.find(group=>group.id===selectedGroupId);
   const activeConversationKeyRef=useRef('');
   activeConversationKeyRef.current=activeGroup?`group:${activeGroup.id}`:`bot:${active?.id||''}`;
@@ -1542,7 +1687,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       {reference && <button type="button" className="more-unreads">↓&nbsp; More unreads</button>}
       <div className="sidebar-footer">{account ? <>
         <button type="button" className="account-control" aria-label="Account menu" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen(value => !value)}><span className="account-dot">{account.name.slice(0, 1).toUpperCase()}</span><span className="account-name">{account.name}</span></button>
-        {accountMenuOpen && <div className="account-menu" role="menu" aria-label="Account"><button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); setNotice(true); }}>Connect apps</button><button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); onLogout?.(); }}>Sign out</button></div>}
+        {accountMenuOpen && <div className="account-menu" role="menu" aria-label="Account"><button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); setTeamDialogOpen(true); }}>Workspaces & team</button><button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); if(active)setConnectAppsOpen(true);else setNotice(true); }}>Connect apps</button><button type="button" role="menuitem" onClick={() => { setAccountMenuOpen(false); onLogout?.(); }}>Sign out</button></div>}
       </> : <><div className="account-dot">M</div><button type="button" className="connect-button" onClick={() => setNotice(true)}>Connect apps <span aria-hidden="true">◈◉▣</span></button></>}</div>
     </aside>
     {account && <div className="sidebar-resize-handle" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" aria-valuemin={PRODUCT_SIDEBAR_MIN} aria-valuemax={productSidebarMax()} aria-valuenow={Math.round(layoutSidebarWidth)} tabIndex={0} onPointerDown={startSidebarResize} onPointerMove={moveSidebarResize} onPointerUp={finishSidebarResize} onPointerCancel={finishSidebarResize} onKeyDown={adjustSidebarResize} onDoubleClick={() => setSidebarWidth(clampProductSidebarWidth(Math.max(280, Math.round(window.innerWidth * 0.28))))} />}
@@ -1650,6 +1795,8 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
         <footer><button type="button" disabled={savingBot} onClick={()=>setCreateDialog(null)}>Cancel</button><button type="submit" disabled={savingBot||createUncertain||!createDialog.name.trim()}>Create</button></footer>
       </form></div>}
       {avatarEditor && <div className="avatar-overlay" onMouseDown={event=>{if(event.target===event.currentTarget)closeAvatar()}}><section className="avatar-dialog" ref={avatarDialog} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Bot picture" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();closeAvatar()}else if(event.key==='Tab'){const choices=Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));const first=choices[0],last=choices.at(-1);if(event.shiftKey&&(document.activeElement===first||document.activeElement===event.currentTarget)){event.preventDefault();last?.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}}}}><header className="avatar-tabs"><button type="button" className="selected" aria-current="true">Bot</button><button type="button" disabled title="Not available yet">Generate</button><button type="button" disabled title="Not available yet">Upload</button><button type="button" disabled title="Not available yet">Reset</button></header><div className="avatar-shapes">{avatarShapes.map(shape=><button key={shape} type="button" aria-label={`Shape ${shape}`} aria-pressed={avatarEditor.shape===shape} onClick={()=>chooseAvatar({shape})}><Avatar bot={{shape,color:avatarEditor.color}} size={40} /></button>)}</div><div className="avatar-colors">{avatarColors.map(color=><button key={color} type="button" className="avatar-color" aria-label={`Color ${color}`} aria-pressed={avatarEditor.color.toLowerCase()===color} onClick={()=>chooseAvatar({color})}><span style={{background:color}} /></button>)}</div></section></div>}
+      {connectAppsOpen&&account&&active&&<ConnectAppsDialog botId={active.id} botName={active.name} focusSkillId={linkedSkillId} onClose={closeConnectApps} />}
+      {teamDialogOpen&&account&&<TeamWorkspaceDialog account={account} onClose={()=>setTeamDialogOpen(false)} onWorkspaceChanged={()=>window.location.reload()} />}
       {previewFile && <FilePreviewDialog file={previewFile} onClose={()=>setPreviewFile(null)} />}
     </main>
   </div>;
@@ -1683,6 +1830,23 @@ function FilePreviewDialog({file,onClose}:{file:RunFile;onClose:()=>void}) {
   </section></div>;
 }
 
+const pendingTeamInviteKey='coke-grok-pending-team-invite';
+function JoinTeamInviteDialog({token,email,onCancel,onSwitchAccount}:{token:string;email:string;onCancel:()=>void;onSwitchAccount:()=>void}){
+  const [busy,setBusy]=useState(false),[error,setError]=useState('');
+  async function accept(){
+    if(busy)return;setBusy(true);setError('');
+    try{
+      const response=await fetch(`${import.meta.env.BASE_URL}api/team/invitations/accept`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({token})});
+      const value=await response.json() as {error?:string};if(!response.ok)throw new Error(value.error||'Could not join this workspace.');
+      sessionStorage.removeItem(pendingTeamInviteKey);window.location.replace(import.meta.env.BASE_URL);
+    }catch(cause){setError(cause instanceof Error?cause.message:'Could not join this workspace.')}finally{setBusy(false)}
+  }
+  return <div className="connect-apps-overlay"><section className="connect-apps-dialog join-team-dialog" role="dialog" aria-modal="true" aria-labelledby="join-team-title">
+    <header><div><strong id="join-team-title">Join a workspace</strong><small>Signed in as {email}</small></div></header>
+    <div className="connect-apps-skills"><p>Joining adds this Google account to the invited workspace. Bots and conversations remain private to their owners.</p>{error&&<p className="connect-apps-error" role="alert">{error}</p>}<div className="join-team-actions"><button type="button" disabled={busy} onClick={onCancel}>Cancel</button><button type="button" disabled={busy} onClick={onSwitchAccount}>Use another Google account</button><button type="button" disabled={busy} onClick={()=>void accept()}>{busy?'Joining…':'Join workspace'}</button></div></div>
+  </section></div>;
+}
+
 function AuthenticatedApp() {
   const [authError] = useState(() => {
     const url = new URL(window.location.href);
@@ -1695,6 +1859,13 @@ function AuthenticatedApp() {
   const [account, setAccount] = useState<Account | null>(null);
   const [status, setStatus] = useState<'loading' | 'signedOut' | 'signedIn' | 'error'>('loading');
   const [logoutError, setLogoutError] = useState(false);
+  const [pendingInvite,setPendingInvite]=useState('');
+  useEffect(()=>{
+    const token=new URLSearchParams(window.location.hash.slice(1)).get('invite');
+    if(token&&/^[A-Za-z0-9_-]{43}$/.test(token))sessionStorage.setItem(pendingTeamInviteKey,token);
+    if(window.location.hash){window.history.replaceState(window.history.state,'',window.location.pathname+window.location.search)}
+    const stored=sessionStorage.getItem(pendingTeamInviteKey)||'';if(/^[A-Za-z0-9_-]{43}$/.test(stored))setPendingInvite(stored);
+  },[]);
   useEffect(() => {
     const controller = new AbortController();
     fetch(`${import.meta.env.BASE_URL}api/auth/me`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
@@ -1714,8 +1885,8 @@ function AuthenticatedApp() {
       setAccount(null); setStatus('signedOut'); setLogoutError(false);
     } catch { setLogoutError(true); }
   }
-  if (status === 'signedIn' && account) return <><PreviewApp key={`${account.tenantId}:${account.userId}`} account={account} onLogout={() => void logout()} />{logoutError && <div role="alert" className="auth-error">Sign out failed. Please try again.</div>}</>;
-  return <main className="auth-page"><div className="auth-card"><h1>Coke Grok Bot</h1>{status === 'loading' ? <p>Checking your session…</p> : status === 'error' ? <><p role="alert">The sign-in service is unavailable.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></> : <><p>Sign in to continue to the local preview.</p>{authError && <p role="alert">{authError}</p>}<a href={`${import.meta.env.BASE_URL}api/auth/google/start`}>Continue with Google</a></>}</div></main>;
+  if (status === 'signedIn' && account) return <><PreviewApp key={`${account.tenantId}:${account.userId}`} account={account} onLogout={() => void logout()} />{pendingInvite&&<JoinTeamInviteDialog token={pendingInvite} email={account.email} onCancel={()=>{sessionStorage.removeItem(pendingTeamInviteKey);setPendingInvite('')}} onSwitchAccount={()=>void logout()} />}{logoutError && <div role="alert" className="auth-error">Sign out failed. Please try again.</div>}</>;
+  return <main className="auth-page"><div className="auth-card"><h1>Coke Grok Bot</h1>{status === 'loading' ? <p>Checking your session…</p> : status === 'error' ? <><p role="alert">The sign-in service is unavailable.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></> : <><p>{pendingInvite?'Sign in with the invited Google account to join the workspace.':'Sign in to continue to the local preview.'}</p>{authError && <p role="alert">{authError}</p>}<a href={`${import.meta.env.BASE_URL}api/auth/google/start`}>Continue with Google</a></>}</div></main>;
 }
 
 function AppRoot() {

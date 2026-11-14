@@ -43,3 +43,16 @@ test('run scheduler locks each Bot screen while allowing same-user screens to ov
     await scheduler.stop();
   }
 });
+
+test('scheduler passes a queue creation cutoff through selection and claim', async () => {
+  const cutoff=new Date('2026-11-14T12:00:00.000Z'),tenantId=randomUUID(),userId=randomUUID(),botId=randomUUID(),seen=[];
+  const store={
+    async markExpiredUnknown(){return 0;},
+    async queuedScreens(_limit,createdAfter){seen.push(['queuedScreens',createdAfter]);return [{tenantId,userId,botId}];},
+    async claimNext(_scope,_leaseSeconds,createdAfter){seen.push(['claimNext',createdAfter]);return null;},
+    async renew(){return true;},async finish(){return true;},async markUnknown(){return true;}
+  };
+  const scheduler=new RunScheduler(store,{execute:async()=>({status:'completed',result:'unused'})},{concurrency:1,leaseSeconds:30,queueCreatedAfter:cutoff});
+  await scheduler.tick();await scheduler.stop();
+  assert.deepEqual(seen,[['queuedScreens',cutoff],['claimNext',cutoff]]);
+});

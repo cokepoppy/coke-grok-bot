@@ -6,6 +6,7 @@
 !deploy/desktop/cloud-kernel-adapter.mjs
 !deploy/desktop/dsh-computer-plugin.mjs
 !deploy/desktop/dsh-memory-plugin.mjs
+!deploy/desktop/dsh-skill-plugin.mjs
 !deploy/desktop/dsh-handoff-plugin.mjs
 !deploy/desktop/dsh-routine-plugin.mjs
 !deploy/desktop/computer-worker.mjs

@@ -27,6 +27,28 @@ test('provisioning is owner-scoped, idempotent and never overwrites existing res
  await assert.rejects(provisioner.connect(owner,new AbortController().signal));assert.equal(kube.creates,8);assert.equal(kube.ready,2);
  assert.equal((kube.objects.get(deploymentKey)! as any).spec.template.spec.containers[0].securityContext.runAsUser,0);
 });
+test('provisioner reuses a valid independent active-tab bridge token from the owner Secret',async()=>{
+ const owner={tenantId:randomUUID(),userId:randomUUID()},key=randomBytes(32),identity=desktopIdentity(owner,key),kube=new FakeKube(),provisioner=new DesktopProvisioner(kube,key,options);
+ await provisioner.connect(owner,new AbortController().signal);
+ const secret=kube.objects.get(kube.key('Secret',identity.namespace,'desktop-runtime')) as any;
+ const token=randomBytes(32).toString('base64url');
+ secret.data.activeTabBridge=Buffer.from(token).toString('base64');
+ secret.data.activeTabBridgeConfig=Buffer.from(`self.COKE_GROK_ACTIVE_TAB_BRIDGE_TOKEN=${JSON.stringify(token)};`).toString('base64');
+ kube.creates=0;kube.ready=0;
+ await provisioner.connect(owner,new AbortController().signal);
+ assert.equal(kube.creates,0);assert.equal(kube.ready,1);
+});
+test('provisioner refuses an independent bridge token with mismatched runtime config',async()=>{
+ const owner={tenantId:randomUUID(),userId:randomUUID()},key=randomBytes(32),identity=desktopIdentity(owner,key),kube=new FakeKube(),provisioner=new DesktopProvisioner(kube,key,options);
+ await provisioner.connect(owner,new AbortController().signal);
+ const secret=kube.objects.get(kube.key('Secret',identity.namespace,'desktop-runtime')) as any;
+ const token=randomBytes(32).toString('base64url');
+ secret.data.activeTabBridge=Buffer.from(token).toString('base64');
+ secret.data.activeTabBridgeConfig=Buffer.from('self.COKE_GROK_ACTIVE_TAB_BRIDGE_TOKEN="different";').toString('base64');
+ kube.creates=0;kube.ready=0;
+ await assert.rejects(provisioner.connect(owner,new AbortController().signal),error=>error instanceof Error&&error.message==='RESOURCE_MISMATCH');
+ assert.equal(kube.creates,0);assert.equal(kube.ready,0);
+});
 test('provisioner refuses an unrelated namespace and honors cancellation',async()=>{
  const owner={tenantId:randomUUID(),userId:randomUUID()},key=randomBytes(32),identity=desktopIdentity(owner,key),kube=new FakeKube();
  kube.objects.set(kube.key('Namespace',null,identity.namespace),{apiVersion:'v1',kind:'Namespace',metadata:{name:identity.namespace,labels:{'app.kubernetes.io/managed-by':'other'}}});
@@ -47,6 +69,18 @@ test('provisioner delegates namespace creation and rejects a different owner',as
  const provisioner=new DesktopProvisioner(kube,key,{...options,split:true,bootstrap});await provisioner.connect(owner,signal);
  assert.equal(called,1);assert.equal(kube.objects.has(kube.key('Namespace',null,identity.namespace)),false);assert.equal(kube.creates,10);
  const wrong=new DesktopProvisioner(new FakeKube(),key,{...options,split:true,bootstrap:{ensure:async()=>`grok-user-${'a'.repeat(32)}`}});await assert.rejects(wrong.connect(owner,signal),error=>error instanceof Error&&error.message==='OWNER_BINDING_MISMATCH');
+});
+test('namespace bootstrap runs before the first owner-scoped Kubernetes read',async()=>{
+ const owner={tenantId:randomUUID(),userId:randomUUID()},key=randomBytes(32),identity=desktopIdentity(owner,key),base=new FakeKube();let ownerAccess=false,bootstrapCalls=0;
+ const kube:DesktopKubernetes={
+  get:async(kind,namespace,name,signal)=>{if(namespace===identity.namespace&&!ownerAccess)throw new Error('Forbidden');return base.get(kind,namespace,name,signal)},
+  create:async(object,signal)=>{const metadata=object.metadata as {namespace?:string};if(metadata.namespace===identity.namespace&&!ownerAccess)throw new Error('Forbidden');return base.create(object,signal)},
+  waitForReady:async(namespace,name,signal)=>{assert.equal(namespace,identity.namespace);assert.ok(ownerAccess);return base.waitForReady(namespace,name,signal)},
+ };
+ const bootstrap={ensure:async(selected:typeof owner)=>{bootstrapCalls++;assert.deepEqual(selected,owner);ownerAccess=true;return identity.namespace}};
+ const provisioner=new DesktopProvisioner(kube,key,{...options,split:true,bootstrap});
+ await provisioner.connect(owner,new AbortController().signal);
+ assert.equal(bootstrapCalls,1);assert.equal(base.creates,10);assert.equal(base.ready,2);
 });
 test('existing owner namespaces adopt their current Agent and Desktop images into an immutable per-owner pin',async()=>{
  const owner={tenantId:randomUUID(),userId:randomUUID()},key=randomBytes(32),identity=desktopIdentity(owner,key),kube=new FakeKube();

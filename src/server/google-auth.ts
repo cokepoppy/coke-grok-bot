@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { CodeChallengeMethod, OAuth2Client } from 'google-auth-library';
-import { TenantStore } from './tenant-store.ts';
+import { TenantInvitationError, TenantStore, TenantWorkspaceError, type TenantInvitation, type WorkspaceMembership } from './tenant-store.ts';
 import { parsePublicUrl } from './public-url.ts';
 
 // Google OIDC flow adapted from Coke Dots origin/main 4213e769e49da7a479ab2ad186584c77b721fa69.
@@ -105,6 +105,36 @@ export class GoogleAuthService {
   async session(req: IncomingMessage) {
     const value = cookies(req.headers.cookie || '')[sessionCookie] || '';
     return /^[A-Za-z0-9_-]{43}$/.test(value) ? await this.store.getSession(hash(value)) : null;
+  }
+  private sessionHash(req:IncomingMessage):string|null{
+    const value=cookies(req.headers.cookie||'')[sessionCookie]||'';
+    return /^[A-Za-z0-9_-]{43}$/.test(value)?hash(value):null;
+  }
+  async workspaces(req:IncomingMessage):Promise<{currentTenantId:string;workspaces:WorkspaceMembership[]}|null>{
+    const session=await this.session(req);return session?{currentTenantId:session.tenantId,workspaces:await this.store.workspaces(session)}:null;
+  }
+  async createTeamWorkspace(req:IncomingMessage,name:string):Promise<string>{
+    const session=await this.session(req),sessionHash=this.sessionHash(req);
+    if(!session||!sessionHash)throw new TenantWorkspaceError('session-expired');
+    return this.store.createTeamWorkspace(sessionHash,session,name);
+  }
+  async createTeamInvitation(req:IncomingMessage,email:string){
+    const session=await this.session(req);if(!session)throw new Error('Unauthenticated');return this.store.createInvitation(session,email);
+  }
+  async listTeamInvitations(req:IncomingMessage):Promise<TenantInvitation[]|null>{
+    const session=await this.session(req);return session?this.store.listInvitations(session):null;
+  }
+  async revokeTeamInvitation(req:IncomingMessage,id:string):Promise<boolean>{
+    const session=await this.session(req);return session?this.store.revokeInvitation(session,id):false;
+  }
+  async acceptTeamInvitation(req:IncomingMessage,token:string):Promise<{tenantId:string;alreadyMember:boolean}>{
+    const session=await this.session(req),sessionHash=this.sessionHash(req);
+    if(!session||!sessionHash)throw new TenantInvitationError('session-expired');
+    return this.store.acceptInvitation(sessionHash,session,token);
+  }
+  async switchWorkspace(req:IncomingMessage,tenantId:string):Promise<boolean>{
+    const session=await this.session(req),sessionHash=this.sessionHash(req);
+    return Boolean(session&&sessionHash&&(session.tenantId===tenantId||await this.store.switchWorkspace(sessionHash,session,tenantId)));
   }
   async logout(req: IncomingMessage, res: ServerResponse) {
     if (req.headers.origin !== this.origin) return json(res, 403, { error: 'Invalid origin' });

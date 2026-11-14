@@ -139,18 +139,20 @@ export class RunStore {
     return rows.map(row => ({tenantId:String(row.tenantId),userId:String(row.userId)}));
   }
   /** Each Bot owns one queue/screen; different Bots belonging to the same user can run concurrently. */
-  async queuedScreens(limit: number): Promise<RunScreenScope[]> {
+  async queuedScreens(limit: number, queueCreatedAfter?: Date): Promise<RunScreenScope[]> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Invalid screen limit');
+    if (queueCreatedAfter && !Number.isFinite(queueCreatedAfter.getTime())) throw new Error('Invalid queue creation cutoff');
     const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT b.tenant_id AS tenantId,b.owner_id AS userId,b.id AS botId,MIN(r.sequence) AS firstRun
       FROM agent_runs r JOIN bots b ON b.id=r.bot_id JOIN memberships m ON m.tenant_id=b.tenant_id AND m.user_id=b.owner_id
-      WHERE r.status='queued' AND NOT EXISTS (
+      WHERE r.status='queued' AND (? IS NULL OR r.created_at>=?) AND NOT EXISTS (
         SELECT 1 FROM agent_runs active WHERE active.bot_id=b.id AND (active.status='running' OR (active.status='unknown' AND active.recovery_state='pending'))
-      ) GROUP BY b.id,b.tenant_id,b.owner_id ORDER BY firstRun LIMIT ?`, [limit]);
+      ) GROUP BY b.id,b.tenant_id,b.owner_id ORDER BY firstRun LIMIT ?`, [queueCreatedAfter??null,queueCreatedAfter??null,limit]);
     return rows.map(row=>({tenantId:String(row.tenantId),userId:String(row.userId),botId:String(row.botId)}));
   }
   /** Claim one Bot's screen. Older callers may omit botId to claim the owner's serialized queue. */
-  async claimNext(session: Pick<Session,'tenantId'|'userId'> | RunScreenScope, leaseSeconds: number): Promise<{ run: AgentRun; leaseId: string } | null> {
+  async claimNext(session: Pick<Session,'tenantId'|'userId'> | RunScreenScope, leaseSeconds: number, queueCreatedAfter?: Date): Promise<{ run: AgentRun; leaseId: string } | null> {
     if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 1 || leaseSeconds > 900) throw new Error('Invalid lease');
+    if (queueCreatedAfter && !Number.isFinite(queueCreatedAfter.getTime())) throw new Error('Invalid queue creation cutoff');
     const botId='botId' in session ? session.botId : undefined;
     if(botId && !uuid.test(botId))throw new Error('Invalid screen Bot');
     return this.transaction(async connection => {
@@ -165,8 +167,8 @@ export class RunStore {
         : await connection.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND (r.status='running' OR (r.status='unknown' AND r.recovery_state='pending')) LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
       if (active.length) return null;
       const [rows] = botId
-        ? await connection.execute<RowDataPacket[]>(`SELECT id,bot_id AS botId,prompt,status,result,recovery_state AS recoveryState,replacement_run_id AS replacementRunId,runtime_context AS runtimeContext FROM agent_runs WHERE bot_id=? AND status='queued' ORDER BY sequence LIMIT 1 FOR UPDATE`,[botId])
-        : await connection.execute<RowDataPacket[]>(`SELECT r.id,r.bot_id AS botId,r.prompt,r.status,r.result,r.recovery_state AS recoveryState,r.replacement_run_id AS replacementRunId,r.runtime_context AS runtimeContext FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND r.status='queued' ORDER BY r.sequence LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
+        ? await connection.execute<RowDataPacket[]>(`SELECT id,bot_id AS botId,prompt,status,result,recovery_state AS recoveryState,replacement_run_id AS replacementRunId,runtime_context AS runtimeContext FROM agent_runs WHERE bot_id=? AND status='queued' AND (? IS NULL OR created_at>=?) ORDER BY sequence LIMIT 1 FOR UPDATE`,[botId,queueCreatedAfter??null,queueCreatedAfter??null])
+        : await connection.execute<RowDataPacket[]>(`SELECT r.id,r.bot_id AS botId,r.prompt,r.status,r.result,r.recovery_state AS recoveryState,r.replacement_run_id AS replacementRunId,r.runtime_context AS runtimeContext FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND r.status='queued' AND (? IS NULL OR r.created_at>=?) ORDER BY r.sequence LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId,queueCreatedAfter??null,queueCreatedAfter??null]);
       if (!rows.length) return null;
       const row=rows[0],run = row as AgentRun, runtimeContext=parseAgentRuntimeContext(row.runtimeContext), leaseId = randomUUID();
       // Preserve a bounded same-Bot user-prompt chain so explicit continuations

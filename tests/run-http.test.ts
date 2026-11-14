@@ -7,6 +7,7 @@ import { mysqlTestCredentials } from './helpers/mysql-test-credentials.ts';
 import { TenantStore } from '../src/server/tenant-store.ts';
 import { BotStore } from '../src/server/bot-store.ts';
 import { RunStore } from '../src/server/run-store.ts';
+import { BotSkillStore } from '../src/server/bot-skill-store.ts';
 import { GoogleAuthService, type IdentityProvider } from '../src/server/google-auth.ts';
 import { createAuthServer } from '../src/server/auth-http.ts';
 import { Readable } from 'node:stream';
@@ -16,18 +17,18 @@ const port=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);if(!port)throw new Erro
 const mysqlCredentials = mysqlTestCredentials(port);
 test('run API is authenticated, owner-scoped, origin-protected and idempotent',async()=>{
  const db=`grok_run_api_${randomUUID().replaceAll('-','')}`,admin=await mysql.createConnection(mysqlCredentials);await admin.query(`CREATE DATABASE \`${db}\``);
- const pool=mysql.createPool({...mysqlCredentials,database:db,timezone:'Z'});const ids=new TenantStore(pool),bots=new BotStore(pool),runs=new RunStore(pool),files=new WorkspaceFileStore(pool),workspace=new Map<string,Buffer>();
- await ids.migrate();await bots.migrate();await runs.migrate();
+ const pool=mysql.createPool({...mysqlCredentials,database:db,timezone:'Z'});const ids=new TenantStore(pool),bots=new BotStore(pool),runs=new RunStore(pool),skills=new BotSkillStore(pool),files=new WorkspaceFileStore(pool),workspace=new Map<string,Buffer>();
+ await ids.migrate();await bots.migrate();await runs.migrate();await skills.migrate();
  const net=await import('node:net'),reservation=net.createServer();reservation.listen(0,'127.0.0.1');await once(reservation,'listening');const httpPort=(reservation.address() as import('node:net').AddressInfo).port;await new Promise<void>(resolve=>reservation.close(()=>resolve()));
  const origin=`http://127.0.0.1:${httpPort}`,base=origin+'/grok-bot',provider:IdentityProvider={authorizationUrl:()=>'',exchange:async()=>({})};
  const transport={async upload(_owner:any,input:any){const chunks:Buffer[]=[];for await(const chunk of input.body)chunks.push(Buffer.from(chunk));const bytes=Buffer.concat(chunks),sha256=createHash('sha256').update(bytes).digest('hex');workspace.set(`shared/uploads/${input.id}${input.extension?'.'+input.extension:''}`,bytes);return {size:bytes.length,sha256}},async download(_owner:any,key:string){const bytes=workspace.get(key);if(!bytes)throw new Error('missing');return {body:Readable.from([bytes]),size:bytes.length}},async removeUpload(){}} as unknown as WorkspaceFileTransport;
- const server=createAuthServer(new GoogleAuthService(ids,provider,base),base,undefined,bots,runs,undefined,undefined,'dsh',files,transport);server.listen(httpPort,'127.0.0.1');await once(server,'listening');
+ const server=createAuthServer(new GoogleAuthService(ids,provider,base),base,undefined,bots,runs,undefined,undefined,'dsh',files,transport,undefined,undefined,undefined,skills);server.listen(httpPort,'127.0.0.1');await once(server,'listening');
  const login=async(subject:string)=>{const id=await ids.signInGoogle({subject,email:`${subject}@example.test`,name:subject}),token=randomBytes(32).toString('base64url');await ids.createSession(createHash('sha256').update(token).digest('hex'),id.userId,id.tenantId,new Date(Date.now()+60000));return {id,cookie:`coke_grok_session=${token}`}};
  try{
   const a=await login('a'),b=await login('b'),ownerSession={...a.id,email:'a@example.test',name:'A',role:'owner' as const};const bot=await bots.create(ownerSession,{name:'A',shape:'round',color:'#abcdef'}),targetBot=await bots.create(ownerSession,{name:'A2',shape:'hex',color:'#abcdef'}),foreignBot=await bots.create({...b.id,email:'b@example.test',name:'B',role:'owner'},{name:'Foreign',shape:'round',color:'#abcdef'});assert.equal(await bots.setLabel(ownerSession,targetBot.id,'Research'),true);
   const path=`/api/bots/${bot.id}/runs`,request=(path:string,cookie='',init:RequestInit={})=>fetch(base+path,{...init,headers:{cookie,...init.headers}});
   assert.equal((await request('/api/auth/features')).status,401);
-  const features=await request('/api/auth/features',a.cookie);assert.equal(features.status,200);assert.deepEqual(await features.json(),{agent:true,engine:'dsh'});
+  const features=await request('/api/auth/features',a.cookie);assert.equal(features.status,200);assert.deepEqual(await features.json(),{agent:true,engine:'dsh',voice:false});
   const requestId=randomUUID(),payload=JSON.stringify({requestId,prompt:'Hello'}),post=(cookie:string,body=payload,from=origin)=>request(path,cookie,{method:'POST',headers:{origin:from,'content-type':'application/json'},body});
   assert.equal((await request(path)).status,401);assert.equal((await post(a.cookie,payload,'https://evil.example')).status,403);assert.equal((await post(b.cookie)).status,404);
   const first=await post(a.cookie),firstBody=await first.json() as {run:{id:string}};assert.equal(first.status,200);
@@ -66,5 +67,27 @@ test('run API is authenticated, owner-scoped, origin-protected and idempotent',a
   const unsafeBytes=Buffer.from('<script>no execution</script>'),unsafeUpload=await request(uploadPath,a.cookie,{method:'POST',headers:{origin,'content-type':'text/html','x-file-name':encodeURIComponent('unsafe.html')},body:new Uint8Array(unsafeBytes)});assert.equal(unsafeUpload.status,201);const unsafeId=(await unsafeUpload.json() as {file:{id:string}}).file.id;
   const unsafeRun=await runs.create({...a.id,email:'a@example.test',name:'A',role:'owner'},bot.id,randomUUID(),'Inspect HTML',[unsafeId]);assert.ok(unsafeRun);const unsafeClaim=await runs.claimNext(a.id,30);assert.equal(unsafeClaim?.run.id,unsafeRun.id);assert.equal(await runs.finish(unsafeRun.id,unsafeClaim!.leaseId,'completed','Reviewed the file.'),true);
   const unsafeFile=await request(`/api/files/${unsafeId}`,a.cookie);assert.equal(unsafeFile.status,200);assert.equal(unsafeFile.headers.get('content-type'),'application/octet-stream');assert.match(unsafeFile.headers.get('content-disposition')||'',/attachment/);
+
+  const skillRun=await runs.create(a.id,bot.id,randomUUID(),'Save this completed research process as a Skill.');assert.ok(skillRun);
+  const skillClaim=await runs.claimNext(a.id,30);assert.equal(skillClaim?.run.id,skillRun.id);
+  const skillInput={name:'Research checklist',description:'A repeatable read-only research process.',instructions:'Gather current primary sources, compare the requested facts, cite each source, and return a concise summary.',visibility:'private' as const};
+  const savedSkill=await skills.createForRun({owner:a.id,botId:bot.id,runId:skillRun.id,leaseId:skillClaim!.leaseId},skillInput,true);assert.ok(savedSkill);
+  const botOnlySkill=await skills.createForRun({owner:a.id,botId:bot.id,runId:skillRun.id,leaseId:skillClaim!.leaseId},{...skillInput,name:'Bot-only checklist',visibility:'bot'},true);assert.ok(botOnlySkill);
+  assert.equal(await runs.finish(skillRun.id,skillClaim!.leaseId,'completed','Saved the research Skill.'),true);
+  const skillPath=`/api/bots/${bot.id}/skills`,targetSkillPath=`/api/bots/${targetBot.id}/skills`;
+  assert.equal((await request(skillPath)).status,401);
+  assert.equal((await request(skillPath,b.cookie)).status,404);
+  const creatorSkills=await request(skillPath,a.cookie);assert.equal(creatorSkills.status,200);
+  const creatorSkillItems=(await creatorSkills.json() as {skills:{id:string;enabled:boolean}[]}).skills;assert.equal(creatorSkillItems.length,2);
+  assert.equal(creatorSkillItems.find(skill=>skill.id===savedSkill.id)?.enabled,true);assert.equal(creatorSkillItems.find(skill=>skill.id===botOnlySkill.id)?.enabled,true);
+  const otherBotSkills=await request(targetSkillPath,a.cookie);assert.equal(otherBotSkills.status,200);
+  assert.deepEqual((await otherBotSkills.json() as {skills:{id:string;enabled:boolean}[]}).skills.map(skill=>[skill.id,skill.enabled]),[[savedSkill.id,false]]);
+  const accessPath=`${targetSkillPath}/${savedSkill.id}`;
+  assert.equal((await request(accessPath,a.cookie,{method:'PATCH',headers:{'content-type':'application/json'},body:'{"enabled":true}'})).status,403);
+  assert.equal((await request(accessPath,a.cookie,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:'{"enabled":true,"scope":"tenant"}'})).status,400);
+  assert.equal((await request(accessPath,b.cookie,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:'{"enabled":true}'})).status,404);
+  const enabled=await request(accessPath,a.cookie,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:'{"enabled":true}'});assert.equal(enabled.status,200);assert.deepEqual(await enabled.json(),{enabled:true});
+  assert.deepEqual((await (await request(targetSkillPath,a.cookie)).json() as {skills:{id:string;enabled:boolean}[]}).skills.map(skill=>[skill.id,skill.enabled]),[[savedSkill.id,true]]);
+  assert.equal((await request(`${targetSkillPath}/${botOnlySkill.id}`,a.cookie,{method:'PATCH',headers:{origin,'content-type':'application/json'},body:'{"enabled":true}'})).status,404);
  }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));await pool.end();await admin.query(`DROP DATABASE \`${db}\``);await admin.end()}
 });

@@ -4,6 +4,7 @@ metadata:
   name: auth-runtime-config
 data:
   COKE_GROK_PI_ENABLED: "1"
+  COKE_GROK_RUN_QUEUE_CREATED_AFTER: ""
   COKE_GROK_AGENT_ENGINE: pi
   COKE_GROK_CONTROL_NAMESPACE: coke-grok-bot
   COKE_GROK_DESKTOP_IMAGE: coke-grok-desktop:candidate-no-per-step-approval-20261112-r1

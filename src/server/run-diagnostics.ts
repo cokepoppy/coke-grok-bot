@@ -6,6 +6,8 @@ const runDiagnosticCodes = [
   'model_upstream_429',
   'bot_memory_preload_failed',
   'bot_memory_scope_invalid',
+  'bot_skill_preload_failed',
+  'bot_skill_scope_invalid',
   'bot_handoff_scope_invalid',
   'capability_issue_failed',
   'agent_transport_failed',

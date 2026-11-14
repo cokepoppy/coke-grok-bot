@@ -286,6 +286,15 @@ function validateBotRoutineBridge(value) {
   return { mode: 'mediated' };
 }
 
+function validateBotSkillBridge(value) {
+  if (value === undefined) return null;
+  const allowed = ['list', 'create', 'update', 'delete'];
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.mode !== 'mediated' || !Array.isArray(value.actions) || !value.actions.length || value.actions.length > allowed.length || new Set(value.actions).size !== value.actions.length || value.actions.some(action => !allowed.includes(action))) {
+    throw new Error('Bot skill bridge configuration is invalid');
+  }
+  return { mode: 'mediated', actions: [...value.actions] };
+}
+
 function validateGroupRuntimeContext(value) {
   if (value === undefined) return undefined;
   const validPerson = person => person && typeof person === 'object' && !Array.isArray(person)
@@ -458,6 +467,7 @@ async function executeKernel(input, requestSignal, slot) {
   const memory = validateBotMemoryBridge(input.memory);
   const handoffs = validateBotHandoffBridge(input.handoffs);
   const routines = validateBotRoutineBridge(input.routines);
+  const skills = validateBotSkillBridge(input.skills);
   const runtimeContext = validateGroupRuntimeContext(input.runtimeContext);
   const dingtalkDocumentsBridge = validateDingTalkDocumentsBridge(input.dingtalkDocumentsBridge);
   const dingtalkCalendarBridge = validateDingTalkCalendarBridge(input.dingtalkCalendarBridge);
@@ -502,6 +512,7 @@ async function executeKernel(input, requestSignal, slot) {
     ...(memory ? { memory } : {}),
     ...(handoffs ? { handoffs } : {}),
     ...(routines ? { routines } : {}),
+    ...(skills ? { skills } : {}),
     computer: process.env.COKE_GROK_MEDIATED_COMPUTER === '1' ? { mode:'mediated', gatewayUrl:modelConfig.baseUrl, gatewayToken:modelConfig.apiKey, screenId } : {
       baseUrl: `http://127.0.0.1:${workerPort}`,
       workerToken: process.env.LINUX_DESKTOP_WORKER_TOKEN,
