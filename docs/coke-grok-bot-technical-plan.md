@@ -3052,6 +3052,8 @@ MySQL 回归新增同一作者跨 Alpha/Beta 发布、两个团队独立启用�
 
 #### 2026-11-15 Routine 列表公网 Computer Use 验收
 
-已在公网候选 `https://codex.cokeagent.com/grok-bot/` 使用原生 Computer Use 无障碍控件创建合成 Routine `Routine UI E2E 20261115`，计划为每周日 23:59（Asia/Shanghai），任务只返回测试标记且不访问网站、不使用工具、不发送消息。执行详情显示 Pi 使用 `deepseek-v4.1-flash`，Bot routines 两次 succeeded、一次 failed，Browser User inspect succeeded；页面没有 Approval 卡。Agent 回复称 Routine 工具不支持创建时设置 paused，具体失败子调用未展开；随后通过行内 Pause 开关成功暂停。启用态可见 `Sundays at 11:59 PM` 和常驻开关；暂停态显示 `Paused` 与关闭开关。刷新并重新打开 Details 后仍显示 Paused。测试 Routine 留在该测试 Bot 且保持暂停。
+已在公网候选 `https://codex.cokeagent.com/grok-bot/` 使用原生 Computer Use 无障碍控件创建合成 Routine `Routine UI E2E 20261115`，计划为每周日 23:59（Asia/Shanghai），任务只返回测试标记且不访问网站、不使用工具、不发送消息。创建任务执行详情显示 Pi 使用 `deepseek-v4.1-flash`，Bot routines 两次 succeeded、一次 failed，Browser User inspect succeeded；页面没有 Approval 卡。Agent 回复称 Routine 工具不支持创建时设置 paused，具体失败子调用未展开；随后通过行内 Pause 开关成功暂停。启用态可见 `Sundays at 11:59 PM` 和常驻开关；暂停态显示 `Paused` 与关闭开关。刷新并重新打开 Details 后仍显示 Paused。
 
-这证明当前候选的公网 Routine 行展示、手动暂停和刷新持久化通过；Agent 工具无法在创建时直接设为暂停仍需另行处理。验收通过原生 Computer Use 语义控件，无截图或坐标操作。代码候选与发布记录位于 `releases/candidate-grok-bot-routine-panel-2026-11-15-r1/`；用户最终体验验收仍待进行。
+点击该 Routine 进入详情可见 When to run、时区、Instruction、Run history 及 Edit/Resume/Test/Delete routine 控件。对暂停状态的合成 Routine 点击 Test 后，公网聊天收到精确结果 `ROUTINE_UI_E2E_OK`，详情 Run history 显示 `Succeeded`；测试后状态仍为 Paused。此为一次手动 Test，不是定时调度触发验收。测试 Routine 留在该测试 Bot 且保持暂停。
+
+这证明当前候选的公网 Routine 行展示、详情、手动 Test、暂停和刷新持久化通过；Agent 工具无法在创建时直接设为暂停仍是观测到的限制，具体失败调用未能从公开 UI 追溯。定时调度、事件触发和运行时区跨日行为仍待分别验收。验收通过原生 Computer Use 语义控件，无截图或坐标操作。代码候选与发布记录位于 `releases/candidate-grok-bot-routine-panel-2026-11-15-r1/`；用户最终体验验收仍待进行。
