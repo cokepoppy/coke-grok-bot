@@ -5540,3 +5540,11 @@ PTS 737240（12:17.240）仍显示新聊天收件人栏中的 `dex`、`Martin`�
 连续审阅 12:30、12:35、12:40 三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧；15 张 5×5 联系图逐张查看。独立从完整 MKV 重解码后，375/375 帧 PTS、yuv420p 像素字节数/SHA-256、15/15 联系图 SHA-256 及完整视频 SHA-256 均与各自 manifest 一致。复核 PTS 范围 750000–764960，源 MKV SHA-256 为 2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2。证据窗口目录：research/frames/grok-201-1230-1235-compact-audit-20261114/、grok-201-1235-1240-compact-audit-20261114/、grok-201-1240-1245-compact-audit-20261114/。
 
 12:30.000–12:44.960 持续显示 Joseph, Martin 群聊及前一段的蓝色贴纸图片、Dex 回复和 Martin 的心形回应；联系图中没有出现新的消息、导航、Computer 操作或任务状态变化。只观察到右上角讲者画中画的自然变化。本段仅补充这段静止 UI 的连续证据，不将其解读为新一轮 Agent 执行。V2 连续逐帧审阅现覆盖至 12:44.960（19,125 帧），下一窗口从 12:45.000 开始。
+
+### Grok Bot 201 逐帧续审：12:45.000–12:59.960（2026-11-14）
+
+连续审阅 12:45、12:50、12:55 三个相邻五秒窗口，共 375 个 1920×1080、25 fps 源帧；15 张 5×5 联系图逐张检查。独立从完整 MKV 重解码后，375/375 帧的源 PTS、`yuv420p` 像素字节数/SHA-256、15/15 联系图 SHA-256 均与原 manifest 一致。PTS 范围 765000–779960，完整源视频 SHA-256 为 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。原始窗口及逐帧 manifest 位于 `research/frames/grok-201-1245-1250-compact-audit-20261114/`、`grok-201-1250-1255-compact-audit-20261114/`、`grok-201-1255-1300-compact-audit-20261114/`。
+
+PTS 772880（12:52.880）仍显示 `Joseph, Martin` 群聊。PTS 772920（12:52.920）开始切换桌面：Grok Bot 窗口缩到左侧，右侧 Chrome 打开 Google Slides；PTS 772960（12:52.960）清楚显示文档 `Grok Bot 201 Slides` 的第 9 页 `Meet the team`。紫色幻灯片展示 Dex（Designer）、Lew（Fullstack）、Sam（UI/UX），下方列出 Dex 设计贴纸、Metrics 跟踪投票与销售、Full Stack 构建并发布网站。三张转场前后原尺寸帧及哈希见 `research/frames/grok-201-1252-desktop-transition-keyframes-20261114/manifest.json`。
+
+PTS 774960（12:54.960）仍显示该 Google Slides 编辑页；PTS 775000（12:55.000）首次切为暗色/黑色加载画面，中央可见 `Loading…`，右上讲者画中画仍在。之后的联系图一直显示这一加载画面，至 PTS 779960（12:59.960）没有恢复到 Grok Bot 或出现可辨认的任务结果。前后状态帧及哈希保存在 `research/frames/grok-201-1254-loading-transition-keyframes-20261114/manifest.json` 和 `research/frames/grok-201-1255-loading-onset-keyframes-20261114/manifest.json`。这些帧能确认录屏中的桌面切换和加载状态；不能据此推断 Chrome 页面为何加载或 Agent 任务是否完成。V2 连续逐帧覆盖延至 12:59.960（19,500 帧），下一窗口从 13:00.000 开始。
