@@ -3194,6 +3194,6 @@ Tester Bot 的公网对话最终记录真实 Browser User 操作链：`Pi · dee
 
 Developer Bot 只读核对 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`；现有 `index.html` 与 `README.md` 已有规则演示，未找到确认的实际缺陷。Ops Bot 确认 PR #1 已合并、Pages 可访问；这是既有 PR，并非本轮通过群协作新建。公网 Bot 验收期间没有修改应用代码、创建分支/PR 或部署。
 
-项目主管最终汇总仍未完成。主管会话显示 `Queued · waiting for your computer` 和 `Review uncertain task outcome`；打开屏幕只确认 `Bot is in control`，没有看到人类接管状态。点击“我已检查·继续”后输入框曾短暂恢复，随后任务再次进入 review/unknown，输入框重新禁用；没有点 Retry、没有再次派发外部任务、没有重启电脑，也没有截图。群聊中的一次仅请求主管总结的消息之后，多个成员曾显示 Queued/Working，表明群消息可能触发成员级 fan-out，但触发机制尚未确认。根因不能归为 Mac 锁屏、电脑断连或权限审批；需要后续从运行状态/队列和项目主管 handoff 持久化路径取证。
+项目主管最终汇总仍未完成。主管会话显示 `Queued · waiting for your computer` 和 `Review uncertain task outcome`；打开屏幕只确认 `Bot is in control`，没有看到人类接管状态。点击“我已检查·继续”后输入框曾短暂恢复，随后任务再次进入 review/unknown，输入框重新禁用；没有点 Retry、没有重启电脑，也没有截图。该轮发群消息时，我通过 AX `setValue` 输入了字面文本 `@北交所项目主管`，没有从提及自动补全列表选择 Bot。源码 `src/web/main.tsx` 只有在 `botMentionTokensRef` 解析出已选提及时才会发送 `targetBotIds`；服务端 `src/server/group-chat-store.ts` 在未提供该字段时会为全体群成员建 run。因此随后多个成员显示 Queued/Working 是群聊默认 fan-out 语义，不是已确认的运行故障；本次并未验证 UI 选中提及后的定向收件人请求。主管队列回到 unknown 的根因仍未确认；目前证据不支持归因为 Mac 锁屏、电脑断连或权限审批，需从主管 run/队列/handoff 持久化路径取证。
 
 验收结论：真实公网 Browser User 页面测试通过；北交所现有演示页面无需重复开发，也无证据要求新 PR。**多 Bot 项目群的主管汇总和原始研究 handoff 状态仍未确认，BSE 多 Bot 协作端到端目标未完成**；暂不合并本功能分支或打 checkpoint tag。
