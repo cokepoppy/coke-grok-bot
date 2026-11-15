@@ -647,11 +647,11 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
   const [unavailable,setUnavailable]=useState(false);
   const imageUrl=useRef('');
   const cardElement=useRef<HTMLElement|null>(null);
-  const [cardVisible,setCardVisible]=useState(true);
+  const [cardVisible,setCardVisible]=useState(false);
   const status=run.status==='running'?'Working':run.status==='queued'?'Queued':run.status==='completed'?'Done':run.status==='failed'?'Failed':'Review';
   useEffect(()=>{
     const element=cardElement.current;
-    if(!element||typeof IntersectionObserver==='undefined')return;
+    if(!element||typeof IntersectionObserver==='undefined'){setCardVisible(true);return}
     const observer=new IntersectionObserver(entries=>setCardVisible(Boolean(entries[0]?.isIntersecting)),{rootMargin:'240px 0px'});
     observer.observe(element);
     return()=>observer.disconnect();
