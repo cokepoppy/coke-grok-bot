@@ -56,3 +56,33 @@ test('scheduler passes a queue creation cutoff through selection and claim', asy
   await scheduler.tick();await scheduler.stop();
   assert.deepEqual(seen,[['queuedScreens',cutoff],['claimNext',cutoff]]);
 });
+
+test('a transient lease renewal error retries before the lease can expire', async () => {
+  const tenantId=randomUUID(),userId=randomUUID(),botId=randomUUID(),runId=randomUUID();
+  let renewals=0,started=false,aborted=false,finished=false,release;
+  const store={
+    async markExpiredUnknown(){return 0;},
+    async queuedScreens(){return started?[]:[{tenantId,userId,botId}];},
+    async claimNext(){if(started)return null;started=true;return {run:{id:runId,botId,prompt:'test',status:'running',files:[]},leaseId:randomUUID()};},
+    async renew(){renewals++;if(renewals===1)throw new Error('temporary database timeout');return true;},
+    async finish(){finished=true;return true;},
+    async markUnknown(){return true;},
+  };
+  const scheduler=new RunScheduler(store,{execute:async(_scope,_run,signal)=>{
+    signal.addEventListener('abort',()=>{aborted=true;},{once:true});
+    await new Promise(resolve=>{release=resolve;});
+    return {status:'completed',result:'done'};
+  }},{concurrency:1,leaseSeconds:6});
+  try{
+    await scheduler.tick();
+    await waitFor(()=>typeof release==='function');
+    await waitFor(()=>renewals>=1,4000);
+    await waitFor(()=>renewals>=2,2000);
+    assert.equal(aborted,false,'one failed renewal must not interrupt an otherwise live task');
+    release();
+    await waitFor(()=>finished);
+  }finally{
+    release?.();
+    await scheduler.stop();
+  }
+});

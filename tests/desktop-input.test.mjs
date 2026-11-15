@@ -67,6 +67,25 @@ test('desktop typing uses xdotool stdin so typed values are not placed in comman
   assert.throws(() => typeDesktop(spawnProcess, 'bad\u0000value'), /input is invalid/);
 });
 
+test('desktop typing times out and kills a stuck xdotool process before releasing the action gate', async () => {
+  const signals=[],gate=createDesktopActionGate();
+  let childExited=false;
+  const spawnProcess=()=>{
+    const child=new EventEmitter();
+    child.stdin=new PassThrough();
+    child.kill=signal=>{
+      signals.push(signal);
+      if(signal==='SIGKILL')setImmediate(()=>{childExited=true;child.emit('close',null,'SIGKILL');});
+      return true;
+    };
+    return child;
+  };
+  const first=gate(()=>assert.rejects(typeDesktop(spawnProcess,'hello',{timeoutMs:5,killGraceMs:5}),/keyboard input timed out/));
+  const second=gate(()=>assert.equal(childExited,true,'the next global desktop action must wait for the timed-out child to exit'));
+  await Promise.all([first,second]);
+  assert.deepEqual(signals,['SIGTERM','SIGKILL']);
+});
+
 test('desktop key mapping uses the Linux X key names', async () => {
   const calls = [];
   const run = async (...args) => calls.push(args);

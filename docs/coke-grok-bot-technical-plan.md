@@ -3112,6 +3112,16 @@ Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无
 
 补审下一个五秒窗口的 125 帧及五张联系图；独立重解码确认全部 PTS、YUV 像素哈希和联系图哈希匹配。全屏 Computer 交接视图与其证据边界见 `research/README.md`；电脑内站点/应用内容不作为产品参考。连续覆盖推进至 27:34.960（41,375 帧），下一窗口为 27:35.000。本段不构成本项目端到端验收。
 
+#### 2026-11-15 云电脑和任务队列卡顿排查
+
+以 xAI 官方[电脑与应用文档](https://docs.x.ai/grok-bot/computer-and-apps)和[故障排查文档](https://docs.x.ai/grok-bot/troubleshooting)为行为基准：每个 Bot 有独立屏幕，同一 Bot 同一时刻只运行一个 computer-use task；不同 Bot 可以在各自屏幕并行。官方故障说明也指出，当前屏幕任务可能需要完成或被重定向后，下一任务才能开始。公开文档描述的是用户可见行为，没有公开其内部调度器实现，因此不能把推测说成 xAI 内部根因。
+
+本轮只读 K3D 快照中，Auth、Broker、3 个 Agent 和 3 个 Desktop 均为 Ready，未见 Warning 事件；节点内存约 4.7 GiB/59%，Desktop 使用约 647–1,199 MiB，单 Pod limit 为 2 GiB。该快照没有证明历史卡顿由资源耗尽造成。源码确认两条可复现风险：第一，所有屏幕共用 `desktopActionGate` 串行化 X11 输入和焦点切换，但 `typeDesktop()` 的 `xdotool` 子进程此前无超时；一个不退出的输入进程会一直占用全局锁，堵住其他屏幕的物理输入和接管切换。第二，`RunScheduler` 将租约续期的一次异常立即视为租约丢失并 abort；执行器随后进入 `unknown/pending`，而 `queuedScreens()` 会跳过仍有该状态的 Bot 屏幕，故该 Bot 后续任务会一直排队等待核对。这两项是已确认的代码风险，不证明它们造成了此前每一条历史卡顿。
+
+唯一功能分支 `codex/grok-runtime-stability` 已修复以上两项：桌面文字输入增加超时，超时先发 SIGTERM、宽限后发 SIGKILL，并等待子进程 close 后才释放全局输入锁；租约续期现在有单次请求超时，暂时性错误在租约安全余量内快速重试，续期明确返回 false 或重试耗尽至安全余量时才中止执行。确定租约丢失后仍保留 `Outcome unknown`，不自动重放可能有外部副作用的任务。原有每 Bot 单任务串行不变。
+
+当前调度器和 Agent runtime 的并行上限均为 2；这会使超过两个的任务真实排队，不等于卡死。Desktop Pod 的 2 GiB 限额与并行 Browser/Computer 页面资源尚未做压力曲线，因此本轮不盲目提高并发上限。对应无 MySQL 依赖回归用例 12/12 通过，`npm run build:deployment` 与 `git diff --check` 通过。以上为本机源码和构建证据；尚未做云电脑压力测试、部署、公网 Computer Use 验收或证明先前所有卡顿均已解决。
+
 #### 2026-11-15 官方行为文档复核
 
 复核 xAI 官方[概览](https://docs.x.ai/grok-bot/overview)、[聊天与协作](https://docs.x.ai/grok-bot/chat-and-collaboration)、[电脑与应用](https://docs.x.ai/grok-bot/computer-and-apps)及[文件与结果](https://docs.x.ai/grok-bot/files-and-results)。当前行为规格记录在 `research/README.md`：可编辑的语音听写草稿；单 Bot 实时语音与通话后转录；2–6 Bot 群聊、`@` 路由和异步交接；每位用户持久且由个人 Bots 共享文件/登录态的电脑、每 Bot 独立屏幕；右侧电脑预览、登录/真人验证接管和聊天结果媒体卡。官方文档只定义行为预期，不证明当前候选代码或公网部署已实现；视觉外观仍以官方客户端和逐帧视频证据核对，运行能力仍须真实端到端验收。

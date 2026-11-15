@@ -59,19 +59,36 @@ export async function clickDesktop(run, bounds, x, y) {
   await run('xdotool', ['mousemove', '--sync', String(bounds.left + x), String(bounds.top + y), 'click', '1'], { timeout: 5_000 });
 }
 
-export function typeDesktop(spawnProcess, text) {
+export function typeDesktop(spawnProcess, text, { timeoutMs = 10_000, killGraceMs = 1_000 } = {}) {
   if (typeof text !== 'string' || text.length > 2_000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) throw new Error('Desktop input is invalid');
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || !Number.isSafeInteger(killGraceMs) || killGraceMs < 1) throw new Error('Desktop keyboard timeout is invalid');
   return new Promise((resolve, reject) => {
     const child = spawnProcess('xdotool', ['type', '--clearmodifiers', '--delay', '1', '--file', '-'], { stdio: ['pipe', 'ignore', 'ignore'] });
-    let settled = false;
+    let settled = false, failure, timeout, killTimeout;
+    const clearTimers = () => {
+      if (timeout) clearTimeout(timeout);
+      if (killTimeout) clearTimeout(killTimeout);
+    };
     const finish = error => {
       if (settled) return;
       settled = true;
+      clearTimers();
       if (error) reject(error); else resolve();
     };
-    child.once('error', () => finish(new Error('Desktop keyboard input failed')));
-    child.once('close', code => finish(code === 0 ? undefined : new Error('Desktop keyboard input failed')));
-    child.stdin.once('error', () => finish(new Error('Desktop keyboard input failed')));
+    const terminate = error => {
+      if (failure) return;
+      failure = error;
+      try { child.kill('SIGTERM'); } catch { /* Wait for close, then report the original failure. */ }
+      killTimeout = setTimeout(() => {
+        try { child.kill('SIGKILL'); } catch { /* The child may already have exited. */ }
+      }, killGraceMs);
+    };
+    timeout = setTimeout(() => {
+      terminate(new Error('Desktop keyboard input timed out'));
+    }, timeoutMs);
+    child.once('error', () => terminate(new Error('Desktop keyboard input failed')));
+    child.once('close', code => finish(failure || (code === 0 ? undefined : new Error('Desktop keyboard input failed'))));
+    child.stdin.once('error', () => terminate(new Error('Desktop keyboard input failed')));
     child.stdin.end(text, 'utf8');
   });
 }

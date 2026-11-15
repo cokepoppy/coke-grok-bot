@@ -49,14 +49,37 @@ export class RunScheduler {
     }
   }
   private async execute(screen:RunScreenScope, claim:{run:AgentRun;leaseId:string}, abort:AbortController):Promise<void> {
-    let renewing = false, leaseLost = false;
-    const timer = setInterval(() => {
-      if (renewing || leaseLost) return;
+    const leaseMs=this.options.leaseSeconds*1000;
+    const renewIntervalMs=Math.max(1000,Math.floor(leaseMs/3));
+    const renewTimeoutMs=Math.max(250,Math.min(5000,Math.floor(renewIntervalMs/2)));
+    const leaseSafetyMs=Math.max(1000,Math.floor(leaseMs*0.1));
+    let renewing = false, leaseLost = false, lastLeaseConfirmationAt=Date.now();
+    let retryTimer:ReturnType<typeof setTimeout>|undefined;
+    const renewLease=async():Promise<void>=>{
+      if(renewing||leaseLost||abort.signal.aborted)return;
+      if(retryTimer){clearTimeout(retryTimer);retryTimer=undefined;}
       renewing = true;
-      void this.store.renew(claim.run.id,claim.leaseId,this.options.leaseSeconds).then(ok => {
-        if (!ok) { leaseLost = true; abort.abort(); }
-      }).catch(() => { leaseLost = true; abort.abort(); }).finally(() => { renewing = false; });
-    }, Math.max(1000, Math.floor(this.options.leaseSeconds * 1000 / 3)));
+      let timeout:ReturnType<typeof setTimeout>|undefined;
+      try {
+        const timedRenewal=new Promise<never>((_resolve,reject)=>{
+          timeout=setTimeout(()=>reject(new Error('Lease renewal timed out')),renewTimeoutMs);
+          timeout.unref();
+        });
+        const renewed=await Promise.race([this.store.renew(claim.run.id,claim.leaseId,this.options.leaseSeconds),timedRenewal]);
+        if(abort.signal.aborted)return;
+        if(!renewed){leaseLost=true;abort.abort();return;}
+        lastLeaseConfirmationAt=Date.now();
+      } catch {
+        const remainingMs=leaseMs-(Date.now()-lastLeaseConfirmationAt);
+        if(remainingMs<=leaseSafetyMs){leaseLost=true;abort.abort();return;}
+        retryTimer=setTimeout(()=>{retryTimer=undefined;void renewLease();},Math.min(1000,Math.max(100,remainingMs-leaseSafetyMs)));
+        retryTimer.unref();
+      } finally {
+        if(timeout)clearTimeout(timeout);
+        renewing=false;
+      }
+    };
+    const timer = setInterval(() => { void renewLease(); }, renewIntervalMs);
     timer.unref();
     try {
       if(claim.run.botId!==screen.botId)throw new Error('Claimed run does not match its Bot screen');
@@ -69,7 +92,10 @@ export class RunScheduler {
       // The executor might already have performed an external side effect. Do not repeat it.
       const executionAudit=error instanceof RunDiagnosticError?error.executionAudit:undefined;
       await this.store.markUnknown(claim.run.id,claim.leaseId,safeRunDiagnosticCode(error),executionAudit).catch(() => undefined);
-    } finally { clearInterval(timer); }
+    } finally {
+      clearInterval(timer);
+      if(retryTimer)clearTimeout(retryTimer);
+    }
   }
   async stop():Promise<void> {
     this.stopped = true;
