@@ -3138,4 +3138,4 @@ Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无
 
 追加代码审查发现另一个明确的全屏锁滞留路径：桌面 click/type/press 在拿到 `desktopActionGate` 后才解析 CDP Bot 页面，而 `bringToFront()` 未受 RendererHealth 的 3 秒超时保护。页面解析或聚焦若不返回，会占着跨 Bot 共用的物理桌面锁。分支修复为先解析页面再取锁，并只对页面聚焦套现有 RendererHealth；聚焦超时会走现有 Chromium 恢复路径，后续 X11 输入不会误发。截图聚焦也使用同一个健康保护。此原因由代码确认，但没有证据证明它造成某一条历史运行卡住。
 
-同一只读快照节点容量约 7.75 GiB、最新检查实际使用 4.79 GiB（61%）、`MemoryPressure=False`；三个 Desktop 各约 0.9 GiB。它提示单 Pod 2 GiB limit 下的浏览器资源余量仍应监控，但当前快照不支持“节点整体内存耗尽”。旧版本已有的 X11 输入子进程超时与租约重试修复、截图轮询/合并优化均已推送；本次新增的 CDP 聚焦保护与页面解析移锁通过 `node --check`、`git diff --check`、`npm run build:deployment`，定向 `tests/desktop-input.test.mjs` 11/11 通过。该分支仍未部署、合并或做公网 Browser/Computer Use 验收。
+同一只读快照节点容量约 7.75 GiB、最新检查实际使用约 4.79 GiB（61%）、`MemoryPressure=False`；三个 Desktop 各约 0.9 GiB。它提示单 Pod 2 GiB limit 下的浏览器资源余量仍应监控，但当前快照不支持“节点整体内存耗尽”。旧版本已有的 X11 输入子进程超时与租约重试修复、截图轮询/合并优化均已推送；本次新增的 CDP 聚焦保护与页面解析移锁通过 `node --check`、`git diff --check`、`npm run build:deployment`，定向 `tests/desktop-input.test.mjs` 11/11 通过，`npm run test:runtime` 204/204 通过。该分支仍未部署、合并或做公网 Browser/Computer Use 验收。
