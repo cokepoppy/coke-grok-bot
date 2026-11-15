@@ -8,11 +8,19 @@ export class ActiveTabResolutionError extends Error {
   constructor() { super('The active Chrome tab could not be identified safely'); this.name = 'ActiveTabResolutionError'; this.code = 'ACTIVE_TAB_UNRESOLVED'; }
 }
 
+export class BotScreenAllocationTimeoutError extends Error {
+  constructor(timeoutMs) { super(`Bot screen allocation timed out after ${timeoutMs} ms`); this.name = 'BotScreenAllocationTimeoutError'; this.code = 'BOT_SCREEN_ALLOCATION_TIMEOUT'; }
+}
+
+export class BotScreenAllocationSupersededError extends Error {
+  constructor() { super('Bot screen allocation was superseded by computer recovery'); this.name = 'BotScreenAllocationSupersededError'; this.code = 'BOT_SCREEN_ALLOCATION_SUPERSEDED'; }
+}
+
 /** Separate Bot browser windows inside one persistent browser context/profile. */
 export class BotScreenPages {
   constructor(contextProvider, options = {}) {
-    const { marker = 'coke-grok-screen:', layout = { width: 1440, height: 900, slots: 1, stride: 1472 }, createWindow, placeWindow, getWindowId = browserWindowId, getTargetId = browserTargetId, getActiveTarget = noActiveTarget, getFocusedWindow = noFocusedWindow } = options;
-    if (typeof contextProvider !== 'function' || typeof marker !== 'string' || !marker || !Number.isSafeInteger(layout?.slots) || layout.slots < 1 || layout.slots > 16 || !Number.isSafeInteger(layout.width) || !Number.isSafeInteger(layout.height) || typeof getWindowId !== 'function' || typeof getTargetId !== 'function' || typeof getActiveTarget !== 'function' || typeof getFocusedWindow !== 'function') throw new Error('Invalid Bot screen page manager');
+    const { marker = 'coke-grok-screen:', layout = { width: 1440, height: 900, slots: 1, stride: 1472 }, createWindow, placeWindow, getWindowId = browserWindowId, getTargetId = browserTargetId, getActiveTarget = noActiveTarget, getFocusedWindow = noFocusedWindow, allocationTimeoutMs = 15_000 } = options;
+    if (typeof contextProvider !== 'function' || typeof marker !== 'string' || !marker || !Number.isSafeInteger(layout?.slots) || layout.slots < 1 || layout.slots > 16 || !Number.isSafeInteger(layout.width) || !Number.isSafeInteger(layout.height) || !Number.isSafeInteger(allocationTimeoutMs) || allocationTimeoutMs < 1 || typeof getWindowId !== 'function' || typeof getTargetId !== 'function' || typeof getActiveTarget !== 'function' || typeof getFocusedWindow !== 'function') throw new Error('Invalid Bot screen page manager');
     this.contextProvider = contextProvider;
     this.marker = marker;
     this.layout = layout;
@@ -25,9 +33,12 @@ export class BotScreenPages {
     this.pages = new Map();
     this.slots = new Map();
     this.pending = new Map();
+    this.allocationTimeoutMs = allocationTimeoutMs;
+    this.generation = 0;
     this.boundPages = new WeakSet();
     this.windowIds = new WeakMap();
     this.allocation = Promise.resolve();
+    this.generationSignal = new Promise(resolve => { this.resolveGeneration = resolve; });
   }
 
   bind(page, markerValue) {
@@ -57,7 +68,9 @@ export class BotScreenPages {
       return cached;
     }
     if (this.pending.has(screenId)) return this.pending.get(screenId);
-    const pending = this.allocate(screenId).finally(() => {
+    const generation = this.generation;
+    let pending;
+    pending = this.allocate(screenId, generation).finally(() => {
       if (this.pending.get(screenId) === pending) this.pending.delete(screenId);
     });
     this.pending.set(screenId, pending);
@@ -129,83 +142,121 @@ export class BotScreenPages {
     return id;
   }
 
-  async allocate(screenId) {
+  assertGeneration(generation) {
+    if (generation !== this.generation) throw new BotScreenAllocationSupersededError();
+  }
+
+  async allocate(screenId, generation) {
     let release;
     const previous = this.allocation;
+    const generationSignal = this.generationSignal;
     this.allocation = new Promise(resolve => { release = resolve; });
-    await previous;
+    let timer;
     try {
-      const cached = this.pages.get(screenId);
-      if (cached && !cached.isClosed()) return cached;
-      if (cached) {
-        this.pages.delete(screenId);
-        this.slots.delete(screenId);
+      await Promise.race([previous, generationSignal.then(() => { throw new BotScreenAllocationSupersededError(); })]);
+      this.assertGeneration(generation);
+      const allocation = this.allocatePage(screenId, generation);
+      const deadline = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new BotScreenAllocationTimeoutError(this.allocationTimeoutMs)), this.allocationTimeoutMs);
+      });
+      try {
+        return await Promise.race([allocation, deadline]);
+      } catch (error) {
+        if (error instanceof BotScreenAllocationTimeoutError && this.generation === generation) this.clear();
+        throw error;
+      } finally {
+        if (timer) clearTimeout(timer);
       }
-      const context = await this.contextProvider();
-      const pages = context.pages();
-      const openPages = new Set(pages.filter(page => !page.isClosed()));
-      const mappedPages = new Set();
-      for (const [id, page] of this.pages) {
-        if (page.isClosed() || !openPages.has(page)) {
-          this.pages.delete(id);
-          this.slots.delete(id);
-          continue;
-        }
-        mappedPages.add(page);
-        const mappedSlot = this.slots.get(id);
-        if (Number.isSafeInteger(mappedSlot)) await page.evaluate(value => { window.name = value; }, `${this.marker}${id}:${mappedSlot}`).catch(() => {});
+    } finally { release(); }
+  }
+
+  async allocatePage(screenId, generation) {
+    this.assertGeneration(generation);
+    const cached = this.pages.get(screenId);
+    if (cached && !cached.isClosed()) return cached;
+    if (cached) {
+      this.pages.delete(screenId);
+      this.slots.delete(screenId);
+    }
+    const context = await this.contextProvider();
+    this.assertGeneration(generation);
+    const pages = context.pages();
+    const openPages = new Set(pages.filter(page => !page.isClosed()));
+    const mappedPages = new Set();
+    for (const [id, page] of this.pages) {
+      if (page.isClosed() || !openPages.has(page)) {
+        this.pages.delete(id);
+        this.slots.delete(id);
+        continue;
       }
-      const markerValuePrefix = `${this.marker}${screenId}:`;
-      for (const page of pages) {
-        if (page.isClosed()) continue;
-        let name;
-        try {
-          name = await page.evaluate(() => window.name);
-        } catch { /* A closing page cannot be assigned to a screen. */ }
-        if (typeof name !== 'string' || !name.startsWith(markerValuePrefix)) continue;
-        const slot = Number(name.slice(markerValuePrefix.length));
-        if (!Number.isSafeInteger(slot) || slot < 0 || slot >= this.layout.slots) throw new Error('Bot screen slot state is invalid');
-        if ([...this.slots.entries()].some(([id, occupied]) => id !== screenId && occupied === slot)) throw new Error('Bot screen slots are duplicated');
-        this.bind(page, name);
-        await this.place(page, slot);
-        this.pages.set(screenId, page);
-        this.slots.set(screenId, slot);
-        return page;
-      }
-      const occupied = new Set(this.slots.values());
-      for (const candidate of pages) {
-        if (candidate.isClosed()) continue;
-        let name;
-        try {
-          name = await candidate.evaluate(() => window.name);
-        } catch { /* A closing page cannot occupy a desktop slot. */ }
-        if (typeof name !== 'string' || !name.startsWith(this.marker)) continue;
-        const suffix = name.slice(this.marker.length);
-        const split = suffix.lastIndexOf(':');
-        if (split < 0 || !uuid.test(suffix.slice(0, split))) continue;
-        const slot = Number(suffix.slice(split + 1));
-        if (!Number.isSafeInteger(slot) || slot < 0 || slot >= this.layout.slots) throw new Error('Bot screen slot state is invalid');
-        occupied.add(slot);
-      }
-      const slot = Array.from({ length: this.layout.slots }, (_, index) => index).find(index => !occupied.has(index));
-      if (slot === undefined) throw new BotScreenCapacityError();
-      let page = null;
-      if (pages.length === 1 && !pages[0].isClosed() && !mappedPages.has(pages[0])) {
-        try {
-          const name = await pages[0].evaluate(() => window.name);
-          if (!name || !String(name).startsWith(this.marker)) page = pages[0];
-        } catch { /* A closing page cannot be assigned to a screen. */ }
-      }
-      if (!page && typeof this.createWindow === 'function') page = await this.createWindow(context, this.bounds(slot));
-      if (!page) page = await context.newPage();
-      const markerValue = `${this.marker}${screenId}:${slot}`;
-      this.bind(page, markerValue);
+      mappedPages.add(page);
+      const mappedSlot = this.slots.get(id);
+      if (Number.isSafeInteger(mappedSlot)) await page.evaluate(value => { window.name = value; }, `${this.marker}${id}:${mappedSlot}`).catch(() => {});
+      this.assertGeneration(generation);
+    }
+    const markerValuePrefix = `${this.marker}${screenId}:`;
+    for (const page of pages) {
+      if (page.isClosed()) continue;
+      let name;
+      try {
+        name = await page.evaluate(() => window.name);
+      } catch { /* A closing page cannot be assigned to a screen. */ }
+      this.assertGeneration(generation);
+      if (typeof name !== 'string' || !name.startsWith(markerValuePrefix)) continue;
+      const slot = Number(name.slice(markerValuePrefix.length));
+      if (!Number.isSafeInteger(slot) || slot < 0 || slot >= this.layout.slots) throw new Error('Bot screen slot state is invalid');
+      if ([...this.slots.entries()].some(([id, occupied]) => id !== screenId && occupied === slot)) throw new Error('Bot screen slots are duplicated');
+      this.bind(page, name);
       await this.place(page, slot);
-      await page.evaluate(value => { window.name = value; }, markerValue);
+      this.assertGeneration(generation);
       this.pages.set(screenId, page);
       this.slots.set(screenId, slot);
       return page;
-    } finally { release(); }
+    }
+    const occupied = new Set(this.slots.values());
+    for (const candidate of pages) {
+      if (candidate.isClosed()) continue;
+      let name;
+      try {
+        name = await candidate.evaluate(() => window.name);
+      } catch { /* A closing page cannot occupy a desktop slot. */ }
+      this.assertGeneration(generation);
+      if (typeof name !== 'string' || !name.startsWith(this.marker)) continue;
+      const suffix = name.slice(this.marker.length);
+      const split = suffix.lastIndexOf(':');
+      if (split < 0 || !uuid.test(suffix.slice(0, split))) continue;
+      const slot = Number(suffix.slice(split + 1));
+      if (!Number.isSafeInteger(slot) || slot < 0 || slot >= this.layout.slots) throw new Error('Bot screen slot state is invalid');
+      occupied.add(slot);
+    }
+    const slot = Array.from({ length: this.layout.slots }, (_, index) => index).find(index => !occupied.has(index));
+    if (slot === undefined) throw new BotScreenCapacityError();
+    let page = null;
+    if (pages.length === 1 && !pages[0].isClosed() && !mappedPages.has(pages[0])) {
+      let name;
+      try {
+        name = await pages[0].evaluate(() => window.name);
+      } catch { /* A closing page cannot be assigned to a screen. */ }
+      this.assertGeneration(generation);
+      if (!name || !String(name).startsWith(this.marker)) page = pages[0];
+    }
+    if (!page && typeof this.createWindow === 'function') {
+      page = await this.createWindow(context, this.bounds(slot));
+      this.assertGeneration(generation);
+    }
+    if (!page) {
+      page = await context.newPage();
+      this.assertGeneration(generation);
+    }
+    const markerValue = `${this.marker}${screenId}:${slot}`;
+    this.bind(page, markerValue);
+    await this.place(page, slot);
+    this.assertGeneration(generation);
+    await page.evaluate(value => { window.name = value; }, markerValue);
+    this.assertGeneration(generation);
+    this.pages.set(screenId, page);
+    this.slots.set(screenId, slot);
+    return page;
   }
 
   bounds(slot) {
@@ -224,6 +275,11 @@ export class BotScreenPages {
   }
 
   clear() {
+    const resolveGeneration = this.resolveGeneration;
+    this.generation += 1;
+    this.generationSignal = new Promise(resolve => { this.resolveGeneration = resolve; });
+    this.allocation = Promise.resolve();
+    resolveGeneration?.();
     this.pages.clear();
     this.slots.clear();
     this.pending.clear();

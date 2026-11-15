@@ -8,7 +8,7 @@ import { chromium } from 'playwright-core';
 import { pathToFileURL } from 'node:url';
 import { BrowserContextNotReadyError, getBrowserPage, waitForDefaultBrowserContext } from './browser-context.mjs';
 import { createRendererHealthMonitor, RendererUnresponsiveError } from './renderer-health.mjs';
-import { ActiveTabResolutionError, BotScreenCapacityError, BotScreenPages } from './bot-screen-pages.mjs';
+import { ActiveTabResolutionError, BotScreenAllocationSupersededError, BotScreenAllocationTimeoutError, BotScreenCapacityError, BotScreenPages } from './bot-screen-pages.mjs';
 import { createDesktopScreenLayout, parseDesktopScreenSlots } from './desktop-screen-layout.mjs';
 import { captureOwnedDesktopScreen, clickDesktop, createDesktopActionGate, createScreenCaptureCoalescer, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from './desktop-input.mjs';
 import { ensureSharedComputerRoots } from './shared-computer-root.mjs';
@@ -745,15 +745,17 @@ http.createServer(async (req, res) => {
     }
     const contextUnavailable = error instanceof BrowserContextNotReadyError;
     const rendererUnresponsive = error instanceof RendererUnresponsiveError;
+    const screenAllocationTimeout = error instanceof BotScreenAllocationTimeoutError;
+    const screenAllocationSuperseded = error instanceof BotScreenAllocationSupersededError;
     const screenCapacity = error instanceof BotScreenCapacityError;
     const activeTabUnresolved = error instanceof ActiveTabResolutionError;
-    if (rendererUnresponsive) {
+    if (rendererUnresponsive || screenAllocationTimeout) {
       rendererHealth.fail();
       void recoverChromium();
     }
-    return send(res, contextUnavailable || rendererUnresponsive || screenCapacity || activeTabUnresolved ? 503 : 400, {
+    return send(res, contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved ? 503 : 400, {
       error: message.slice(0, 240),
-      ...(contextUnavailable || rendererUnresponsive || screenCapacity || activeTabUnresolved ? { code: error.code } : {}),
+      ...(contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved ? { code: error.code } : {}),
     });
   }
 }).listen(port, '0.0.0.0', () => process.stdout.write(`Dots desktop worker listening on ${port}\n`));

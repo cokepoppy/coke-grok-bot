@@ -3141,3 +3141,7 @@ Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无
 同一只读快照节点容量约 7.75 GiB、最新检查实际使用约 4.79 GiB（61%）、`MemoryPressure=False`；三个 Desktop 各约 0.9 GiB。它提示单 Pod 2 GiB limit 下的浏览器资源余量仍应监控，但当前快照不支持“节点整体内存耗尽”。旧版本已有的 X11 输入子进程超时与租约重试修复、截图轮询/合并优化均已推送；本次新增的 CDP 聚焦保护与页面解析移锁通过 `node --check`、`git diff --check`、`npm run build:deployment`，定向 `tests/desktop-input.test.mjs` 11/11 通过，`npm run test:runtime` 204/204 通过。该分支仍未部署、合并或做公网 Browser/Computer Use 验收。
 
 从功能分支 HEAD `47ee7dd` 构建了本机 Docker 候选 `coke-grok-desktop:candidate-screen-contention-20261115`，镜像 digest `sha256:5ed9116deaf18e284be6cf2f980e7ec780339521ab0eb48cb9b7fd63c4dfac4f`，linux/arm64，Docker build context 677 KB。没有创建容器或导入 K3D；K3D 仍运行旧的 Agent/desktop 镜像。只读统计见一个电脑 screen 的 owner 为 `user`，但无法把该 screen 安全映射到北交所 Tester，因此未重启或滚动更新任何共享 Pod。公网入口的 HTTP 200 不是端到端证据。
+
+后续代码审查确认 `BotScreenPages.allocate()` 也会串行占用跨 Bot 的页面分配队列；旧实现没有超时，CDP 页面扫描或窗口创建若一直不返回，会让后续 Bot 屏幕创建全部等待。新增 15 秒**持锁操作超时**：超时后失效当前分配代际、释放逻辑队列，并触发现有 Chromium 单例恢复；等待者得到 `BOT_SCREEN_ALLOCATION_SUPERSEDED`，不会各自触发恢复；迟到的旧 CDP 结果不能覆盖新页面映射。计时从真正持有分配锁时开始，不计算正常排队时间，避免多 Bot 依次初始化超过 15 秒时误重启。定向测试覆盖卡死恢复、迟到结果隔离和健康分配排队 385 ms（超过测试超时）的情形；`tests/bot-screen-pages.test.mjs` 11/11、`npm run test:runtime` 206/206、`npm run build:deployment`、`node --check` 与 `git diff --check` 通过。
+
+更新后的本机候选镜像仍使用 `coke-grok-desktop:candidate-screen-contention-20261115`，digest `sha256:f4b5cc2cc390303c61f157d2debcc8561f420d55c8e3bbe18c66bfe0519ce27b`，linux/arm64，镜像约 913 MB。只构建了镜像，没有新建容器、导入 K3D 或重启任何电脑；此补丁还没有部署，也没有公网 Computer Use 压力验收，因此只能确认代码级死锁恢复路径和本机构建，不代表线上卡顿已解决。
