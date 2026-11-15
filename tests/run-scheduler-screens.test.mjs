@@ -8,6 +8,8 @@ async function waitFor(check) {
   throw new Error('Timed out waiting for the Bot screen scheduler');
 }
 
+function deferred(){let resolve;const promise=new Promise(done=>{resolve=done;});return{promise,resolve};}
+
 test('run scheduler locks each Bot screen while allowing same-user screens to overlap', async () => {
   const tenantId=randomUUID(),userId=randomUUID(),botA=randomUUID(),botB=randomUUID();
   const queues=new Map([[botA,[randomUUID(),randomUUID()]],[botB,[randomUUID()]]]);
@@ -42,6 +44,75 @@ test('run scheduler locks each Bot screen while allowing same-user screens to ov
     for (const release of releases.values()) release();
     await scheduler.stop();
   }
+});
+
+test('a pending claim on one Bot screen does not block later screens or future scans', async () => {
+  const tenantId=randomUUID(),userId=randomUUID(),botA=randomUUID(),botB=randomUUID(),botC=randomUUID();
+  const scopes=[botA,botB,botC].map(botId=>({tenantId,userId,botId}));
+  const running=new Set(),completed=new Set(),runToBot=new Map(),started=[],releases=new Map(),aClaim=deferred();
+  let claimsForA=0;
+  const store={
+    async queuedScreens(){return scopes.filter(scope=>!running.has(scope.botId)&&!completed.has(scope.botId));},
+    async claimNext(scope){
+      if(scope.botId===botA){claimsForA++;return aClaim.promise;}
+      if(running.has(scope.botId)||completed.has(scope.botId))return null;
+      running.add(scope.botId);
+      const runId=randomUUID();runToBot.set(runId,scope.botId);
+      return{run:{id:runId,botId:scope.botId,prompt:'test',status:'running',files:[]},leaseId:randomUUID()};
+    },
+    async renew(){return true;},
+    async finish(runId){const botId=runToBot.get(runId);running.delete(botId);completed.add(botId);return true;},
+    async markUnknown(){return true;},
+  };
+  const executor={execute(scope,run){started.push(scope.botId);return new Promise(resolve=>releases.set(scope.botId,()=>resolve({status:'completed',result:'done'})));}};
+  const scheduler=new RunScheduler(store,executor,{concurrency:2,leaseSeconds:60,claimSlowAfterMs:1_000,onClaimEvent(){}});
+  try{
+    await scheduler.tick();
+    await waitFor(()=>started.includes(botB));
+    assert.equal(started.includes(botA),false,'the unresolved first claim must not delay the next Bot');
+    assert.equal(started.includes(botC),false,'pending claim plus active run still consume the two global slots');
+    assert.equal(claimsForA,1,'a pending claim must not be duplicated by another scan');
+
+    releases.get(botB)();
+    await waitFor(()=>completed.has(botB));
+    await scheduler.tick();
+    await waitFor(()=>started.includes(botC));
+    assert.equal(started.includes(botA),false,'a later Bot must progress while the earlier claim remains pending');
+    assert.equal(started.filter(botId=>botId!==botB).length,1,'the scheduler must keep the global concurrency limit');
+
+    const runId=randomUUID();
+    aClaim.resolve({run:{id:runId,botId:botA,prompt:'test',status:'running',files:[]},leaseId:randomUUID()});
+    running.add(botA);runToBot.set(runId,botA);
+    await waitFor(()=>started.includes(botA));
+    releases.get(botA)();
+    releases.get(botC)();
+    await waitFor(()=>completed.has(botA)&&completed.has(botC));
+  }finally{
+    if(!started.includes(botA)){const runId=randomUUID();aClaim.resolve({run:{id:runId,botId:botA,prompt:'test',status:'running',files:[]},leaseId:randomUUID()});running.add(botA);runToBot.set(runId,botA);}
+    for(const release of releases.values())release();
+    await scheduler.stop();
+  }
+});
+
+test('a rejected screen claim is logged without details and retried on a later scan', async()=>{
+  const tenantId=randomUUID(),userId=randomUUID(),botId=randomUUID(),runId=randomUUID(),events=[],started=deferred();
+  let claims=0,finished=false;
+  const scope={tenantId,userId,botId};
+  const store={
+    async queuedScreens(){return finished?[]:[scope];},
+    async claimNext(){if(++claims===1)throw new Error('sensitive database details');return{run:{id:runId,botId,prompt:'test',status:'running',files:[]},leaseId:randomUUID()};},
+    async renew(){return true;},async finish(){finished=true;return true;},async markUnknown(){return true;},
+  };
+  const scheduler=new RunScheduler(store,{execute:async()=>{started.resolve();return{status:'completed',result:'done'};}},{concurrency:1,leaseSeconds:60,onClaimEvent:event=>events.push(event)});
+  try{
+    await scheduler.tick();
+    await waitFor(()=>events.some(event=>event.event==='grok_scheduler_claim_failed'));
+    assert.equal(JSON.stringify(events).includes('sensitive database details'),false);
+    await scheduler.tick();
+    await started.promise;
+    await waitFor(()=>finished);
+    assert.equal(claims,2);
+  }finally{await scheduler.stop();}
 });
 
 test('scheduler passes a queue creation cutoff through selection and claim', async () => {
