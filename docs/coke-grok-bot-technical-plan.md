@@ -3161,3 +3161,11 @@ Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无
 #### 2026-11-15 轮询隔离 Auth 镜像候选
 
 使用该分支 `f17c058eca86a42c04f0e8b489dea5d05689ddb4` 构建 ARM64 Auth 镜像 `coke-grok-auth:candidate-poll-loop-isolation-20261115`，manifest list digest 为 `sha256:93c66b975d779cdfbf26fbe2a6cb55272ec74b412df8d4e735547b368ab2f566`，并导入 K3D `tp1121-sandbox-dev` 的唯一 server node。镜像带有匹配分支提交的 revision label。导入后 Auth Deployment 仍是 `candidate-library-files-20261115-r2`，Pod UID `b8c80804-3c02-4e5f-a84b-9947ac894eef` 未变、Ready 1/1、重启数 0；Agent/Desktop 与 PVC 未动，因此目前只是可部署缓存镜像，不是线上修复。Chrome 扩展枚举到公网标签页，但绑定标签页 30 秒超时；原生 Computer Use 同时返回 Mac 已锁。未用 HTTP/API、Playwright、截图或坐标点击替代公网验收，也未重启 Auth 或云电脑。继续前需恢复语义 Computer Use，并先检查在线任务状态。
+
+#### 2026-11-15 轮询隔离候选部署记录
+
+再次恢复 Mac 后，通过 Chrome 原生 Computer Use 成功读取已登录公网 `/grok-bot/`。北交所规则研究员和 E2E Bot 都显示 `Outcome unknown`，开发/运维 Bot 尚无子任务；分别打开两台电脑后均明确显示 `Bot is in control`，没有人类接管或 `Approval requested` 卡。检查后在两条任务上选择 `I checked · continue`，没有直接重放不确定操作。Chrome 控制随后发现 Mac 再次自动锁定；继续用 Computer Use 的前提是由用户解锁。
+
+基于该界面复核，没有可见的 `Working` 任务后，仅滚动 `coke-grok-auth` 到 `coke-grok-auth:candidate-poll-loop-isolation-20261115`（linux/arm64，镜像 ID `sha256:93c66b975d779cdfbf26fbe2a6cb55272ec74b412df8d4e735547b368ab2f566`）。Auth rollout 成功，Deployment generation 138→139，Ready 1/1，候选 Pod 重启 0；Broker 保持原镜像与 generation。7 个 Agent/Desktop Pod 的 UID 集合哈希、`coke-auth` MySQL Pod 与 PVC 的 UID 集合哈希均与部署前相同。未更新 VPS，未重启 Broker、Agent、Desktop 或 MySQL，未改 PVC。
+
+候选发布目录 `releases/candidate-grok-poll-loop-isolation-2026-11-15/` 已加入源码补丁、构建 Auth bundle、压缩镜像、SHA-256、固定镜像清单、仅 Auth 部署/回退脚本和脱敏运行快照。源码回归仍为 poller 2/2、runtime 206/206、MySQL 20/20、TypeScript/build 通过。候选现在已部署但**尚未完成真实公网 Computer Use 任务验收**；部署或 Pod Ready 不代表卡顿已解决。待 Mac 解锁后从该公网页面继续 BSE 多 Bot 任务，不重新派发已由 `I checked · continue` 恢复的任务，避免重复外部操作。
