@@ -1,6 +1,6 @@
 {
   "name": "candidate-grok-runtime-stability-2026-11-15",
-  "status": "candidate-deployed-awaiting-public-browser-acceptance",
+  "status": "candidate-public-browser-acceptance-passed-awaiting-user-acceptance",
   "source": {
     "branch": "codex/grok-poll-loop-isolation",
     "commit": "b8c4b61c61990c64779b086789bb84ab3cb51cd1",
@@ -25,10 +25,11 @@
   },
   "verification": {
     "runtimeTests": "passed 209/209",
+    "runtimeMysqlTests": "passed 20/20 on the existing fixed test MySQL container at 127.0.0.1:13317; container returned to Exited",
     "pollerTests": "passed 2/2",
     "focusedSchedulerAndBrowserPolicy": "passed 42/42",
     "deploymentBuild": "passed",
-    "publicComputerUse": "pending: Computer Use channel disallowed the public Grok Bot URL; no webpage-click E2E is claimed",
+    "publicComputerUse": "passed 2026-11-15 20:42 Asia/Shanghai: signed-in public Grok Bot task ran via Pi deepseek-v4.1-flash; Browser User inspect/navigate/inspect/click/inspect succeeded; BSE Pages fixed boundary checker 5/5 passed; see operations/public-e2e.md",
     "mysqlOrPvcTouched": false,
     "publicHttpPageStatus": 200,
     "publicReadinessStatus": 204

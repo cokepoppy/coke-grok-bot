@@ -3197,3 +3197,33 @@ Developer Bot 只读核对 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`
 项目主管最终汇总仍未完成。主管会话显示 `Queued · waiting for your computer` 和 `Review uncertain task outcome`；打开屏幕只确认 `Bot is in control`，没有看到人类接管状态。点击“我已检查·继续”后输入框曾短暂恢复，随后任务再次进入 review/unknown，输入框重新禁用；没有点 Retry、没有重启电脑，也没有截图。该轮发群消息时，我通过 AX `setValue` 输入了字面文本 `@北交所项目主管`，没有从提及自动补全列表选择 Bot。源码 `src/web/main.tsx` 只有在 `botMentionTokensRef` 解析出已选提及时才会发送 `targetBotIds`；服务端 `src/server/group-chat-store.ts` 在未提供该字段时会为全体群成员建 run。因此随后多个成员显示 Queued/Working 是群聊默认 fan-out 语义，不是已确认的运行故障；本次并未验证 UI 选中提及后的定向收件人请求。主管队列回到 unknown 的根因仍未确认；目前证据不支持归因为 Mac 锁屏、电脑断连或权限审批，需从主管 run/队列/handoff 持久化路径取证。
 
 验收结论：真实公网 Browser User 页面测试通过；北交所现有演示页面无需重复开发，也无证据要求新 PR。**多 Bot 项目群的主管汇总和原始研究 handoff 状态仍未确认，BSE 多 Bot 协作端到端目标未完成**；暂不合并本功能分支或打 checkpoint tag。
+
+#### 2026-11-15 最新运行时候选公网 Computer Use 验收
+
+在 Auth 候选 `coke-grok-auth:candidate-runtime-stability-b8c4b61-20261115` 已部署后（UI 本地时间 20:42），通过公网 `/grok-bot/` 的北交所端到端测试 Bot 发起一条新的直接任务；没有重放旧的 Outcome unknown 任务，也没有发群消息。任务在该 Bot 的云电脑 Chrome 通过 Browser User 打开 `https://c-m-ai-copilot.github.io/coke-bse-trading-demo/` 并真实点击“运行边界校验”一次。执行详情明确显示 `Pi · deepseek-v4.1-flash`，随后 `Browser User · inspect / navigate / inspect / click / inspect` 全部 succeeded；无逐步审批卡。
+
+页面标题为“北证证券终端 · DEMO · 920999 N星澜”，环境“纯前端演示 / 行情 合成 / 网络 0 请求”。固定五项实测结果为：13.00 通过 PASS；13.01 拒绝 PASS；7.00 通过 PASS；6.99 拒绝 PASS；10.00 通过 PASS。页面汇总 5/5，基准均价 ¥10.00、上限 ¥13.00、下限 ¥7.00；任务确认未碰买入/卖出/委托/重置控件、未登录、未截图、未发消息。这一结果验证当前候选上的 Pi/DeepSeek→Browser User→云电脑→公网页面点击路径；它是测试 Bot 的直接任务，不证明原始群 handoff 故障已修复，也没有覆盖零/极小参考价。
+
+验收后只读检查 Mac 本机 K3D：Auth 仍为候选镜像，Pod Ready 1/1、重启 0，imageID 与候选包一致；Broker generation 51 与镜像未变；7 个 Agent/Desktop Pod UID 集合、MySQL Pod 与 PVC UID 集合与发布前记录相同。没有重启云电脑/Broker/MySQL，没有改数据库/PVC/VPS。当前分支源码验证：poller 2/2、scheduler/browser focused 42/42、runtime 209/209、固定测试 MySQL 13317 上 runtime-mysql 20/20、deployment build 通过；测试后原固定测试 MySQL 容器已恢复 Exited。该候选的浏览器验收通过；原始 BSE 多 Bot 研究交接仍为 Outcome unknown，需与直接 Bot 任务结果分开表述。
+
+#### 2026-11-15 BSE Developer Bot GitHub 阻塞复核（22:33 Asia/Shanghai）
+
+通过已登录公网 `/grok-bot/` 查看 Developer Bot 的新实现任务回执：任务在任何写入副作用之前返回 `BLOCKED`，没有建 feature 分支、提交、PR、合并或部署。Bot 自己的云电脑 Chrome 停在 `https://github.com/login`，仓库页显示 `Sign in`；终端 `git ls-remote` 连接 `github.com:443` 失败，raw GitHub 与 Pages 也无法访问，REST 请求另返回共享 IP 403 限流。该任务目录没有仓库副本，且缺少先前的 `receipt-seg2.md` 附件。Bot 未输入或请求任何凭据。
+
+本机 Chrome 的 Computer Use 已恢复，但它只证明本机浏览器可控，不代表 Developer 云电脑已登录或具有终端外网。当前 Developer 屏幕仍显示 `Bot is in control` 和 `Take control`。需要在这台 Bot 的 Computer 上完成 GitHub 登录后再检查 Browser User；终端 Git egress 是独立问题，必须另行验证。登录前不得重试实现，也不得宣称云端 PAT 或本地 `github_pat.txt` 已对 Bot 可用。测试/运维 Bot 的 `Outcome unknown` 仍保留；不重放其任务。该阻塞使 BSE 多 Bot 协作验收继续未完成。
+
+#### 2026-11-15 Agent GitHub 出网隔离根因复核（22:54 Asia/Shanghai）
+
+本机只读诊断确认 GitHub 仓库可从 Mac 访问，Grok Auth 与 Desktop Broker 均 Ready；本机桌面代理桥 `127.0.0.1:17891` 和 Clash `127.0.0.1:7890` 正在监听，Auth 运行环境也具有 `COKE_GROK_DESKTOP_PROXY_SERVER=http://host.docker.internal:17891`。检查的三个现存用户 Agent Deployment 均没有桌面代理或 HTTP(S)_PROXY 环境变量；其中两个 `agent-isolation` NetworkPolicy 仅允许 DNS 和 Auth 模型端口 3002，另一个旧 namespace 还存在一个单独的 host/port egress 例外。当前分支的 `splitDesktopResources` 模板对新 Agent 只生成 DNS 与 Auth egress，且回归测试明确断言 Agent 不接收 Desktop 代理。Developer Bot 的确切 owner namespace 尚未映射，因此这是与终端 GitHub 故障高度一致的隔离根因，但尚未证明该具体任务所用 namespace 的最终策略。该 egress 问题与云电脑 Chrome 是否登录是两个不同问题；Auth、本机代理和 Mac 到仓库的网络当前可用。Cloud Chrome 的登录态仍需在该 Bot 自己的 Computer 完成真人登录后核验。
+
+本次没有修改网络策略、Agent 环境、PAT 或用户 Pod。一个带 `desktop-worker-k3d` 标签的同名测试 namespace 被确认是测试资源，不能作为生产 Bot 身份，也没有对它或生产云电脑运行修改。安全的后续方案应是有明确仓库范围、凭据留在服务端的 GitHub 工具/网关，或单独设计和验证受约束的 egress；不要把通用 Clash 代理直接暴露给可执行任意终端命令的 Agent。Computer Use 本轮只成功枚举 Chrome 标签，随后 `getTab` 与 `getState` 均超时，没有进行网页交互；本机 Computer Use 服务进程仍存在。多 Bot BSE 端到端仍未完成，未知 Tester/Ops 任务保持原状。
+
+#### 2026-11-15 Computer Use 再检与 GitHub 工具缺口（23:04 Asia/Shanghai）
+
+在不关闭 Chrome 的情况下重置 Computer Use 临时 JS 会话后，再次调用 `getState` 仍在 30 秒超时；本机 Computer Use 服务进程可见但不能据此认定控制正常。没有使用截图、原始 CDP、Playwright 或 API 替代公网点击。当前公网 BSE 多 Bot 验收没有新增 UI 证据。
+
+只读代码检索没有找到适用于授权目标 `c-m-ai-copilot/coke-bse-trading-demo` 的分支/文件/提交/PR 工具。仓库内已有 incident-specific `create_incident_pull_request`，但它固定到另一个仓库与既定分支，只创建或复用 PR，不能提交 BSE 代码。Agent 终端仍受上述 egress 隔离；现有 PAT 没有读取内容或注入到 Pod。用户完成开发 Bot 云电脑登录后，先验证能否经 GitHub 网页完成目标仓库的分支、文件编辑、提交与 PR；若 Browser User 不支持这条完整路径，再实现精确限定目标仓库的服务端能力，秘密留在 Agent 与模型之外。当前分支仍是唯一活动分支；没有建新分支、改网络策略、改 PAT 或重启用户云电脑。
+
+#### 2026-11-15 Computer Use 原生 Chrome 恢复（23:19 Asia/Shanghai）
+
+在 23:04 的 `cua.getState()` 超时后，23:19 调用 `cua.getApp("Google Chrome")` 成功返回原生无障碍树；随后用语义控件打开北交所项目群、开发 Bot 私聊和本机 GitHub 仓库标签。本机 GitHub 页面可访问只证明本机浏览器会话，不证明开发 Bot 的独立云电脑已登录或 Agent 容器具备 GitHub 出网。开发 Bot 仍显示 `Bot is in control`，最近任务卡显示未登录阻塞且没有写副作用。没有重放 Tester/Ops 的 unknown 任务，没有截图、坐标点击或 CDP。用户登录交接已发出，等待登录并归还后再继续。
