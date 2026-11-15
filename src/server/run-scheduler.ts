@@ -3,7 +3,6 @@ import type { AgentExecutionAudit } from './execution-audit.ts';
 import { RunDiagnosticError, safeRunDiagnosticCode, type RunDiagnosticCode } from './run-diagnostics.ts';
 
 export interface SchedulerStore {
-  markExpiredUnknown(): Promise<number>;
   queuedScreens(limit: number, queueCreatedAfter?: Date): Promise<RunScreenScope[]>;
   claimNext(screen: RunScreenScope, leaseSeconds: number, queueCreatedAfter?: Date): Promise<{run:AgentRun;leaseId:string}|null>;
   renew(runId:string, leaseId:string, leaseSeconds:number): Promise<boolean>;
@@ -32,7 +31,6 @@ export class RunScheduler {
     try { await tick; } finally { if (this.tickInFlight === tick) this.tickInFlight = null; }
   }
   private async tickOnce():Promise<void> {
-    await this.store.markExpiredUnknown();
     const remaining = this.options.concurrency - this.active.size;
     if (remaining <= 0 || this.stopped) return;
     const screens = await this.store.queuedScreens(Math.min(100, this.options.concurrency * 4),this.options.queueCreatedAfter);

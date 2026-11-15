@@ -3151,3 +3151,9 @@ Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无
 `tests/desktop-worker-k3d.e2e.ts` 过去每次运行都会生成随机租户、namespace、PVC、云电脑和浏览器 fixture，再删除整套资源；这会反复拉起容器并增加 K3D/PVC 生命周期噪声。默认模式现改为复用一个合成测试身份、固定 Bot screen ID、同一个 Desktop Deployment 和 workspace PVC。复用前校验 namespace 与 Secret 的 owner hash 和项目标签；凭据从测试 Secret 读取但不打印、不覆盖；浏览器 fixture 与 PVC 持久复用。旧的一次性模式仅在 `COKE_GROK_DESKTOP_TEST_MODE=ephemeral` 时启用。测试只清理本次随机任务目录并把两个测试屏幕归还给 Agent。
 
 本轮三次连续运行 `npm run test:desktop-worker-k3d` 均通过；后两次复用了同一个 Pod UID `7e486848-9306-4613-96b1-970d499cf52e` 和 Bound workspace PVC UID `4cc9a951-65c5-47ce-925a-74faf86170a9`，未新建 namespace 或 Pod。覆盖两屏并行、共享登录态、真实 Chromium Browser User 点击与文件上传、1440x900 Worker 屏幕、Computer User 键鼠输入、接管时停止 Agent 操作及跨 Bot 隔离；没有调用模型，故不能代替 Pi/DeepSeek 任务验收。定向控制/调度回归 43/43、`npm run test:runtime` 206/206、`npx tsc --noEmit`、`git diff --check` 均通过。测试 namespace `grok-user-b6c851fd5b4fc610966aba5c03018772` 使用候选镜像；它是单独的测试 Worker，不是公网/用户电脑部署。节点 MemoryPressure 为 False，测试后使用约 767 MiB；当前内存利用率约 71%，因此不提高生产并发上限。公网运行仍是旧部署，是否缓解线上卡顿仍需单独部署后验收。
+
+#### 2026-11-15 独立后台轮询候选
+
+后续源码复查发现 `pi-runtime.ts` 把 Routine 派发、RunScheduler 和 Bot handoff 回传串在同一个 `routineTickInFlight` promise 链中。`RoutineStore.dispatchDue()` 与 `BotHandoffStore.deliverReplies()` 会执行 MySQL 事务/查询；任一步长时间等待都会令独立的用户任务调度也完全不触发。该因果关系由当前源码路径确认，但没有证据表明它造成了某一条历史卡顿。
+
+候选改动将 run 调度、Routine 派发、handoff 回传和过期 lease 回收拆成四个互不等待、单组件防重入的轮询器；一项轮询长期未结束或失败时写不含任务文本、用户标识、令牌或原始异常的结构化组件/时长日志，并在下个 interval 重试。过期 lease 回收从 `RunScheduler.tick()` 移出以避免维护事务阻塞普通排队；每 Bot 单任务串行、同租户跨 Bot 并行、并发上限 2、`Outcome unknown` 防止自动重放仍保留。针对“Routine 卡住时普通队列、handoff 和 lease recovery 仍继续”的回归覆盖已补，验证状态以本节后续记录为准。该分支未部署公网；不得以单测或 Pod Ready 声称线上卡顿已解决。
