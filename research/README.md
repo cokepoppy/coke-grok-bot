@@ -5660,3 +5660,17 @@ PTS 1,369,960（22:49.960）已显示橙色头像 `full stack` Bot，聊天区�
 画面持续显示 `full stack` Bot 的欢迎语和“`What would you like me to take off your plate first?`”入门卡，选项为 Meetings、Slack catch-up、Projects and tickets、Code and deploys，另有 `Type your own answer` 输入项；左侧为 Bot/团队导航，中间为对话，底部输入框位于聊天列，右侧 `Computer` 标签下仍是灰色屏幕占位。欢迎语提到已连接应用只是可见文案，灰色占位也不能证明电脑已连接或有任务实际执行。
 
 PTS 1,508,920（25:08.920）画面显示入门卡下方仍为 `Running a few commands`，尚无语音记录行；下一源帧 PTS 1,508,960（25:08.960）出现 `Voice chat · 01:59` 及赞/踩反馈控件。至 25:14.960，屏幕仍显示 `Running a few commands`，未观察到最终回答或电脑操作结果。转场前后两张原尺寸帧、源 PTS/YUV 像素哈希和 PNG 哈希保存在 `research/frames/grok-201-2508-920-960-voice-chat-end-transition-keyframes-20261115/manifest.json`。讲解者小窗属于视频叠层，不是产品 UI。V2 连续逐帧覆盖推进至 25:14.960（37,875 帧），下一窗口从 25:15.000 开始；本段记录的是视频可见状态，不替代本项目的视觉对比或真实运行验收。
+
+### Grok Bot 201 V2 连续逐帧续审：25:15.000–25:34.960（2026-11-15）
+
+接续审阅官方 [Grok Bot 201](https://www.youtube.com/watch?v=rOVomdnWhjQ) 的四个连续五秒窗口：25:15–25:20、25:20–25:25、25:25–25:30、25:30–25:35。共 500 个 1920×1080、25 fps 源帧、20 张 5×5 联系图，PTS 1,515,000–1,534,960。完整源 MKV SHA-256 为 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。四窗分别独立重解码复核：每窗 125/125 个 PTS、`yuv420p` 像素字节数及哈希匹配，5/5 张联系图 SHA-256 匹配。证据目录为 `research/frames/grok-201-2515-2520-compact-audit-20261115/`、`grok-201-2520-2525-compact-audit-20261115/`、`grok-201-2525-2530-compact-audit-20261115/`、`grok-201-2530-2535-compact-audit-20261115/`；均仅保留联系图和逐帧 manifest。
+
+| 时间码 / PTS | 逐帧观察 | 证据边界 |
+| --- | --- | --- |
+| 25:15.000–25:17.360 / 1,515,000–1,517,360 | 新 Bot 对话显示欢迎语与偏好卡：Meetings、Slack catch-up、Projects and tickets、Code and deploys、`Type your own answer`；右侧 `Computer` 选中但屏幕为灰色占位。任务状态为 `Connecting the dots`。 | 是录屏中可见的工作区状态；灰色占位不证明云电脑在线。 |
+| 25:17.360–25:17.400 / 1,517,360–1,517,400 | 相邻源帧间隔 40 ms：状态从 `Connecting the dots` 变为 `Writing some code`。 | 只证明状态文案变化，不能证明代码已写入或构建。 |
+| 25:24.480–25:24.520 / 1,524,480–1,524,520 | PTS 1,524,480 显示 `Messaged` 事件与 `Typing…`，尚无回复；下一帧首次出现助手回复气泡，称会构建贴纸商店并提供后续进展链接。 | “正在构建”是对话中的声明；没有可见仓库内容、部署或完成结果。相邻关键帧见 `research/frames/grok-201-2524-480-520-first-response-keyframes-20261115/manifest.json`。 |
+| 25:26.160–25:26.200 / 1,526,160–1,526,200 | 助手图标下方首次显示 `Getting it done`。 | 这是进行中状态文字，不代表任务已完成。关键帧见 `research/frames/grok-201-2526-160-200-progress-status-keyframes-20261115/manifest.json`。 |
+| 25:30.600–25:30.640 / 1,530,600–1,530,640 | 第二条助手进度气泡首次出现；表示项目仍在构建，完成后会回传仓库链接、摘要、截图和录屏。后续样帧至 25:34.960 仍保留这两条气泡，右侧 Computer 仍为灰色占位。 | 录屏没有展示这些承诺的制品，也没有显示最终完成状态；不据此认定仓库、代码或页面已经产出。关键帧见 `research/frames/grok-201-2530-640-followup-message-transition-keyframes-20261115/manifest.json`。 |
+
+本段结束时，V2 连续逐帧覆盖推进至 25:34.960（38,375 帧）；下一未审窗口从 25:35.000 开始。所有画面仅作为官方 UI/交互研究依据，需与本地真实 Agent、Computer 和浏览器端到端验收分别记录。
