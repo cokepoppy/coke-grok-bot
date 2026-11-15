@@ -3169,3 +3169,11 @@ Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无
 基于该界面复核，没有可见的 `Working` 任务后，仅滚动 `coke-grok-auth` 到 `coke-grok-auth:candidate-poll-loop-isolation-20261115`（linux/arm64，镜像 ID `sha256:93c66b975d779cdfbf26fbe2a6cb55272ec74b412df8d4e735547b368ab2f566`）。Auth rollout 成功，Deployment generation 138→139，Ready 1/1，候选 Pod 重启 0；Broker 保持原镜像与 generation。7 个 Agent/Desktop Pod 的 UID 集合哈希、`coke-auth` MySQL Pod 与 PVC 的 UID 集合哈希均与部署前相同。未更新 VPS，未重启 Broker、Agent、Desktop 或 MySQL，未改 PVC。
 
 候选发布目录 `releases/candidate-grok-poll-loop-isolation-2026-11-15/` 已加入源码补丁、构建 Auth bundle、压缩镜像、SHA-256、固定镜像清单、仅 Auth 部署/回退脚本和脱敏运行快照。源码回归仍为 poller 2/2、runtime 206/206、MySQL 20/20、TypeScript/build 通过。候选现在已部署但**尚未完成真实公网 Computer Use 任务验收**；部署或 Pod Ready 不代表卡顿已解决。待 Mac 解锁后从该公网页面继续 BSE 多 Bot 任务，不重新派发已由 `I checked · continue` 恢复的任务，避免重复外部操作。
+
+#### 2026-11-15 per-screen claim isolation 修复部署（公网验收待续）
+
+在同一功能分支 `codex/grok-poll-loop-isolation` 上，提交 `fe7806999253370008ce165122902b989d3b91a1` 将不同 Bot 屏幕的 `claimNext()` 改为独立异步 claim，并保持全局并发上限 2、每 Bot 串行和不确定结果不自动重放。该提交已推送。针对新改动的调度用例 5/5 通过，`npm run build:deployment` 通过；完整 runtime/MySQL 套件没有在该最终提交上重跑，不能把前一提交的 206/206、20/20 记为本提交结果。
+
+新建独立候选目录 `releases/candidate-grok-poll-loop-isolation-fe78069-2026-11-15/`，包含匹配提交的 Auth 制品、linux/arm64 镜像归档、源补丁、校验和、仅 Auth 部署与回退脚本。候选镜像 ID 为 `sha256:c4af9138be28d01998bf2db3cf33962225d85b86cb3abe44e107a6384005aa24`；以 `coke-grok-auth:candidate-poll-loop-isolation-20261115` 为回退镜像。2026-11-15T08:44:28Z 只更新 Mac 本机 K3D 的 Auth：Deployment generation 139→140，Ready 1/1。Broker generation 和镜像不变；7 个 Agent/Desktop Pod UID 集合、MySQL Pod UID 和 PVC UID 的前后哈希一致。没有重启 Broker/Agent/Desktop，没有更改 MySQL/PVC，也没有更新 VPS。
+
+公网群组派发的可见任务内容完整，但研究、运维和 E2E Bot 回答说收到的只有 `Review / I checked · continue / Retry / bse.cn / main / Pages / PR` 等 UI 片段；这些任务显示 Failed。开发 Bot 仍为 Outcome unknown，主管 Bot 排队。E2E Bot 的电脑显示 Bot is in control，其失败消息称没有执行任务且浏览器停在 example.com；没有把这些结果当成功，也没有重放开发 Bot 的不确定任务。prompt/dispatch 不匹配的根因尚未确认。Auth 更新后第一次公网刷新时 Computer Use 返回 Mac 已锁，未能检查候选后的队列或继续页面点击。公网多 Bot/DeepSeek/云电脑验收仍未完成；本分支未合并 `main`、未打 checkpoint tag。
