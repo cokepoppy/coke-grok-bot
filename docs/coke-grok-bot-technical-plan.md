@@ -3095,3 +3095,7 @@ Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无
 当前唯一功能分支正在实现通用 Bearer Webhook 触发并接入真实 Agent run queue：Pi/DSH 可创建触发器，owner-only Routine 详情读取密钥；数据库只存密钥哈希和使用持久签名密钥派生的 AES-GCM 密文；可选事件 ID 用于重试去重；请求体作为不可信 JSON 输入，不能提升自身权限。定时、Test、Webhook 共享每 Routine/账号小时限额；限流失败进入历史，Webhook 返回 429。通用 Webhook 不是 Slack、GitHub、Linear、Sentry、PagerDuty 或邮件的原生事件连接器，这些集成仍未实现。
 
 本轮源码构建、Routine schedule 单测 4/4、Pi/DSH Routine adapter 测试 3/3 和 `git diff --check` 通过。MySQL 集成测试未运行：当前只有应用 MySQL 实例可见，测试账号未配置；既有用户约束禁止读取或复用应用数据库密码，也没有新建测试容器。公网 Computer Use 的 Chrome tab inventory 成功，但 URL tab binding 超时，未对页面执行操作；因此没有公网 Routine Webhook / DeepSeek / K3D 持久化验收证据。改动仍只在 `codex/grok-bot-routine-panel-parity`，未提交、推送、部署、合并或打 tag；不要据此称 Routine 事件触发已通过端到端验收。
+
+#### 2026-11-15 官方 Grok Bot 201 V2 逐帧续审（25:55–26:29.960）
+
+连续审阅 7 个五秒区间，共 875 个 1920×1080、25 fps 源帧与 35 张联系图，PTS 1,555,000–1,589,960。对各 manifest 的逐帧 PTS 连续性、源视频 SHA-256 及 35 张联系图文件哈希作聚合核对；再从原片独立重解码 26:25–26:30，125/125 帧的 PTS、YUV 字节数和像素 SHA-256、5/5 联系图哈希全部匹配。完整视觉记录和忽略目录路径见 `research/README.md`。25:55–26:00 为非产品开发工作区，排除；26:01.960 已完整显示 Grok Bot 客户端。26:12 可见 Bot/群组导航、协作消息及灰色 Computer 占位；26:29.960 可见贴纸商店进度消息和结果卡片。后两者仅是演示画面内容，不能证明云电脑在线、Agent 实际运行或结果已部署。V2 连续逐帧覆盖至 26:29.960（39,750 帧），下一窗口从 26:30.000 开始；这项研究不等于本项目的像素比对或真实功能验收。
