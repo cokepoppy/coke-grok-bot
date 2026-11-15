@@ -10,6 +10,8 @@ type Shape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle' | 'oval' | 'square'
 type Bot = { id: string; name: string; label: string; color: string; shape: Shape; group: string; preview: string; lastActivityAt?: string | null; pinned?: boolean; hidden?: boolean };
 type Message = { id: string; role: 'user' | 'bot' | 'system' | 'voice'; text: string; createdAt?: string | null; voiceCall?:VoiceCallData };
 type RunFile = { id: string; name: string; mimeType: string; size: number; sha256: string; kind: 'input' | 'output' };
+type BotLibraryCategory = 'All'|'Pages'|'Media'|'Links'|'Files'|'Apps'|'Pinned';
+type BotLibraryItem = RunFile & {kind:'output';createdAt:string;pinned:boolean};
 type ExecutionAudit = {engine:'pi'|'dsh';model:string;modelCompleted:boolean;calls:{tool:string;action:string|null;outcome:'succeeded'|'failed'|'unconfirmed'}[];truncated:boolean};
 type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; executionAudit?:ExecutionAudit|null; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: string | null };
 type GroupMember = Pick<Bot,'id'|'name'|'label'|'color'|'shape'> & { position: number };
@@ -1800,7 +1802,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
             </form>
           </section>
           {account && panel && <div className="computer-panel-resize-handle" role="separator" aria-label="Resize computer panel" aria-orientation="vertical" aria-valuemin={productPanelMin()} aria-valuemax={productPanelMax(layoutSidebarWidth)} aria-valuenow={Math.round(computerPanelWidth)} aria-valuetext={`${Math.round(computerPanelWidth)} pixels`} tabIndex={0} onPointerDown={startComputerPanelResize} onPointerMove={moveComputerPanelResize} onPointerUp={finishComputerPanelResize} onPointerCancel={finishComputerPanelResize} onKeyDown={adjustComputerPanelResize} onDoubleClick={() => setComputerPanelWidth(initialProductPanelWidth('', layoutSidebarWidth, ''))} />}
-          {panel && (activeGroup?<aside className="details-panel group-details-panel" aria-label="Group details"><GroupAvatar members={activeGroup.members} size={80}/><div className="group-panel-name">{activeGroup.name}</div><div className="group-panel-count">{activeGroup.members.length} Bots</div><div className="tabs"><button type="button" className={tab==='Details'?'active':''} onClick={()=>setTab('Details')}>Details</button><button type="button" className={tab==='Computer'?'active':''} onClick={()=>setTab('Computer')}>Computer</button></div>{tab==='Computer'?remote&&agentFeature==='enabled'?<ComputerPanel name={activeGroup.members.find(member=>member.id===groupComputerBotId)?.name||activeGroup.members[0].name} botId={groupComputerBotId||activeGroup.members[0].id}/>:<div className="computer-preview"><Icon name="screen"/><span>Computer not connected</span></div>:<div className="group-member-list" aria-label="Group members">{activeGroup.members.map(member=><div className="group-member" key={member.id}><Avatar bot={member} size={30}/><span><strong>{member.name}</strong>{member.label&&<small>{member.label}</small>}</span><button type="button" onClick={()=>{setGroupComputerBotId(member.id);setTab('Computer')}}>Computer</button></div>)}</div>}</aside>:<aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" ref={avatarButton} aria-label="Change Bot picture" onClick={openAvatar}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => saveBotName(active.id,active.name)} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && agentFeature === 'enabled' ? <ComputerPanel name={active.name} botId={active.id} official bot={active} onClose={()=>setPanel(false)} onRename={renameBot} onSaveName={()=>saveBotName(active.id,active.name)} onLabelChange={label=>setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))} onSaveLabel={saveBotLabel} onChangeAvatar={openAvatar} onEditRoutine={name=>{setDraft(`Edit your routine: ${name}`);setPanel(false);requestAnimationFrame(()=>composerInput.current?.focus())}} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>)}
+          {panel && (activeGroup?<aside className="details-panel group-details-panel" aria-label="Group details"><GroupAvatar members={activeGroup.members} size={80}/><div className="group-panel-name">{activeGroup.name}</div><div className="group-panel-count">{activeGroup.members.length} Bots</div><div className="tabs"><button type="button" className={tab==='Details'?'active':''} onClick={()=>setTab('Details')}>Details</button><button type="button" className={tab==='Computer'?'active':''} onClick={()=>setTab('Computer')}>Computer</button></div>{tab==='Computer'?remote&&agentFeature==='enabled'?<ComputerPanel name={activeGroup.members.find(member=>member.id===groupComputerBotId)?.name||activeGroup.members[0].name} botId={groupComputerBotId||activeGroup.members[0].id}/>:<div className="computer-preview"><Icon name="screen"/><span>Computer not connected</span></div>:<div className="group-member-list" aria-label="Group members">{activeGroup.members.map(member=><div className="group-member" key={member.id}><Avatar bot={member} size={30}/><span><strong>{member.name}</strong>{member.label&&<small>{member.label}</small>}</span><button type="button" onClick={()=>{setGroupComputerBotId(member.id);setTab('Computer')}}>Computer</button></div>)}</div>}</aside>:<aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" ref={avatarButton} aria-label="Change Bot picture" onClick={openAvatar}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => saveBotName(active.id,active.name)} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && agentFeature === 'enabled' ? <ComputerPanel name={active.name} botId={active.id} official bot={active} onClose={()=>setPanel(false)} onRename={renameBot} onSaveName={()=>saveBotName(active.id,active.name)} onLabelChange={label=>setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))} onSaveLabel={saveBotLabel} onChangeAvatar={openAvatar} onEditRoutine={name=>{setDraft(`Edit your routine: ${name}`);setPanel(false);requestAnimationFrame(()=>composerInput.current?.focus())}} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : tab === 'Library' ? (remote ? <BotLibrary botId={active.id} onPreview={setPreviewFile}/> : <div className="panel-placeholder">No local files in this preview.</div>) : <div className="panel-placeholder">Routines and connections are not available in this preview.</div>}</aside>)}
         </div>
       </>}
       {voiceChatBotId&&<VoiceChatOverlay botId={voiceChatBotId} botName={state.bots.find(bot=>bot.id===voiceChatBotId)?.name||'Bot'} isActiveBot={active?.id===voiceChatBotId&&!activeGroup&&!newChat} onReturnToBot={()=>selectBot(voiceChatBotId)} onSaved={()=>setVoiceTranscriptRefresh(value=>value+1)} onClose={()=>setVoiceChatBotId(null)}/>}
@@ -1854,6 +1856,73 @@ function FilePreviewDialog({file,onClose}:{file:RunFile;onClose:()=>void}) {
     <header><strong>{file.name}</strong><a href={fileUrl(file)} download={file.name}>Download</a><button type="button" aria-label="Close preview" onClick={onClose}>×</button></header>
     {previewImageTypes.has(file.mimeType)?<img className="file-preview-image" src={fileUrl(file)} alt={file.name}/>:previewVideoTypes.has(file.mimeType)?<video className="file-preview-video" controls preload="metadata" aria-label={`Play ${file.name}`}><source src={fileUrl(file)} type={file.mimeType}/></video>:previewAudioTypes.has(file.mimeType)?<audio className="file-preview-audio" controls preload="metadata" aria-label={`Play ${file.name}`}><source src={fileUrl(file)} type={file.mimeType}/></audio>:file.mimeType==='application/pdf'?<iframe title={`Preview ${file.name}`} src={fileUrl(file)} sandbox="allow-scripts"/>:text!==null?<pre>{text}</pre>:error?<p role="alert">Preview could not be loaded.</p>:<p>Loading preview…</p>}
   </section></div>;
+}
+
+function BotLibrary({botId,onPreview}:{botId:string;onPreview:(file:RunFile)=>void}) {
+  const [category,setCategory]=useState<BotLibraryCategory>('All');
+  const [items,setItems]=useState<BotLibraryItem[]>([]);
+  const [loading,setLoading]=useState(true);
+  const [loadingMore,setLoadingMore]=useState(false);
+  const [error,setError]=useState('');
+  const [hasMore,setHasMore]=useState(false);
+  const [nextOffset,setNextOffset]=useState(0);
+  const [expanded,setExpanded]=useState<Record<string,number>>({});
+  const [pinning,setPinning]=useState<string|null>(null);
+  const categories:BotLibraryCategory[]=['All','Pages','Media','Links','Files','Apps','Pinned'];
+  const apiCategory=category==='All'?'all':category==='Media'?'media':category==='Files'?'files':category==='Pinned'?'pinned':null;
+
+  useEffect(()=>{
+    const controller=new AbortController();
+    setItems([]);setHasMore(false);setNextOffset(0);setExpanded({});setError('');setLoading(true);
+    if(!apiCategory){setLoading(false);return()=>controller.abort()}
+    void fetch(`${import.meta.env.BASE_URL}api/bots/${botId}/library?category=${apiCategory}&offset=0&limit=100`,{credentials:'same-origin',cache:'no-store',signal:controller.signal})
+      .then(async response=>{const value=await response.json() as {files?:BotLibraryItem[];hasMore?:boolean;error?:string};if(!response.ok)throw new Error(value.error||'Library is unavailable.');return value})
+      .then(value=>{if(controller.signal.aborted)return;const files=value.files||[];setItems(files);setHasMore(Boolean(value.hasMore));setNextOffset(files.length)})
+      .catch(()=>{if(!controller.signal.aborted)setError('Could not load this Bot’s library.')})
+      .finally(()=>{if(!controller.signal.aborted)setLoading(false)});
+    return()=>controller.abort();
+  },[botId,apiCategory]);
+
+  async function loadMore(){
+    if(!apiCategory||loadingMore||!hasMore)return;
+    setLoadingMore(true);setError('');
+    try{
+      const response=await fetch(`${import.meta.env.BASE_URL}api/bots/${botId}/library?category=${apiCategory}&offset=${nextOffset}&limit=100`,{credentials:'same-origin',cache:'no-store'});
+      const value=await response.json() as {files?:BotLibraryItem[];hasMore?:boolean;error?:string};
+      if(!response.ok)throw new Error(value.error||'Library is unavailable.');
+      const files=value.files||[];setItems(current=>[...current,...files]);setNextOffset(offset=>offset+files.length);setHasMore(Boolean(value.hasMore));
+    }catch{setError('Could not load more library items.')}finally{setLoadingMore(false)}
+  }
+
+  async function togglePin(item:BotLibraryItem){
+    if(pinning)return;const pinned=!item.pinned;setPinning(item.id);setError('');
+    try{
+      const response=await fetch(`${import.meta.env.BASE_URL}api/bots/${botId}/library/${item.id}`,{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({pinned})});
+      const value=await response.json() as {pinned?:boolean;error?:string};if(!response.ok||value.pinned!==pinned)throw new Error(value.error||'Could not update pin.');
+      setItems(current=>pinned?current.map(file=>file.id===item.id?{...file,pinned:true}:file):category==='Pinned'?current.filter(file=>file.id!==item.id):current.map(file=>file.id===item.id?{...file,pinned:false}:file));
+    }catch{setError('Could not update this library item.')}finally{setPinning(null)}
+  }
+
+  const groups:Record<'Pinned'|'Today'|'This week'|'Older',BotLibraryItem[]>={Pinned:[],Today:[],'This week':[],Older:[]};
+  const now=new Date(),todayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()),weekStart=new Date(todayStart);
+  weekStart.setDate(todayStart.getDate()-((todayStart.getDay()+6)%7));
+  for(const item of items){if(category==='Pinned'||item.pinned){groups.Pinned.push(item);continue}const date=new Date(item.createdAt);groups[date>=todayStart?'Today':date>=weekStart?'This week':'Older'].push(item)}
+  const emptyLabel=category==='Media'?'No media in this Bot’s library yet.':category==='Files'?'No files in this Bot’s library yet.':category==='Pinned'?'No pinned items in this Bot’s library yet.':'No files or media in this Bot’s library yet.';
+
+  return <section className="bot-library" aria-label="Bot library">
+    <div className="library-filters" role="tablist" aria-label="Library item type">{categories.map(value=><button key={value} type="button" role="tab" aria-selected={category===value} className={category===value?'active':''} onClick={()=>setCategory(value)}>{value}</button>)}</div>
+    {!apiCategory?<div className="library-empty">This Library view currently supports generated files and media.</div>:loading?<div className="library-empty" role="status">Loading library…</div>:error&&!items.length?<div className="library-empty" role="alert">{error}</div>:!items.length?<div className="library-empty">{emptyLabel}</div>:<>
+      {(['Pinned','Today','This week','Older'] as const).map(group=>{const rows=groups[group],shown=expanded[group]||5;if(!rows.length)return null;return <section className="library-group" key={group} aria-label={group}>
+        <h3>{group}</h3><div className="library-items">{rows.slice(0,shown).map(item=><div className="library-item" key={item.id}>
+          <RunFileCards files={[item]} onPreview={onPreview}/>
+          <button type="button" className="library-pin" disabled={pinning!==null} aria-label={`${item.pinned?'Unpin':'Pin'} ${item.name}`} onClick={()=>void togglePin(item)}><BotMenuIcon name="pin"/><span>{item.pinned?'Unpin':'Pin'}</span></button>
+        </div>)}</div>
+        {rows.length>shown&&<button type="button" className="library-show-more" onClick={()=>setExpanded(current=>({...current,[group]:shown+5}))}>Show more</button>}
+      </section>})}
+      {error&&<div className="library-feedback" role="alert">{error}</div>}
+      {hasMore&&<button type="button" className="library-load-more" disabled={loadingMore} onClick={()=>void loadMore()}>{loadingMore?'Loading…':'Load more'}</button>}
+    </>}
+  </section>;
 }
 
 const pendingTeamInviteKey='coke-grok-pending-team-invite';

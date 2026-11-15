@@ -13,6 +13,7 @@ import { createAuthServer } from '../src/server/auth-http.ts';
 import { Readable } from 'node:stream';
 import { WorkspaceFileStore } from '../src/server/file-store.ts';
 import type { WorkspaceFileTransport } from '../src/server/workspace-file-client.ts';
+type BotLibraryItem={id:string;pinned:boolean};
 const port=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);if(!port)throw new Error('Disposable MySQL port required');
 const mysqlCredentials = mysqlTestCredentials(port);
 test('run API is authenticated, owner-scoped, origin-protected and idempotent',async()=>{
@@ -60,10 +61,28 @@ test('run API is authenticated, owner-scoped, origin-protected and idempotent',a
   assert.equal((await request(`/api/files/${uploadedFile.id}`,b.cookie)).status,404);const attachedDownload=await request(`/api/files/${uploadedFile.id}`,a.cookie);assert.equal(attachedDownload.status,200);assert.equal(await attachedDownload.text(),uploadBytes.toString());
   const attachedClaim=await runs.claimNext(a.id,30);assert.equal(attachedClaim?.run.id,attachedRun.id);assert.equal(attachedClaim?.run.files[0].storageKey,workspace.keys().next().value);
   const outputBytes=Buffer.from('Agent-generated summary');const outputHash=createHash('sha256').update(outputBytes).digest('hex');
-  assert.equal(await runs.finish(attachedRun.id,attachedClaim!.leaseId,'completed','I read the notes and created a summary.',[{name:'summary.txt',mimeType:'text/plain',size:outputBytes.length,sha256:outputHash,storageKey:`tasks/${attachedRun.id}/artifacts/summary.txt`}]),true);
+  const mediaBytes=Buffer.from('synthetic image artifact'),mediaHash=createHash('sha256').update(mediaBytes).digest('hex');
+  assert.equal(await runs.finish(attachedRun.id,attachedClaim!.leaseId,'completed','I read the notes and created a summary.',[
+    {name:'summary.txt',mimeType:'text/plain',size:outputBytes.length,sha256:outputHash,storageKey:`tasks/${attachedRun.id}/artifacts/summary.txt`},
+    {name:'preview.png',mimeType:'image/png',size:mediaBytes.length,sha256:mediaHash,storageKey:`tasks/${attachedRun.id}/artifacts/preview.png`}
+  ]),true);
   workspace.set(`tasks/${attachedRun.id}/artifacts/summary.txt`,outputBytes);
-  const savedRun=(await runs.list({...a.id,email:'a@example.test',name:'A',role:'owner'},bot.id))?.find(run=>run.id===attachedRun.id);assert.equal(savedRun?.files.filter(file=>file.kind==='output').length,1);
-  const outputFile=savedRun!.files.find(file=>file.kind==='output')!;const downloaded=await request(`/api/files/${outputFile.id}`,a.cookie);assert.equal(downloaded.status,200);assert.match(downloaded.headers.get('content-disposition')||'',/inline/);assert.equal(await downloaded.text(),outputBytes.toString());
+  workspace.set(`tasks/${attachedRun.id}/artifacts/preview.png`,mediaBytes);
+  const savedRun=(await runs.list({...a.id,email:'a@example.test',name:'A',role:'owner'},bot.id))?.find(run=>run.id===attachedRun.id);assert.equal(savedRun?.files.filter(file=>file.kind==='output').length,2);
+  const outputFiles=savedRun!.files.filter(file=>file.kind==='output'),outputFile=outputFiles.find(file=>file.name==='summary.txt')!,mediaFile=outputFiles.find(file=>file.name==='preview.png')!;const downloaded=await request(`/api/files/${outputFile.id}`,a.cookie);assert.equal(downloaded.status,200);assert.match(downloaded.headers.get('content-disposition')||'',/inline/);assert.equal(await downloaded.text(),outputBytes.toString());
+  const libraryPath=`/api/bots/${bot.id}/library`,libraryFor=(cookie:string,category='all')=>request(`${libraryPath}?category=${category}`,cookie);
+  assert.equal((await request(libraryPath)).status,401);assert.equal((await libraryFor(b.cookie)).status,404);assert.equal((await libraryFor(a.cookie,'unsupported')).status,400);
+  const allLibrary=await libraryFor(a.cookie);assert.equal(allLibrary.status,200);const allItems=(await allLibrary.json() as {files:BotLibraryItem[];hasMore:boolean}).files;assert.deepEqual(allItems.map(file=>file.id).sort(),outputFiles.map(file=>file.id).sort());assert.ok(!allItems.some(file=>file.id===uploadedFile.id));
+  const textLibrary=await libraryFor(a.cookie,'files');assert.deepEqual((await textLibrary.json() as {files:BotLibraryItem[]}).files.map(file=>file.id),[outputFile.id]);
+  const mediaLibrary=await libraryFor(a.cookie,'media');assert.deepEqual((await mediaLibrary.json() as {files:BotLibraryItem[]}).files.map(file=>file.id),[mediaFile.id]);
+  assert.equal((await request(`${libraryPath}/${mediaFile.id}`,a.cookie,{method:'PATCH',headers:{'content-type':'application/json'},body:'{"pinned":true}'})).status,403);
+  const pinHeaders={origin,'content-type':'application/json'};
+  assert.equal((await request(`${libraryPath}/${mediaFile.id}`,a.cookie,{method:'PATCH',headers:pinHeaders,body:'{"pinned":true}'})).status,200);
+  const pinnedLibrary=await libraryFor(a.cookie,'pinned');assert.deepEqual((await pinnedLibrary.json() as {files:BotLibraryItem[]}).files.map(file=>[file.id,file.pinned]),[[mediaFile.id,true]]);
+  const allWithPinned=await libraryFor(a.cookie);assert.equal((await allWithPinned.json() as {files:BotLibraryItem[]}).files[0]?.id,mediaFile.id);
+  assert.equal((await request(`${libraryPath}/${mediaFile.id}`,b.cookie,{method:'PATCH',headers:pinHeaders,body:'{"pinned":false}'})).status,404);
+  assert.equal((await request(`${libraryPath}/${mediaFile.id}`,a.cookie,{method:'PATCH',headers:pinHeaders,body:'{"pinned":false}'})).status,200);
+  assert.deepEqual((await libraryFor(a.cookie,'pinned').then(response=>response.json()) as {files:BotLibraryItem[]}).files,[]);
   const unsafeBytes=Buffer.from('<script>no execution</script>'),unsafeUpload=await request(uploadPath,a.cookie,{method:'POST',headers:{origin,'content-type':'text/html','x-file-name':encodeURIComponent('unsafe.html')},body:new Uint8Array(unsafeBytes)});assert.equal(unsafeUpload.status,201);const unsafeId=(await unsafeUpload.json() as {file:{id:string}}).file.id;
   const unsafeRun=await runs.create({...a.id,email:'a@example.test',name:'A',role:'owner'},bot.id,randomUUID(),'Inspect HTML',[unsafeId]);assert.ok(unsafeRun);const unsafeClaim=await runs.claimNext(a.id,30);assert.equal(unsafeClaim?.run.id,unsafeRun.id);assert.equal(await runs.finish(unsafeRun.id,unsafeClaim!.leaseId,'completed','Reviewed the file.'),true);
   const unsafeFile=await request(`/api/files/${unsafeId}`,a.cookie);assert.equal(unsafeFile.status,200);assert.equal(unsafeFile.headers.get('content-type'),'application/octet-stream');assert.match(unsafeFile.headers.get('content-disposition')||'',/attachment/);

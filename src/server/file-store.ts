@@ -6,6 +6,8 @@ import type { Session } from './tenant-store.ts';
 export type RunFileKind = 'input' | 'output';
 export interface RunFile { id: string; name: string; mimeType: string; size: number; sha256: string; kind: RunFileKind; storageKey?: string }
 export interface StoredWorkspaceFile extends RunFile { botId: string; storageKey: string }
+export type BotLibraryCategory = 'all' | 'files' | 'media' | 'pinned';
+export interface BotLibraryItem extends RunFile { kind: 'output'; createdAt: string; pinned: boolean }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const safeName = /^[^\\/\u0000-\u001f\u007f]{1,180}$/;
 const extension = /^[a-z0-9]{1,12}$/i;
@@ -72,6 +74,48 @@ export class WorkspaceFileStore {
       FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE,
       FOREIGN KEY (file_id) REFERENCES bot_files(id) ON DELETE CASCADE
     ) ENGINE=InnoDB`);
+    await this.pool.execute(`CREATE TABLE IF NOT EXISTS bot_library_pins (
+      bot_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+      file_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      PRIMARY KEY (bot_id,file_id),
+      KEY bot_library_pin_recent (bot_id,created_at,file_id),
+      FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE,
+      FOREIGN KEY (file_id) REFERENCES bot_files(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB`);
+  }
+
+  async listLibrary(session:Session,botId:string,category:BotLibraryCategory,offset:number,limit:number):Promise<{items:BotLibraryItem[];hasMore:boolean}|null>{
+    if(!uuid.test(botId)||!['all','files','media','pinned'].includes(category)||!Number.isSafeInteger(offset)||offset<0||offset>10000||!Number.isSafeInteger(limit)||limit<1||limit>100)return null;
+    if(!await this.ownsBot(session,botId))return null;
+    const media="(f.mime_type LIKE 'image/%' OR f.mime_type LIKE 'video/%' OR f.mime_type LIKE 'audio/%')";
+    const conditions=[`f.bot_id=?`,`b.tenant_id=?`,`b.owner_id=?`,`EXISTS(
+      SELECT 1 FROM agent_run_files rf JOIN agent_runs r ON r.id=rf.run_id AND r.bot_id=f.bot_id
+      WHERE rf.file_id=f.id AND rf.kind='output' AND r.status='completed'
+    )`];
+    if(category==='files')conditions.push(`NOT ${media}`);
+    if(category==='media')conditions.push(media);
+    if(category==='pinned')conditions.push('EXISTS(SELECT 1 FROM bot_library_pins p WHERE p.bot_id=f.bot_id AND p.file_id=f.id)');
+    const [rows]=await this.pool.execute<RowDataPacket[]>(`SELECT f.id,f.display_name AS name,f.mime_type AS mimeType,f.size,f.sha256,
+      DATE_FORMAT(f.created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt,
+      EXISTS(SELECT 1 FROM bot_library_pins p WHERE p.bot_id=f.bot_id AND p.file_id=f.id) AS pinned
+      FROM bot_files f JOIN bots b ON b.id=f.bot_id WHERE ${conditions.join(' AND ')}
+      ORDER BY pinned DESC,f.created_at DESC,f.id DESC LIMIT ? OFFSET ?`,[botId,session.tenantId,session.userId,limit+1,offset]);
+    return {items:rows.slice(0,limit).map(row=>({id:String(row.id),name:String(row.name),mimeType:String(row.mimeType),size:Number(row.size),sha256:String(row.sha256),kind:'output',createdAt:String(row.createdAt),pinned:Boolean(row.pinned)})),hasMore:rows.length>limit};
+  }
+
+  async setLibraryPinned(session:Session,botId:string,fileId:string,pinned:boolean):Promise<boolean|null>{
+    if(!uuid.test(botId)||!uuid.test(fileId))return null;
+    const [eligible]=await this.pool.execute<RowDataPacket[]>(`SELECT f.id FROM bot_files f JOIN bots b ON b.id=f.bot_id
+      WHERE f.id=? AND f.bot_id=? AND b.tenant_id=? AND b.owner_id=? AND EXISTS(
+        SELECT 1 FROM agent_run_files rf JOIN agent_runs r ON r.id=rf.run_id AND r.bot_id=f.bot_id
+        WHERE rf.file_id=f.id AND rf.kind='output' AND r.status='completed'
+      ) LIMIT 1`,[fileId,botId,session.tenantId,session.userId]);
+    if(!eligible.length)return null;
+    if(pinned)await this.pool.execute('INSERT INTO bot_library_pins (bot_id,file_id) VALUES (?,?) ON DUPLICATE KEY UPDATE file_id=VALUES(file_id)',[botId,fileId]);
+    else await this.pool.execute(`DELETE p FROM bot_library_pins p JOIN bots b ON b.id=p.bot_id
+      WHERE p.bot_id=? AND p.file_id=? AND b.tenant_id=? AND b.owner_id=?`,[botId,fileId,session.tenantId,session.userId]);
+    return pinned;
   }
 
   newUpload(botId: string, name: string, mimeType: string, size: number, sha256: string): StoredWorkspaceFile {

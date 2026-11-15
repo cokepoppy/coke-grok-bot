@@ -281,6 +281,29 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         try{await computer.action(session,botId,action,signal);return reply(200,{ok:true})}catch(error){const diagnostic=safeDiagnosticMetadata(error);console.error('Computer request failed',{operation:'action',...diagnostic});return reply(503,{error:'Service unavailable',diagnostic})}
       }
       const botPath = `${origin.prefix}/api/bots`;
+      const botLibraryMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/library$`,'i'));
+      const botLibraryItemMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/library/([0-9a-f-]{36})$`,'i'));
+      if(botLibraryMatch||botLibraryItemMatch){
+        if(!files)return replyJson(res,503,{error:'Library service unavailable'});
+        const session=await auth.session(req);if(!session)return replyJson(res,401,{error:'Unauthenticated'});
+        if(botLibraryMatch&&req.method==='GET'){
+          const category=url.searchParams.get('category')||'all';
+          const offsetRaw=url.searchParams.get('offset')||'0',limitRaw=url.searchParams.get('limit')||'100';
+          const offset=Number(offsetRaw),limit=Number(limitRaw);
+          if(!['all','files','media','pinned'].includes(category)||!/^\d+$/.test(offsetRaw)||!/^\d+$/.test(limitRaw)||!Number.isSafeInteger(offset)||offset>10000||!Number.isSafeInteger(limit)||limit<1||limit>100)return replyJson(res,400,{error:'Invalid Library query'});
+          const result=await files.listLibrary(session,botLibraryMatch[1],category as 'all'|'files'|'media'|'pinned',offset,limit);
+          return result?replyJson(res,200,{files:result.items,hasMore:result.hasMore,offset,limit}):replyJson(res,404,{error:'Not found'});
+        }
+        if(botLibraryItemMatch&&req.method==='PATCH'){
+          if(req.headers.origin!==origin.origin)return replyJson(res,403,{error:'Invalid origin'});
+          const parsed=await readJsonBody(req,1024);if(!parsed.ok)return replyJson(res,parsed.status,{error:'Invalid Library setting'});
+          const body=parsed.value;
+          if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||typeof (body as {pinned?:unknown}).pinned!=='boolean')return replyJson(res,400,{error:'Invalid Library setting'});
+          const pinned=await files.setLibraryPinned(session,botLibraryItemMatch[1],botLibraryItemMatch[2],(body as {pinned:boolean}).pinned);
+          return pinned===null?replyJson(res,404,{error:'Not found'}):replyJson(res,200,{pinned});
+        }
+        return replyJson(res,405,{error:'Method not allowed'});
+      }
       const skillCollectionMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/skills$`,'i'));
       const skillItemMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/skills/([0-9a-f-]{36})$`,'i'));
       const skillPublicationMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/skills/([0-9a-f-]{36})/publication$`,'i'));
