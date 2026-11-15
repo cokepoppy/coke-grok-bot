@@ -1,0 +1,281 @@
+diff --git a/src/server/auth-http.ts b/src/server/auth-http.ts
+index 8f2d739..398800a 100644
+--- a/src/server/auth-http.ts
++++ b/src/server/auth-http.ts
+@@ -281,6 +281,29 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string,
+         try{await computer.action(session,botId,action,signal);return reply(200,{ok:true})}catch(error){const diagnostic=safeDiagnosticMetadata(error);console.error('Computer request failed',{operation:'action',...diagnostic});return reply(503,{error:'Service unavailable',diagnostic})}
+       }
+       const botPath = `${origin.prefix}/api/bots`;
++      const botLibraryMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/library$`,'i'));
++      const botLibraryItemMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/library/([0-9a-f-]{36})$`,'i'));
++      if(botLibraryMatch||botLibraryItemMatch){
++        if(!files)return replyJson(res,503,{error:'Library service unavailable'});
++        const session=await auth.session(req);if(!session)return replyJson(res,401,{error:'Unauthenticated'});
++        if(botLibraryMatch&&req.method==='GET'){
++          const category=url.searchParams.get('category')||'all';
++          const offsetRaw=url.searchParams.get('offset')||'0',limitRaw=url.searchParams.get('limit')||'100';
++          const offset=Number(offsetRaw),limit=Number(limitRaw);
++          if(!['all','files','media','pinned'].includes(category)||!/^\d+$/.test(offsetRaw)||!/^\d+$/.test(limitRaw)||!Number.isSafeInteger(offset)||offset>10000||!Number.isSafeInteger(limit)||limit<1||limit>100)return replyJson(res,400,{error:'Invalid Library query'});
++          const result=await files.listLibrary(session,botLibraryMatch[1],category as 'all'|'files'|'media'|'pinned',offset,limit);
++          return result?replyJson(res,200,{files:result.items,hasMore:result.hasMore,offset,limit}):replyJson(res,404,{error:'Not found'});
++        }
++        if(botLibraryItemMatch&&req.method==='PATCH'){
++          if(req.headers.origin!==origin.origin)return replyJson(res,403,{error:'Invalid origin'});
++          const parsed=await readJsonBody(req,1024);if(!parsed.ok)return replyJson(res,parsed.status,{error:'Invalid Library setting'});
++          const body=parsed.value;
++          if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||typeof (body as {pinned?:unknown}).pinned!=='boolean')return replyJson(res,400,{error:'Invalid Library setting'});
++          const pinned=await files.setLibraryPinned(session,botLibraryItemMatch[1],botLibraryItemMatch[2],(body as {pinned:boolean}).pinned);
++          return pinned===null?replyJson(res,404,{error:'Not found'}):replyJson(res,200,{pinned});
++        }
++        return replyJson(res,405,{error:'Method not allowed'});
++      }
+       const skillCollectionMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/skills$`,'i'));
+       const skillItemMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/skills/([0-9a-f-]{36})$`,'i'));
+       const skillPublicationMatch=url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/skills/([0-9a-f-]{36})/publication$`,'i'));
+diff --git a/src/server/file-store.ts b/src/server/file-store.ts
+index da680c9..24d26ec 100644
+--- a/src/server/file-store.ts
++++ b/src/server/file-store.ts
+@@ -6,6 +6,8 @@ import type { Session } from './tenant-store.ts';
+ export type RunFileKind = 'input' | 'output';
+ export interface RunFile { id: string; name: string; mimeType: string; size: number; sha256: string; kind: RunFileKind; storageKey?: string }
+ export interface StoredWorkspaceFile extends RunFile { botId: string; storageKey: string }
++export type BotLibraryCategory = 'all' | 'files' | 'media' | 'pinned';
++export interface BotLibraryItem extends RunFile { kind: 'output'; createdAt: string; pinned: boolean }
+ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+ const safeName = /^[^\\/\u0000-\u001f\u007f]{1,180}$/;
+ const extension = /^[a-z0-9]{1,12}$/i;
+@@ -72,6 +74,48 @@ export class WorkspaceFileStore {
+       FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE,
+       FOREIGN KEY (file_id) REFERENCES bot_files(id) ON DELETE CASCADE
+     ) ENGINE=InnoDB`);
++    await this.pool.execute(`CREATE TABLE IF NOT EXISTS bot_library_pins (
++      bot_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
++      file_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
++      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
++      PRIMARY KEY (bot_id,file_id),
++      KEY bot_library_pin_recent (bot_id,created_at,file_id),
++      FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE,
++      FOREIGN KEY (file_id) REFERENCES bot_files(id) ON DELETE CASCADE
++    ) ENGINE=InnoDB`);
++  }
++
++  async listLibrary(session:Session,botId:string,category:BotLibraryCategory,offset:number,limit:number):Promise<{items:BotLibraryItem[];hasMore:boolean}|null>{
++    if(!uuid.test(botId)||!['all','files','media','pinned'].includes(category)||!Number.isSafeInteger(offset)||offset<0||offset>10000||!Number.isSafeInteger(limit)||limit<1||limit>100)return null;
++    if(!await this.ownsBot(session,botId))return null;
++    const media="(f.mime_type LIKE 'image/%' OR f.mime_type LIKE 'video/%' OR f.mime_type LIKE 'audio/%')";
++    const conditions=[`f.bot_id=?`,`b.tenant_id=?`,`b.owner_id=?`,`EXISTS(
++      SELECT 1 FROM agent_run_files rf JOIN agent_runs r ON r.id=rf.run_id AND r.bot_id=f.bot_id
++      WHERE rf.file_id=f.id AND rf.kind='output' AND r.status='completed'
++    )`];
++    if(category==='files')conditions.push(`NOT ${media}`);
++    if(category==='media')conditions.push(media);
++    if(category==='pinned')conditions.push('EXISTS(SELECT 1 FROM bot_library_pins p WHERE p.bot_id=f.bot_id AND p.file_id=f.id)');
++    const [rows]=await this.pool.execute<RowDataPacket[]>(`SELECT f.id,f.display_name AS name,f.mime_type AS mimeType,f.size,f.sha256,
++      DATE_FORMAT(f.created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt,
++      EXISTS(SELECT 1 FROM bot_library_pins p WHERE p.bot_id=f.bot_id AND p.file_id=f.id) AS pinned
++      FROM bot_files f JOIN bots b ON b.id=f.bot_id WHERE ${conditions.join(' AND ')}
++      ORDER BY pinned DESC,f.created_at DESC,f.id DESC LIMIT ? OFFSET ?`,[botId,session.tenantId,session.userId,limit+1,offset]);
++    return {items:rows.slice(0,limit).map(row=>({id:String(row.id),name:String(row.name),mimeType:String(row.mimeType),size:Number(row.size),sha256:String(row.sha256),kind:'output',createdAt:String(row.createdAt),pinned:Boolean(row.pinned)})),hasMore:rows.length>limit};
++  }
++
++  async setLibraryPinned(session:Session,botId:string,fileId:string,pinned:boolean):Promise<boolean|null>{
++    if(!uuid.test(botId)||!uuid.test(fileId))return null;
++    const [eligible]=await this.pool.execute<RowDataPacket[]>(`SELECT f.id FROM bot_files f JOIN bots b ON b.id=f.bot_id
++      WHERE f.id=? AND f.bot_id=? AND b.tenant_id=? AND b.owner_id=? AND EXISTS(
++        SELECT 1 FROM agent_run_files rf JOIN agent_runs r ON r.id=rf.run_id AND r.bot_id=f.bot_id
++        WHERE rf.file_id=f.id AND rf.kind='output' AND r.status='completed'
++      ) LIMIT 1`,[fileId,botId,session.tenantId,session.userId]);
++    if(!eligible.length)return null;
++    if(pinned)await this.pool.execute('INSERT INTO bot_library_pins (bot_id,file_id) VALUES (?,?) ON DUPLICATE KEY UPDATE file_id=VALUES(file_id)',[botId,fileId]);
++    else await this.pool.execute(`DELETE p FROM bot_library_pins p JOIN bots b ON b.id=p.bot_id
++      WHERE p.bot_id=? AND p.file_id=? AND b.tenant_id=? AND b.owner_id=?`,[botId,fileId,session.tenantId,session.userId]);
++    return pinned;
+   }
+ 
+   newUpload(botId: string, name: string, mimeType: string, size: number, sha256: string): StoredWorkspaceFile {
+diff --git a/src/web/main.tsx b/src/web/main.tsx
+index b224409..cc02aa6 100644
+--- a/src/web/main.tsx
++++ b/src/web/main.tsx
+@@ -10,6 +10,8 @@ type Shape = 'cloud' | 'drop' | 'hex' | 'round' | 'triangle' | 'oval' | 'square'
+ type Bot = { id: string; name: string; label: string; color: string; shape: Shape; group: string; preview: string; lastActivityAt?: string | null; pinned?: boolean; hidden?: boolean };
+ type Message = { id: string; role: 'user' | 'bot' | 'system' | 'voice'; text: string; createdAt?: string | null; voiceCall?:VoiceCallData };
+ type RunFile = { id: string; name: string; mimeType: string; size: number; sha256: string; kind: 'input' | 'output' };
++type BotLibraryCategory = 'All'|'Pages'|'Media'|'Links'|'Files'|'Apps'|'Pinned';
++type BotLibraryItem = RunFile & {kind:'output';createdAt:string;pinned:boolean};
+ type ExecutionAudit = {engine:'pi'|'dsh';model:string;modelCompleted:boolean;calls:{tool:string;action:string|null;outcome:'succeeded'|'failed'|'unconfirmed'}[];truncated:boolean};
+ type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; executionAudit?:ExecutionAudit|null; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: string | null };
+ type GroupMember = Pick<Bot,'id'|'name'|'label'|'color'|'shape'> & { position: number };
+@@ -1738,7 +1740,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
+         <div className="new-chat-menu" aria-label="Chat recipients"><button type="button" className="menu-option menu-primary" onClick={()=>reference?void createBot():beginCreate()}><Icon name="plus" />Create new Bot</button><button type="button" className="menu-option" disabled={remote&&agentFeature==='enabled'&&state.bots.length<2} onClick={() => remote&&agentFeature==='enabled'?beginGroupCreate():setNotice(true)}><span className="menu-symbol">♧</span>Create group chat</button>{[primary, ...state.bots.filter(bot=>!reference || bot.id!=='new')].filter(bot=>`${bot.name} ${bot.label}`.toLowerCase().includes(recipientQuery.trim().toLowerCase())).map(bot => <button key={bot.id} type="button" className="menu-option" onClick={() => bot.id === primary.id ? setNotice(true) : selectBot(bot.id)}><Avatar bot={bot} size={27} />{bot.name}</button>)}<button type="button" className="menu-option team-option" onClick={() => setNotice(true)}><span>🟣</span>Team Bots <span className="menu-arrow">›</span></button></div>
+         <div className="composer new-chat-composer"><IconButton name="plus" label="Add attachment" onClick={() => setNotice(true)} /><textarea aria-label="Message Bot" placeholder="Message Bot" disabled rows={1} /><IconButton name="mic" label="Voice input" className="voice-button" onClick={() => setNotice(true)} /></div>
+       </div> : <>
+-        <div className={`chat-header ${panel ? 'panel-open' : ''}`}><button type="button" className="chat-title" onClick={toggleProductPanel}>{activeGroup?<GroupAvatar members={activeGroup.members} size={30}/>:<Avatar bot={active} size={30}/>}<span>{activeGroup?.name||active.name}</span></button></div>
++        <div className={`chat-header ${panel ? 'panel-open' : ''}`}><button type="button" className="chat-title" onClick={()=>openProductPanel('Details')}>{activeGroup?<GroupAvatar members={activeGroup.members} size={30}/>:<Avatar bot={active} size={30}/>}<span>{activeGroup?.name||active.name}</span></button></div>
+         <div className={`header-actions ${panel ? 'panel-open' : ''}`}><IconButton name="share" label={activeGroup?'Share group':'Share bot'} onClick={() => setNotice(true)} /><IconButton name={account && !panel ? 'screen' : 'panel'} label={panel ? account ? 'Hide computer' : 'Hide bot details' : account ? `Open ${activeGroup?.name||active.name}'s computer` : 'Show bot details'} onClick={toggleProductPanel} /></div>
+         <div className={`workspace ${panel ? 'with-panel' : ''}`}>
+           <section className="conversation" aria-label={activeGroup?`Group chat ${activeGroup.name}`:`Chat with ${active.name}`} onDragOver={event=>{if(remote&&agentFeature==='enabled'&&Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault()}} onDrop={event=>{if(!remote||agentFeature!=='enabled'||!event.dataTransfer.files.length)return;event.preventDefault();event.stopPropagation();const dropped=Array.from(event.dataTransfer.files);activeGroup?stageGroupFiles(dropped):stageFiles(dropped)}}>
+@@ -1800,7 +1802,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
+             </form>
+           </section>
+           {account && panel && <div className="computer-panel-resize-handle" role="separator" aria-label="Resize computer panel" aria-orientation="vertical" aria-valuemin={productPanelMin()} aria-valuemax={productPanelMax(layoutSidebarWidth)} aria-valuenow={Math.round(computerPanelWidth)} aria-valuetext={`${Math.round(computerPanelWidth)} pixels`} tabIndex={0} onPointerDown={startComputerPanelResize} onPointerMove={moveComputerPanelResize} onPointerUp={finishComputerPanelResize} onPointerCancel={finishComputerPanelResize} onKeyDown={adjustComputerPanelResize} onDoubleClick={() => setComputerPanelWidth(initialProductPanelWidth('', layoutSidebarWidth, ''))} />}
+-          {panel && (activeGroup?<aside className="details-panel group-details-panel" aria-label="Group details"><GroupAvatar members={activeGroup.members} size={80}/><div className="group-panel-name">{activeGroup.name}</div><div className="group-panel-count">{activeGroup.members.length} Bots</div><div className="tabs"><button type="button" className={tab==='Details'?'active':''} onClick={()=>setTab('Details')}>Details</button><button type="button" className={tab==='Computer'?'active':''} onClick={()=>setTab('Computer')}>Computer</button></div>{tab==='Computer'?remote&&agentFeature==='enabled'?<ComputerPanel name={activeGroup.members.find(member=>member.id===groupComputerBotId)?.name||activeGroup.members[0].name} botId={groupComputerBotId||activeGroup.members[0].id}/>:<div className="computer-preview"><Icon name="screen"/><span>Computer not connected</span></div>:<div className="group-member-list" aria-label="Group members">{activeGroup.members.map(member=><div className="group-member" key={member.id}><Avatar bot={member} size={30}/><span><strong>{member.name}</strong>{member.label&&<small>{member.label}</small>}</span><button type="button" onClick={()=>{setGroupComputerBotId(member.id);setTab('Computer')}}>Computer</button></div>)}</div>}</aside>:<aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" ref={avatarButton} aria-label="Change Bot picture" onClick={openAvatar}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => saveBotName(active.id,active.name)} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && agentFeature === 'enabled' ? <ComputerPanel name={active.name} botId={active.id} official bot={active} onClose={()=>setPanel(false)} onRename={renameBot} onSaveName={()=>saveBotName(active.id,active.name)} onLabelChange={label=>setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))} onSaveLabel={saveBotLabel} onChangeAvatar={openAvatar} onEditRoutine={name=>{setDraft(`Edit your routine: ${name}`);setPanel(false);requestAnimationFrame(()=>composerInput.current?.focus())}} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : <div className="panel-placeholder">{tab === 'Library' ? 'No local files in this preview.' : 'Routines and connections are not available in this preview.'}</div>}</aside>)}
++          {panel && (activeGroup?<aside className="details-panel group-details-panel" aria-label="Group details"><GroupAvatar members={activeGroup.members} size={80}/><div className="group-panel-name">{activeGroup.name}</div><div className="group-panel-count">{activeGroup.members.length} Bots</div><div className="tabs"><button type="button" className={tab==='Details'?'active':''} onClick={()=>setTab('Details')}>Details</button><button type="button" className={tab==='Computer'?'active':''} onClick={()=>setTab('Computer')}>Computer</button></div>{tab==='Computer'?remote&&agentFeature==='enabled'?<ComputerPanel name={activeGroup.members.find(member=>member.id===groupComputerBotId)?.name||activeGroup.members[0].name} botId={groupComputerBotId||activeGroup.members[0].id}/>:<div className="computer-preview"><Icon name="screen"/><span>Computer not connected</span></div>:<div className="group-member-list" aria-label="Group members">{activeGroup.members.map(member=><div className="group-member" key={member.id}><Avatar bot={member} size={30}/><span><strong>{member.name}</strong>{member.label&&<small>{member.label}</small>}</span><button type="button" onClick={()=>{setGroupComputerBotId(member.id);setTab('Computer')}}>Computer</button></div>)}</div>}</aside>:<aside className="details-panel" aria-label="Bot details"><button type="button" className="avatar-edit" ref={avatarButton} aria-label="Change Bot picture" onClick={openAvatar}><Avatar bot={active} size={86} /></button><input className="bot-name" aria-label="Bot name" value={active.name} onChange={event => renameBot(event.target.value)} onBlur={() => saveBotName(active.id,active.name)} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><input className="bot-label" aria-label="Bot label" placeholder="Add a label" maxLength={60} value={active.label} onChange={event=>{const label=event.target.value;setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))}} onBlur={saveBotLabel} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}} /><div className="tabs">{(['Details', 'Library', 'Computer'] as const).map(name => <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => setTab(name)}>{name}</button>)}</div>{tab === 'Computer' ? remote && agentFeature === 'enabled' ? <ComputerPanel name={active.name} botId={active.id} official bot={active} onClose={()=>setPanel(false)} onRename={renameBot} onSaveName={()=>saveBotName(active.id,active.name)} onLabelChange={label=>setState(current=>({...current,bots:current.bots.map(bot=>bot.id===active.id?{...bot,label}:bot)}))} onSaveLabel={saveBotLabel} onChangeAvatar={openAvatar} onEditRoutine={name=>{setDraft(`Edit your routine: ${name}`);setPanel(false);requestAnimationFrame(()=>composerInput.current?.focus())}} /> : <><div className="computer-preview"><Icon name="screen" />{!reference && <span>Computer not connected</span>}</div><div className="screen-label">{active.name || 'Bot'}'s screen</div></> : tab === 'Library' ? (remote ? <BotLibrary botId={active.id} onPreview={setPreviewFile}/> : <div className="panel-placeholder">No local files in this preview.</div>) : <div className="panel-placeholder">Routines and connections are not available in this preview.</div>}</aside>)}
+         </div>
+       </>}
+       {voiceChatBotId&&<VoiceChatOverlay botId={voiceChatBotId} botName={state.bots.find(bot=>bot.id===voiceChatBotId)?.name||'Bot'} isActiveBot={active?.id===voiceChatBotId&&!activeGroup&&!newChat} onReturnToBot={()=>selectBot(voiceChatBotId)} onSaved={()=>setVoiceTranscriptRefresh(value=>value+1)} onClose={()=>setVoiceChatBotId(null)}/>}
+@@ -1856,6 +1858,73 @@ function FilePreviewDialog({file,onClose}:{file:RunFile;onClose:()=>void}) {
+   </section></div>;
+ }
+ 
++function BotLibrary({botId,onPreview}:{botId:string;onPreview:(file:RunFile)=>void}) {
++  const [category,setCategory]=useState<BotLibraryCategory>('All');
++  const [items,setItems]=useState<BotLibraryItem[]>([]);
++  const [loading,setLoading]=useState(true);
++  const [loadingMore,setLoadingMore]=useState(false);
++  const [error,setError]=useState('');
++  const [hasMore,setHasMore]=useState(false);
++  const [nextOffset,setNextOffset]=useState(0);
++  const [expanded,setExpanded]=useState<Record<string,number>>({});
++  const [pinning,setPinning]=useState<string|null>(null);
++  const categories:BotLibraryCategory[]=['All','Pages','Media','Links','Files','Apps','Pinned'];
++  const apiCategory=category==='All'?'all':category==='Media'?'media':category==='Files'?'files':category==='Pinned'?'pinned':null;
++
++  useEffect(()=>{
++    const controller=new AbortController();
++    setItems([]);setHasMore(false);setNextOffset(0);setExpanded({});setError('');setLoading(true);
++    if(!apiCategory){setLoading(false);return()=>controller.abort()}
++    void fetch(`${import.meta.env.BASE_URL}api/bots/${botId}/library?category=${apiCategory}&offset=0&limit=100`,{credentials:'same-origin',cache:'no-store',signal:controller.signal})
++      .then(async response=>{const value=await response.json() as {files?:BotLibraryItem[];hasMore?:boolean;error?:string};if(!response.ok)throw new Error(value.error||'Library is unavailable.');return value})
++      .then(value=>{if(controller.signal.aborted)return;const files=value.files||[];setItems(files);setHasMore(Boolean(value.hasMore));setNextOffset(files.length)})
++      .catch(()=>{if(!controller.signal.aborted)setError('Could not load this Bot’s library.')})
++      .finally(()=>{if(!controller.signal.aborted)setLoading(false)});
++    return()=>controller.abort();
++  },[botId,apiCategory]);
++
++  async function loadMore(){
++    if(!apiCategory||loadingMore||!hasMore)return;
++    setLoadingMore(true);setError('');
++    try{
++      const response=await fetch(`${import.meta.env.BASE_URL}api/bots/${botId}/library?category=${apiCategory}&offset=${nextOffset}&limit=100`,{credentials:'same-origin',cache:'no-store'});
++      const value=await response.json() as {files?:BotLibraryItem[];hasMore?:boolean;error?:string};
++      if(!response.ok)throw new Error(value.error||'Library is unavailable.');
++      const files=value.files||[];setItems(current=>[...current,...files]);setNextOffset(offset=>offset+files.length);setHasMore(Boolean(value.hasMore));
++    }catch{setError('Could not load more library items.')}finally{setLoadingMore(false)}
++  }
++
++  async function togglePin(item:BotLibraryItem){
++    if(pinning)return;const pinned=!item.pinned;setPinning(item.id);setError('');
++    try{
++      const response=await fetch(`${import.meta.env.BASE_URL}api/bots/${botId}/library/${item.id}`,{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({pinned})});
++      const value=await response.json() as {pinned?:boolean;error?:string};if(!response.ok||value.pinned!==pinned)throw new Error(value.error||'Could not update pin.');
++      setItems(current=>pinned?current.map(file=>file.id===item.id?{...file,pinned:true}:file):category==='Pinned'?current.filter(file=>file.id!==item.id):current.map(file=>file.id===item.id?{...file,pinned:false}:file));
++    }catch{setError('Could not update this library item.')}finally{setPinning(null)}
++  }
++
++  const groups:Record<'Pinned'|'Today'|'This week'|'Older',BotLibraryItem[]>={Pinned:[],Today:[],'This week':[],Older:[]};
++  const now=new Date(),todayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()),weekStart=new Date(todayStart);
++  weekStart.setDate(todayStart.getDate()-((todayStart.getDay()+6)%7));
++  for(const item of items){if(category==='Pinned'||item.pinned){groups.Pinned.push(item);continue}const date=new Date(item.createdAt);groups[date>=todayStart?'Today':date>=weekStart?'This week':'Older'].push(item)}
++  const emptyLabel=category==='Media'?'No media in this Bot’s library yet.':category==='Files'?'No files in this Bot’s library yet.':category==='Pinned'?'No pinned items in this Bot’s library yet.':'No files or media in this Bot’s library yet.';
++
++  return <section className="bot-library" aria-label="Bot library">
++    <div className="library-filters" role="tablist" aria-label="Library item type">{categories.map(value=><button key={value} type="button" role="tab" aria-selected={category===value} className={category===value?'active':''} onClick={()=>setCategory(value)}>{value}</button>)}</div>
++    {!apiCategory?<div className="library-empty">This Library view currently supports generated files and media.</div>:loading?<div className="library-empty" role="status">Loading library…</div>:error&&!items.length?<div className="library-empty" role="alert">{error}</div>:!items.length?<div className="library-empty">{emptyLabel}</div>:<>
++      {(['Pinned','Today','This week','Older'] as const).map(group=>{const rows=groups[group],shown=expanded[group]||5;if(!rows.length)return null;return <section className="library-group" key={group} aria-label={group}>
++        <h3>{group}</h3><div className="library-items">{rows.slice(0,shown).map(item=><div className="library-item" key={item.id}>
++          <RunFileCards files={[item]} onPreview={onPreview}/>
++          <button type="button" className="library-pin" disabled={pinning!==null} aria-label={`${item.pinned?'Unpin':'Pin'} ${item.name}`} onClick={()=>void togglePin(item)}><BotMenuIcon name="pin"/><span>{item.pinned?'Unpin':'Pin'}</span></button>
++        </div>)}</div>
++        {rows.length>shown&&<button type="button" className="library-show-more" onClick={()=>setExpanded(current=>({...current,[group]:shown+5}))}>Show more</button>}
++      </section>})}
++      {error&&<div className="library-feedback" role="alert">{error}</div>}
++      {hasMore&&<button type="button" className="library-load-more" disabled={loadingMore} onClick={()=>void loadMore()}>{loadingMore?'Loading…':'Load more'}</button>}
++    </>}
++  </section>;
++}
++
+ const pendingTeamInviteKey='coke-grok-pending-team-invite';
+ function JoinTeamInviteDialog({token,email,onCancel,onSwitchAccount}:{token:string;email:string;onCancel:()=>void;onSwitchAccount:()=>void}){
+   const [busy,setBusy]=useState(false),[error,setError]=useState('');
+diff --git a/src/web/shell.css b/src/web/shell.css
+index 75aa485..ae862c6 100644
+--- a/src/web/shell.css
++++ b/src/web/shell.css
+@@ -252,6 +252,31 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
+ .computer-controls p { margin: 0; font-size: 12px; color: #666; }
+ .screen-label { padding-top: 12px; color: #666; font-size: 15px; }
+ .panel-placeholder { width: 100%; padding: 18px; border: 1px solid #e9e9e9; border-radius: 10px; color: #777; font-size: 14px; }
++.bot-library { width: 100%; min-width: 0; min-height: 0; flex: 1; align-self: stretch; overflow: auto; color: #222; }
++.library-filters { display: flex; gap: 3px; width: 100%; overflow-x: auto; padding: 0 0 9px; border-bottom: 1px solid #e9e9e9; scrollbar-width: none; }
++.library-filters::-webkit-scrollbar { display: none; }
++.library-filters button { flex: none; padding: 6px 8px; border: 0; border-radius: 8px; color: #777; background: transparent; font: inherit; font-size: 11px; }
++.library-filters button:hover { background: #f1f1f1; }
++.library-filters button.active { color: #111; background: #e9e9e9; }
++.library-group { margin-top: 16px; }
++.library-group h3 { margin: 0 0 8px; color: #777; font-size: 13px; font-weight: 500; }
++.library-items { display: grid; gap: 8px; }
++.library-item { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 5px; min-width: 0; }
++.library-item .run-files { min-width: 0; margin-top: 0; }
++.library-item .run-file-card { gap: 7px; padding: 6px; border-radius: 10px; }
++.library-item .run-file-preview { width: 38px; height: 38px; }
++.library-item .run-file-meta strong { font-size: 11px; }
++.library-item .run-file-meta small { font-size: 10px; }
++.library-item .run-file-card > a { width: 26px; height: 26px; font-size: 15px; }
++.library-pin { display: flex; align-items: center; gap: 3px; padding: 5px 4px; border: 0; border-radius: 7px; color: #777; background: transparent; font: inherit; font-size: 10px; }
++.library-pin:hover:not(:disabled) { color: #222; background: #f1f1f1; }
++.library-pin:disabled { opacity: .55; }
++.library-pin svg { width: 13px; height: 13px; }
++.library-show-more,.library-load-more { display: block; margin: 8px auto 0; padding: 5px 10px; border: 0; border-radius: 8px; color: #666; background: transparent; font: inherit; font-size: 11px; }
++.library-show-more:hover,.library-load-more:hover:not(:disabled) { background: #eee; }
++.library-load-more:disabled { opacity: .6; }
++.library-empty,.library-feedback { width: 100%; padding: 18px 10px; color: #777; font-size: 12px; text-align: center; }
++.library-feedback { padding: 8px; color: #a33333; }
+ .new-chat-view { position: absolute; inset: 0; padding: 16px 20px; }
+ .new-chat-head { display: flex; justify-content: space-between; align-items: center; font-size: 17px; color: #555; }
+ .new-chat-head label { display: flex; align-items: center; gap: 4px; flex: 1; }
+diff --git a/tests/run-http.test.ts b/tests/run-http.test.ts
+index 6b127aa..667abdf 100644
+--- a/tests/run-http.test.ts
++++ b/tests/run-http.test.ts
+@@ -13,6 +13,7 @@ import { createAuthServer } from '../src/server/auth-http.ts';
+ import { Readable } from 'node:stream';
+ import { WorkspaceFileStore } from '../src/server/file-store.ts';
+ import type { WorkspaceFileTransport } from '../src/server/workspace-file-client.ts';
++type BotLibraryItem={id:string;pinned:boolean};
+ const port=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);if(!port)throw new Error('Disposable MySQL port required');
+ const mysqlCredentials = mysqlTestCredentials(port);
+ test('run API is authenticated, owner-scoped, origin-protected and idempotent',async()=>{
+@@ -60,10 +61,28 @@ test('run API is authenticated, owner-scoped, origin-protected and idempotent',a
+   assert.equal((await request(`/api/files/${uploadedFile.id}`,b.cookie)).status,404);const attachedDownload=await request(`/api/files/${uploadedFile.id}`,a.cookie);assert.equal(attachedDownload.status,200);assert.equal(await attachedDownload.text(),uploadBytes.toString());
+   const attachedClaim=await runs.claimNext(a.id,30);assert.equal(attachedClaim?.run.id,attachedRun.id);assert.equal(attachedClaim?.run.files[0].storageKey,workspace.keys().next().value);
+   const outputBytes=Buffer.from('Agent-generated summary');const outputHash=createHash('sha256').update(outputBytes).digest('hex');
+-  assert.equal(await runs.finish(attachedRun.id,attachedClaim!.leaseId,'completed','I read the notes and created a summary.',[{name:'summary.txt',mimeType:'text/plain',size:outputBytes.length,sha256:outputHash,storageKey:`tasks/${attachedRun.id}/artifacts/summary.txt`}]),true);
++  const mediaBytes=Buffer.from('synthetic image artifact'),mediaHash=createHash('sha256').update(mediaBytes).digest('hex');
++  assert.equal(await runs.finish(attachedRun.id,attachedClaim!.leaseId,'completed','I read the notes and created a summary.',[
++    {name:'summary.txt',mimeType:'text/plain',size:outputBytes.length,sha256:outputHash,storageKey:`tasks/${attachedRun.id}/artifacts/summary.txt`},
++    {name:'preview.png',mimeType:'image/png',size:mediaBytes.length,sha256:mediaHash,storageKey:`tasks/${attachedRun.id}/artifacts/preview.png`}
++  ]),true);
+   workspace.set(`tasks/${attachedRun.id}/artifacts/summary.txt`,outputBytes);
+-  const savedRun=(await runs.list({...a.id,email:'a@example.test',name:'A',role:'owner'},bot.id))?.find(run=>run.id===attachedRun.id);assert.equal(savedRun?.files.filter(file=>file.kind==='output').length,1);
+-  const outputFile=savedRun!.files.find(file=>file.kind==='output')!;const downloaded=await request(`/api/files/${outputFile.id}`,a.cookie);assert.equal(downloaded.status,200);assert.match(downloaded.headers.get('content-disposition')||'',/inline/);assert.equal(await downloaded.text(),outputBytes.toString());
++  workspace.set(`tasks/${attachedRun.id}/artifacts/preview.png`,mediaBytes);
++  const savedRun=(await runs.list({...a.id,email:'a@example.test',name:'A',role:'owner'},bot.id))?.find(run=>run.id===attachedRun.id);assert.equal(savedRun?.files.filter(file=>file.kind==='output').length,2);
++  const outputFiles=savedRun!.files.filter(file=>file.kind==='output'),outputFile=outputFiles.find(file=>file.name==='summary.txt')!,mediaFile=outputFiles.find(file=>file.name==='preview.png')!;const downloaded=await request(`/api/files/${outputFile.id}`,a.cookie);assert.equal(downloaded.status,200);assert.match(downloaded.headers.get('content-disposition')||'',/inline/);assert.equal(await downloaded.text(),outputBytes.toString());
++  const libraryPath=`/api/bots/${bot.id}/library`,libraryFor=(cookie:string,category='all')=>request(`${libraryPath}?category=${category}`,cookie);
++  assert.equal((await request(libraryPath)).status,401);assert.equal((await libraryFor(b.cookie)).status,404);assert.equal((await libraryFor(a.cookie,'unsupported')).status,400);
++  const allLibrary=await libraryFor(a.cookie);assert.equal(allLibrary.status,200);const allItems=(await allLibrary.json() as {files:BotLibraryItem[];hasMore:boolean}).files;assert.deepEqual(allItems.map(file=>file.id).sort(),outputFiles.map(file=>file.id).sort());assert.ok(!allItems.some(file=>file.id===uploadedFile.id));
++  const textLibrary=await libraryFor(a.cookie,'files');assert.deepEqual((await textLibrary.json() as {files:BotLibraryItem[]}).files.map(file=>file.id),[outputFile.id]);
++  const mediaLibrary=await libraryFor(a.cookie,'media');assert.deepEqual((await mediaLibrary.json() as {files:BotLibraryItem[]}).files.map(file=>file.id),[mediaFile.id]);
++  assert.equal((await request(`${libraryPath}/${mediaFile.id}`,a.cookie,{method:'PATCH',headers:{'content-type':'application/json'},body:'{"pinned":true}'})).status,403);
++  const pinHeaders={origin,'content-type':'application/json'};
++  assert.equal((await request(`${libraryPath}/${mediaFile.id}`,a.cookie,{method:'PATCH',headers:pinHeaders,body:'{"pinned":true}'})).status,200);
++  const pinnedLibrary=await libraryFor(a.cookie,'pinned');assert.deepEqual((await pinnedLibrary.json() as {files:BotLibraryItem[]}).files.map(file=>[file.id,file.pinned]),[[mediaFile.id,true]]);
++  const allWithPinned=await libraryFor(a.cookie);assert.equal((await allWithPinned.json() as {files:BotLibraryItem[]}).files[0]?.id,mediaFile.id);
++  assert.equal((await request(`${libraryPath}/${mediaFile.id}`,b.cookie,{method:'PATCH',headers:pinHeaders,body:'{"pinned":false}'})).status,404);
++  assert.equal((await request(`${libraryPath}/${mediaFile.id}`,a.cookie,{method:'PATCH',headers:pinHeaders,body:'{"pinned":false}'})).status,200);
++  assert.deepEqual((await libraryFor(a.cookie,'pinned').then(response=>response.json()) as {files:BotLibraryItem[]}).files,[]);
+   const unsafeBytes=Buffer.from('<script>no execution</script>'),unsafeUpload=await request(uploadPath,a.cookie,{method:'POST',headers:{origin,'content-type':'text/html','x-file-name':encodeURIComponent('unsafe.html')},body:new Uint8Array(unsafeBytes)});assert.equal(unsafeUpload.status,201);const unsafeId=(await unsafeUpload.json() as {file:{id:string}}).file.id;
+   const unsafeRun=await runs.create({...a.id,email:'a@example.test',name:'A',role:'owner'},bot.id,randomUUID(),'Inspect HTML',[unsafeId]);assert.ok(unsafeRun);const unsafeClaim=await runs.claimNext(a.id,30);assert.equal(unsafeClaim?.run.id,unsafeRun.id);assert.equal(await runs.finish(unsafeRun.id,unsafeClaim!.leaseId,'completed','Reviewed the file.'),true);
+   const unsafeFile=await request(`/api/files/${unsafeId}`,a.cookie);assert.equal(unsafeFile.status,200);assert.equal(unsafeFile.headers.get('content-type'),'application/octet-stream');assert.match(unsafeFile.headers.get('content-disposition')||'',/attachment/);

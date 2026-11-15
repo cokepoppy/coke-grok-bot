@@ -1,0 +1,14 @@
+2026-11-15 public Computer Use acceptance
+
+Target: https://codex.cokeagent.com/grok-bot/
+Method: signed-in Google Chrome, native Computer Use accessibility controls. No screenshots or coordinate clicks used.
+
+Observed flow:
+- Refreshed the public app after the r2 Auth rollout.
+- Clicked the current Bot title to open Bot details; Details, Library and Computer controls were visible.
+- Clicked Library, then All, Files, Media, Pinned, Pages, Links and Apps.
+- All, Files, Media and Pinned showed the expected empty states for this Bot.
+- Pages stated that this Library view currently supports generated files and media. Links and Apps did not expose file rows.
+- Returned to All. There were no existing output rows, so card preview and public Pin/Unpin persistence were not exercised.
+
+No Bot, run, file, routine, credential, or external site data was created or modified during this acceptance pass.

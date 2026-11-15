@@ -1,0 +1,5 @@
+/artifacts/images/*.tar.gz
+/operations/auth-before.yaml
+/operations/auth-after.yaml
+/operations/auth-rollback.yaml
+/operations/image-archive.sha256

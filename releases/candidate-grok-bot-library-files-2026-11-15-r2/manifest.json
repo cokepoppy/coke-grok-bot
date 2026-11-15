@@ -1,0 +1,32 @@
+{
+  "name": "grok-bot-library-files",
+  "date": "2026-11-15",
+  "status": "candidate-public-empty-state-verified-r2",
+  "source": {
+    "branch": "codex/grok-bot-library-files",
+    "baseCommit": "da9cfb2df7c6d303da71ae2c2a5b453e6eef47e1",
+    "codeCommit": "8c41309fc3e884d88c3e16e966cf551b93be6c43"
+  },
+  "reference": "https://docs.x.ai/grok-bot/files-and-results",
+  "images": {
+    "auth": "coke-grok-auth:candidate-library-files-20261115-r2",
+    "previousAuth": "coke-grok-auth:candidate-library-files-20261115-r1",
+    "platform": "linux/arm64",
+    "archive": "artifacts/images/coke-grok-auth-linux-arm64.tar.gz"
+  },
+  "verification": {
+    "productionBuild": "passed: npm run build:deployment",
+    "mysqlRuntimeSuite": "passed: 20/20 with fixed disposable test MySQL",
+    "publicComputerUse": "passed: signed-in public page opened Bot details > Library; clicked All, Files, Media, Pinned, Pages, Links and Apps; empty states and generated-files/media scope rendered. No existing output rows were available for public card preview or pin interaction."
+  },
+  "deployment": {
+    "kubeContext": "k3d-tp1121-sandbox-dev",
+    "cluster": "tp1121-sandbox-dev",
+    "namespace": "coke-grok-bot",
+    "authReplicas": 1,
+    "scope": "Auth only; no Agent/Desktop, Broker, PVC, MySQL data, or VPS changes",
+    "imageImport": "passed",
+    "rollout": "passed: 1/1 Ready",
+    "brokerAgentUnchanged": true
+  }
+}

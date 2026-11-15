@@ -1,0 +1,9 @@
+*
+!Dockerfile.auth
+!artifacts/
+!artifacts/auth.cjs
+!artifacts/web/
+!artifacts/web/index.html
+!artifacts/web/web-build.json
+!artifacts/web/assets/
+!artifacts/web/assets/**

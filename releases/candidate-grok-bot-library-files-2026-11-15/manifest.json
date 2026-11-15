@@ -1,0 +1,29 @@
+{
+  "name": "grok-bot-library-files",
+  "date": "2026-11-15",
+  "status": "superseded-by-r2",
+  "source": {
+    "branch": "codex/grok-bot-library-files",
+    "baseCommit": "da9cfb2df7c6d303da71ae2c2a5b453e6eef47e1",
+    "codeCommit": "ff4186017232d71c2f3e72d2b4dc55f057137286"
+  },
+  "reference": "https://docs.x.ai/grok-bot/files-and-results",
+  "images": {
+    "auth": "coke-grok-auth:candidate-library-files-20261115-r1",
+    "previousAuth": "coke-grok-auth:candidate-webhook-routines-20261115-r2",
+    "platform": "linux/arm64",
+    "archive": "artifacts/images/coke-grok-auth-linux-arm64.tar.gz"
+  },
+  "verification": {
+    "productionBuild": "passed: npm run build:deployment",
+    "mysqlRuntimeSuite": "passed: 20/20 with fixed disposable test MySQL",
+    "publicComputerUse": "superseded by r2; see ../candidate-grok-bot-library-files-2026-11-15-r2/manifest.json"
+  },
+  "deployment": {
+    "kubeContext": "k3d-tp1121-sandbox-dev",
+    "cluster": "tp1121-sandbox-dev",
+    "namespace": "coke-grok-bot",
+    "authReplicas": 1,
+    "scope": "Auth only; no Agent/Desktop, Broker, PVC, MySQL data, or VPS changes"
+  }
+}
