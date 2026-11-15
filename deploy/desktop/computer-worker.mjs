@@ -8,9 +8,9 @@ import { chromium } from 'playwright-core';
 import { pathToFileURL } from 'node:url';
 import { BrowserContextNotReadyError, getBrowserPage, waitForDefaultBrowserContext } from './browser-context.mjs';
 import { createRendererHealthMonitor, RendererUnresponsiveError } from './renderer-health.mjs';
-import { ActiveTabResolutionError, BotScreenCapacityError, BotScreenPages } from './bot-screen-pages.mjs';
+import { ActiveTabResolutionError, BotScreenAllocationSupersededError, BotScreenAllocationTimeoutError, BotScreenCapacityError, BotScreenPages } from './bot-screen-pages.mjs';
 import { createDesktopScreenLayout, parseDesktopScreenSlots } from './desktop-screen-layout.mjs';
-import { captureOwnedDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from './desktop-input.mjs';
+import { captureOwnedDesktopScreen, clickDesktop, createDesktopActionGate, createScreenCaptureCoalescer, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from './desktop-input.mjs';
 import { ensureSharedComputerRoots } from './shared-computer-root.mjs';
 import { appendControlOwnerEvent, computerScreenKey } from './control-owner-audit.mjs';
 import { createGuardedComputer } from '/opt/coke-grok/guarded-computer.mjs';
@@ -277,10 +277,14 @@ function screenIdFromRequest(req) {
 }
 
 async function screenshot(screenId) {
+  return captureScreen(screenId);
+}
+
+const captureScreen = createScreenCaptureCoalescer(async screenId => {
   const browserPage = await pageForScreen(screenId);
   const bounds = await screenPages.geometry(screenId);
-  return desktopActionGate(async () => captureOwnedDesktopScreen(exec, browserPage, bounds, await screenOwner(screenId)));
-}
+  return desktopActionGate(async () => captureOwnedDesktopScreen(exec, browserPage, bounds, await screenOwner(screenId), operation => rendererHealth.run(operation)));
+});
 
 const taskIdPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const maxArtifactBytes = 25 * 1024 * 1024;
@@ -365,18 +369,17 @@ async function command(input, screenId) {
     });
   }
   if (['click', 'type', 'press'].includes(action)) {
+    // Resolve the Bot page before taking the one physical X11 lock. A slow CDP
+    // lookup should delay only this Bot, never every other Bot's keyboard.
+    const browserPage = await pageForScreen(screenId);
+    const bounds = await screenPages.geometry(screenId);
     return desktopActionGate(async () => {
-      const browserPage = await pageForScreen(screenId);
-      const bounds = await screenPages.geometry(screenId);
       if (action === 'click') {
         const x = Number(input.x), y = Number(input.y);
         if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Click coordinates are invalid');
-        await withFocusedDesktopPage(browserPage, () => clickDesktop(exec, bounds, Math.round(x), Math.round(y)));
-      } else if (action === 'type') {
-        await withFocusedDesktopPage(browserPage, () => typeDesktop(spawn, String(input.text || '')));
-      } else {
-        await withFocusedDesktopPage(browserPage, () => pressDesktopKey(exec, String(input.key || '')));
-      }
+        await withFocusedDesktopPage(browserPage, () => clickDesktop(exec, bounds, Math.round(x), Math.round(y)), operation => rendererHealth.run(operation));
+      } else if (action === 'type') await withFocusedDesktopPage(browserPage, () => typeDesktop(spawn, String(input.text || '')), operation => rendererHealth.run(operation));
+      else await withFocusedDesktopPage(browserPage, () => pressDesktopKey(exec, String(input.key || '')), operation => rendererHealth.run(operation));
       const currentOwner = await screenOwner(screenId);
       if (actor !== currentOwner) throw new Error('Computer ownership changed');
       return {
@@ -397,7 +400,7 @@ async function command(input, screenId) {
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Only credential-free HTTP and HTTPS URLs are allowed');
     await browserPage.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
   } else throw new Error('Unsupported desktop command');
-  await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => undefined));
+  await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => undefined, operation => rendererHealth.run(operation)));
   const currentOwner = await screenOwner(screenId);
   if (actor !== currentOwner) throw new Error('Computer ownership changed');
   return {
@@ -500,7 +503,6 @@ async function agentBrowserAction(input, screenId) {
       const pageState = await browserSecurityState(browserPage);
       if (isAuthenticationChallenge({ url: browserPage.url(), ...pageState })) throw browserTaskPolicyError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
     }
-    await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => undefined));
     return { ready: true, action, url: safePageUrl(browserPage.url()), title: await rendererHealth.run(() => browserPage.title()) };
   }
   return rendererHealth.run(async () => {
@@ -598,7 +600,6 @@ async function agentBrowserAction(input, screenId) {
     } else throw new Error('Unsupported Agent browser action');
 
     const title = await browserPage.title();
-    await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => undefined));
     return { ready: true, action, url: safePageUrl(browserPage.url()), title: title.slice(0, 300) };
   });
 }
@@ -744,15 +745,17 @@ http.createServer(async (req, res) => {
     }
     const contextUnavailable = error instanceof BrowserContextNotReadyError;
     const rendererUnresponsive = error instanceof RendererUnresponsiveError;
+    const screenAllocationTimeout = error instanceof BotScreenAllocationTimeoutError;
+    const screenAllocationSuperseded = error instanceof BotScreenAllocationSupersededError;
     const screenCapacity = error instanceof BotScreenCapacityError;
     const activeTabUnresolved = error instanceof ActiveTabResolutionError;
-    if (rendererUnresponsive) {
+    if (rendererUnresponsive || screenAllocationTimeout) {
       rendererHealth.fail();
       void recoverChromium();
     }
-    return send(res, contextUnavailable || rendererUnresponsive || screenCapacity || activeTabUnresolved ? 503 : 400, {
+    return send(res, contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved ? 503 : 400, {
       error: message.slice(0, 240),
-      ...(contextUnavailable || rendererUnresponsive || screenCapacity || activeTabUnresolved ? { code: error.code } : {}),
+      ...(contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved ? { code: error.code } : {}),
     });
   }
 }).listen(port, '0.0.0.0', () => process.stdout.write(`Dots desktop worker listening on ${port}\n`));

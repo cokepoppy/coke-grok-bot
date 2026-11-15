@@ -180,3 +180,88 @@ test('Bot screen manager rejects malformed IDs before accessing a browser contex
   await assert.rejects(manager.get('not-a-bot'), /Invalid Bot screen id/);
   assert.equal(calls, 0);
 });
+
+test('a stalled screen lookup times out, releases the allocation queue, and ignores its late result', async () => {
+  const page = new FakePage();
+  const originalEvaluate = page.evaluate.bind(page);
+  let blockFirstLookup = true;
+  let resolveLookup;
+  let signalLookupStarted;
+  const lookupStarted = new Promise(resolve => { signalLookupStarted = resolve; });
+  page.evaluate = async (fn, value) => {
+    if (blockFirstLookup && value === undefined) {
+      blockFirstLookup = false;
+      signalLookupStarted();
+      return new Promise(resolve => { resolveLookup = resolve; });
+    }
+    return originalEvaluate(fn, value);
+  };
+
+  const pages = [page];
+  const context = {
+    pages: () => [...pages],
+    async newPage() { const next = new FakePage(); pages.push(next); return next; },
+  };
+  const manager = new BotScreenPages(async () => context, {
+    layout: { width: 1440, height: 900, slots: 2, stride: 1472 },
+    allocationTimeoutMs: 40,
+  });
+  const botA = randomUUID(), botB = randomUUID();
+  const blocked = manager.get(botA);
+  await lookupStarted;
+  const queued = manager.get(botB);
+
+  const [blockedResult, queuedResult] = await Promise.allSettled([blocked, queued]);
+  assert.equal(blockedResult.status, 'rejected');
+  assert.equal(blockedResult.reason.code, 'BOT_SCREEN_ALLOCATION_TIMEOUT');
+  assert.equal(queuedResult.status, 'rejected');
+  assert.equal(queuedResult.reason.code, 'BOT_SCREEN_ALLOCATION_SUPERSEDED');
+
+  const recoveredA = await manager.get(botA);
+  const recoveredB = await manager.get(botB);
+  assert.notEqual(recoveredA, recoveredB);
+  assert.equal(manager.pages.get(botA), recoveredA);
+  assert.equal(manager.pages.get(botB), recoveredB);
+
+  resolveLookup('');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(manager.pages.get(botA), recoveredA, 'a late result from the timed-out generation must not replace the recovered page');
+  assert.equal(manager.pages.get(botB), recoveredB);
+  assert.equal(await recoveredA.evaluate(() => window.name), `coke-grok-screen:${botA}:0`);
+});
+
+test('healthy screen allocations can queue longer than the per-allocation timeout', async () => {
+  const page = new FakePage();
+  const originalEvaluate = page.evaluate.bind(page);
+  let delayFirstLookup = true;
+  page.evaluate = async (fn, value) => {
+    if (delayFirstLookup && value === undefined) {
+      delayFirstLookup = false;
+      await new Promise(resolve => setTimeout(resolve, 190));
+    }
+    return originalEvaluate(fn, value);
+  };
+
+  const pages = [page];
+  let delayFirstNewPage = true;
+  const context = {
+    pages: () => [...pages],
+    async newPage() {
+      if (delayFirstNewPage) {
+        delayFirstNewPage = false;
+        await new Promise(resolve => setTimeout(resolve, 190));
+      }
+      const next = new FakePage();
+      pages.push(next);
+      return next;
+    },
+  };
+  const manager = new BotScreenPages(async () => context, {
+    layout: { width: 1440, height: 900, slots: 3, stride: 1472 },
+    allocationTimeoutMs: 300,
+  });
+
+  const allocated = await Promise.all([manager.get(randomUUID()), manager.get(randomUUID()), manager.get(randomUUID())]);
+  assert.equal(new Set(allocated).size, 3);
+  assert.equal(pages.length, 3);
+});

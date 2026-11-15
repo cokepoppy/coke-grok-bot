@@ -1,4 +1,4 @@
-/** Disposable K3D Browser User and Computer User test without model/API calls. */
+/** Reuses one fixed, isolated K3D desktop for Browser User and Computer User checks. */
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
@@ -7,18 +7,30 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PNG } from 'pngjs';
-import { desktopIdentity, desktopResources } from '../src/server/desktop-resources.ts';
+import { desktopIdentity, desktopResources, type DesktopIdentity } from '../src/server/desktop-resources.ts';
 
 const context = 'k3d-tp1121-sandbox-dev';
 const image = process.env.COKE_GROK_DESKTOP_TEST_IMAGE;
 if (!image) throw new Error('Pinned desktop test image is required');
+const fixedRuntime = process.env.COKE_GROK_DESKTOP_TEST_MODE !== 'ephemeral';
+const fixedRuntimeLabel = 'coke-grok-bot.io/test-runtime';
+const fixedRuntimeMarker = 'desktop-worker-k3d';
+// This stable pair is synthetic and must never identify a live app owner.
+const fixedSession = {
+  tenantId: '00000000-0000-4000-8000-000000000451',
+  userId: '00000000-0000-4000-8000-000000000452',
+};
 
 const temp = await mkdtemp(join(tmpdir(), 'grok-desktop-worker-test-'));
-const identity = desktopIdentity({ tenantId: randomUUID(), userId: randomUUID() }, randomBytes(32));
-const [screenA, screenB] = [randomUUID(), randomUUID()];
+let identity: DesktopIdentity = desktopIdentity(fixedRuntime ? fixedSession : { tenantId: randomUUID(), userId: randomUUID() }, randomBytes(32));
+const [screenA, screenB] = fixedRuntime
+  ? ['7e900001-1970-4f00-8000-000000000001', '7e900002-1970-4f00-8000-000000000002']
+  : [randomUUID(), randomUUID()];
 let created = false;
 let forward: ChildProcess | undefined;
 let forwardStderr = '';
+let podName = '';
+let artifactTaskId = '';
 let stage = 'initialize';
 let lastScreenState: { screenId: string; title: string; text: string; url: string; visibleH1?: string[] } | undefined;
 
@@ -94,24 +106,60 @@ async function expectStatus(response: Response, expected: number, action: string
 try {
   stage = 'verify K3D context';
   assert.equal((await kubectl(['config', 'current-context'])).trim(), context);
-  stage = 'create ephemeral TLS fixture';
-  const cert = join(temp, 'cert.pem'), privateKey = join(temp, 'key.pem');
-  const certResult = await exec('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', privateKey, '-out', cert, '-days', '1', '-subj', '/CN=host.k3d.internal', '-addext', 'subjectAltName=DNS:host.k3d.internal']);
-  assert.equal(certResult.code, 0, 'temporary K3D test certificate should be created');
-  stage = 'create isolated desktop namespace';
-  const resources = desktopResources(identity, { image, controlNamespace: 'coke-grok-bot', gatewayCA: await readFile(cert, 'utf8') });
-  await kubectl(['apply', '-f', '-'], JSON.stringify(resources[0]));
-  created = true;
-  await kubectl(['apply', '-f', '-'], JSON.stringify({ apiVersion: 'v1', kind: 'List', items: resources.slice(1) }));
+  stage = fixedRuntime ? 'load the fixed isolated desktop identity' : 'create ephemeral TLS fixture';
+  let gatewayCA: string;
+  const namespaceJson = fixedRuntime
+    ? await kubectl(['get', 'namespace', identity.namespace, '-o', 'json', '--ignore-not-found'])
+    : '';
+  const namespaceExists = Boolean(namespaceJson);
+  if (namespaceExists) {
+    const namespace = JSON.parse(namespaceJson) as { metadata?: { labels?: Record<string, string> } };
+    assert.equal(namespace.metadata?.labels?.['app.kubernetes.io/managed-by'], 'coke-grok-bot', 'fixed test namespace must be project-owned');
+    assert.equal(namespace.metadata?.labels?.['coke-grok-bot.io/owner-hash'], identity.ownerHash, 'fixed test namespace must match the dedicated test identity');
+    const marker = namespace.metadata?.labels?.[fixedRuntimeLabel];
+    if (marker) assert.equal(marker, fixedRuntimeMarker, 'fixed namespace must be reserved for this Worker test');
+    else await kubectl(['label', 'namespace', identity.namespace, `${fixedRuntimeLabel}=${fixedRuntimeMarker}`]);
+    const secret = JSON.parse(await kubectl(['-n', identity.namespace, 'get', 'secret', 'desktop-runtime', '-o', 'json'])) as { metadata?: { labels?: Record<string, string> }; data?: Record<string, string> };
+    assert.equal(secret.metadata?.labels?.['coke-grok-bot.io/owner-hash'], identity.ownerHash, 'fixed test credentials must be isolated to the test owner');
+    const decode = (key: string) => Buffer.from(secret.data?.[key] || '', 'base64').toString('utf8');
+    identity = { ...identity, workerToken: decode('worker'), agentToken: decode('agent'), controlToken: decode('control'), activeTabBridgeToken: decode('activeTabBridge') };
+    for (const value of [identity.workerToken, identity.agentToken, identity.controlToken, identity.activeTabBridgeToken]) assert.match(value, /^[A-Za-z0-9_-]{43}$/, 'fixed test credentials must be present and well formed');
+    const ca = JSON.parse(await kubectl(['-n', identity.namespace, 'get', 'configmap', 'model-ca', '-o', 'json'])) as { metadata?: { labels?: Record<string, string> }; data?: Record<string, string> };
+    assert.equal(ca.metadata?.labels?.['coke-grok-bot.io/owner-hash'], identity.ownerHash, 'fixed test CA must be isolated to the test owner');
+    gatewayCA = ca.data?.['ca.pem'] || '';
+    assert.ok(gatewayCA.includes('BEGIN CERTIFICATE'), 'fixed test CA certificate should be available');
+  } else {
+    const cert = join(temp, 'cert.pem'), privateKey = join(temp, 'key.pem');
+    const certResult = await exec('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', privateKey, '-out', cert, '-days', '365', '-subj', '/CN=host.k3d.internal', '-addext', 'subjectAltName=DNS:host.k3d.internal']);
+    assert.equal(certResult.code, 0, 'K3D test certificate should be created');
+    gatewayCA = await readFile(cert, 'utf8');
+  }
+  stage = fixedRuntime ? 'apply or reuse fixed isolated desktop' : 'create isolated desktop namespace';
+  const resources = desktopResources(identity, { image, controlNamespace: 'coke-grok-bot', gatewayCA });
+  if (fixedRuntime) {
+    const namespace = resources[0] as { metadata: { labels: Record<string, string> } };
+    namespace.metadata.labels[fixedRuntimeLabel] = fixedRuntimeMarker;
+  }
+  if (namespaceExists) {
+    const pin = JSON.parse(await kubectl(['-n', identity.namespace, 'get', 'configmap', 'desktop-image-pin', '-o', 'json'])) as { metadata?: { labels?: Record<string, string> }; data?: Record<string, string> };
+    assert.equal(pin.metadata?.labels?.['coke-grok-bot.io/owner-hash'], identity.ownerHash, 'fixed test image pin must be isolated to the test owner');
+    if (pin.data?.desktopImage !== image || pin.data?.agentImage !== image) {
+      await kubectl(['-n', identity.namespace, 'delete', 'configmap', 'desktop-image-pin', '--wait=true']);
+    }
+  } else {
+    await kubectl(['apply', '-f', '-'], JSON.stringify(resources[0]));
+    created = true;
+  }
+  const applyResources = namespaceExists ? resources.slice(1).filter(resource => resource.kind !== 'Secret') : resources.slice(1);
+  await kubectl(['apply', '-f', '-'], JSON.stringify({ apiVersion: 'v1', kind: 'List', items: applyResources }));
   stage = 'wait for isolated desktop rollout';
   await kubectl(['-n', identity.namespace, 'rollout', 'status', 'deployment/desktop', '--timeout=150s'], undefined, 160_000);
 
   stage = 'start local browser fixture in isolated Pod';
-  const pod = await kubectl(['-n', identity.namespace, 'get', 'pods', '-l', 'app=grok-desktop', '-o', 'jsonpath={.items[0].metadata.name}']);
-  const fixturePath = `/tmp/grok-screen-fixture-${randomUUID()}.cjs`;
-  const artifactTaskId = randomUUID();
+  podName = await kubectl(['-n', identity.namespace, 'get', 'pods', '-l', 'app=grok-desktop', '-o', 'jsonpath={.items[0].metadata.name}']);
+  artifactTaskId = randomUUID();
   const uploadArtifactPath = `/workspace/tasks/${artifactTaskId}/artifacts/upload-check.txt`;
-  await kubectl(['-n', identity.namespace, 'exec', pod, '-c', 'agent', '--', 'node', '-e', `require('node:fs').mkdirSync(require('node:path').dirname(${JSON.stringify(uploadArtifactPath)}),{recursive:true});require('node:fs').writeFileSync(${JSON.stringify(uploadArtifactPath)},'GROK_UPLOAD_FILE_OK')`]);
+  await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'node', '-e', `require('node:fs').mkdirSync(require('node:path').dirname(${JSON.stringify(uploadArtifactPath)}),{recursive:true});require('node:fs').writeFileSync(${JSON.stringify(uploadArtifactPath)},'GROK_UPLOAD_FILE_OK')`]);
   const fixtureHtml = `<!doctype html><title>SCREEN_LABEL</title><h1>SCREEN_LABEL</h1>
     <div id="screen-marker" style="position:fixed;right:20px;top:20px;width:180px;height:90px;background:SCREEN_COLOR;color:#fff;font:24px sans-serif">SCREEN_LABEL</div>
     <button onclick="document.getElementById('browser').textContent='BROWSER_CLICK_OK'">Mark complete</button><p id="browser">WAITING</p>
@@ -119,17 +167,15 @@ try {
     <form onsubmit="event.preventDefault();document.getElementById('computer').textContent='COMPUTER_INPUT_OK'"><input aria-label="Desktop input" oninput="document.getElementById('typed').textContent=this.value" style="position:fixed;left:120px;top:180px;width:360px;height:54px;background:rgb(255,230,20);font:24px sans-serif"><button type="submit" style="position:fixed;left:520px;top:180px;width:200px;height:54px;background:#155ab5;color:white">Submit</button></form>
     <p id="typed"></p>
     <p id="computer">WAITING</p><p id="shared"></p><script>const key='grok-shared',cookie='grok-shared=ok',had=localStorage.getItem(key)==='ok'&&document.cookie.split('; ').includes(cookie);if(localStorage.getItem(key)!=='ok')localStorage.setItem(key,'ok');if(!document.cookie.split('; ').includes(cookie))document.cookie=cookie+'; path=/';document.getElementById('shared').textContent=had?'SHARED_STATE_OK':'SHARED_STATE_INIT'</script>`;
-  const fixture = `const http=require('node:http');const html=${JSON.stringify(fixtureHtml)};http.createServer((req,res)=>{if(req.url==='/healthz'){res.writeHead(204);return res.end()}const a=req.url==='/a';const label=a?'BOT_A_SCREEN':'BOT_B_SCREEN';const color=a?'rgb(230, 20, 140)':'rgb(20, 140, 230)';res.writeHead(200,{'content-type':'text/html; charset=utf-8'});res.end(html.replaceAll('SCREEN_LABEL',label).replaceAll('SCREEN_COLOR',color))}).listen(18111,'0.0.0.0')`;
-  await kubectl(['-n', identity.namespace, 'exec', pod, '-c', 'agent', '--', 'node', '-e', `require('node:fs').writeFileSync(${JSON.stringify(fixturePath)},${JSON.stringify(fixture)})`]);
-  await kubectl(['-n', identity.namespace, 'exec', pod, '-c', 'agent', '--', 'sh', '-c', `nohup node ${fixturePath} >/tmp/grok-screen-fixture.log 2>&1 </dev/null &`]);
-
-  let fixtureReady = false;
-  for (let attempt = 0; attempt < 30; attempt++) {
-    const probe = await kubectl(['-n', identity.namespace, 'exec', pod, '-c', 'agent', '--', 'node', '-e', "fetch('http://127.0.0.1:18111/healthz',{signal:AbortSignal.timeout(500)}).then(r=>process.stdout.write(String(r.status))).catch(()=>process.exitCode=1)"]).catch(() => '');
-    if (probe === '204') { fixtureReady = true; break; }
-    await new Promise(resolve => setTimeout(resolve, 100));
+  const fixturePath = '/tmp/grok-screen-fixture.cjs';
+  const fixture = `const http=require('node:http');const fs=require('node:fs');const html=${JSON.stringify(fixtureHtml)};http.createServer((req,res)=>{if(req.url==='/healthz'){res.writeHead(204);return res.end()}const a=req.url==='/a';const label=a?'BOT_A_SCREEN':'BOT_B_SCREEN';const color=a?'rgb(230, 20, 140)':'rgb(20, 140, 230)';res.writeHead(200,{'content-type':'text/html; charset=utf-8'});res.end(html.replaceAll('SCREEN_LABEL',label).replaceAll('SCREEN_COLOR',color))}).listen(18111,'127.0.0.1')`;
+  const fixtureProbe = await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'node', '-e', "fetch('http://127.0.0.1:18111/healthz',{signal:AbortSignal.timeout(500)}).then(r=>process.stdout.write(String(r.status))).catch(()=>process.exitCode=1)"]).catch(() => '');
+  if (fixtureProbe !== '204') {
+    await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'node', '-e', `require('node:fs').writeFileSync(${JSON.stringify(fixturePath)},${JSON.stringify(fixture)})`]);
+    await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'sh', '-c', `nohup node ${fixturePath} >/tmp/grok-screen-fixture.log 2>&1 </dev/null &`]);
   }
-  assert.equal(fixtureReady, true, 'disposable fixture should listen inside the shared Pod network');
+  const fixtureReady = await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'node', '-e', "fetch('http://127.0.0.1:18111/healthz',{signal:AbortSignal.timeout(3000)}).then(r=>process.stdout.write(String(r.status))).catch(()=>process.exitCode=1)"]).catch(() => '');
+  assert.equal(fixtureReady, '204', 'reusable fixture should listen inside the isolated shared Pod network');
 
   stage = 'start Worker port-forward';
   forward = spawn('kubectl', ['--context', context, '-n', identity.namespace, 'port-forward', 'service/desktop', ':8082'], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -150,6 +196,7 @@ try {
   stage = 'check Worker readiness';
   const ready = await fetch(`http://127.0.0.1:${workerPort}/readyz`, { signal: AbortSignal.timeout(15_000) });
   assert.equal(ready.status, 200, 'Worker and Chromium should be ready over port-forward');
+  for (const screenId of [screenA, screenB]) await expectStatus(await worker('/v1/control', screenId, { owner: 'agent' }), 200, 'reset fixed test screen to Agent control');
 
   const navigate = async (screenId: string, path: string) => {
     stage = `Browser User navigate ${path}`;
@@ -225,12 +272,12 @@ try {
   assert.equal((await inspect(screenB)).title, 'BOT_B_SCREEN', 'Bot B should remain usable during Bot A takeover');
   assert.equal((await worker('/v1/control', screenA, { owner: 'agent' })).status, 200);
 
-  console.log('Worker K3D test passed: separate Bot screens, shared browser profile, browser click and artifact upload, Computer User input, screenshots, takeover, and cross-Bot isolation; no model calls.');
+  console.log(`Worker K3D test passed (${fixedRuntime ? 'reused fixed test desktop' : 'disposable test desktop'}): separate Bot screens, shared browser profile, browser click and artifact upload, Computer User input, screenshots, takeover, and cross-Bot isolation; no model calls.`);
 } catch (error) {
   console.error(`Last test stage: ${stage}`);
   if (lastScreenState) console.error(`Last inspected screen: ${JSON.stringify({ ...lastScreenState, text: lastScreenState.text.slice(0, 600) })}`);
   if (forwardStderr) console.error(`Worker port-forward stderr: ${forwardStderr.slice(-1000)}`);
-  if (created) {
+  if (created || podName) {
     const podsJson = await kubectl(['-n', identity.namespace, 'get', 'pods', '-o', 'json']).catch(() => '');
     if (podsJson) {
       const podInfo = JSON.parse(podsJson).items.map((pod: any) => ({ name: pod.metadata.name, containers: pod.status.containerStatuses?.map((container: any) => ({ name: container.name, restarts: container.restartCount, ready: container.ready, reason: container.state?.terminated?.reason || container.lastState?.terminated?.reason || '' })) }));
@@ -246,7 +293,11 @@ try {
   const cause = error instanceof Error && 'cause' in error ? (error as Error & { cause?: { code?: string } }).cause?.code : undefined;
   throw new Error(`Desktop Worker K3D test failed at ${stage} on port ${workerPort || 'unassigned'} (${cause || 'no-cause-code'}): ${message}`, { cause: error });
 } finally {
+  if (workerPort) for (const screenId of [screenA, screenB]) await worker('/v1/control', screenId, { owner: 'agent' }).catch(() => undefined);
+  if (podName && /^[0-9a-f-]{36}$/i.test(artifactTaskId)) {
+    await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'rm', '-rf', `/workspace/tasks/${artifactTaskId}`]).catch(() => undefined);
+  }
   if (forward) { forward.kill('SIGTERM'); await once(forward, 'exit').catch(() => {}); }
-  if (created) await kubectl(['delete', 'namespace', identity.namespace, '--wait=true', '--timeout=90s'], undefined, 100_000);
+  if (created && !fixedRuntime) await kubectl(['delete', 'namespace', identity.namespace, '--wait=true', '--timeout=90s'], undefined, 100_000);
   await rm(temp, { recursive: true, force: true });
 }

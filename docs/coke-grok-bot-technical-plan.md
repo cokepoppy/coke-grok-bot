@@ -116,8 +116,9 @@ flowchart LR
 ### 4.1 Bot 与电脑
 
 - 初始模型：一个个人用户在一个租户内拥有一台持久电脑；该用户的多个 Bot 共享电脑内的浏览器登录态和文件，但各 Bot 的聊天、角色、记忆及任务记录独立。
-- 多 Bot 聊天和普通文本推理可并行。官方说明每个 Bot 在共享电脑上有自己的屏幕，可并行使用浏览器/桌面工具；同一个 Bot 同时最多执行一个 computer-use 任务。用户文件、浏览器登录态仍共享，屏幕不是安全隔离边界。
+- 多 Bot 聊天和普通文本推理可并行。[xAI 官方电脑文档](https://docs.x.ai/grok-bot/computer-and-apps)说明每个 Bot 在共享电脑上有自己的屏幕，可并行使用浏览器/桌面工具；同一个 Bot 同时最多执行一个 computer-use 任务。用户文件、浏览器登录态仍共享，屏幕不是安全隔离边界。
 - 初版 Dots 复用实现是一名用户一套 Chromium/X11 屏幕，并把该用户所有 Bot 的运行串成队列。本候选把运行租约、浏览器页面、截图、电脑控制和人工接管按 Bot 绑定，并让不同 Bot 在全局资源上限内并行；同一 Bot 仍串行。Bot 页面使用同一个持久 Chromium context，以共享 Cookie/存储和用户 PVC。它是应用层的浏览器页面屏幕，不宣称等价于官方硬件隔离或独立完整 OS 桌面。
+- X11 是共享的实体桌面输入面，同一时刻的真实键鼠、焦点切换和整屏截图必须串行；Browser User 对独立 Chromium 页面执行的 DOM 导航/点击/输入不应仅为更新预览而抢占该全局输入锁。云电脑截图仍按需聚焦对应页面；同一屏幕的重叠截图请求合并，滚出视口的运行卡暂停轮询。提升并发上限前先测量队列等待、动作耗时和 Desktop 内存。
 - 每个工作任务保留独立工作目录和原生 session；用户共享电脑文件与 Bot 会话分属不同范围。禁止路径穿越、跨任务或跨租户 session 恢复。
 
 ### 4.2 Agent、任务与事件
@@ -125,6 +126,7 @@ flowchart LR
 - **运行位置**：Pi/DeepSeek Harness 在所属用户的 Mac K3D 云电脑内运行；控制面只负责任务、权限、调度和审计。
 - **持久状态**：消息、任务、工具事件、结果、审批、定时计划先写 MySQL；建议状态为 `queued → running → waiting_approval / completed / failed / canceled / unknown`，失败、取消和外部副作用不明确必须可区分。
 - **恢复**：使用 MySQL 事务、任务租约、到期回收和有序事件游标；刷新/重连后根据已存状态还原。调度采取至少一次投递与去重设计，外部副作用不得假定天然恰好一次。
+- **队列状态**：区分同 Bot 正在运行/结果待核、全局运行槽位已满、云电脑连接恢复和真正执行失败；`unknown/pending` 只阻塞可能重复副作用的同 Bot 屏幕，必须核对执行审计后才允许继续。不可把未决结果伪装成普通排队，也不可静默自动重放。
 - **重试**：只对有明确定义的幂等步骤自动重试；外部写入或非幂等请求超时/5xx 后先检查已持久化进度，不重复发送。
 - **任务授权与人工介入**：对用户明确要求的任务，在绑定 owner、tenant、Bot、run 和有效 lease 的范围内直接执行所需动作，不为普通点击、搜索、文件操作或用户明确要求的发送/修改/提交创建逐步审批卡。任务本身没有授权的动作不执行，也不从网页、邮件或文件内容推导授权；信息不足时先澄清任务范围。登录凭据、一次性验证码、MFA、CAPTCHA 和其他真人身份验证暂停自动化并交由用户接管。历史审批数据可保留用于审计与迁移，但不得让旧运行时继续生成新的普通动作审批。
 - **网页导航与登录交接**：用户要求打开网页或完成网站任务时，普通 HTTP/HTTPS 导航与完成该任务所需的页面操作由 Browser User/Computer User 直接完成，不应逐步提示用户批准；到达登录或真人身份验证步骤时，停止 Agent 操作并把云电脑交还用户。用户归还控制后，按原任务继续，不重复已完成步骤。
@@ -3125,3 +3127,27 @@ Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无
 #### 2026-11-15 官方行为文档复核
 
 复核 xAI 官方[概览](https://docs.x.ai/grok-bot/overview)、[聊天与协作](https://docs.x.ai/grok-bot/chat-and-collaboration)、[电脑与应用](https://docs.x.ai/grok-bot/computer-and-apps)及[文件与结果](https://docs.x.ai/grok-bot/files-and-results)。当前行为规格记录在 `research/README.md`：可编辑的语音听写草稿；单 Bot 实时语音与通话后转录；2–6 Bot 群聊、`@` 路由和异步交接；每位用户持久且由个人 Bots 共享文件/登录态的电脑、每 Bot 独立屏幕；右侧电脑预览、登录/真人验证接管和聊天结果媒体卡。官方文档只定义行为预期，不证明当前候选代码或公网部署已实现；视觉外观仍以官方客户端和逐帧视频证据核对，运行能力仍须真实端到端验收。
+
+#### 2026-11-15 多 Bot 屏幕争用优化与 Desktop OOM 证据
+
+在唯一 feature 分支 `codex/grok-screen-contention`（初始提交 `64deb68`）减少共享桌面锁争用：Browser User 的 DOM 导航/点击/填充不再为预览更新而在每步后请求 `desktopActionGate`；同一 Bot 屏幕的重叠截图请求共用一次整屏截图；电脑活动卡通过 `IntersectionObserver` 判断可视范围，初始不可见时不发截图请求，滚出可视范围后暂停轮询。真实 X11 键鼠输入、焦点切换、用户接管和整屏截图仍使用全局串行锁。
+
+之后只读 K3D 检查在命名空间 `grok-user-efbc9abae2560feb29bc9ba3719c77ce` 发现 Desktop Pod `desktop-f4f444cd9-brx98` 曾以 `OOMKilled`/137 退出一次（`2026-11-15T04:02:22Z`）；Pod 内存 request 为 512 Mi、limit 为 2 Gi。事件记录其重启前曾有一次 readiness HTTP 503。当前容器重启后 `kubectl top` 约 936 Mi，cgroup `memory.current` 约 1.02 GB、`memory.max` 2 Gi；三台 Desktop 的当前用量约 922/753/936 Mi。重启后的 cgroup OOM 计数为 0，不能回推出已退出进程的峰值。
+
+该 namespace 的脱敏 owner 与当前北交所 Tester Bot 的映射尚未证实，因此 OOM 不能直接归因于该 Tester 的 `Outcome unknown`，也不能解释所有历史卡顿。后续提高并发或重启前先确认当前 Bot/owner/run 和活跃 lease，保留 PVC/登录态；当时 Chrome Browser Use 在取页面无障碍状态和重置后的 `getState` 均超时，未完成公网映射/验收。按既有 Computer Use 超时记忆停止循环重试，在公开控制恢复前继续离线工作；不得据此声称已部署或已解决 OOM。
+
+追加代码审查发现另一个明确的全屏锁滞留路径：桌面 click/type/press 在拿到 `desktopActionGate` 后才解析 CDP Bot 页面，而 `bringToFront()` 未受 RendererHealth 的 3 秒超时保护。页面解析或聚焦若不返回，会占着跨 Bot 共用的物理桌面锁。分支修复为先解析页面再取锁，并只对页面聚焦套现有 RendererHealth；聚焦超时会走现有 Chromium 恢复路径，后续 X11 输入不会误发。截图聚焦也使用同一个健康保护。此原因由代码确认，但没有证据证明它造成某一条历史运行卡住。
+
+同一只读快照节点容量约 7.75 GiB、最新检查实际使用约 4.79 GiB（61%）、`MemoryPressure=False`；三个 Desktop 各约 0.9 GiB。它提示单 Pod 2 GiB limit 下的浏览器资源余量仍应监控，但当前快照不支持“节点整体内存耗尽”。旧版本已有的 X11 输入子进程超时与租约重试修复、截图轮询/合并优化均已推送；本次新增的 CDP 聚焦保护与页面解析移锁通过 `node --check`、`git diff --check`、`npm run build:deployment`，定向 `tests/desktop-input.test.mjs` 11/11 通过，`npm run test:runtime` 204/204 通过。该分支仍未部署、合并或做公网 Browser/Computer Use 验收。
+
+从功能分支 HEAD `47ee7dd` 构建了本机 Docker 候选 `coke-grok-desktop:candidate-screen-contention-20261115`，镜像 digest `sha256:5ed9116deaf18e284be6cf2f980e7ec780339521ab0eb48cb9b7fd63c4dfac4f`，linux/arm64，Docker build context 677 KB。没有创建容器或导入 K3D；K3D 仍运行旧的 Agent/desktop 镜像。只读统计见一个电脑 screen 的 owner 为 `user`，但无法把该 screen 安全映射到北交所 Tester，因此未重启或滚动更新任何共享 Pod。公网入口的 HTTP 200 不是端到端证据。
+
+后续代码审查确认 `BotScreenPages.allocate()` 也会串行占用跨 Bot 的页面分配队列；旧实现没有超时，CDP 页面扫描或窗口创建若一直不返回，会让后续 Bot 屏幕创建全部等待。新增 15 秒**持锁操作超时**：超时后失效当前分配代际、释放逻辑队列，并触发现有 Chromium 单例恢复；等待者得到 `BOT_SCREEN_ALLOCATION_SUPERSEDED`，不会各自触发恢复；迟到的旧 CDP 结果不能覆盖新页面映射。计时从真正持有分配锁时开始，不计算正常排队时间，避免多 Bot 依次初始化超过 15 秒时误重启。定向测试覆盖卡死恢复、迟到结果隔离和健康分配排队 385 ms（超过测试超时）的情形；`tests/bot-screen-pages.test.mjs` 11/11、`npm run test:runtime` 206/206、`npm run build:deployment`、`node --check` 与 `git diff --check` 通过。
+
+更新后的本机候选镜像仍使用 `coke-grok-desktop:candidate-screen-contention-20261115`，digest `sha256:f4b5cc2cc390303c61f157d2debcc8561f420d55c8e3bbe18c66bfe0519ce27b`，linux/arm64，镜像约 913 MB。只构建了镜像，没有新建容器、导入 K3D 或重启任何电脑；此补丁还没有部署，也没有公网 Computer Use 压力验收，因此只能确认代码级死锁恢复路径和本机构建，不代表线上卡顿已解决。
+
+#### 2026-11-15 固定 K3D Worker 验收资源
+
+`tests/desktop-worker-k3d.e2e.ts` 过去每次运行都会生成随机租户、namespace、PVC、云电脑和浏览器 fixture，再删除整套资源；这会反复拉起容器并增加 K3D/PVC 生命周期噪声。默认模式现改为复用一个合成测试身份、固定 Bot screen ID、同一个 Desktop Deployment 和 workspace PVC。复用前校验 namespace 与 Secret 的 owner hash 和项目标签；凭据从测试 Secret 读取但不打印、不覆盖；浏览器 fixture 与 PVC 持久复用。旧的一次性模式仅在 `COKE_GROK_DESKTOP_TEST_MODE=ephemeral` 时启用。测试只清理本次随机任务目录并把两个测试屏幕归还给 Agent。
+
+本轮三次连续运行 `npm run test:desktop-worker-k3d` 均通过；后两次复用了同一个 Pod UID `7e486848-9306-4613-96b1-970d499cf52e` 和 Bound workspace PVC UID `4cc9a951-65c5-47ce-925a-74faf86170a9`，未新建 namespace 或 Pod。覆盖两屏并行、共享登录态、真实 Chromium Browser User 点击与文件上传、1440x900 Worker 屏幕、Computer User 键鼠输入、接管时停止 Agent 操作及跨 Bot 隔离；没有调用模型，故不能代替 Pi/DeepSeek 任务验收。定向控制/调度回归 43/43、`npm run test:runtime` 206/206、`npx tsc --noEmit`、`git diff --check` 均通过。测试 namespace `grok-user-b6c851fd5b4fc610966aba5c03018772` 使用候选镜像；它是单独的测试 Worker，不是公网/用户电脑部署。节点 MemoryPressure 为 False，测试后使用约 767 MiB；当前内存利用率约 71%，因此不提高生产并发上限。公网运行仍是旧部署，是否缓解线上卡顿仍需单独部署后验收。

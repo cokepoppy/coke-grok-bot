@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { readFile, writeFile } from 'node:fs/promises';
-import { captureDesktopScreen, captureFocusedDesktopScreen, captureOwnedDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from '../deploy/desktop/desktop-input.mjs';
+import { captureDesktopScreen, captureFocusedDesktopScreen, captureOwnedDesktopScreen, clickDesktop, createDesktopActionGate, createScreenCaptureCoalescer, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from '../deploy/desktop/desktop-input.mjs';
 
 test('desktop screenshot captures only the Bot screen rectangle as PNG bytes', async () => {
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -105,6 +105,48 @@ test('desktop X11 actions serialize focus plus input while allowing async comple
   release();
   await Promise.all([first, second]);
   assert.deepEqual(events, ['first-start', 'first-end', 'second-start']);
+});
+
+test('desktop input never runs when the guarded Bot-page focus fails', async () => {
+  const events = [];
+  const page = { async bringToFront() { events.push('focus'); } };
+  const result = await withFocusedDesktopPage(page, async () => { events.push('input'); return 'done'; }, async operation => {
+    events.push('guard-start');
+    await operation();
+    events.push('guard-end');
+  });
+  assert.equal(result, 'done');
+  assert.deepEqual(events, ['guard-start', 'focus', 'guard-end', 'input']);
+
+  let inputRan = false;
+  await assert.rejects(() => withFocusedDesktopPage(page, async () => { inputRan = true; }, async () => {
+    throw new Error('CDP focus timed out');
+  }), /CDP focus timed out/);
+  assert.equal(inputRan, false);
+});
+
+test('overlapping screenshot readers share one capture per Bot screen', async () => {
+  const calls = [];
+  let releaseFirst;
+  const capture = createScreenCaptureCoalescer(async screenId => {
+    calls.push(screenId);
+    if (screenId === 'bot-a' && calls.filter(value => value === screenId).length === 1) {
+      return new Promise(resolve => { releaseFirst = resolve; });
+    }
+    return Buffer.from(screenId);
+  });
+  const first = capture('bot-a');
+  const duplicate = capture('bot-a');
+  const otherScreen = capture('bot-b');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(first, duplicate);
+  assert.deepEqual(calls, ['bot-a', 'bot-b']);
+  releaseFirst(Buffer.from('bot-a'));
+  assert.equal((await first).toString(), 'bot-a');
+  assert.equal((await duplicate).toString(), 'bot-a');
+  assert.equal((await otherScreen).toString(), 'bot-b');
+  assert.equal((await capture('bot-a')).toString(), 'bot-a');
+  assert.deepEqual(calls, ['bot-a', 'bot-b', 'bot-a']);
 });
 
 test('desktop typing and keys activate the current Bot page before emitting X11 input', async () => {
