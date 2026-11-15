@@ -10,7 +10,7 @@ import { BrowserContextNotReadyError, getBrowserPage, waitForDefaultBrowserConte
 import { createRendererHealthMonitor, RendererUnresponsiveError } from './renderer-health.mjs';
 import { ActiveTabResolutionError, BotScreenCapacityError, BotScreenPages } from './bot-screen-pages.mjs';
 import { createDesktopScreenLayout, parseDesktopScreenSlots } from './desktop-screen-layout.mjs';
-import { captureOwnedDesktopScreen, clickDesktop, createDesktopActionGate, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from './desktop-input.mjs';
+import { captureOwnedDesktopScreen, clickDesktop, createDesktopActionGate, createScreenCaptureCoalescer, pressDesktopKey, typeDesktop, withFocusedDesktopPage } from './desktop-input.mjs';
 import { ensureSharedComputerRoots } from './shared-computer-root.mjs';
 import { appendControlOwnerEvent, computerScreenKey } from './control-owner-audit.mjs';
 import { createGuardedComputer } from '/opt/coke-grok/guarded-computer.mjs';
@@ -277,10 +277,14 @@ function screenIdFromRequest(req) {
 }
 
 async function screenshot(screenId) {
+  return captureScreen(screenId);
+}
+
+const captureScreen = createScreenCaptureCoalescer(async screenId => {
   const browserPage = await pageForScreen(screenId);
   const bounds = await screenPages.geometry(screenId);
   return desktopActionGate(async () => captureOwnedDesktopScreen(exec, browserPage, bounds, await screenOwner(screenId)));
-}
+});
 
 const taskIdPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const maxArtifactBytes = 25 * 1024 * 1024;
@@ -500,7 +504,6 @@ async function agentBrowserAction(input, screenId) {
       const pageState = await browserSecurityState(browserPage);
       if (isAuthenticationChallenge({ url: browserPage.url(), ...pageState })) throw browserTaskPolicyError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
     }
-    await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => undefined));
     return { ready: true, action, url: safePageUrl(browserPage.url()), title: await rendererHealth.run(() => browserPage.title()) };
   }
   return rendererHealth.run(async () => {
@@ -598,7 +601,6 @@ async function agentBrowserAction(input, screenId) {
     } else throw new Error('Unsupported Agent browser action');
 
     const title = await browserPage.title();
-    await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => undefined));
     return { ready: true, action, url: safePageUrl(browserPage.url()), title: title.slice(0, 300) };
   });
 }

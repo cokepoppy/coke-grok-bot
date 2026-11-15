@@ -646,9 +646,18 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
   const [image,setImage]=useState('');
   const [unavailable,setUnavailable]=useState(false);
   const imageUrl=useRef('');
+  const cardElement=useRef<HTMLElement|null>(null);
+  const [cardVisible,setCardVisible]=useState(true);
   const status=run.status==='running'?'Working':run.status==='queued'?'Queued':run.status==='completed'?'Done':run.status==='failed'?'Failed':'Review';
   useEffect(()=>{
-    if(!showScreen||run.status==='queued')return;
+    const element=cardElement.current;
+    if(!element||typeof IntersectionObserver==='undefined')return;
+    const observer=new IntersectionObserver(entries=>setCardVisible(Boolean(entries[0]?.isIntersecting)),{rootMargin:'240px 0px'});
+    observer.observe(element);
+    return()=>observer.disconnect();
+  },[]);
+  useEffect(()=>{
+    if(!showScreen||run.status==='queued'||!cardVisible)return;
     let stopped=false,timer:ReturnType<typeof setTimeout>|undefined;
     const controller=new AbortController();
     const refresh=async()=>{
@@ -662,9 +671,9 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
     };
     void refresh();
     return()=>{stopped=true;controller.abort();if(timer)clearTimeout(timer);if(imageUrl.current)URL.revokeObjectURL(imageUrl.current);imageUrl.current=''};
-  },[botId,run.id,run.status,showScreen]);
+  },[botId,cardVisible,run.id,run.status,showScreen]);
   const toolLabel=(tool:string)=>tool==='computer_browser'?'Browser User':tool==='computer_desktop'?'Computer User':tool==='computer_files'?'Computer files':tool==='computer_terminal'?'Computer terminal':tool==='open_public_page'?'Public page':tool==='bot_handoff'?'Bot handoff':tool==='bot_memory'?'Bot memory':tool==='bot_routines'?'Bot routines':tool;
-  return <section className="computer-activity-card" aria-label={`Computer activity · ${status}`}>
+  return <section ref={cardElement} className="computer-activity-card" aria-label={`Computer activity · ${status}`}>
     <header><strong>Computer</strong><span className={`computer-activity-status ${run.status}`}><i />{status}</span></header>
     {run.prompt.trim()&&<p className="computer-activity-prompt">{run.prompt}</p>}
     {children}

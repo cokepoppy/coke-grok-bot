@@ -48,6 +48,22 @@ export function createDesktopActionGate() {
   };
 }
 
+/** Share a single physical-screen capture among overlapping readers of one Bot screen. */
+export function createScreenCaptureCoalescer(capture) {
+  if (typeof capture !== 'function') throw new Error('A screen capture function is required');
+  const inFlight = new Map();
+  return function captureScreen(screenId) {
+    const active = inFlight.get(screenId);
+    if (active) return active;
+    let request;
+    request = Promise.resolve().then(() => capture(screenId)).finally(() => {
+      if (inFlight.get(screenId) === request) inFlight.delete(screenId);
+    });
+    inFlight.set(screenId, request);
+    return request;
+  };
+}
+
 export async function withFocusedDesktopPage(page, action) {
   if (!page || typeof page.bringToFront !== 'function' || typeof action !== 'function') throw new Error('A Bot browser page and desktop action are required');
   await page.bringToFront();
