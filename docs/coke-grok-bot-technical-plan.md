@@ -3183,3 +3183,17 @@ Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无
 公网 Bot Tester 在目标页面只读确认了 Demo 标识、基准价 10.00 元及上/下限 13.00 元和 7.00 元；没有保存五个边界用例的运行结果。后续按“不要登录；若没有校验控件，请停止并报告”的任务执行时，Worker 未点击页面按钮，任务错误地返回“ends at a user sign-in handoff”。复现确认：`requestsUserSignInHandoff()` 的宽松正则把“不登录”与稍后无关的“停止并报告”关联成登录交接，Pi 因而为整个 run 注入登录限制并阻断普通 Browser/Computer 动作。这是本次直接原因，不是云电脑人类接管或站点网络故障。
 
 同一功能分支已修正识别器：只有明确关联登录/验证边界的停止与人工接管表述才触发交接；否定登录约束和无关失败停止条件不再触发。新增策略和 Pi 派发回归覆盖该反例并保留真实 Gmail 登录交接用例，定向测试 37/37 通过；本次提示词现分类为非登录交接。Auth 镜像重建、K3D 部署与公网重新点击“运行边界校验”仍待完成；5/5、逐项提示和多 Bot 群聊工作流均未验收，不能据此宣称完成。
+
+#### 2026-11-15 北交所公网点击验收（多 Bot 汇总仍未闭环）
+
+Mac 解锁后在已登录 Chrome 的公网 `/grok-bot/` 会话继续验收。`cua.getTab("841112101", {browser:"Chrome"})` 未绑定（浏览器名称不可用）；改用已枚举的浏览器 ID `"1"` 绑定标签页 30 秒超时并重置 CUA kernel。按既有恢复路径只尝试一次 `cua.getApp("Google Chrome")` 原生辅助功能树，成功读取标签与页面并切回北交所项目会话；没有用截图、坐标、HTTP 或脚本代替网页验收。
+
+Tester Bot 的公网对话最终记录真实 Browser User 操作链：`Pi · deepseek-v4.1-flash`、Browser User inspect/click/inspect succeeded；在 `https://c-m-ai-copilot.github.io/coke-bse-trading-demo/` 点击页面的“运行边界校验”，UI 显示 5/5 PASS，默认申报价区间 ¥7.00–¥13.00。页面可见标识是 `纯前端演示`、`行情 合成`、`网络 0 请求`；没有真实委托或买卖动作。五个固定用例覆盖上下限、上下限外 0.01 元和中点，但没有零/极小参考价用例，因此不能据此证明零成交量/除零边界。
+
+独立规则核对使用北交所官网[北证公告〔2026〕43号](https://www.bse.cn/jygl_list/200029608.html)和[《北京证券交易规则》](https://www.bse.cn/jygl_list/200028217.html)：公告 2026-10-16 发布，明确第 3.6.5(2)(3) 自 2026-10-26 实施；按官网条文，上限为 `min(实时成交均价×130%, 当日最高成交价)`，下限为 `max(实时成交均价×70%, 当日最低成交价)`，均价为成交金额除以成交股数，边界含本数。规则研究 Bot 的原始异步 handoff 仍保留 `Outcome unknown`，其本轮状态消息仅引用上述已核对条文，不能表述为“研究员原始任务成功”。
+
+Developer Bot 只读核对 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`；现有 `index.html` 与 `README.md` 已有规则演示，未找到确认的实际缺陷。Ops Bot 确认 PR #1 已合并、Pages 可访问；这是既有 PR，并非本轮通过群协作新建。公网 Bot 验收期间没有修改应用代码、创建分支/PR 或部署。
+
+项目主管最终汇总仍未完成。主管会话显示 `Queued · waiting for your computer` 和 `Review uncertain task outcome`；打开屏幕只确认 `Bot is in control`，没有看到人类接管状态。点击“我已检查·继续”后输入框曾短暂恢复，随后任务再次进入 review/unknown，输入框重新禁用；没有点 Retry、没有再次派发外部任务、没有重启电脑，也没有截图。群聊中的一次仅请求主管总结的消息之后，多个成员曾显示 Queued/Working，表明群消息可能触发成员级 fan-out，但触发机制尚未确认。根因不能归为 Mac 锁屏、电脑断连或权限审批；需要后续从运行状态/队列和项目主管 handoff 持久化路径取证。
+
+验收结论：真实公网 Browser User 页面测试通过；北交所现有演示页面无需重复开发，也无证据要求新 PR。**多 Bot 项目群的主管汇总和原始研究 handoff 状态仍未确认，BSE 多 Bot 协作端到端目标未完成**；暂不合并本功能分支或打 checkpoint tag。
