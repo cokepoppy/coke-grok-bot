@@ -107,6 +107,24 @@ test('desktop X11 actions serialize focus plus input while allowing async comple
   assert.deepEqual(events, ['first-start', 'first-end', 'second-start']);
 });
 
+test('desktop input never runs when the guarded Bot-page focus fails', async () => {
+  const events = [];
+  const page = { async bringToFront() { events.push('focus'); } };
+  const result = await withFocusedDesktopPage(page, async () => { events.push('input'); return 'done'; }, async operation => {
+    events.push('guard-start');
+    await operation();
+    events.push('guard-end');
+  });
+  assert.equal(result, 'done');
+  assert.deepEqual(events, ['guard-start', 'focus', 'guard-end', 'input']);
+
+  let inputRan = false;
+  await assert.rejects(() => withFocusedDesktopPage(page, async () => { inputRan = true; }, async () => {
+    throw new Error('CDP focus timed out');
+  }), /CDP focus timed out/);
+  assert.equal(inputRan, false);
+});
+
 test('overlapping screenshot readers share one capture per Bot screen', async () => {
   const calls = [];
   let releaseFirst;
