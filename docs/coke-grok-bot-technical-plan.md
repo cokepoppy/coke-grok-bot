@@ -3127,3 +3127,11 @@ Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无
 #### 2026-11-15 官方行为文档复核
 
 复核 xAI 官方[概览](https://docs.x.ai/grok-bot/overview)、[聊天与协作](https://docs.x.ai/grok-bot/chat-and-collaboration)、[电脑与应用](https://docs.x.ai/grok-bot/computer-and-apps)及[文件与结果](https://docs.x.ai/grok-bot/files-and-results)。当前行为规格记录在 `research/README.md`：可编辑的语音听写草稿；单 Bot 实时语音与通话后转录；2–6 Bot 群聊、`@` 路由和异步交接；每位用户持久且由个人 Bots 共享文件/登录态的电脑、每 Bot 独立屏幕；右侧电脑预览、登录/真人验证接管和聊天结果媒体卡。官方文档只定义行为预期，不证明当前候选代码或公网部署已实现；视觉外观仍以官方客户端和逐帧视频证据核对，运行能力仍须真实端到端验收。
+
+#### 2026-11-15 多 Bot 屏幕争用优化与 Desktop OOM 证据
+
+在唯一 feature 分支 `codex/grok-screen-contention`（当前远端提交 `fa7f40c`）减少共享桌面锁争用：Browser User 的 DOM 导航/点击/填充不再为预览更新而在每步后请求 `desktopActionGate`；同一 Bot 屏幕的重叠截图请求共用一次整屏截图；电脑活动卡通过 `IntersectionObserver` 判断可视范围，初始不可见时不发截图请求，滚出可视范围后暂停轮询。真实 X11 键鼠输入、焦点切换、用户接管和整屏截图仍使用全局串行锁。`tests/desktop-input.test.mjs` 10/10 通过，`npm run build:deployment` 与 `git diff --check` 通过。此 feature 已推送，但尚未部署、合并或做公网验收。
+
+之后只读 K3D 检查在命名空间 `grok-user-efbc9abae2560feb29bc9ba3719c77ce` 发现 Desktop Pod `desktop-f4f444cd9-brx98` 曾以 `OOMKilled`/137 退出一次（`2026-11-15T04:02:22Z`）；Pod 内存 request 为 512 Mi、limit 为 2 Gi。事件记录其重启前曾有一次 readiness HTTP 503。当前容器重启后 `kubectl top` 约 936 Mi，cgroup `memory.current` 约 1.02 GB、`memory.max` 2 Gi；三台 Desktop 的当前用量约 922/753/936 Mi。重启后的 cgroup OOM 计数为 0，不能回推出已退出进程的峰值。
+
+该 namespace 的脱敏 owner 与当前北交所 Tester Bot 的映射尚未证实，因此 OOM 不能直接归因于该 Tester 的 `Outcome unknown`，也不能解释所有历史卡顿。后续提高并发或重启前先确认当前 Bot/owner/run 和活跃 lease，保留 PVC/登录态；当时 Chrome Browser Use 在取页面无障碍状态和重置后的 `getState` 均超时，未完成公网映射/验收。按既有 Computer Use 超时记忆停止循环重试，在公开控制恢复前继续离线工作；不得据此声称已部署或已解决 OOM。
