@@ -1,0 +1,3 @@
+public_page_http=200
+public_ready_http=204
+Scope: supporting availability checks only; not Browser/Computer Use acceptance.

@@ -1,0 +1,20 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "coke-grok-auth",
+    "namespace": "coke-grok-bot"
+  },
+  "spec": {
+    "template": {
+      "spec": {
+        "containers": [
+          {
+            "name": "auth",
+            "image": "coke-grok-auth:candidate-signin-handoff-fix-2655b22-20261115"
+          }
+        ]
+      }
+    }
+  }
+}

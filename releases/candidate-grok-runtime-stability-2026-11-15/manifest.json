@@ -1,0 +1,53 @@
+{
+  "name": "candidate-grok-runtime-stability-2026-11-15",
+  "status": "candidate-deployed-awaiting-public-browser-acceptance",
+  "source": {
+    "branch": "codex/grok-poll-loop-isolation",
+    "commit": "b8c4b61c61990c64779b086789bb84ab3cb51cd1",
+    "baseCommit": "6645a5043f6b1559126ee06329f0cf1da46bf783",
+    "codeSnapshot": "source/worktree.patch"
+  },
+  "runtime": {
+    "clusterContext": "k3d-tp1121-sandbox-dev",
+    "cluster": "tp1121-sandbox-dev",
+    "namespace": "coke-grok-bot",
+    "deployment": "coke-grok-auth",
+    "publicUrl": "https://codex.cokeagent.com/grok-bot/",
+    "scope": "Auth Deployment only; VPS tunnel only"
+  },
+  "images": {
+    "candidate": "coke-grok-auth:candidate-runtime-stability-b8c4b61-20261115",
+    "candidateId": "sha256:9069c35f0dc1e5673b0a151b9ad4852d3a3f7a057d7cec69f50fd4878c854228",
+    "rollback": "coke-grok-auth:candidate-signin-handoff-fix-2655b22-20261115",
+    "platform": "linux/arm64",
+    "archive": "artifacts/images/coke-grok-auth-linux-arm64.tar.gz",
+    "candidateConfigId": "sha256:04a2836d0a9fdd7d7e62485ae292f00c599420b6a968ad4357a10d7d33afdb6d"
+  },
+  "verification": {
+    "runtimeTests": "passed 209/209",
+    "pollerTests": "passed 2/2",
+    "focusedSchedulerAndBrowserPolicy": "passed 42/42",
+    "deploymentBuild": "passed",
+    "publicComputerUse": "pending: Computer Use channel disallowed the public Grok Bot URL; no webpage-click E2E is claimed",
+    "mysqlOrPvcTouched": false,
+    "publicHttpPageStatus": 200,
+    "publicReadinessStatus": 204
+  },
+  "deployment": {
+    "deployed": true,
+    "candidateBuilt": true,
+    "previousAuthImage": "coke-grok-auth:candidate-signin-handoff-fix-2655b22-20261115",
+    "currentAuthImageBeforeDeploy": "coke-grok-auth:candidate-signin-handoff-fix-2655b22-20261115",
+    "authRestarted": true,
+    "brokerRestarted": false,
+    "agentDesktopRestarted": false,
+    "mysqlTouched": false,
+    "pvcChanged": false,
+    "currentAuthImage": "coke-grok-auth:candidate-runtime-stability-b8c4b61-20261115",
+    "authReady": "1/1",
+    "authPodRestarts": 0,
+    "deploymentRevision": "134",
+    "deployedAt": "2026-11-15T10:36:08Z",
+    "containerImageID": "sha256:04a2836d0a9fdd7d7e62485ae292f00c599420b6a968ad4357a10d7d33afdb6d"
+  }
+}
