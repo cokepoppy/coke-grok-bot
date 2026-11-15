@@ -26,8 +26,10 @@ const defaultLog = (event: RuntimePollEvent) => process.stderr.write(`${JSON.str
 
 /**
  * Keep independent background work from blocking user run dispatch. A single
- * poller never overlaps itself; a slow or failed poll is observable and retried
- * on a later interval without logging prompts, IDs, or raw error messages.
+ * poller never overlaps itself; slow and failed polls are observable, and a
+ * failed poll is retried on a later interval after its Promise has settled.
+ * A still-pending operation is not duplicated because its transaction may have
+ * an unknown outcome. Logs never include prompts, IDs, or raw error messages.
  */
 export function startRuntimePollers(services: RuntimePollerServices, options: RuntimePollerOptions = {}): RuntimePollers {
   const intervalMs = options.intervalMs ?? 2_000;
