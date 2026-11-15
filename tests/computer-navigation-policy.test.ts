@@ -10,6 +10,7 @@ test('a sign-in request that explicitly hands control to the user is marked for 
  assert.equal(requestsUserSignInHandoff('帮我打开谷歌，然后登录我的 Gmail，登录时停下来让我操作。'),true);
  assert.equal(requestsUserSignInHandoff('Open Gmail and stop at sign-in so I can take control.'),true);
  assert.equal(requestsUserSignInHandoff('请在云电脑里打开 Chrome，访问 Google 并打开 Gmail。到 Google 登录页后停止，把云电脑交给我操作。'),true);
+ assert.equal(requestsUserSignInHandoff('在浏览器打开目标页。不要登录，不要连接真实系统，不要提交订单，不要截图。若页面没有边界校验控件，请停止并报告原因。'),false,'an unrelated conditional stop must not turn a negative login instruction into a sign-in handoff');
  assert.equal(requestsUserSignInHandoff('Open Gmail and summarize the public help page.'),false);
 });
 

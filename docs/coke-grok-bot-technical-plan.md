@@ -3177,3 +3177,9 @@ Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无
 新建独立候选目录 `releases/candidate-grok-poll-loop-isolation-fe78069-2026-11-15/`，包含匹配提交的 Auth 制品、linux/arm64 镜像归档、源补丁、校验和、仅 Auth 部署与回退脚本。候选镜像 ID 为 `sha256:c4af9138be28d01998bf2db3cf33962225d85b86cb3abe44e107a6384005aa24`；以 `coke-grok-auth:candidate-poll-loop-isolation-20261115` 为回退镜像。2026-11-15T08:44:28Z 只更新 Mac 本机 K3D 的 Auth：Deployment generation 139→140，Ready 1/1。Broker generation 和镜像不变；7 个 Agent/Desktop Pod UID 集合、MySQL Pod UID 和 PVC UID 的前后哈希一致。没有重启 Broker/Agent/Desktop，没有更改 MySQL/PVC，也没有更新 VPS。
 
 公网群组派发的可见任务内容完整，但研究、运维和 E2E Bot 回答说收到的只有 `Review / I checked · continue / Retry / bse.cn / main / Pages / PR` 等 UI 片段；这些任务显示 Failed。开发 Bot 仍为 Outcome unknown，主管 Bot 排队。E2E Bot 的电脑显示 Bot is in control，其失败消息称没有执行任务且浏览器停在 example.com；没有把这些结果当成功，也没有重放开发 Bot 的不确定任务。prompt/dispatch 不匹配的根因尚未确认。Auth 更新后第一次公网刷新时 Computer Use 返回 Mac 已锁，未能检查候选后的队列或继续页面点击。公网多 Bot/DeepSeek/云电脑验收仍未完成；本分支未合并 `main`、未打 checkpoint tag。
+
+#### 2026-11-15 BSE 浏览器任务误触发登录交接
+
+公网 Bot Tester 在目标页面只读确认了 Demo 标识、基准价 10.00 元及上/下限 13.00 元和 7.00 元；没有保存五个边界用例的运行结果。后续按“不要登录；若没有校验控件，请停止并报告”的任务执行时，Worker 未点击页面按钮，任务错误地返回“ends at a user sign-in handoff”。复现确认：`requestsUserSignInHandoff()` 的宽松正则把“不登录”与稍后无关的“停止并报告”关联成登录交接，Pi 因而为整个 run 注入登录限制并阻断普通 Browser/Computer 动作。这是本次直接原因，不是云电脑人类接管或站点网络故障。
+
+同一功能分支已修正识别器：只有明确关联登录/验证边界的停止与人工接管表述才触发交接；否定登录约束和无关失败停止条件不再触发。新增策略和 Pi 派发回归覆盖该反例并保留真实 Gmail 登录交接用例，定向测试 37/37 通过；本次提示词现分类为非登录交接。Auth 镜像重建、K3D 部署与公网重新点击“运行边界校验”仍待完成；5/5、逐项提示和多 Bot 群聊工作流均未验收，不能据此宣称完成。

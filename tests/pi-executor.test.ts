@@ -110,6 +110,25 @@ test('Pi grants generic Browser User scope for an unregistered app named in the 
  }finally{await executor.close();gateway.close()}
 });
 
+test('Pi does not turn a negative login constraint plus an unrelated stop condition into a sign-in handoff',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const task:AgentRun={...run,prompt:'请在云电脑里打开 Chrome，访问 https://c-m-ai-copilot.github.io/coke-bse-trading-demo/ 并点击边界校验。不要登录，不要连接真实系统，不要提交订单。若按钮不可用，请停止并报告实际看到的控件。'};
+ let issuedScope:{browserTask?:boolean;signInHandoff?:boolean;requestedNavigationOrigins?:readonly string[]}|undefined,receivedPrompt='';
+ const issue=gateway.issue.bind(gateway);gateway.issue=options=>{issuedScope=options.scope;return issue(options)};
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
+  receivedPrompt=JSON.parse(String(init?.body)).prompt;
+  return Response.json({status:'done',message:'Boundary validation task dispatched.'});
+ });
+ try{
+  const result=await executor.execute(screen,task,new AbortController().signal,randomUUID());
+  assert.equal(result.status,'completed');
+  assert.equal(issuedScope?.browserTask,true,'the requested public-page work should receive Browser User scope');
+  assert.equal(issuedScope?.signInHandoff,false,'an unrelated stop condition must not lock the run to sign-in navigation');
+  assert.deepEqual(issuedScope?.requestedNavigationOrigins,['https://c-m-ai-copilot.github.io']);
+  assert.doesNotMatch(receivedPrompt,/This run ends at a user sign-in handoff/i);
+ }finally{await executor.close();gateway.close()}
+});
+
 test('Pi recognizes an ordinary Chinese mail request as Browser User work',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const task:AgentRun={...run,prompt:'找一封最近未读的邮件，点击进去详情，然后看看，帮我拟写一个回复呀。'};

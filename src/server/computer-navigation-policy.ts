@@ -112,8 +112,12 @@ export function requestsGmailReadDraftWorkflow(request: string): boolean {
 export function requestsUserSignInHandoff(request: string): boolean {
   const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';
   if (!text) return false;
-  const chinese = /(?:登录|登陆).{0,60}(?:停下(?:来)?|暂停|停止|让我(?:去)?(?:操作|登录|接管)|由我(?:操作|登录|接管)|我来(?:操作|登录|接管)|(?:把)?(?:云电脑|电脑|浏览器|控制权).{0,20}(?:交给|留给)我.{0,20}(?:操作|登录|接管)?)|(?:停下(?:来)?|暂停|停止).{0,40}(?:让我|由我|我来).{0,20}(?:登录|登陆|操作|接管)/i;
-  const english = /(?:\b(?:stop|pause|wait)\b.{0,60}\b(?:until|while|for)\s+(?:i|me|the user)\b.{0,30}\b(?:sign[ -]?in|log[ -]?in|take control)\b|\b(?:let|allow)\s+me\b.{0,40}\b(?:sign[ -]?in|log[ -]?in|take control)\b|\b(?:sign[ -]?in|log[ -]?in)\b.{0,50}\b(?:i(?:'ll| will)|let me|user can|take control)\b)/i;
+  // Require the stop/owner-control instruction to be tied to the sign-in
+  // boundary itself. A broad "login ... stop" scan misclassified ordinary
+  // tasks such as "do not log in ... if the control is missing, stop and report"
+  // and then disabled every Browser/Computer action for the whole run.
+  const chinese = /(?:(?:登录|登陆)(?:页|页面|界面)?时.{0,28}(?:停下(?:来)?|暂停|停止).{0,28}(?:让我(?:去)?|由我|我来|(?:提示|告诉)我).{0,40}(?:操作|登录|接管|Take\s+control)|(?:停下(?:来)?|暂停|停止).{0,28}(?:让我|由我|我来|(?:提示|告诉)我).{0,40}(?:登录|登陆|操作|接管|Take\s+control)|(?:到|遇到|若|如果|一旦|出现|看到).{0,18}(?:登录|登陆)(?:页|页面|界面)?.{0,32}(?:停下(?:来)?|暂停|停止).{0,28}(?:让我|由我|我来|(?:提示|告诉)我).{0,40}(?:操作|登录|接管|Take\s+control)|(?:云电脑|电脑|浏览器|控制权).{0,20}(?:交给|留给)我.{0,20}(?:操作|登录|接管)?)/i;
+  const english = /(?:\b(?:stop|pause|wait)\b.{0,24}\b(?:at|on|when|if|once|until)\s+(?:the\s+)?(?:sign[ -]?in|log[ -]?in|authentication|verification)(?:\s+page)?[\s\S]{0,40}\b(?:so\s+)?(?:i|me|the user)\b[\s\S]{0,24}\b(?:take control|sign[ -]?in|log[ -]?in|handle|continue)\b|\b(?:sign[ -]?in|log[ -]?in)(?:\s+page)?[\s\S]{0,40}\b(?:let me|i(?:'ll| will)|take control|hand (?:control|it) to me|user can)\b)/i;
   return chinese.test(text) || english.test(text);
 }
 
