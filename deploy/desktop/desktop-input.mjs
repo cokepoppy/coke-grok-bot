@@ -25,14 +25,14 @@ export async function captureDesktopScreen(run, bounds) {
   }
 }
 
-export async function captureFocusedDesktopScreen(run, page, bounds) {
-  return withFocusedDesktopPage(page, () => captureDesktopScreen(run, bounds));
+export async function captureFocusedDesktopScreen(run, page, bounds, focus = operation => operation()) {
+  return withFocusedDesktopPage(page, () => captureDesktopScreen(run, bounds), focus);
 }
 
 /** Never raise Chromium while the owner is actively using its desktop. */
-export async function captureOwnedDesktopScreen(run, page, bounds, owner) {
+export async function captureOwnedDesktopScreen(run, page, bounds, owner, focus = operation => operation()) {
   if (owner === 'user') return captureDesktopScreen(run, bounds);
-  if (owner === 'agent') return captureFocusedDesktopScreen(run, page, bounds);
+  if (owner === 'agent') return captureFocusedDesktopScreen(run, page, bounds, focus);
   throw new Error('Computer owner is invalid');
 }
 
@@ -64,9 +64,10 @@ export function createScreenCaptureCoalescer(capture) {
   };
 }
 
-export async function withFocusedDesktopPage(page, action) {
+export async function withFocusedDesktopPage(page, action, focus = operation => operation()) {
   if (!page || typeof page.bringToFront !== 'function' || typeof action !== 'function') throw new Error('A Bot browser page and desktop action are required');
-  await page.bringToFront();
+  if (typeof focus !== 'function') throw new Error('A Bot page focus guard is required');
+  await focus(() => page.bringToFront());
   return action();
 }
 

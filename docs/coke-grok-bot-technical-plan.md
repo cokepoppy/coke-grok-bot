@@ -3130,8 +3130,12 @@ Chrome 扩展标签绑定超时 30 秒后，改用原生 Chrome Computer Use 无
 
 #### 2026-11-15 多 Bot 屏幕争用优化与 Desktop OOM 证据
 
-在唯一 feature 分支 `codex/grok-screen-contention`（当前远端提交 `fa7f40c`）减少共享桌面锁争用：Browser User 的 DOM 导航/点击/填充不再为预览更新而在每步后请求 `desktopActionGate`；同一 Bot 屏幕的重叠截图请求共用一次整屏截图；电脑活动卡通过 `IntersectionObserver` 判断可视范围，初始不可见时不发截图请求，滚出可视范围后暂停轮询。真实 X11 键鼠输入、焦点切换、用户接管和整屏截图仍使用全局串行锁。`tests/desktop-input.test.mjs` 10/10 通过，`npm run build:deployment` 与 `git diff --check` 通过。此 feature 已推送，但尚未部署、合并或做公网验收。
+在唯一 feature 分支 `codex/grok-screen-contention`（初始提交 `64deb68`）减少共享桌面锁争用：Browser User 的 DOM 导航/点击/填充不再为预览更新而在每步后请求 `desktopActionGate`；同一 Bot 屏幕的重叠截图请求共用一次整屏截图；电脑活动卡通过 `IntersectionObserver` 判断可视范围，初始不可见时不发截图请求，滚出可视范围后暂停轮询。真实 X11 键鼠输入、焦点切换、用户接管和整屏截图仍使用全局串行锁。
 
 之后只读 K3D 检查在命名空间 `grok-user-efbc9abae2560feb29bc9ba3719c77ce` 发现 Desktop Pod `desktop-f4f444cd9-brx98` 曾以 `OOMKilled`/137 退出一次（`2026-11-15T04:02:22Z`）；Pod 内存 request 为 512 Mi、limit 为 2 Gi。事件记录其重启前曾有一次 readiness HTTP 503。当前容器重启后 `kubectl top` 约 936 Mi，cgroup `memory.current` 约 1.02 GB、`memory.max` 2 Gi；三台 Desktop 的当前用量约 922/753/936 Mi。重启后的 cgroup OOM 计数为 0，不能回推出已退出进程的峰值。
 
 该 namespace 的脱敏 owner 与当前北交所 Tester Bot 的映射尚未证实，因此 OOM 不能直接归因于该 Tester 的 `Outcome unknown`，也不能解释所有历史卡顿。后续提高并发或重启前先确认当前 Bot/owner/run 和活跃 lease，保留 PVC/登录态；当时 Chrome Browser Use 在取页面无障碍状态和重置后的 `getState` 均超时，未完成公网映射/验收。按既有 Computer Use 超时记忆停止循环重试，在公开控制恢复前继续离线工作；不得据此声称已部署或已解决 OOM。
+
+追加代码审查发现另一个明确的全屏锁滞留路径：桌面 click/type/press 在拿到 `desktopActionGate` 后才解析 CDP Bot 页面，而 `bringToFront()` 未受 RendererHealth 的 3 秒超时保护。页面解析或聚焦若不返回，会占着跨 Bot 共用的物理桌面锁。分支修复为先解析页面再取锁，并只对页面聚焦套现有 RendererHealth；聚焦超时会走现有 Chromium 恢复路径，后续 X11 输入不会误发。截图聚焦也使用同一个健康保护。此原因由代码确认，但没有证据证明它造成某一条历史运行卡住。
+
+同一只读快照节点容量约 7.75 GiB、实际使用 4.69 GiB（59%）、`MemoryPressure=False`；三个 Desktop 当前约 0.9/0.8/0.9 GiB，进程统计显示每 Pod 有 10–14 个 Chromium 进程。它提示单 Pod 2 GiB limit 下的浏览器资源余量仍应监控，但当前快照不支持“节点整体内存耗尽”。旧版本已有的 X11 输入子进程超时与租约重试修复、截图轮询/合并优化均已推送；本次新增的 CDP 聚焦保护与页面解析移锁通过 `node --check`、`git diff --check` 和 `npm run build:deployment`，本次补丁的测试尚未运行。该分支仍未部署、合并或做公网 Browser/Computer Use 验收。

@@ -283,7 +283,7 @@ async function screenshot(screenId) {
 const captureScreen = createScreenCaptureCoalescer(async screenId => {
   const browserPage = await pageForScreen(screenId);
   const bounds = await screenPages.geometry(screenId);
-  return desktopActionGate(async () => captureOwnedDesktopScreen(exec, browserPage, bounds, await screenOwner(screenId)));
+  return desktopActionGate(async () => captureOwnedDesktopScreen(exec, browserPage, bounds, await screenOwner(screenId), operation => rendererHealth.run(operation)));
 });
 
 const taskIdPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -369,18 +369,17 @@ async function command(input, screenId) {
     });
   }
   if (['click', 'type', 'press'].includes(action)) {
+    // Resolve the Bot page before taking the one physical X11 lock. A slow CDP
+    // lookup should delay only this Bot, never every other Bot's keyboard.
+    const browserPage = await pageForScreen(screenId);
+    const bounds = await screenPages.geometry(screenId);
     return desktopActionGate(async () => {
-      const browserPage = await pageForScreen(screenId);
-      const bounds = await screenPages.geometry(screenId);
       if (action === 'click') {
         const x = Number(input.x), y = Number(input.y);
         if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('Click coordinates are invalid');
-        await withFocusedDesktopPage(browserPage, () => clickDesktop(exec, bounds, Math.round(x), Math.round(y)));
-      } else if (action === 'type') {
-        await withFocusedDesktopPage(browserPage, () => typeDesktop(spawn, String(input.text || '')));
-      } else {
-        await withFocusedDesktopPage(browserPage, () => pressDesktopKey(exec, String(input.key || '')));
-      }
+        await withFocusedDesktopPage(browserPage, () => clickDesktop(exec, bounds, Math.round(x), Math.round(y)), operation => rendererHealth.run(operation));
+      } else if (action === 'type') await withFocusedDesktopPage(browserPage, () => typeDesktop(spawn, String(input.text || '')), operation => rendererHealth.run(operation));
+      else await withFocusedDesktopPage(browserPage, () => pressDesktopKey(exec, String(input.key || '')), operation => rendererHealth.run(operation));
       const currentOwner = await screenOwner(screenId);
       if (actor !== currentOwner) throw new Error('Computer ownership changed');
       return {
@@ -401,7 +400,7 @@ async function command(input, screenId) {
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Only credential-free HTTP and HTTPS URLs are allowed');
     await browserPage.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
   } else throw new Error('Unsupported desktop command');
-  await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => undefined));
+  await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => undefined, operation => rendererHealth.run(operation)));
   const currentOwner = await screenOwner(screenId);
   if (actor !== currentOwner) throw new Error('Computer ownership changed');
   return {
