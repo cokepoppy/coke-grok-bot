@@ -1,6 +1,6 @@
 import type { AgentRun, RunOwner, RunScreenScope } from './run-store.ts';
 import type { RunExecutor, ExecutionResult } from './run-scheduler.ts';
-import type { ModelGateway } from './model-gateway.ts';
+import { ModelGateway } from './model-gateway.ts';
 import type { BotMemoryStore } from './bot-memory-store.ts';
 import { containsSensitiveData } from './bot-memory-store.ts';
 import type { BotMemoryRunScope } from './bot-memory-bridge.ts';
@@ -10,6 +10,7 @@ import { continuedBrowserTaskRequest } from './computer-navigation-policy.ts';
 import { Agent } from 'undici';
 import { createHash } from 'node:crypto';
 import { agentHttpDiagnostic, RunDiagnosticError } from './run-diagnostics.ts';
+import type { RunDiagnosticCode } from './run-diagnostics.ts';
 import { explicitMemoryRequest } from './explicit-memory-request.ts';
 import { validateAgentExecutionAudit } from './execution-audit.ts';
 import type { BotSkillStore } from './bot-skill-store.ts';
@@ -50,7 +51,23 @@ export function classifyAgentRejection(value:unknown):AgentRejectionClass {
   return 'unknown_agent_rejection';
 }
 
-async function logAgentRejection(response:Response):Promise<void> {
+function agentRejectionDiagnostic(code:AgentRejectionClass):RunDiagnosticCode {
+  switch(code){
+    case 'agent_adapter_failed':return 'agent_adapter_failed';
+    case 'agent_adapter_output_invalid':return 'agent_adapter_output_invalid';
+    case 'bot_bridge_invalid':return 'bot_bridge_invalid';
+    case 'computer_control_unavailable':return 'computer_control_unavailable';
+    case 'group_context_invalid':return 'group_context_invalid';
+    case 'kernel_unavailable':return 'kernel_unavailable';
+    case 'model_config_invalid':return 'model_config_invalid';
+    case 'task_attachments_invalid':return 'task_attachments_invalid';
+    case 'task_cancelled':return 'task_cancelled';
+    case 'task_workspace_invalid':return 'task_workspace_invalid';
+    case 'unknown_agent_rejection':return 'unknown_agent_rejection';
+  }
+}
+
+async function logAgentRejection(response:Response,taskId:string):Promise<AgentRejectionClass> {
   let error:unknown,reasonCode:string|undefined;
   const declared=Number(response.headers.get('content-length'));
   if(Number.isSafeInteger(declared)&&declared>=0&&declared<=4096) {
@@ -63,7 +80,9 @@ async function logAgentRejection(response:Response):Promise<void> {
       }
     } catch { /* Keep only the status and a fixed fallback code. */ }
   }
-  console.warn('Agent task endpoint rejected request',{status:response.status,code:classifyAgentRejection(error),...(reasonCode?{reasonCode}:{})});
+  const code=classifyAgentRejection(error);
+  console.warn('Agent task endpoint rejected request',{taskId,status:response.status,code,...(reasonCode?{reasonCode}:{})});
+  return code;
 }
 
 export interface DesktopConnection { agentUrl: URL; agentToken: string }
@@ -124,7 +143,7 @@ export class DesktopAgentExecutor implements RunExecutor {
       if(!handoffBots)throw new RunDiagnosticError('bot_handoff_scope_invalid');
     }
     let capability:string;
-    try { capability=this.gateway.issue({ttlMs:14*60_000,calls:100,scope:{...memoryScope,skillMutations}}); }
+    try { capability=this.gateway.issue({ttlMs:14*60_000,calls:ModelGateway.maxModelCallsPerRun,scope:{...memoryScope,skillMutations}}); }
     catch { throw new RunDiagnosticError('capability_issue_failed'); }
     try {
       const memoryContext=this.memories?formatBotMemory(storedMemories||[]):'';
@@ -152,8 +171,9 @@ export class DesktopAgentExecutor implements RunExecutor {
         throw new RunDiagnosticError(modelDiagnostic||'agent_transport_failed');
       }
       if (!response.ok) {
-        await logAgentRejection(response);
-        throw new RunDiagnosticError(this.gateway.diagnosticCode(capability)||agentHttpDiagnostic(response.status));
+        const rejection=await logAgentRejection(response,run.id);
+        const diagnostic=this.gateway.diagnosticCode(capability)||(response.status===400?agentRejectionDiagnostic(rejection):agentHttpDiagnostic(response.status));
+        throw new RunDiagnosticError(diagnostic);
       }
       let value:unknown;
       try { value=await response.json(); }

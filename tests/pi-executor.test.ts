@@ -33,9 +33,23 @@ test('Pi logs an allowlisted attachment reason code without logging Agent respon
  const warnings:unknown[][]=[];const originalWarn=console.warn;
  console.warn=(...args)=>{warnings.push(args)};
  try {
-  await assert.rejects(executor.execute(screen,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='agent_http_400');
+  await assert.rejects(executor.execute(screen,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='task_attachments_invalid');
  } finally {console.warn=originalWarn;gateway.close()}
- assert.deepEqual(warnings,[['Agent task endpoint rejected request',{status:400,code:'task_attachments_invalid',reasonCode:'task_attachment_source_unavailable'}]]);
+ assert.deepEqual(warnings,[['Agent task endpoint rejected request',{taskId:run.id,status:400,code:'task_attachments_invalid',reasonCode:'task_attachment_source_unavailable'}]]);
+});
+
+test('Pi preserves a fixed Agent adapter failure code and correlates it without logging response text',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const body=Buffer.from(JSON.stringify({error:'Agent adapter exited with code 1: private provider diagnostic'}));
+ const response=new Response(body,{status:400,headers:{'content-type':'application/json','content-length':String(body.length)}});
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>response);
+ const warnings:unknown[][]=[];const originalWarn=console.warn;
+ console.warn=(...args)=>{warnings.push(args)};
+ try {
+  await assert.rejects(executor.execute(screen,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='agent_adapter_failed');
+ } finally {console.warn=originalWarn;gateway.close()}
+ assert.deepEqual(warnings,[['Agent task endpoint rejected request',{taskId:run.id,status:400,code:'agent_adapter_failed'}]]);
+ assert.equal(JSON.stringify(warnings).includes('private provider diagnostic'),false);
 });
 
 test('Pi and DSH preload only enabled Skills named by the direct message and scope mutations to that request',async()=>{
@@ -288,6 +302,24 @@ test('Pi task transport uses the configured long-response dispatcher with Node f
   assert.equal(AGENT_TASK_TRANSPORT_TIMEOUT_MS,15*60_000);
   assert.deepEqual(await executor.execute(screen,run,new AbortController().signal,randomUUID()),{status:'completed',result:'Delayed task completed.'});
  }finally{await executor.close();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}
+});
+
+test('Pi reports model-call budget exhaustion instead of a generic Agent runtime failure',async()=>{
+ let upstreamCalls=0;
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>{upstreamCalls++;return new Response('{}')});
+ const gatewayServer=gateway.createServer();gatewayServer.listen(0,'127.0.0.1');await once(gatewayServer,'listening');const address=gatewayServer.address();if(!address||typeof address==='string')throw new Error('No gateway');
+ const gatewayUrl=`http://127.0.0.1:${address.port}/v1/chat/completions`;
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
+  const request=JSON.parse(String(init?.body)) as {modelConfig:{apiKey:string}};
+  const call=()=>fetch(gatewayUrl,{method:'POST',headers:{authorization:`Bearer ${request.modelConfig.apiKey}`,'content-type':'application/json'},body:JSON.stringify({model:'model',messages:[{role:'user',content:'hello'}]})});
+  for(let i=0;i<ModelGateway.maxModelCallsPerRun;i++){const response=await call();assert.equal(response.status,200);await response.arrayBuffer()}
+  const exhausted=await call();assert.equal(exhausted.status,401);await exhausted.arrayBuffer();
+  return Response.json({error:'Agent adapter exited after the Model Gateway denied the exhausted capability.'},{status:400});
+ });
+ try{
+  await assert.rejects(executor.execute(screen,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='model_gateway_call_limit');
+  assert.equal(upstreamCalls,ModelGateway.maxModelCallsPerRun);
+ }finally{await executor.close();gateway.close();await new Promise<void>(resolve=>gatewayServer.close(()=>resolve()))}
 });
 
 test('Pi maps a gateway rate limit to a fixed run diagnostic without reading Agent error text',async()=>{
