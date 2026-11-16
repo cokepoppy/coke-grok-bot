@@ -15,6 +15,7 @@ import { ensureSharedComputerRoots } from './shared-computer-root.mjs';
 import { appendControlOwnerEvent, computerScreenKey } from './control-owner-audit.mjs';
 import { createGuardedComputer } from '/opt/coke-grok/guarded-computer.mjs';
 import { isAuthenticationChallenge } from './browser-task-policy.mjs';
+import { browserActionDiagnostic } from './browser-action-diagnostics.mjs';
 
 const exec = promisify(execFile);
 const token = String(process.env.LINUX_DESKTOP_WORKER_TOKEN || '');
@@ -672,7 +673,8 @@ http.createServer(async (req, res) => {
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/navigation-state') return send(res, 200, await guardedComputer.navigationState());
     if (guardedMode && isControl && req.method === 'POST' && pathname === '/v1/guarded/navigate') {
       const input = await body(req);
-      return send(res, 200, await guardedComputer.navigateIfUnchanged(input.action, input.expected));
+      try { return send(res, 200, await guardedComputer.navigateIfUnchanged(input.action, input.expected)); }
+      catch (error) { if (input.action?.kind === 'browser') throw browserActionDiagnostic(error); throw error; }
     }
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/inspect') return await guardedComputer.locked(async () => send(res, 200, await agentBrowserAction({action:'inspect'}, screenId)));
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/screenshot') return await guardedComputer.locked(async () => {
@@ -681,7 +683,8 @@ http.createServer(async (req, res) => {
     });
     if (guardedMode && isControl && req.method === 'POST' && pathname === '/v1/guarded/execute') {
       const input = await body(req);
-      return send(res, 200, await guardedComputer.execute(input.action, input.expected));
+      try { return send(res, 200, await guardedComputer.execute(input.action, input.expected)); }
+      catch (error) { if (input.action?.kind === 'browser') throw browserActionDiagnostic(error); throw error; }
     }
     if (req.method === 'GET' && pathname === '/v1/artifacts') {
       const taskId = new URL(req.url || '/', 'http://127.0.0.1').searchParams.get('taskId') || '';
@@ -725,7 +728,9 @@ http.createServer(async (req, res) => {
       return await guardedComputer.locked(async () => send(res, 200, await command(input,screenId)));
     }
     if (req.method === 'POST' && pathname === '/v1/browser') {
-      return await guardedComputer.locked(async () => send(res, 200, await agentBrowserAction(await body(req),screenId)));
+      const input = await body(req);
+      try { return await guardedComputer.locked(async () => send(res, 200, await agentBrowserAction(input,screenId))); }
+      catch (error) { throw browserActionDiagnostic(error); }
     }
     return send(res, 404, { error: 'not found' });
   } catch (error) {
@@ -740,13 +745,17 @@ http.createServer(async (req, res) => {
     const screenAllocationSuperseded = error instanceof BotScreenAllocationSupersededError;
     const screenCapacity = error instanceof BotScreenCapacityError;
     const activeTabUnresolved = error instanceof ActiveTabResolutionError;
+    const browserDiagnostic = error && typeof error === 'object' && typeof error.code === 'string' && error.code.startsWith('COMPUTER_BROWSER_');
+    const computerStateChanged = error && typeof error === 'object' && error.code === 'COMPUTER_STATE_CHANGED';
+    const computerOwnerUser = error && typeof error === 'object' && error.code === 'COMPUTER_OWNER_USER';
     if (rendererUnresponsive || screenAllocationTimeout) {
       rendererHealth.fail();
       void recoverChromium();
     }
-    return send(res, contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved ? 503 : 400, {
-      error: message.slice(0, 240),
-      ...(contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved ? { code: error.code } : {}),
+    const status = browserDiagnostic ? error.status : computerStateChanged || computerOwnerUser ? 409 : contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved ? 503 : 400;
+    return send(res, status, {
+      error: browserDiagnostic ? error.message : message.slice(0, 240),
+      ...(browserDiagnostic || computerStateChanged || computerOwnerUser || contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved ? { code: error.code } : {}),
     });
   }
 }).listen(port, '0.0.0.0', () => process.stdout.write(`Dots desktop worker listening on ${port}\n`));

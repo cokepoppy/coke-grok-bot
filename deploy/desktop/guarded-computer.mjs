@@ -80,14 +80,16 @@ export function createGuardedComputer({readOwner,readPageUrl,readScreenshot,perf
       if(!expected||expected.owner!=='agent'||typeof expected.url!=='string'||expected.url.length>4096)throw new Error('Invalid expected navigation state');
       if(!input||typeof input!=='object'||Array.isArray(input)||input.kind!=='browser'||input.action!=='navigate'||typeof input.url!=='string')throw new Error('Invalid browser navigation');
       const owner=readOwner(),url=await readPageUrl();
-      if(owner!=='agent'||owner!==expected.owner||url!==expected.url)throw new Error('Computer state or ownership changed');
+      if(owner!=='agent')throw Object.assign(new Error('Computer state or ownership changed'),{code:'COMPUTER_OWNER_USER'});
+      if(owner!==expected.owner||url!==expected.url)throw Object.assign(new Error('Computer state or ownership changed'),{code:'COMPUTER_STATE_CHANGED'});
       return perform(input);
     }),
     execute:(input,expected)=>locked(async()=>{
       if(!expected||typeof expected!=='object'||expected.owner!=='agent'||typeof expected.url!=='string'||!/^[a-f0-9]{64}$/.test(expected.screenshotSha256||'')||!/^[a-f0-9]{64}$/.test(expected.guardFingerprint||''))throw new Error('Invalid expected computer state');
       const current=await capture();
       const browserAction=input?.kind==='browser';
-      if(current.owner!=='agent'||current.url!==expected.url||(!browserAction&&current.guardFingerprint!==expected.guardFingerprint))throw new Error('Computer state or ownership changed');
+      if(current.owner!=='agent')throw Object.assign(new Error('Computer state or ownership changed'),{code:'COMPUTER_OWNER_USER'});
+      if(current.url!==expected.url||(!browserAction&&current.guardFingerprint!==expected.guardFingerprint))throw Object.assign(new Error('Computer state or ownership changed'),{code:'COMPUTER_STATE_CHANGED'});
       return perform(input);
     }),
   };

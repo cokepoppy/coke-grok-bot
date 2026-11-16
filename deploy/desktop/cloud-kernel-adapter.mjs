@@ -250,6 +250,7 @@ const safeComputerDiagnosticCodes=new Set([
   'COMPUTER_ACTION_INVALID','COMPUTER_NAVIGATION_USE_BROWSER','COMPUTER_SIGNIN_HANDOFF_REQUIRED','COMPUTER_OWNER_USER','COMPUTER_RUN_LEASE_CHECK_FAILED',
   'COMPUTER_RUN_LEASE_UNAVAILABLE','COMPUTER_SNAPSHOT_FAILED','COMPUTER_SCREEN_CAPACITY','COMPUTER_ACTIVE_TAB_UNRESOLVED','COMPUTER_RENDERER_UNRESPONSIVE','COMPUTER_WORKER_AUTH_REJECTED',
   'COMPUTER_WORKER_FAILED','COMPUTER_WORKER_FORBIDDEN','COMPUTER_WORKER_HTTP_ERROR',
+  'COMPUTER_STATE_CHANGED','COMPUTER_BROWSER_TARGET_NOT_FOUND','COMPUTER_BROWSER_TARGET_AMBIGUOUS','COMPUTER_BROWSER_ACTION_TIMEOUT','COMPUTER_BROWSER_ACTION_FAILED',
   'COMPUTER_WORKER_INVALID_RESPONSE','COMPUTER_WORKER_TRANSPORT_FAILED','INTERNAL_FAILURE',
 ]);
 
@@ -265,6 +266,12 @@ async function computerExecutionError(response,fallback=`Computer action was not
     if(!diagnostic||!safeComputerDiagnosticCodes.has(diagnostic.code))return new Error(fallback);
     if(diagnostic.code==='COMPUTER_NAVIGATION_USE_BROWSER')return new Error('This is a browser action. The desktop action was not executed and no approval was requested. Use computer_browser for navigation and page interactions; do not use desktop coordinates for browser controls.');
     if(diagnostic.code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED')return new Error('A sign-in or human-verification challenge is visible. Stop Agent input at that challenge and tell the owner to open the Computer screen and choose Take control. Ordinary navigation and page interaction remain available across sites until that challenge. Do not enter credentials or claim control has transferred.');
+    if(diagnostic.code==='COMPUTER_OWNER_USER')return new Error('The owner currently controls this computer. Stop Agent input and resume after the owner returns control; no approval is requested for ordinary page actions.');
+    if(diagnostic.code==='COMPUTER_STATE_CHANGED')return new Error('The computer page or owner changed before the action completed. Inspect the current page and continue from its live state; do not repeat the action blindly.');
+    if(diagnostic.code==='COMPUTER_BROWSER_TARGET_NOT_FOUND')return new Error('No visible browser control matched. Inspect the current page and choose a visible target; do not repeat the same locator.');
+    if(diagnostic.code==='COMPUTER_BROWSER_TARGET_AMBIGUOUS')return new Error('More than one browser control matched. Inspect the current page and choose a unique visible target.');
+    if(diagnostic.code==='COMPUTER_BROWSER_ACTION_TIMEOUT')return new Error('The browser action timed out and its outcome may be unknown. Inspect the current page before deciding whether to continue; do not repeat it blindly.');
+    if(diagnostic.code==='COMPUTER_BROWSER_ACTION_FAILED')return new Error('The browser action was not confirmed. Inspect the current page and task state before deciding whether to continue.');
     const workerStatus=Number.isInteger(diagnostic.status)&&diagnostic.status>=100&&diagnostic.status<=599?` (worker HTTP ${diagnostic.status})`:'';
     return new Error(`Computer action failed: ${diagnostic.code}${workerStatus}`);
   } catch { return new Error(fallback); }

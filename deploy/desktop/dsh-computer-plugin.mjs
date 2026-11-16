@@ -188,6 +188,12 @@ async function readJson(response, message) {
           const value=JSON.parse(text),code=value?.error==='computer_request_failed'?value?.diagnostic?.code:null;
           if(code==='COMPUTER_NAVIGATION_USE_BROWSER')forwardedDiagnostic='This is a browser action. The desktop action was not executed and no approval was requested. Use computer_browser for navigation and page interactions; do not use desktop coordinates for browser controls.';
           else if(code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED')forwardedDiagnostic='A sign-in or human-verification challenge is visible. Stop all Agent input at that challenge and tell the owner to open the Computer screen and choose Take control. Ordinary navigation and page interaction remain available across sites until that challenge; do not enter credentials or claim control has transferred.';
+          else if(code==='COMPUTER_OWNER_USER')forwardedDiagnostic='The owner currently controls this computer. Stop Agent input and resume after the owner returns control; no approval is requested for ordinary page actions.';
+          else if(code==='COMPUTER_STATE_CHANGED')forwardedDiagnostic='The computer page or owner changed before the action completed. Inspect the current page and continue from its live state; do not repeat the action blindly.';
+          else if(code==='COMPUTER_BROWSER_TARGET_NOT_FOUND')forwardedDiagnostic='No visible browser control matched. Inspect the current page and choose a visible target; do not repeat the same locator.';
+          else if(code==='COMPUTER_BROWSER_TARGET_AMBIGUOUS')forwardedDiagnostic='More than one browser control matched. Inspect the current page and choose a unique visible target.';
+          else if(code==='COMPUTER_BROWSER_ACTION_TIMEOUT')forwardedDiagnostic='The browser action timed out and its outcome may be unknown. Inspect the current page before deciding whether to continue; do not repeat it blindly.';
+          else if(code==='COMPUTER_BROWSER_ACTION_FAILED')forwardedDiagnostic='The browser action was not confirmed. Inspect the current page and task state before deciding whether to continue.';
           else if(['COMPUTER_SCREEN_CAPACITY','COMPUTER_ACTIVE_TAB_UNRESOLVED','COMPUTER_RENDERER_UNRESPONSIVE'].includes(code))forwardedDiagnostic=`Computer action failed: ${code}`;
         }
       }catch{/* Ignore malformed or oversized diagnostics; never forward response text. */}

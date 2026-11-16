@@ -106,3 +106,20 @@ test('guarded action failures preserve only a safe diagnostic code and HTTP stat
  const invalid=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>new Response('private upstream detail'));
  await assert.rejects(invalid.performIfUnchanged(action,state,signal),error=>safeDiagnosticMetadata(error).code==='COMPUTER_WORKER_INVALID_RESPONSE');
 });
+test('guarded worker maps browser worker diagnostics to fixed safe codes',async()=>{
+ const action={kind:'browser',action:'click',by:'role',role:'link',target:'Business Rules'},state={owner:'agent' as const,url:'https://www.bse.cn/',screenshotSha256:'a'.repeat(64)};
+ for(const [workerCode,status,expected] of [
+  ['COMPUTER_BROWSER_TARGET_NOT_FOUND',422,'COMPUTER_BROWSER_TARGET_NOT_FOUND'],
+  ['COMPUTER_BROWSER_TARGET_AMBIGUOUS',422,'COMPUTER_BROWSER_TARGET_AMBIGUOUS'],
+  ['COMPUTER_BROWSER_ACTION_TIMEOUT',504,'COMPUTER_BROWSER_ACTION_TIMEOUT'],
+  ['COMPUTER_BROWSER_ACTION_FAILED',500,'COMPUTER_BROWSER_ACTION_FAILED'],
+  ['COMPUTER_STATE_CHANGED',409,'COMPUTER_STATE_CHANGED'],
+  ['COMPUTER_OWNER_USER',409,'COMPUTER_OWNER_USER'],
+ ] as const){
+  const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>Response.json({code:workerCode,error:`private page and token ${token}`},{status}));
+  await assert.rejects(worker.performIfUnchanged(action,state,signal),error=>{
+   const metadata=safeDiagnosticMetadata(error);
+   return metadata.code===expected&&metadata.status===status&&error instanceof Error&&error.message===expected&&!error.message.includes(token);
+  });
+ }
+});
