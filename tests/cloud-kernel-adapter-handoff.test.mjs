@@ -18,7 +18,7 @@ test('Pi installs an owner-scoped private async Bot handoff tool and queues thro
  const sdk={
   AuthStorage:{inMemory:()=>({setRuntimeApiKey(){}})},ModelRegistry:{inMemory:()=>({registerProvider(){},find:()=>({id:'deepseek-v4.1-flash'})})},
   SessionManager:{list:async()=>[],create:()=>({getSessionId:()=>randomUUID()})},
-  createAgentSession:async value=>{options=value;return{session:{messages:[{role:'assistant',stopReason:'stop',content:[{type:'text',text:'{"status":"done","message":"Delegation queued."}'}]}],async prompt(prompt){assert.match(prompt,/Bot handoff policy/);},dispose(){}}}},
+  createAgentSession:async value=>{options=value;return{session:{messages:[{role:'assistant',stopReason:'stop',content:[{type:'text',text:'{"status":"done","message":"Delegation queued."}'}]}],async prompt(prompt){assert.match(prompt,/Bot handoff policy/);assert.match(prompt,/Mandatory delegation rule:.*must call bot_handoff.*before using Browser User, Computer User/s);assert.match(prompt,/serial or one-at-a-time.*wait for and verify its returned reply/s);},dispose(){}}}},
  };
  try{
   await runCloudKernel({engine:'pi',modelConfig:{apiKey:capability,baseUrl:'https://gateway.example.test/v1',model:'deepseek-v4.1-flash'},handoffs:{...handoffs,bots:[targetBot,sameNameBot]},workspace,cwd:path.relative(workspace,cwd),prompt:'Ask Sales Outbound to research one safe example prospect. Do not contact anyone.',signal:new AbortController().signal},{piSdk:sdk});
@@ -83,7 +83,7 @@ test('DeepSeek Harness installs the handoff plugin with only the scoped gateway 
  class FakeDeepSeekHarness{
   constructor(value){options=value}
   async run(prompt){
-   assert.match(prompt,/Bot handoff policy/);
+   assert.match(prompt,/Bot handoff policy/);assert.match(prompt,/Mandatory delegation rule:.*must call bot_handoff.*before using Browser User, Computer User/s);assert.match(prompt,/serial or one-at-a-time.*wait for and verify its returned reply/s);
    const patch=await readFile(options.patches[0],'utf8');assert.match(patch,/coke-grok-handoff-/);
    const match=patch.match(/name: "\.\/(coke-grok-handoff-[a-f0-9]+\.mjs)"/);assert.ok(match);
    const source=await readFile(path.join(options.dshHome,match[1]),'utf8');assert.match(source,/bot-handoffs/);
