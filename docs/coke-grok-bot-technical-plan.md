@@ -3238,3 +3238,11 @@ Developer Bot 只读核对 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`
 该 Bot 既有调研 run 的失败仍是另一条待办：页面中的 Bot 回执报告 Browser User `navigate` 三次 `COMPUTER_WORKER_FORBIDDEN`、`about:blank` 以及终端无网络出口。只读检查发现三个现存租户 Desktop Pod 的 `browser-task-policy.mjs` 与源码哈希一致，且 `browserActionRequiresApproval()` 返回 `false`；因此目前没有证据将这次错误归因于 Desktop 的逐控件审批策略。ComputerBridge 会把缺失 `browserTask` scope 和 Worker HTTP 403 都折叠为 `COMPUTER_WORKER_FORBIDDEN`，错误来源仍待区分。继续 BSE 全链路前应通过可审计诊断区分这两个路径，并确认浏览器页面实际导航结果；不得重放旧的未知 run。
 
 用户后续截图对应另一条只读调研请求：其任务状态为 `Outcome unknown · not retried` / `Computer · Not confirmed`，但电脑预览清楚显示 `bse.cn/business/overview.html` 的北交所“规则总览”页面。由此可确认该次至少完成了页面导航和渲染，不能据此确认 Bot 已完成规则分析或最终结果已保存。公开 UI 没有暴露该 run 变成 unknown 的具体原因；按当前调度器实现，异常、lease 丢失/中止、无效执行结果及结果持久化失败都可能进入 unknown。本次没有重试。该运行时问题与恢复提示移除是两项不同结果，下一步需取到安全的 run diagnostic/event，定位究竟是执行中断还是完成结果写入。
+
+#### 2026-11-16 未知结果诊断提示与网页操作阻塞区分
+
+复查发现 `RunStore.list()` 与 `GroupChatStore.get()` 已按租户、Bot 和 run 作用域读取允许列表内的 `diagnosticCode`，但聊天 UI 没有显示它；有电脑操作且无结果正文/文件的 unknown run 还可能不生成结果气泡。当前分支把这些安全类别映射成简短解释，unknown computer run 同时保留“不重跑”状态，并在 Computer 活动卡显示原因；不显示原始模型文本或异常，不增加审批/重试按钮。`tests/run-browser.e2e.ts` 覆盖私聊电脑 run 的 `lease_lost` 和群聊 `agent_transport_failed`。浏览器 UI 集成测试在固定测试 MySQL 与模拟身份/执行器上通过，TypeScript 检查和部署构建通过；这只验证诊断呈现，不代表真实模型或 K3D 任务成功。部署后仍需从已登录公网页面观察既有未知 run 的具体提示；旧 run 不重放。
+
+同日用户提供的 `打卡助手` 页面显示 Computer 预览停在 `about:blank`，Bot 的可见回执报告 `COMPUTER_WORKER_FORBIDDEN` 并解释浏览器操作未执行。该页面已收到 Bot 回复，不应与“任务仍在队列卡住”混为一谈。源码中至少有两条路径使用同一错误码：`ComputerBridge` 缺少 `browserTask` scope 时拒绝 browser action，以及 Worker HTTP 403（另有旧 Worker 逐操作审批错误会被转换成该码）；单凭页面文本不能断定属于哪一条，必须检查该 run scope 与 Worker 返回类别。此前检查的 Worker policy 允许普通网页操作，不足以证明这次没有旧 Worker、scope 或 HTTP 403 问题。
+
+该回执提及 Routine 只支持每周、间隔和 Webhook；源码 schema/plugin 对应枚举中没有“每天多个固定时刻”的调度类型。不要静默拆成多个每周 Routine 来假装支持每日计划；应把 Daily/多个时刻作为独立能力实现与验收。该用户截图只用于诊断，不代表授权执行打卡或创建真实 Routine。

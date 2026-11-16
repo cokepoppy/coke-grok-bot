@@ -202,7 +202,7 @@ function buildBotTimeline(messages:Message[],runs:AgentRun[],latestSubmittedItem
     const genericDone=Boolean(run.computerUsed&&/^(done|done\.)$/i.test(run.result?.trim()||''));
     const showRecovery=run.status==='unknown'&&run.recoveryState==='pending';
     const showRetryNote=run.status==='unknown'&&run.recoveryState==='retried'&&Boolean(run.replacementRunId);
-    const showFollowup=!run.computerUsed||Boolean((run.result&&!genericDone)||outputFiles.length||showRecovery||showRetryNote);
+    const showFollowup=!run.computerUsed||Boolean((run.result&&!genericDone)||outputFiles.length||showRecovery||showRetryNote||run.status==='unknown');
     if(run.computerUsed)entries.push({key:`computer:${run.id}`,at:createdAt,priority:1,order:index,kind:'computer',run});
     else entries.push({key:`prompt:${run.id}`,at:createdAt,priority:0,order:index,kind:'run-prompt',run});
     if(showFollowup)entries.push({key:`result:${run.id}`,at:updatedAt,priority:2,order:index,kind:'run-result',run});
@@ -250,6 +250,45 @@ function replacementRunLabel(status:AgentRun['status']):string {
 
 function replacementRunFallback(status:AgentRun['status']):string {
   return ({queued:'Waiting for this Bot’s computer…',running:'Working on this Bot’s computer…',completed:'The retry completed without a saved response.',failed:'The retry failed without a saved response.',unknown:'The retry outcome could not be confirmed.'})[status];
+}
+
+const runDiagnosticSummaries:Record<string,string>={
+  executor_error:'The Agent stopped before it could confirm a result.',
+  desktop_connect_failed:'The Bot could not connect to its computer.',
+  model_upstream_429:'The model service was rate-limited before a result was confirmed.',
+  bot_memory_preload_failed:'The Bot could not load its saved memory.',
+  bot_memory_scope_invalid:'The Bot could not access its saved memory for this run.',
+  bot_skill_preload_failed:'The Bot could not load one of its enabled skills.',
+  bot_skill_scope_invalid:'The Bot could not access an enabled skill for this run.',
+  bot_handoff_scope_invalid:'The Bot could not complete its handoff to another Bot.',
+  capability_issue_failed:'The Agent could not initialize a required capability.',
+  agent_transport_failed:'The Agent connection ended before the result was confirmed.',
+  agent_http_400:'The Agent rejected the request as invalid.',
+  agent_http_401:'The Agent request was not authenticated.',
+  agent_http_403:'The Agent service denied the request.',
+  agent_http_404:'The Agent service could not find the requested resource.',
+  agent_http_408:'The Agent service timed out waiting for the request.',
+  agent_http_409:'The Agent service reported a request conflict.',
+  agent_http_413:'The Agent request exceeded the service size limit.',
+  agent_http_415:'The Agent service rejected the request format.',
+  agent_http_422:'The Agent service could not process the request.',
+  agent_http_429:'The Agent service rate-limited the request.',
+  agent_http_5xx:'The Agent service failed while processing the request.',
+  agent_http_other:'The Agent service returned an unexpected error.',
+  agent_response_invalid:'The Agent returned a response the Bot could not use.',
+  agent_result_unconfirmed:'The Agent did not confirm whether the task completed.',
+  agent_paused_for_control:'The Agent paused while computer control was unavailable.',
+  computer_control_state_unknown:'The Bot could not determine the current computer control state.',
+  agent_result_status_unconfirmed:'The Agent response did not confirm a final task status.',
+  agent_result_message_missing:'The Agent did not return a final message.',
+  execution_aborted:'Execution stopped before a result was confirmed.',
+  lease_lost:'The run lease ended before completion was recorded.',
+  result_persist_failed:'The result was returned, but saving it failed.',
+  lease_expired:'The task timed out before its result was confirmed.',
+};
+
+function runDiagnosticSummary(code:string|null|undefined):string|null {
+  return code?runDiagnosticSummaries[code]||null:null;
 }
 
 function renderGroupUserText(message: GroupMessage, members: GroupMember[]): React.ReactNode {
@@ -642,6 +681,7 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
   const cardElement=useRef<HTMLElement|null>(null);
   const [cardVisible,setCardVisible]=useState(false);
   const status=run.status==='running'?'Working':run.status==='queued'?'Queued':run.status==='completed'?'Done':run.status==='failed'?'Failed':'Not confirmed';
+  const diagnostic=run.status==='unknown'?runDiagnosticSummary(run.diagnosticCode):null;
   useEffect(()=>{
     const element=cardElement.current;
     if(!element||typeof IntersectionObserver==='undefined'){setCardVisible(true);return}
@@ -670,6 +710,7 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
     <header><strong>Computer</strong><span className={`computer-activity-status ${run.status}`}><i />{status}</span></header>
     {run.prompt.trim()&&<p className="computer-activity-prompt">{run.prompt}</p>}
     {children}
+    {diagnostic&&<p className="run-recovery-diagnostic">{diagnostic}</p>}
     {showScreen&&image?<button type="button" className="computer-activity-screen" onClick={onOpenComputer} aria-label="Open this Bot's computer"><img src={image} alt="Current cloud computer screen" /></button>:<button type="button" className="computer-activity-open" onClick={onOpenComputer}>{unavailable?'Open computer to inspect the screen':'View computer screen'}</button>}
     {run.executionAudit&&<details className="computer-activity-audit"><summary>Execution details</summary><div className="computer-activity-audit-body"><span>{run.executionAudit.engine==='dsh'?'DeepSeek Harness':'Pi'} · {run.executionAudit.model} · {run.executionAudit.modelCompleted?'response received':'response not confirmed'}</span>{run.executionAudit.calls.map((call,index)=><span key={`${call.tool}-${call.action||''}-${index}`}>{toolLabel(call.tool)}{call.action?` · ${call.action}`:''} · {call.outcome}</span>)}{run.executionAudit.truncated&&<span>Additional tool calls omitted</span>}</div></details>}
   </section>;
@@ -1190,9 +1231,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     if(entry.kind==='run-prompt')return <div key={entry.key} className="message-line user"><div className="message-bubble">{run.prompt}<RunFileCards files={inputFiles} onPreview={setPreviewFile}/></div></div>;
     if(entry.kind==='computer')return <div key={entry.key} className="computer-activity-line"><ComputerActivityCard run={run} botId={active.id} showScreen={run.id===latestComputerRunId} onOpenComputer={()=>openProductPanel('Computer')}><RunFileCards files={inputFiles} onPreview={setPreviewFile}/></ComputerActivityCard></div>;
     return <div key={entry.key} className={`message-line bot${run.computerUsed?' computer-followup':''}`}><div className="message-bubble">
-      {!run.computerUsed&&run.status!=='completed'&&<span className="run-status">{run.status==='unknown'&&run.recoveryState==='auto_resumed'?'Outcome unknown · not retried':run.status==='unknown'&&run.recoveryState==='acknowledged'?'Outcome unknown · queue resumed':run.status==='unknown'&&run.recoveryState==='retried'?'Outcome unknown · explicit retry recorded':({queued:'Queued · waiting for your computer',running:'Working on your computer',failed:'Failed',unknown:'Outcome unknown'} as const)[run.status]}</span>}
+      {(run.status==='unknown'||(!run.computerUsed&&run.status!=='completed'))&&<span className="run-status">{run.status==='unknown'&&run.recoveryState==='auto_resumed'?'Outcome unknown · not retried':run.status==='unknown'&&run.recoveryState==='acknowledged'?'Outcome unknown · queue resumed':run.status==='unknown'&&run.recoveryState==='retried'?'Outcome unknown · explicit retry recorded':({queued:'Queued · waiting for your computer',running:'Working on your computer',failed:'Failed',unknown:'Outcome unknown'} as const)[run.status]}</span>}
       {run.result&&!genericDone&&<p>{run.result}</p>}
-      {run.status==='unknown'&&<p className="run-recovery-note">The result could not be confirmed. The task was not replayed; the queue can continue.</p>}
+      {run.status==='unknown'&&<><p className="run-recovery-note">The result could not be confirmed. The task was not replayed; the queue can continue.</p>{!run.computerUsed&&runDiagnosticSummary(run.diagnosticCode)&&<p className="run-recovery-diagnostic">{runDiagnosticSummary(run.diagnosticCode)}</p>}</>}
       {run.status==='completed'&&Boolean(run.result?.trim())&&!genericDone&&voiceAvailable&&remote&&active&&<div className="message-actions"><button type="button" className="message-speech-button" aria-label={speechMessageId===run.id?'Stop reading aloud':'Read aloud'} title={speechMessageId===run.id?'Stop reading aloud':'Read aloud'} onClick={()=>void speakMessageAloud(active.id,run.id,run.result||'')}><Icon name="sound"/></button></div>}
       <RunFileCards files={outputFiles} onPreview={setPreviewFile} onReuse={reuseRunFile}/>
       {showRetryNote&&<p className="run-recovery-note">A separate queued task was created; the original outcome remains in history.</p>}
@@ -1721,14 +1762,14 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
                       <header className="group-message-heading"><strong>{message.botName||'Bot'}</strong><span className={`group-run-status ${message.status||'queued'}`} title={groupRunStatusLabel(message)}>{groupRunStatusLabel(message)}</span></header>
                       <p>{message.text||groupRunFallback(message)}</p>
                       <RunFileCards files={(message.files||[]).filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
-                      {message.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.runId||message.id,prompt:'',status:message.status||'queued',result:message.text,recoveryState:message.recoveryState||'none',replacementRunId:message.replacementRunId,files:message.files||[],computerUsed:true,executionAudit:message.executionAudit}} botId={message.botId} showScreen={message.status==='running'||message.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
-                      {message.status==='unknown'&&<p className="run-recovery-note">The result could not be confirmed. The task was not replayed; this Bot’s queue can continue.</p>}
+                      {message.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.runId||message.id,prompt:'',status:message.status||'queued',result:message.text,recoveryState:message.recoveryState||'none',replacementRunId:message.replacementRunId,files:message.files||[],computerUsed:true,diagnosticCode:message.diagnosticCode,executionAudit:message.executionAudit}} botId={message.botId} showScreen={message.status==='running'||message.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
+                      {message.status==='unknown'&&<><p className="run-recovery-note">The result could not be confirmed. The task was not replayed; this Bot’s queue can continue.</p>{!message.computerUsed&&runDiagnosticSummary(message.diagnosticCode)&&<p className="run-recovery-diagnostic">{runDiagnosticSummary(message.diagnosticCode)}</p>}</>}
                       {message.status==='unknown'&&message.recoveryState==='retried'&&message.replacementRunId&&<p className="run-recovery-note">The original task outcome remains unknown. The separate retry is shown below.</p>}
                       {message.replacementRun&&<section className="group-replacement-run" aria-label={`Separate retry for ${message.botName||'Bot'}`}>
                         <header><strong>Separate retry</strong><span className={`group-run-status ${message.replacementRun.status}`}>{replacementRunLabel(message.replacementRun.status)}</span></header>
                         <p>{message.replacementRun.result||replacementRunFallback(message.replacementRun.status)}</p>
                         <RunFileCards files={message.replacementRun.files.filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
-                        {message.replacementRun.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.replacementRun.id,prompt:'',status:message.replacementRun.status,result:message.replacementRun.result,recoveryState:'none',replacementRunId:null,files:message.replacementRun.files,computerUsed:true,executionAudit:message.replacementRun.executionAudit}} botId={message.botId} showScreen={message.replacementRun.status==='running'||message.replacementRun.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
+                        {message.replacementRun.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.replacementRun.id,prompt:'',status:message.replacementRun.status,result:message.replacementRun.result,recoveryState:'none',replacementRunId:null,files:message.replacementRun.files,computerUsed:true,diagnosticCode:message.replacementRun.diagnosticCode,executionAudit:message.replacementRun.executionAudit}} botId={message.botId} showScreen={message.replacementRun.status==='running'||message.replacementRun.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
                       </section>}
                     </div>
                   </div>)}
