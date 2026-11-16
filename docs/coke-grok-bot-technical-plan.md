@@ -27,6 +27,8 @@
 
 ### 浏览器导航与登录交接
 
+权限设计遵循“先放再紧”：认证用户在有效 Bot/run lease 内的普通 Browser User 与 Computer User 能力默认开放，不按自然语言关键词、网站、URL、控件或单步动作建立授权分类，也不弹逐步审批卡。只有真实登录、密码、一次性验证码、MFA、CAPTCHA 等身份验证需要用户接管。用户/租户/Bot/run lease 和电脑控制权校验仍必须保留；这些是身份、隔离和并发边界，不是对普通操作逐步审批。遇到普通动作失败时先查实际运行错误，不要把未知故障归因成权限不足后再加白名单。
+
 用户明确要求网站或云电脑任务时，Browser User、Computer User 和受限任务目录内的终端命令，在该任务有效 run lease 内执行完成目标所需的普通操作，不按网站、控件或命令逐步审批。权限只覆盖当前用户明确要求的结果；网页、邮件、文件和工具输出不能扩大任务范围。遇到登录凭据、一次性验证码、MFA、CAPTCHA 或其他真人身份验证时暂停并提示用户在 Computer 面板选择 `Take control`；用户完成验证并归还控制后，继续原任务。Bot 不收集、索要或输入凭据。跨用户/租户隔离和终端任务目录限制继续有效。该策略取代本节较早的“Computer User 坐标操作仍需独立审批”历史说明；部署状态与公网观察见本文件末尾 2026-11-12 记录。
 
 当前实现通过 ComputerBridge 的 browser.navigate 路径直接导航，并在登录交接期间限制动作；把地址栏/标签栏误当成 Desktop 点击的调用会被引导到 Browser User，不生成普通网页导航审批卡。2026-11-08 定向回归运行 43 项全部通过，覆盖不弹审批导航、错误 Desktop 路由和登录交接约束。2026-11-09 又从已登录的公网 Chrome 可见界面核实：普通 `example.com` 导航显示为 Done；另一次到 Google 登录页的任务也显示为 Done，执行详情为 Pi `deepseek-flash`、Browser User `navigate` 和 `inspect` 均 succeeded。云电脑仍显示 `Bot is in control` 并提供 `Take control`，所以这次没有发生用户接管；旧 Agent 文案声称已交还控制并不准确。两个任务均未见审批卡，也没有输入凭据或操作表单。此为实际公网 UI 证据，但观察的是页面中已有的完成记录，不代表所有历史 Review 任务均已清除或每条旧运行路径都已重新验收。
@@ -3264,3 +3266,15 @@ Developer Bot 只读核对 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`
 19:30 Asia/Shanghai 的真实公网 Browser User run 中，Pi/DeepSeek 检查北交所首页、导航至 `https://www.bse.cn/` 均成功；点击“业务规则”链接返回 `COMPUTER_WORKER_HTTP_ERROR` / HTTP 400。Auth 在 11:30:29Z 记录该状态；模型上游请求同期为 200。当前 BSE Research 租户 Desktop 镜像为 `sha-1bd99f0`，其日志没有对应的 `guarded-execute-failed` 事件。由于 400 也可能来自执行前的 snapshot，且旧 Worker/其他 owner namespace 还没有按 run 映射，这些证据不足以确定失败发生在哪个 HTTP 路由或哪个租户 Worker；不得据此推断为权限审批问题，也不要盲目重复点击。
 
 同一 feature 分支新增了 Worker HTTP 请求阶段诊断（snapshot、navigation-state、execute 等）和仅供服务端日志关联的 owner namespace hash；API/模型响应不包含内部 Worker 标识或原始异常文本。定向 guarded-worker 与 model-gateway 测试 17/17、Auth bundle build 与 `git diff --check` 通过。此补充诊断目前尚未提交、推送或部署；下一步需生成新的独立候选、仅部署 Auth，再通过一次新的公网可见任务读取安全阶段与 Worker 标识，之后才确定根因及目标租户镜像。普通网页操作仍默认开放，无 URL/site/control allowlist 或逐步审批；真人登录、密码、MFA、验证码或 CAPTCHA 才交给用户接管。北交所多 Bot 全链路尚未完成。
+
+#### 2026-11-16 BSE 云电脑连接失败：完整镜像 SHA 标签校验
+
+20:06 Asia/Shanghai 的新公网任务在 Browser User 开始前显示 `The Bot could not connect to its computer`。Auth 把底层异常归为 `desktop_connect_failed`；Desktop Provisioning Broker 的安全日志进一步定位到 owner namespace `grok-user-efbc9abae2560feb29bc9ba3719c77ce` 的 immutable `desktop-image-pin` 数据校验失败，原因是部署使用了 `coke-grok-desktop:sha-1bd99f0` 七位缩写标签，而 `isValidDesktopImageRef()` 只接受 `sha-` 后 40 位完整 commit。共享 Auth/Broker runtime image config 也保留了这个无效标签。镜像本身有效：在不重建镜像的情况下，使用原 image ID `sha256:b2ec61935a15836367a4f8ed4d25ec1b1792d17b5634fc58dd588321391f3af1`，按完整 commit `1bd99f0f701259b10c91fc9046f73e4c5968de2c` 重新打标签。
+
+恢复仅针对上述 owner 的 Agent/Desktop pin 与两个 Deployment，并把共享 runtime 默认值同步改为完整 SHA；为加载该 ConfigMap，按顺序滚动重启 Desktop Broker 与 Auth。部署验收脚本通过，Agent/Desktop/Auth/Broker 均 Ready；只读核对 MySQL Pod 和 `mysql-data`、owner `workspace` PVC UID 均保持不变。没有收紧或改动任何网页权限、审批策略、租户身份、Bot、数据卷或 VPS。
+
+公网 Computer Use 未能继续验收：既有 Chrome tab 的 `getTab` 与随后 `getState` 均分别超过 30 秒；按已有重复超时恢复原则停止探测，没有使用截图、CDP、Playwright、HTTP 或 Pod 检查冒充网页点击验收。因此当前只确认 provisioning 镜像 pin/config 已修复，尚不能确认从公网新任务成功连接电脑或 BSE 多 Bot 端到端已通过。今后 Desktop/Agent 镜像只使用完整 40 位 commit SHA，并在发布前校验固定标签、owner pin、Agent/Desktop image 与共享 runtime defaults 一致；遇到 `desktop_connect_failed` 先查 Broker 的安全诊断码，不改权限、不重启无关 Pod。
+
+#### 2026-11-16 镜像 pin 修复后的公网 Browser 动作失败
+
+在完整 SHA 镜像 pin 修复后，通过已登录公网 UI 给 BSE 产品调研 Bot 发起了一条新的只读任务，目标是在北交所官网导航并点击可见的“业务规则”。没有出现审批卡，任务已越过云电脑连接阶段并进入 Browser User；最终 UI 显示 `Outcome unknown` / `The Agent rejected the request as invalid.`。对应 Auth 安全日志同一任务窗口先后记录 `COMPUTER_BROWSER_TARGET_NOT_FOUND`、`COMPUTER_BROWSER_TARGET_AMBIGUOUS` 和 `COMPUTER_ACTION_INVALID`，模型上游请求返回 200。当前证据说明镜像 pin 修复消除了先前的电脑连接失败，且这次结果不是审批阻塞；但尚不足以证明某个错误码就是最终失败的唯一原因。该 run 保持 unknown，不重复执行；下一步先核对该 run 的安全执行详情和 Worker/Agent 的动作参数校验路径，修复后再启动一条新的只读公网验收。

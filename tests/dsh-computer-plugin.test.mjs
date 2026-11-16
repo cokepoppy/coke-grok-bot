@@ -57,6 +57,33 @@ test('DSH computer screenshot becomes a durable model image attachment', async (
   }
 });
 
+test('DSH explains malformed browser arguments as a tool-shape issue, never an approval', async () => {
+  const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
+  const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
+  const oldFetch = globalThis.fetch;
+  process.env.COKE_GROK_COMPUTER_BRIDGE_URL = 'https://gateway.example.test/v1';
+  process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = bridgeToken;
+  globalThis.fetch = async (url, init = {}) => {
+    const path = new URL(String(url)).pathname;
+    if (path.endsWith('/computer/control')) return Response.json({ owner: 'agent' });
+    if (path.endsWith('/computer/actions')) return Response.json({ error: 'Action rejected', diagnostic: { code: 'COMPUTER_ACTION_INVALID' }, privateValue: 'do-not-forward' }, { status: 400 });
+    throw new Error('Unexpected computer route');
+  };
+  try {
+    const browser = mount().tools.get('computer_browser');
+    await assert.rejects(browser.execute({ action: 'click', by: 'role', role: 'link', target: 'Business Rules' }, { signal: new AbortController().signal }), error => {
+      assert.match(error.message, /parameters were incomplete or invalid/i);
+      assert.match(error.message, /click\/check\/uncheck/);
+      assert.doesNotMatch(error.message, /approval|do-not-forward/i);
+      return true;
+    });
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
+    if (oldToken === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN; else process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = oldToken;
+  }
+});
+
 test('DSH browser control clicks execute directly without approval polling', async () => {
   const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
   const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;

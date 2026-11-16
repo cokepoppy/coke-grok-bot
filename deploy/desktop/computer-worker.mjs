@@ -515,9 +515,21 @@ async function agentBrowserAction(input, screenId) {
             const labels = Array.from(element.labels || []).map(label => label.innerText).filter(Boolean);
             const name = element.getAttribute('aria-label') || labels.join(' ').trim() || element.innerText?.trim() || element.getAttribute('title') || element.getAttribute('placeholder') || element.getAttribute('name') || '';
             const tag = element.tagName.toLowerCase();
+            let href;
+            if (tag === 'a' || element.getAttribute('role') === 'link') {
+              try {
+                const target = new URL(element.getAttribute('href') || element.href || '', location.href);
+                if (['http:', 'https:'].includes(target.protocol) && !target.username && !target.password) {
+                  target.search = '';
+                  target.hash = '';
+                  href = target.href.slice(0, 2048);
+                }
+              } catch { /* Do not expose non-web or malformed link targets. */ }
+            }
             return {
               role: element.getAttribute('role') || ({ button: 'button', a: 'link', input: element.getAttribute('type') === 'checkbox' ? 'checkbox' : element.getAttribute('type') === 'radio' ? 'radio' : 'textbox', textarea: 'textbox', select: 'combobox' }[tag] || tag),
               name: String(name).replace(/\s+/g, ' ').slice(0, 160),
+              ...(href ? { href } : {}),
               type: tag === 'input' ? element.getAttribute('type') || 'text' : tag,
               placeholder: element.getAttribute('placeholder') || undefined,
               disabled: Boolean(element.disabled),

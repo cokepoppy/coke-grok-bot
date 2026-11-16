@@ -81,8 +81,40 @@ test('Pi fails closed instead of polling a legacy computer approval id',async()=
  try{
   await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:token},prompt:'Check the browser tool.',signal:new AbortController().signal},{piSdk:sdk});
   const browser=options.customTools.find(tool=>tool.name==='computer_browser');assert.ok(browser);
+  const variants=browser.parameters.anyOf||browser.parameters.oneOf;assert.ok(Array.isArray(variants));
+  const clickByRole=variants.find(schema=>schema.properties?.action?.const==='click'&&schema.properties?.by?.const==='role');
+  assert.deepEqual([...clickByRole.required].sort(),['action','by','role','target']);
+  const fillByRole=variants.find(schema=>schema.properties?.action?.const==='fill'&&schema.properties?.by?.const==='role');
+  assert.deepEqual([...fillByRole.required].sort(),['action','by','role','target','value']);
   await assert.rejects(()=>browser.execute('call',{action:'navigate',url:'https://example.com/'},new AbortController().signal),/Worker did not confirm that the computer action ran/);
   assert.deepEqual(requests,[{pathname:'/v1/computer/actions',method:'POST'}],'a legacy id must never be polled or executed');
+ }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
+});
+
+test('Pi explains invalid computer action parameters without adding an approval step',async()=>{
+ const workspace=await mkdtemp(path.join(os.tmpdir(),'grok-pi-invalid-browser-action-')),cwd=path.join(workspace,'tasks','invalid');await mkdir(cwd,{recursive:true});
+ const oldFetch=globalThis.fetch,token='x'.repeat(43);let options;
+ globalThis.fetch=async(url,init={})=>{
+  const pathname=new URL(String(url)).pathname;
+  if(pathname==='/v1/computer/control')return Response.json({owner:'agent'});
+  if(pathname==='/v1/computer/actions'&&init.method==='POST')return Response.json({error:'Action rejected',diagnostic:{code:'COMPUTER_ACTION_INVALID'},secret:'never-return-this'},{status:400});
+  throw new Error('Unexpected computer gateway request');
+ };
+ const sdk={
+  AuthStorage:{inMemory:()=>({setRuntimeApiKey(){}})},ModelRegistry:{inMemory:()=>({registerProvider(){},find:()=>({id:'deepseek-v4.1-flash'})})},
+  SessionManager:{list:async()=>[],create:()=>({getSessionId:()=>randomUUID()})},
+  createAgentSession:async value=>{options=value;return{session:{messages:[{role:'assistant',stopReason:'stop',content:[{type:'text',text:'{"status":"done","message":"Adapter ready."}'}]}],async prompt(){},dispose(){}}}},
+ };
+ try{
+  await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:token},prompt:'Inspect then click the requested visible link.',signal:new AbortController().signal},{piSdk:sdk});
+  const browser=options.customTools.find(tool=>tool.name==='computer_browser');
+  await assert.rejects(()=>browser.execute('invalid-click',{action:'click' },new AbortController().signal),error=>{
+   assert.match(error.message,/parameters were incomplete or invalid/i);
+   assert.match(error.message,/click\/check\/uncheck/);
+   assert.doesNotMatch(error.message,/approval/i);
+   assert.doesNotMatch(error.message,/never-return-this/);
+   return true;
+  });
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });
 
