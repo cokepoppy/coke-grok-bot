@@ -13,7 +13,7 @@ type RunFile = { id: string; name: string; mimeType: string; size: number; sha25
 type BotLibraryCategory = 'All'|'Pages'|'Media'|'Links'|'Files'|'Apps'|'Pinned';
 type BotLibraryItem = RunFile & {kind:'output';createdAt:string;pinned:boolean};
 type ExecutionAudit = {engine:'pi'|'dsh';model:string;modelCompleted:boolean;calls:{tool:string;action:string|null;outcome:'succeeded'|'failed'|'unconfirmed'}[];truncated:boolean};
-type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; executionAudit?:ExecutionAudit|null; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: string | null };
+type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged' | 'auto_resumed'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; executionAudit?:ExecutionAudit|null; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: string | null };
 type GroupMember = Pick<Bot,'id'|'name'|'label'|'color'|'shape'> & { position: number };
 type BotMentionCandidate = {kind:'bot';id:string;bot:GroupMember|Bot}|{kind:'everyone';id:'everyone'};
 type GroupChat = { id: string; name: string; members: GroupMember[]; preview: string; lastActivityAt: string | null };
@@ -217,6 +217,7 @@ function buildBotTimeline(messages:Message[],runs:AgentRun[],latestSubmittedItem
 }
 
 function groupRunStatusLabel(message: GroupMessage): string {
+  if (message.status === 'unknown' && message.recoveryState === 'auto_resumed') return 'Outcome unknown · not retried';
   if (message.status === 'unknown' && message.recoveryState === 'acknowledged') return 'Reviewed · outcome unknown';
   if (message.status === 'unknown' && message.recoveryState === 'retried') {
     if (message.replacementRun?.status === 'completed') return 'Original outcome unknown · retry completed';
@@ -235,7 +236,8 @@ function groupRunStatusLabel(message: GroupMessage): string {
 function groupRunFallback(message: GroupMessage): string {
   if (message.status === 'queued') return 'Waiting for this Bot’s computer…';
   if (message.status === 'running') return 'Working on this Bot’s computer…';
-  if (message.status === 'unknown' && message.recoveryState === 'pending') return 'Outcome unknown · review the computer before continuing.';
+  if (message.status === 'unknown' && message.recoveryState === 'auto_resumed') return 'The result could not be confirmed. The original task was not replayed, and the queue can continue.';
+  if (message.status === 'unknown' && message.recoveryState === 'pending') return 'The result could not be confirmed. The task was not replayed.';
   if (message.status === 'unknown' && message.recoveryState === 'acknowledged') return 'You checked this Bot’s computer. The task result remains unknown; the queue has resumed.';
   if (message.status === 'unknown' && message.recoveryState === 'retried') return 'The original task outcome remains unknown. The separate retry is shown below.';
   if (message.status === 'unknown') return 'The task outcome could not be confirmed.';
@@ -261,15 +263,6 @@ function renderGroupUserText(message: GroupMessage, members: GroupMember[]): Rea
     parts.push(<span className="group-mention-token" key={`${match.id}:${cursor}`}>{match.label}</span>);cursor+=match.label.length;
   }
   return parts;
-}
-
-function runDiagnosticExplanation(code?: string | null): string | null {
-  if (code === 'model_upstream_429') return 'Model requests are temporarily paused after a provider rate limit. This run’s result is unconfirmed; review the computer before continuing.';
-  if (code === 'agent_paused_for_control') return 'The Bot paused while the cloud computer was in user-control mode. The result is unconfirmed; review the screen before continuing.';
-  if (code === 'computer_control_state_unknown') return 'The Bot could not confirm who controls the cloud computer. The result is unconfirmed; review the screen before continuing.';
-  if (code === 'agent_result_status_unconfirmed') return 'The Agent returned an unexpected task status. The result is unconfirmed; review the computer before continuing.';
-  if (code === 'agent_result_message_missing') return 'The Agent returned no readable result. The task outcome is unconfirmed; review the computer before continuing.';
-  return null;
 }
 
 function IconButton({ name, label, onClick, className = '', buttonRef, disabled = false }: { name: IconName; label: string; onClick?: () => void; className?: string; buttonRef?: React.Ref<HTMLButtonElement>; disabled?: boolean }) {
@@ -648,7 +641,7 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
   const imageUrl=useRef('');
   const cardElement=useRef<HTMLElement|null>(null);
   const [cardVisible,setCardVisible]=useState(false);
-  const status=run.status==='running'?'Working':run.status==='queued'?'Queued':run.status==='completed'?'Done':run.status==='failed'?'Failed':'Review';
+  const status=run.status==='running'?'Working':run.status==='queued'?'Queued':run.status==='completed'?'Done':run.status==='failed'?'Failed':'Not confirmed';
   useEffect(()=>{
     const element=cardElement.current;
     if(!element||typeof IntersectionObserver==='undefined'){setCardVisible(true);return}
@@ -777,8 +770,6 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const [agentEngine, setAgentEngine] = useState<'pi' | 'dsh' | null>(null);
   const [runHistory, setRunHistory] = useState<{ id: string; status: 'loading' | 'ready' | 'error'; runs: AgentRun[] }>({ id: '', status: 'loading', runs: [] });
   const [runRefresh, setRunRefresh] = useState(0);
-  const [resolvingRun, setResolvingRun] = useState<string | null>(null);
-  const decidingRef = useRef(false);
   const uncertainMutation = useRef(false);
   const [history, setHistory] = useState<{ id: string; status: 'loading' | 'ready' | 'error' }>({ id: '', status: 'loading' });
   const [sending, setSending] = useState(false);
@@ -1184,40 +1175,6 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     try{localStorage.removeItem(`${storageKey}:selected-group`)}catch{/* Selection persistence is optional. */}
     setCreateDialog(null);setNewChat(false);setPanel(false);
   }
-  async function recoverGroupRun(message:GroupMessage,decision:'retry'|'acknowledge'){
-    if(uncertainMutation.current||decidingRef.current||!selectedGroupId||groupChat.id!==selectedGroupId||groupChat.status!=='ready'||!message.runId||message.status!=='unknown'||message.recoveryState!=='pending')return;
-    decidingRef.current=true;setResolvingRun(message.runId);setGroupError('');
-    try{
-      const response=await fetch(`${import.meta.env.BASE_URL}api/runs/${message.runId}/recovery`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision})});
-      if(!response.ok)throw new Error('recovery could not be confirmed');
-      const result=await response.json() as {decision:'retry'|'acknowledge';run:AgentRun|null};
-      if(result.decision!==decision||(decision==='retry'&&(!result.run||result.run.status!=='queued'))||(decision==='acknowledge'&&result.run!==null))throw new Error('invalid recovery response');
-      setGroupRefresh(value=>value+1);
-    }catch{
-      uncertainMutation.current=true;setGroupError('Recovery could not be confirmed. Refresh and check the group history before making another decision.');
-      setGroupChat(current=>({...current,status:'error'}));
-    }finally{decidingRef.current=false;setResolvingRun(null)}
-  }
-  async function recoverRun(run: AgentRun, decision: 'retry' | 'acknowledge') {
-    if (uncertainMutation.current || decidingRef.current || !active || run.status !== 'unknown' || run.recoveryState !== 'pending' || runHistory.id !== active.id || runHistory.status !== 'ready') return;
-    decidingRef.current = true; setResolvingRun(run.id); setBotError('');
-    try {
-      const response = await fetch(`${import.meta.env.BASE_URL}api/runs/${run.id}/recovery`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision }) });
-      if (!response.ok) throw new Error('recovery could not be confirmed');
-      const result = await response.json() as { decision: 'retry' | 'acknowledge'; run: AgentRun | null };
-      if (result.decision !== decision || (decision === 'retry' && (!result.run || result.run.status !== 'queued')) || (decision === 'acknowledge' && result.run !== null)) throw new Error('invalid recovery response');
-      setRunHistory(current => {
-        const runs = current.runs.map(item => item.id === run.id ? { ...item, recoveryState: decision === 'retry' ? 'retried' as const : 'acknowledged' as const, replacementRunId: result.run?.id || null } : item);
-        if (result.run && !runs.some(item => item.id === result.run!.id)) runs.push(result.run);
-        return { ...current, runs };
-      });
-      setRunRefresh(value => value + 1);
-    } catch {
-      uncertainMutation.current = true;
-      setBotError('Recovery could not be confirmed. Refresh and check the run history before making another decision.');
-      setRunHistory(current => ({ ...current, status: 'error' }));
-    } finally { decidingRef.current = false; setResolvingRun(null); }
-  }
   function renderBotTimelineEntry(entry:BotTimelineEntry):React.ReactNode {
     if(entry.kind==='message'){
       const message=entry.message;
@@ -1229,16 +1186,15 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     const run=entry.run;
     const inputFiles=(run.files||[]).filter(file=>file.kind==='input'),outputFiles=(run.files||[]).filter(file=>file.kind==='output');
     const genericDone=Boolean(run.computerUsed&&/^(done|done\.)$/i.test(run.result?.trim()||''));
-    const showRecovery=run.status==='unknown'&&run.recoveryState==='pending';
     const showRetryNote=run.status==='unknown'&&run.recoveryState==='retried'&&Boolean(run.replacementRunId);
     if(entry.kind==='run-prompt')return <div key={entry.key} className="message-line user"><div className="message-bubble">{run.prompt}<RunFileCards files={inputFiles} onPreview={setPreviewFile}/></div></div>;
     if(entry.kind==='computer')return <div key={entry.key} className="computer-activity-line"><ComputerActivityCard run={run} botId={active.id} showScreen={run.id===latestComputerRunId} onOpenComputer={()=>openProductPanel('Computer')}><RunFileCards files={inputFiles} onPreview={setPreviewFile}/></ComputerActivityCard></div>;
     return <div key={entry.key} className={`message-line bot${run.computerUsed?' computer-followup':''}`}><div className="message-bubble">
-      {!run.computerUsed&&run.status!=='completed'&&<span className="run-status">{run.status==='unknown'&&run.recoveryState==='acknowledged'?'Outcome unknown · reviewed; queue resumed':run.status==='unknown'&&run.recoveryState==='retried'?'Outcome unknown · explicit retry recorded':({queued:'Queued · waiting for your computer',running:'Working on your computer',failed:'Failed',unknown:'Outcome unknown · check before retrying'} as const)[run.status]}</span>}
+      {!run.computerUsed&&run.status!=='completed'&&<span className="run-status">{run.status==='unknown'&&run.recoveryState==='auto_resumed'?'Outcome unknown · not retried':run.status==='unknown'&&run.recoveryState==='acknowledged'?'Outcome unknown · queue resumed':run.status==='unknown'&&run.recoveryState==='retried'?'Outcome unknown · explicit retry recorded':({queued:'Queued · waiting for your computer',running:'Working on your computer',failed:'Failed',unknown:'Outcome unknown'} as const)[run.status]}</span>}
       {run.result&&!genericDone&&<p>{run.result}</p>}
+      {run.status==='unknown'&&<p className="run-recovery-note">The result could not be confirmed. The task was not replayed; the queue can continue.</p>}
       {run.status==='completed'&&Boolean(run.result?.trim())&&!genericDone&&voiceAvailable&&remote&&active&&<div className="message-actions"><button type="button" className="message-speech-button" aria-label={speechMessageId===run.id?'Stop reading aloud':'Read aloud'} title={speechMessageId===run.id?'Stop reading aloud':'Read aloud'} onClick={()=>void speakMessageAloud(active.id,run.id,run.result||'')}><Icon name="sound"/></button></div>}
       <RunFileCards files={outputFiles} onPreview={setPreviewFile} onReuse={reuseRunFile}/>
-      {showRecovery&&<section className="run-recovery" aria-label="Review uncertain task outcome"><p>{runDiagnosticExplanation(run.diagnosticCode)||'The previous task may have run even though its result was not saved. Review the computer before deciding.'}</p><div><button type="button" disabled={Boolean(resolvingRun)||runHistory.status!=='ready'} onClick={()=>void recoverRun(run,'acknowledge')}>{resolvingRun===run.id?'Saving…':'I checked · continue'}</button><button type="button" disabled={Boolean(resolvingRun)||runHistory.status!=='ready'} onClick={()=>void recoverRun(run,'retry')}>{resolvingRun===run.id?'Saving…':'Retry as a new task'}</button></div></section>}
       {showRetryNote&&<p className="run-recovery-note">A separate queued task was created; the original outcome remains in history.</p>}
     </div></div>;
   }
@@ -1404,7 +1360,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     if (remote) {
       const id = active.id;
       if (sendingRef.current || history.id !== id || history.status !== 'ready') return;
-      if (agentFeature === 'loading' || agentFeature === 'error' || (agentFeature === 'enabled' && (runHistory.id !== id || runHistory.status !== 'ready' || unresolvedOutcome))) return;
+      if (agentFeature === 'loading' || agentFeature === 'error' || (agentFeature === 'enabled' && (runHistory.id !== id || runHistory.status !== 'ready'))) return;
       if (clean.length > 10000) { setBotError('Message is too long.'); return; }
       if (selectedFiles.length + selectedRunFiles.length > attachmentCountLimit) { setBotError('Attach up to 20 files per message.'); return; }
       sendingRef.current = true; setSending(true); setBotError('');
@@ -1698,11 +1654,9 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
   const renderBotRow=(bot:Bot)=><div className="bot-row-wrap" key={bot.id}><button ref={element=>{sidebarRows.current[bot.id]=element}} type="button" data-bot-id={bot.id} className={`bot-row ${!newChat && !activeGroup && bot.id === active?.id ? 'selected' : ''}`} aria-label={layoutSidebarWidth <= 140 ? `Open ${bot.name}` : undefined} title={layoutSidebarWidth <= 140 ? bot.name : undefined} aria-haspopup="menu" onClick={() => selectBot(bot.id)} onContextMenu={event=>{event.preventDefault();setSidebarMenu({id:bot.id,x:Math.max(0,Math.min(event.clientX,window.innerWidth-200)),y:Math.max(0,Math.min(event.clientY,window.innerHeight-265))})}}>
           <Avatar bot={bot} size={46} /><span className="bot-row-content"><span className="bot-row-title"><span onDoubleClick={event=>{event.stopPropagation();beginSidebarRename(bot.id)}}>{bot.name}</span>{bot.label && <small>{bot.label}</small>}<time dateTime={bot.lastActivityAt||undefined}>{formatBotTime(bot.lastActivityAt)}</time></span><span className="bot-preview">{bot.preview}</span></span>
         </button>{sidebarRename?.id===bot.id && <input ref={sidebarInput} className="sidebar-rename" aria-label="Rename Bot" maxLength={60} value={sidebarRename.value} onChange={event=>{const edit={id:bot.id,value:event.target.value};sidebarRenameRef.current=edit;setSidebarRename(edit)}} onBlur={event=>finishSidebarRename(bot.id,event.currentTarget.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur()}else if(event.key==='Escape'){event.preventDefault();sidebarRenameRef.current=null;setSidebarRename(null);sidebarRows.current[bot.id]?.focus()}}} />}</div>;
-  const unresolvedOutcome = agentFeature === 'enabled' && runHistory.id === active?.id && runHistory.runs.some(run => run.status === 'unknown' && run.recoveryState === 'pending');
   const latestComputerRunId=runHistory.runs.filter(run=>run.computerUsed).at(-1)?.id;
-  const groupNeedsReview=Boolean(groupChat.id===selectedGroupId&&groupChat.view?.messages.some(message=>message.role==='bot'&&message.status==='unknown'&&message.recoveryState==='pending'));
-  const groupComposerDisabled=remote&&(groupSending||groupNeedsReview||groupChat.id!==selectedGroupId||groupChat.status!=='ready'||agentFeature!=='enabled'||uncertainMutation.current);
-  const composerDisabled = activeGroup ? groupComposerDisabled : remote && (sending || history.id !== active?.id || history.status !== 'ready' || agentFeature === 'loading' || agentFeature === 'error' || (agentFeature === 'enabled' && (runHistory.id !== active?.id || runHistory.status !== 'ready' || unresolvedOutcome)));
+  const groupComposerDisabled=remote&&(groupSending||groupChat.id!==selectedGroupId||groupChat.status!=='ready'||agentFeature!=='enabled'||uncertainMutation.current);
+  const composerDisabled = activeGroup ? groupComposerDisabled : remote && (sending || history.id !== active?.id || history.status !== 'ready' || agentFeature === 'loading' || agentFeature === 'error' || (agentFeature === 'enabled' && (runHistory.id !== active?.id || runHistory.status !== 'ready')));
   if (botStatus === 'loading') return <main className="auth-page"><div className="auth-card">Loading your Bots…</div></main>;
   if (botStatus === 'error') return <main className="auth-page"><div className="auth-card"><p role="alert">Could not load your Bots.</p><button type="button" onClick={() => window.location.reload()}>Try again</button></div></main>;
 
@@ -1768,7 +1722,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
                       <p>{message.text||groupRunFallback(message)}</p>
                       <RunFileCards files={(message.files||[]).filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
                       {message.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.runId||message.id,prompt:'',status:message.status||'queued',result:message.text,recoveryState:message.recoveryState||'none',replacementRunId:message.replacementRunId,files:message.files||[],computerUsed:true,executionAudit:message.executionAudit}} botId={message.botId} showScreen={message.status==='running'||message.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
-                      {message.status==='unknown'&&message.recoveryState==='pending'&&<section className="run-recovery" aria-label={`Review uncertain task outcome for ${message.botName||'Bot'}`}><p>{runDiagnosticExplanation(message.diagnosticCode)||'The previous task may have run even though its result was not saved. Review this Bot’s computer before deciding.'}</p><div><button type="button" disabled={Boolean(resolvingRun)||groupChat.status!=='ready'} onClick={()=>void recoverGroupRun(message,'acknowledge')}>{resolvingRun===message.runId?'Saving…':'I checked · continue'}</button><button type="button" disabled={Boolean(resolvingRun)||groupChat.status!=='ready'} onClick={()=>void recoverGroupRun(message,'retry')}>{resolvingRun===message.runId?'Saving…':'Retry as a new task'}</button></div></section>}
+                      {message.status==='unknown'&&<p className="run-recovery-note">The result could not be confirmed. The task was not replayed; this Bot’s queue can continue.</p>}
                       {message.status==='unknown'&&message.recoveryState==='retried'&&message.replacementRunId&&<p className="run-recovery-note">The original task outcome remains unknown. The separate retry is shown below.</p>}
                       {message.replacementRun&&<section className="group-replacement-run" aria-label={`Separate retry for ${message.botName||'Bot'}`}>
                         <header><strong>Separate retry</strong><span className={`group-run-status ${message.replacementRun.status}`}>{replacementRunLabel(message.replacementRun.status)}</span></header>

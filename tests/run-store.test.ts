@@ -11,7 +11,7 @@ import { WorkspaceFileStore } from '../src/server/file-store.ts';
 const port = Number(process.env.COKE_GROK_TEST_MYSQL_PORT);
 if (!port) throw new Error('Set COKE_GROK_TEST_MYSQL_PORT to a disposable local MySQL instance.');
 const mysqlCredentials = mysqlTestCredentials(port);
-test('runs are deduplicated, isolated, serialized per computer and never silently retried after lease expiry', async () => {
+test('runs are deduplicated and isolated; unknown outcomes resume queues without replay', async () => {
   const database = `grok_runs_${randomUUID().replaceAll('-','')}`;
   const admin = await mysql.createConnection(mysqlCredentials);
   await admin.query(`CREATE DATABASE \`${database}\``);
@@ -59,26 +59,20 @@ test('runs are deduplicated, isolated, serialized per computer and never silentl
     assert.equal(await runs.markExpiredUnknown(),1);
     assert.equal(await runs.finish(next.run.id,next.leaseId,'completed','late'),false);
     assert.equal(await runs.claimNext(sa,10),null);
-    assert.deepEqual((await runs.events(sa,next.run.id))?.map(event => event.status),['queued','running','unknown']);
+    assert.deepEqual((await runs.events(sa,next.run.id))?.map(event => event.status),['queued','running','unknown','unknown']);
     const uncertain=(await runs.list(sa,next.run.botId))?.find(run => run.id === next.run.id);
-    assert.equal(uncertain?.status,'unknown'); assert.equal(uncertain?.recoveryState,'pending');
+    assert.equal(uncertain?.status,'unknown'); assert.equal(uncertain?.recoveryState,'auto_resumed');
     assert.equal(await runs.resolveUnknown(sb,next.run.id,'acknowledge'),null);
     assert.equal((await runs.queuedOwners(10)).some(owner=>owner.userId===sa.userId),false);
-    const retryResults=await Promise.all([runs.resolveUnknown(sa,next.run.id,'retry'),runs.resolveUnknown(sa,next.run.id,'retry')]);
-    const retry=retryResults[0];assert.ok(retry?.run);assert.equal(retry.run.status,'queued');assert.equal(retry.run.prompt,next.run.prompt);assert.equal(retryResults[1]?.run?.id,retry.run.id);
-    assert.equal((await runs.list(sa,next.run.botId))?.find(run=>run.id===next.run.id)?.recoveryState,'retried');
-    assert.equal((await runs.queuedOwners(10)).some(owner=>owner.userId===sa.userId),true);
-    const retryClaim=await runs.claimNext(sa,10);assert.equal(retryClaim?.run.id,retry.run.id);
-    assert.equal(await runs.finish(retry.run.id,retryClaim!.leaseId,'completed','explicit retry done'),true);
+    await assert.rejects(runs.resolveUnknown(sa,next.run.id,'retry'));
+    assert.equal((await runs.list(sa,next.run.botId))?.find(run=>run.id===next.run.id)?.replacementRunId,null);
 
-    const ackRequest=randomUUID(),ackQueued=await runs.create(sa,bot1.id,ackRequest,'acknowledge safely');assert.ok(ackQueued);
+    const ackRequest=randomUUID(),ackQueued=await runs.create(sa,bot1.id,ackRequest,'continue automatically');assert.ok(ackQueued);
     const ackClaim=await runs.claimNext(sa,10);assert.ok(ackClaim);assert.equal(ackClaim.run.id,ackQueued.id);
     assert.equal(await runs.markUnknown(ackClaim.run.id,ackClaim.leaseId,'agent_paused_for_control'),true);
     assert.equal((await runs.list(sa,bot1.id))?.find(run=>run.id===ackClaim.run.id)?.diagnosticCode,'agent_paused_for_control');
-    const afterAck=await runs.create(sa,bot2.id,randomUUID(),'continue after review');assert.ok(afterAck);assert.equal(await runs.claimNext(sa,10),null);
-    const acknowledged=await runs.resolveUnknown(sa,ackClaim.run.id,'acknowledge');assert.deepEqual(acknowledged,{decision:'acknowledge',run:null});
-    assert.deepEqual(await runs.resolveUnknown(sa,ackClaim.run.id,'acknowledge'),{decision:'acknowledge',run:null});
-    assert.equal((await runs.list(sa,bot1.id))?.find(run=>run.id===ackClaim.run.id)?.recoveryState,'acknowledged');
+    const afterAck=await runs.create(sa,bot2.id,randomUUID(),'continue after unknown result');assert.ok(afterAck);
+    assert.equal((await runs.list(sa,bot1.id))?.find(run=>run.id===ackClaim.run.id)?.recoveryState,'auto_resumed');
     const resumed=await runs.claimNext(sa,10);assert.equal(resumed?.run.id,afterAck.id);assert.equal(await runs.finish(afterAck.id,resumed!.leaseId,'completed','continued'),true);
     assert.equal(await runs.finish(otherClaim.run.id,otherClaim.leaseId,'completed','other done'),true);
 
@@ -146,12 +140,11 @@ test('separate Bot screens can be leased in parallel while each Bot queue remain
     assert.equal(await runs.hasLiveLease(session,claimA!.run.id,claimA!.leaseId,botA.id),true);
     assert.equal(await runs.hasLiveLease(session,claimA!.run.id,claimA!.leaseId,botB.id),false);
     assert.equal(await runs.markUnknown(claimA!.run.id,claimA!.leaseId,'agent_paused_for_control'),true);
-    assert.deepEqual((await runs.queuedScreens(10)).map(screen=>screen.botId),[]);
+    assert.deepEqual((await runs.queuedScreens(10)).map(screen=>screen.botId),[botA.id]);
     assert.equal(await runs.finish(claimB!.run.id,claimB!.leaseId,'completed','B finished'),true);
-    assert.deepEqual((await runs.queuedScreens(10)).map(screen=>screen.botId),[botB.id]);
+    assert.deepEqual((await runs.queuedScreens(10)).map(screen=>screen.botId),[botA.id,botB.id]);
     const nextB=await runs.claimNext({...session,botId:botB.id},30);assert.equal(nextB?.run.id,queuedB.id);
     assert.equal(await runs.finish(nextB!.run.id,nextB!.leaseId,'completed','B second finished'),true);
-    await runs.resolveUnknown(session,claimA!.run.id,'acknowledge');
     assert.deepEqual((await runs.queuedScreens(10)).map(screen=>screen.botId),[botA.id]);
     const nextA=await runs.claimNext({...session,botId:botA.id},30);assert.equal(nextA?.run.id,queuedSame.id);
     assert.equal(await runs.finish(nextA!.run.id,nextA!.leaseId,'completed','A second finished'),true);

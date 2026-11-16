@@ -7,7 +7,7 @@ import { isRunDiagnosticCode, type RunDiagnosticCode } from './run-diagnostics.t
 import { validateAgentExecutionAudit, type AgentExecutionAudit } from './execution-audit.ts';
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'unknown';
-export type RecoveryState = 'none' | 'pending' | 'retried' | 'acknowledged';
+export type RecoveryState = 'none' | 'pending' | 'retried' | 'acknowledged' | 'auto_resumed';
 export interface GroupRunContext { kind:'group-chat';groupName:string;currentBot:{name:string;label:string};members:Array<{name:string;label:string}>;targeted:boolean }
 export interface BotMentionRunContext { kind:'bot-mentions';targets:Array<{id:string;name:string;label:string}> }
 export type AgentRuntimeContext = GroupRunContext | BotMentionRunContext;
@@ -31,7 +31,7 @@ export class RunStore {
       prompt TEXT NOT NULL,
       status ENUM('queued','running','completed','failed','unknown') NOT NULL,
       result TEXT NULL,
-      recovery_state ENUM('none','pending','retried','acknowledged') NOT NULL DEFAULT 'none',
+      recovery_state ENUM('none','pending','retried','acknowledged','auto_resumed') NOT NULL DEFAULT 'none',
       replacement_run_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
       attachment_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '',
       runtime_context TEXT NULL,
@@ -46,15 +46,15 @@ export class RunStore {
       KEY bot_runs (bot_id, sequence),
       FOREIGN KEY (bot_id) REFERENCES bots(id)
     ) ENGINE=InnoDB`);
-    const [columns] = await this.pool.execute<RowDataPacket[]>(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='agent_runs'`);
+    const [columns] = await this.pool.execute<RowDataPacket[]>(`SELECT COLUMN_NAME,COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='agent_runs'`);
     const names = new Set(columns.map(column => String(column.COLUMN_NAME)));
-    if (!names.has('recovery_state')) await this.pool.execute(`ALTER TABLE agent_runs ADD COLUMN recovery_state ENUM('none','pending','retried','acknowledged') NOT NULL DEFAULT 'none' AFTER result`);
+    if (!names.has('recovery_state')) await this.pool.execute(`ALTER TABLE agent_runs ADD COLUMN recovery_state ENUM('none','pending','retried','acknowledged','auto_resumed') NOT NULL DEFAULT 'none' AFTER result`);
+    else if (!String(columns.find(column => String(column.COLUMN_NAME)==='recovery_state')?.COLUMN_TYPE||'').includes('auto_resumed')) await this.pool.execute(`ALTER TABLE agent_runs MODIFY COLUMN recovery_state ENUM('none','pending','retried','acknowledged','auto_resumed') NOT NULL DEFAULT 'none'`);
     if (!names.has('replacement_run_id')) await this.pool.execute('ALTER TABLE agent_runs ADD COLUMN replacement_run_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER recovery_state');
     if (!names.has('attachment_hash')) await this.pool.execute("ALTER TABLE agent_runs ADD COLUMN attachment_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' AFTER replacement_run_id");
     if (!names.has('runtime_context')) await this.pool.execute('ALTER TABLE agent_runs ADD COLUMN runtime_context TEXT NULL AFTER attachment_hash');
     if (!names.has('computer_used')) await this.pool.execute('ALTER TABLE agent_runs ADD COLUMN computer_used BOOLEAN NOT NULL DEFAULT FALSE AFTER attachment_hash');
     if (!names.has('execution_audit')) await this.pool.execute('ALTER TABLE agent_runs ADD COLUMN execution_audit JSON NULL AFTER computer_used');
-    await this.pool.execute(`UPDATE agent_runs SET recovery_state='pending' WHERE status='unknown' AND recovery_state='none'`);
     await this.pool.execute(`CREATE TABLE IF NOT EXISTS agent_run_events (
       sequence BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       run_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -64,6 +64,10 @@ export class RunStore {
       KEY run_history (run_id, sequence),
       FOREIGN KEY (run_id) REFERENCES agent_runs(id)
     ) ENGINE=InnoDB`);
+    // Unknown runs are never replayed automatically, but they also must not
+    // block future work behind a manual review card. Preserve their original
+    // status and audit while allowing the Bot's queue to continue.
+    await this.autoResumePendingUnknowns();
     await new WorkspaceFileStore(this.pool).migrate();
   }
   async create(session: Session, botId: string, requestId: string, prompt: string, fileIdsValue?: unknown, mentionBotIdsValue?: unknown): Promise<AgentRun | null> {
@@ -130,6 +134,7 @@ export class RunStore {
   }
   async queuedOwners(limit: number): Promise<RunOwner[]> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Invalid owner limit');
+    await this.autoResumePendingUnknowns();
     const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT b.tenant_id AS tenantId, b.owner_id AS userId, MIN(r.sequence) AS firstRun
       FROM agent_runs r JOIN bots b ON b.id=r.bot_id
       WHERE r.status='queued' AND NOT EXISTS (
@@ -142,6 +147,7 @@ export class RunStore {
   async queuedScreens(limit: number, queueCreatedAfter?: Date): Promise<RunScreenScope[]> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Invalid screen limit');
     if (queueCreatedAfter && !Number.isFinite(queueCreatedAfter.getTime())) throw new Error('Invalid queue creation cutoff');
+    await this.autoResumePendingUnknowns();
     const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT b.tenant_id AS tenantId,b.owner_id AS userId,b.id AS botId,MIN(r.sequence) AS firstRun
       FROM agent_runs r JOIN bots b ON b.id=r.bot_id JOIN memberships m ON m.tenant_id=b.tenant_id AND m.user_id=b.owner_id
       WHERE r.status='queued' AND (? IS NULL OR r.created_at>=?) AND NOT EXISTS (
@@ -226,9 +232,10 @@ export class RunStore {
     if (!uuid.test(runId) || !uuid.test(leaseId) || !isRunDiagnosticCode(diagnosticCode)) throw new Error('Invalid lease');
     const executionAudit=validateAgentExecutionAudit(executionAuditValue);
     return this.transaction(async connection => {
-      const [updated] = await connection.execute<ResultSetHeader>(`UPDATE agent_runs SET status='unknown',recovery_state='pending',replacement_run_id=NULL,execution_audit=COALESCE(?,execution_audit),lease_id=NULL,lease_until=NULL WHERE id=? AND lease_id=? AND status='running'`,[executionAudit?JSON.stringify(executionAudit):null,runId,leaseId]);
+      const [updated] = await connection.execute<ResultSetHeader>(`UPDATE agent_runs SET status='unknown',recovery_state='auto_resumed',replacement_run_id=NULL,execution_audit=COALESCE(?,execution_audit),lease_id=NULL,lease_until=NULL WHERE id=? AND lease_id=? AND status='running'`,[executionAudit?JSON.stringify(executionAudit):null,runId,leaseId]);
       if (!updated.affectedRows) return false;
       await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown',?)`,[runId,`diagnostic:${diagnosticCode}`]);
+      await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','Queue resumed automatically; the original task was not replayed.')`,[runId]);
       return true;
     });
   }
@@ -236,13 +243,14 @@ export class RunStore {
     return this.transaction(async connection => {
       const [rows] = await connection.execute<RowDataPacket[]>(`SELECT id FROM agent_runs WHERE status='running' AND lease_until<=UTC_TIMESTAMP(3) ORDER BY lease_until LIMIT 100 FOR UPDATE`);
       for (const row of rows) {
-        await connection.execute(`UPDATE agent_runs SET status='unknown',recovery_state='pending',replacement_run_id=NULL,lease_id=NULL,lease_until=NULL WHERE id=?`,[row.id]);
+        await connection.execute(`UPDATE agent_runs SET status='unknown',recovery_state='auto_resumed',replacement_run_id=NULL,lease_id=NULL,lease_until=NULL WHERE id=?`,[row.id]);
         await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','diagnostic:lease_expired')`,[row.id]);
+        await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','Queue resumed automatically; the original task was not replayed.')`,[row.id]);
       }
       return rows.length;
     });
   }
-  /** The owner must explicitly acknowledge uncertainty before this Bot screen queue can resume. */
+  /** Compatibility endpoint for pending records from older runtime versions. */
   async resolveUnknown(session: Session, runId: string, decision: 'retry' | 'acknowledge'): Promise<RunRecoveryResult | null> {
     if (!uuid.test(runId) || !['retry','acknowledge'].includes(decision)) throw new Error('Invalid run recovery');
     return this.transaction(async connection => {
@@ -308,6 +316,18 @@ export class RunStore {
       FROM agent_run_files rf JOIN bot_files f ON f.id=rf.file_id WHERE rf.run_id IN (${runIds.map(()=>'?').join(',')}) ORDER BY rf.created_at,f.id`,runIds);
     for(const row of rows){const key=String(row.runId);const files=result.get(key)||[];files.push({...row,id:String(row.id),name:String(row.name),mimeType:String(row.mimeType),size:Number(row.size),sha256:String(row.sha256),kind:row.kind as RunFile['kind']} as RunFile);result.set(key,files)}
     return result;
+  }
+  private async autoResumePendingUnknowns():Promise<void>{
+    const [candidates]=await this.pool.execute<RowDataPacket[]>(`SELECT id FROM agent_runs WHERE status='unknown' AND recovery_state IN ('none','pending') ORDER BY sequence LIMIT 100`);
+    if(!candidates.length)return;
+    await this.transaction(async connection=>{
+      for(const row of candidates){
+        const id=String(row.id);
+        const [updated]=await connection.execute<ResultSetHeader>(`UPDATE agent_runs SET recovery_state='auto_resumed' WHERE id=? AND status='unknown' AND recovery_state IN ('none','pending')`,[id]);
+        if(!updated.affectedRows)continue;
+        await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','Queue resumed automatically; the original task was not replayed.')`,[id]);
+      }
+    });
   }
   private async transaction<T>(work: (connection: PoolConnection) => Promise<T>): Promise<T> {
     const connection = await this.pool.getConnection();

@@ -3,6 +3,7 @@ import type {Pool,PoolConnection,RowDataPacket} from 'mysql2/promise';
 import type {Session} from './tenant-store.ts';
 import type {BotShape} from './bot-store.ts';
 import {WorkspaceFileStore,type RunFile,type StoredWorkspaceFile} from './file-store.ts';
+import type {RecoveryState} from './run-store.ts';
 import {isRunDiagnosticCode,type RunDiagnosticCode} from './run-diagnostics.ts';
 import {validateAgentExecutionAudit,type AgentExecutionAudit} from './execution-audit.ts';
 
@@ -17,7 +18,7 @@ export interface StoredGroupReplacementRun {
 export interface StoredGroupMessage {
  id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;targetBotIds:string[];
  runId:string|null;status:'queued'|'running'|'completed'|'failed'|'unknown'|null;
- recoveryState:'none'|'pending'|'retried'|'acknowledged'|null;replacementRunId:string|null;computerUsed:boolean;updatedAt:string|null;diagnosticCode:RunDiagnosticCode|null;executionAudit:AgentExecutionAudit|null;
+ recoveryState:RecoveryState|null;replacementRunId:string|null;computerUsed:boolean;updatedAt:string|null;diagnosticCode:RunDiagnosticCode|null;executionAudit:AgentExecutionAudit|null;
  files:RunFile[];replacementRun:StoredGroupReplacementRun|null;
 }
 export interface GroupChatView {group:StoredGroup;messages:StoredGroupMessage[]}

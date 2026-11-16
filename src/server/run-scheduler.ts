@@ -23,7 +23,7 @@ const defaultClaimLog = (event: SchedulerClaimEvent) => process.stderr.write(`${
 
 /**
  * One process may run multiple computers concurrently; each computer is locked
- * by the store. Exceptions or lost leases mean unknown, never automatic retry.
+ * by the store. Exceptions or lost leases stay unknown and are never replayed.
  */
 export class RunScheduler {
   private readonly active = new Map<string,ActiveRun>();
