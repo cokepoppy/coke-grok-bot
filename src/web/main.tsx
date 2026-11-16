@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { avatarPaths } from './avatar-paths';
+import { computerScreenRetryDelay } from './computer-screen-polling';
 import { WebsiteDemoApp } from './website-demo';
 import { VoiceCallCard, VoiceChatOverlay, type VoiceCallData } from './voice-chat';
 import {findGroupMentionQuery,groupMentionRecipientBotIds,groupRecipientBotIds,rebaseGroupMentionTokens,type GroupMentionQuery,type GroupMentionToken} from './group-mentions';
@@ -475,6 +476,7 @@ function ConnectAppsDialog({botId,botName,focusSkillId,onClose}:{botId:string;bo
 
 function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveName,onLabelChange,onSaveLabel,onChangeAvatar,onEditRoutine}:{name:string;botId:string;official?:boolean;bot?:Bot;onClose?:()=>void;onRename?:(value:string)=>void;onSaveName?:()=>void;onLabelChange?:(value:string)=>void;onSaveLabel?:()=>void;onChangeAvatar?:()=>void;onEditRoutine?:(name:string)=>void}) {
   const [owner,setOwner]=useState<'agent'|'user'|null>(null),[image,setImage]=useState(''),[error,setError]=useState(''),[diagnostic,setDiagnostic]=useState(''),[busy,setBusy]=useState(false),[text,setText]=useState('');
+  const [screenStale,setScreenStale]=useState(false);
   const [screenOpen,setScreenOpen]=useState(false);
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [routines,setRoutines]=useState<Routine[]>([]),[routineState,setRoutineState]=useState<'loading'|'ready'|'error'>('loading');
@@ -502,7 +504,9 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
     setRoutines(value.routines as Routine[]);setRoutineState('ready');
   };
   useEffect(()=>{
-    mounted.current=true;let stopped=false,timer:ReturnType<typeof setTimeout>|undefined;const controller=new AbortController();
+    mounted.current=true;let stopped=false,timer:ReturnType<typeof setTimeout>|undefined,consecutiveFailures=0;const controller=new AbortController();
+    setOwner(null);setImage('');setScreenStale(false);setDiagnostic('');
+    if(imageUrl.current)URL.revokeObjectURL(imageUrl.current);imageUrl.current='';
     const responseDiagnostic=async(response:Response,phase:string)=>{
       let code='',upstreamStatus:number|undefined;
       try{const body=await response.clone().json() as {diagnostic?:{code?:unknown;status?:unknown}}|null;const metadata=body?.diagnostic;const reportedStatus=metadata?.status;if(typeof metadata?.code==='string'&&/^(?:COMPUTER_[A-Z0-9_]+|INTERNAL_FAILURE)$/.test(metadata.code))code=metadata.code;if(typeof reportedStatus==='number'&&Number.isInteger(reportedStatus)&&reportedStatus>=100&&reportedStatus<=599)upstreamStatus=reportedStatus}catch{/* Keep the diagnostic limited to the HTTP status. */}
@@ -511,10 +515,11 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
     const refresh=async()=>{let phase='Computer status request',failure='';try{
       const status=await fetch(computerUrl,{credentials:'same-origin',cache:'no-store',signal:controller.signal});if(!status.ok){failure=await responseDiagnostic(status,phase);throw new Error()}
       phase='Computer status response';const state=await status.json() as {owner?:unknown};if(state.owner!=='agent'&&state.owner!=='user'){failure=`${phase}: invalid response`;throw new Error()}
+      setOwner(state.owner);
       phase='Computer screenshot request';const screen=await fetch(`${computerUrl}/screenshot`,{credentials:'same-origin',cache:'no-store',signal:controller.signal});if(!screen.ok){failure=await responseDiagnostic(screen,phase);throw new Error()}
       if(screen.headers.get('content-type')?.split(';')[0]!=='image/png'){failure='Computer screenshot response: invalid image type';throw new Error()}
-      phase='Computer screenshot image';const blob=await screen.blob();if(stopped)return;const next=URL.createObjectURL(blob),previous=imageUrl.current;imageUrl.current=next;setImage(next);setOwner(state.owner);setDiagnostic('');if(previous)URL.revokeObjectURL(previous);
-    }catch{if(!stopped){setOwner(null);setImage('');setDiagnostic(failure||`${phase}: request failed`);if(imageUrl.current)URL.revokeObjectURL(imageUrl.current);imageUrl.current=''}}finally{if(!stopped)timer=setTimeout(refresh,2000)}};
+      phase='Computer screenshot image';const blob=await screen.blob();if(stopped)return;const next=URL.createObjectURL(blob),previous=imageUrl.current;imageUrl.current=next;setImage(next);setOwner(state.owner);setScreenStale(false);setDiagnostic('');consecutiveFailures=0;if(previous)URL.revokeObjectURL(previous);
+    }catch{if(!stopped&&!controller.signal.aborted){consecutiveFailures+=1;if(phase==='Computer status request'||phase==='Computer status response')setOwner(null);setScreenStale(Boolean(imageUrl.current));setDiagnostic(failure||`${phase}: request failed`)}}finally{if(!stopped)timer=setTimeout(refresh,computerScreenRetryDelay(consecutiveFailures))}};
     void refresh();return ()=>{stopped=true;mounted.current=false;controller.abort();if(timer)clearTimeout(timer);if(imageUrl.current)URL.revokeObjectURL(imageUrl.current);imageUrl.current=''};
   },[computerUrl]);
   useEffect(()=>{
@@ -616,6 +621,7 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
   const toggleScreenFullscreen=async()=>{const element=screenDialog.current;if(!element)return;try{if(document.fullscreenElement===element)await document.exitFullscreen();else await element.requestFullscreen()}catch{setError('Full-screen view is unavailable in this browser.')}};
   const controlLabel=owner==='user'?'You are in control':owner==='agent'?'Bot is in control':'Waiting for computer';
   if(!official)return <><div className="computer-preview" title={diagnostic||undefined}>{image ? <img src={image} alt="Current computer screen" onClick={click} /> : <><Icon name="screen" /><span>Computer not connected</span></>}</div>
+    {screenStale&&image&&<p className="computer-screen-stale" role="status">Screen update delayed · showing the last received screen.</p>}
     <div className="screen-label" title={diagnostic||undefined}>{name || 'Bot'}'s screen · {controlLabel}</div><span className="sr-only" role="status" aria-live="polite">{diagnostic}</span>
     {owner && <div className="computer-controls"><button type="button" disabled={busy} onClick={()=>void send('control',{owner:owner==='agent'?'user':'agent'})}>{owner==='agent'?'Take control':'Return to Bot'}</button>
       {owner==='user' && <><form onSubmit={event=>{event.preventDefault();if(text){void send('action',{action:'type',text});setText('')}}}><input aria-label="Type on computer" value={text} maxLength={2000} onChange={event=>setText(event.target.value)} /><button disabled={busy||!text}>Type</button></form><button type="button" disabled={busy} onClick={()=>void send('action',{action:'press',key:'Enter'})}>Enter</button><p>Click the screen to interact. The image refreshes every few seconds.</p></>}</div>}
@@ -653,6 +659,7 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
         {image ? <img src={image} alt="Current computer screen" /> : <span className="computer-preview-empty"><Icon name="screen" /><span>Computer not connected</span></span>}
         <span className="computer-open-screen"><Icon name="screen" /><span>Open screen</span></span>
       </button>
+      {screenStale&&image&&<p className="computer-screen-stale" role="status">Screen update delayed · showing the last received screen.</p>}
       <div className="screen-label" title={diagnostic||undefined}>{name || 'Bot'}’s screen</div>
       <section className="computer-routines" aria-label="Routines">
         <header><h2>Routines</h2></header>
@@ -680,6 +687,7 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
         <div className="computer-large-screen">{owner==='user'
           ? <iframe ref={screenFrame} key={`${botId}-user-control`} title={`${name || 'Bot'} cloud computer`} src={noVncViewer} allow="clipboard-read; clipboard-write" />
           : image ? <img src={image} alt="Current computer screen" onClick={click} /> : <span>Computer not connected</span>}</div>
+        {screenStale&&image&&<p className="computer-screen-stale" role="status">Screen update delayed · showing the last received screen.</p>}
         {error&&<span className="sr-only" role="status">{error}</span>}
       </section>
     </div>}
@@ -689,7 +697,9 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
 function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{run:AgentRun;botId:string;showScreen:boolean;onOpenComputer:()=>void;children?:React.ReactNode}) {
   const [image,setImage]=useState('');
   const [unavailable,setUnavailable]=useState(false);
+  const [screenStale,setScreenStale]=useState(false);
   const imageUrl=useRef('');
+  const imageOwnerKey=useRef('');
   const cardElement=useRef<HTMLElement|null>(null);
   const [cardVisible,setCardVisible]=useState(false);
   const status=run.status==='running'?'Working':run.status==='queued'?'Queued':run.status==='completed'?'Done':run.status==='failed'?'Failed':'Not confirmed';
@@ -703,20 +713,23 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
   },[]);
   useEffect(()=>{
     if(!showScreen||run.status==='queued'||!cardVisible)return;
-    let stopped=false,timer:ReturnType<typeof setTimeout>|undefined;
+    const ownerKey=`${botId}:${run.id}`;
+    if(imageOwnerKey.current!==ownerKey){if(imageUrl.current)URL.revokeObjectURL(imageUrl.current);imageUrl.current='';imageOwnerKey.current=ownerKey;setImage('');setUnavailable(false);setScreenStale(false)}
+    let stopped=false,timer:ReturnType<typeof setTimeout>|undefined,consecutiveFailures=0;
     const controller=new AbortController();
     const refresh=async()=>{
       try{
         const response=await fetch(`${import.meta.env.BASE_URL}api/bots/${encodeURIComponent(botId)}/computer/screenshot`,{credentials:'same-origin',cache:'no-store',signal:controller.signal});
         if(!response.ok||response.headers.get('content-type')?.split(';')[0]!=='image/png')throw new Error();
         const next=URL.createObjectURL(await response.blob());if(stopped){URL.revokeObjectURL(next);return}
-        const previous=imageUrl.current;imageUrl.current=next;setImage(next);setUnavailable(false);if(previous)URL.revokeObjectURL(previous);
-      }catch(error){if(!stopped&&error instanceof Error&&error.name!=='AbortError'){setImage('');setUnavailable(true)}}
-      finally{if(!stopped&&run.status==='running')timer=setTimeout(refresh,2000)}
+        const previous=imageUrl.current;imageUrl.current=next;setImage(next);setUnavailable(false);setScreenStale(false);consecutiveFailures=0;if(previous)URL.revokeObjectURL(previous);
+      }catch(error){if(!stopped&&error instanceof Error&&error.name!=='AbortError'){consecutiveFailures+=1;setScreenStale(Boolean(imageUrl.current));if(!imageUrl.current)setUnavailable(true)}}
+      finally{if(!stopped&&run.status==='running')timer=setTimeout(refresh,computerScreenRetryDelay(consecutiveFailures))}
     };
     void refresh();
-    return()=>{stopped=true;controller.abort();if(timer)clearTimeout(timer);if(imageUrl.current)URL.revokeObjectURL(imageUrl.current);imageUrl.current=''};
+    return()=>{stopped=true;controller.abort();if(timer)clearTimeout(timer)};
   },[botId,cardVisible,run.id,run.status,showScreen]);
+  useEffect(()=>()=>{if(imageUrl.current)URL.revokeObjectURL(imageUrl.current);imageUrl.current='';imageOwnerKey.current=''},[]);
   const toolLabel=(tool:string)=>tool==='computer_browser'?'Browser User':tool==='computer_desktop'?'Computer User':tool==='computer_files'?'Computer files':tool==='computer_terminal'?'Computer terminal':tool==='open_public_page'?'Public page':tool==='bot_handoff'?'Bot handoff':tool==='bot_memory'?'Bot memory':tool==='bot_routines'?'Bot routines':tool;
   return <section ref={cardElement} className="computer-activity-card" aria-label={`Computer activity · ${status}`}>
     <header><strong>Computer</strong><span className={`computer-activity-status ${run.status}`}><i />{status}</span></header>
@@ -724,6 +737,7 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
     {children}
     {diagnostic&&<p className="run-recovery-diagnostic">{diagnostic}</p>}
     {showScreen&&image?<button type="button" className="computer-activity-screen" onClick={onOpenComputer} aria-label="Open this Bot's computer"><img src={image} alt="Current cloud computer screen" /></button>:<button type="button" className="computer-activity-open" onClick={onOpenComputer}>{unavailable?'Open computer to inspect the screen':'View computer screen'}</button>}
+    {screenStale&&image&&<p className="computer-screen-stale" role="status">Screen update delayed · showing the last received screen.</p>}
     {run.executionAudit&&<details className="computer-activity-audit"><summary>Execution details</summary><div className="computer-activity-audit-body"><span>{run.executionAudit.engine==='dsh'?'DeepSeek Harness':'Pi'} · {run.executionAudit.model} · {run.executionAudit.modelCompleted?'response received':'response not confirmed'}</span>{run.executionAudit.calls.map((call,index)=><span key={`${call.tool}-${call.action||''}-${index}`}>{toolLabel(call.tool)}{call.action?` · ${call.action}`:''} · {call.outcome}</span>)}{run.executionAudit.truncated&&<span>Additional tool calls omitted</span>}</div></details>}
   </section>;
 }
