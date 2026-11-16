@@ -3246,3 +3246,15 @@ Developer Bot 只读核对 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`
 同日用户提供的 `打卡助手` 页面显示 Computer 预览停在 `about:blank`，Bot 的可见回执报告 `COMPUTER_WORKER_FORBIDDEN` 并解释浏览器操作未执行。该页面已收到 Bot 回复，不应与“任务仍在队列卡住”混为一谈。源码中至少有两条路径使用同一错误码：`ComputerBridge` 缺少 `browserTask` scope 时拒绝 browser action，以及 Worker HTTP 403（另有旧 Worker 逐操作审批错误会被转换成该码）；单凭页面文本不能断定属于哪一条，必须检查该 run scope 与 Worker 返回类别。此前检查的 Worker policy 允许普通网页操作，不足以证明这次没有旧 Worker、scope 或 HTTP 403 问题。
 
 该回执提及 Routine 只支持每周、间隔和 Webhook；源码 schema/plugin 对应枚举中没有“每天多个固定时刻”的调度类型。不要静默拆成多个每周 Routine 来假装支持每日计划；应把 Daily/多个时刻作为独立能力实现与验收。该用户截图只用于诊断，不代表授权执行打卡或创建真实 Routine。
+
+未知结果诊断 UI 候选 `9cd2371` 已推送到同一功能分支并在 Mac-local K3D 只滚动 `coke-grok-auth`。候选镜像 `coke-grok-auth:candidate-run-diagnostics-9cd2371-20261116-r1`（linux/arm64，image ID `sha256:95b3782d5f94b796d93ea939ae1d5ada44f6c68a893174d228672bbf6a6971fb`）已 Ready；新 Pod 内 `/app/auth.cjs` SHA-256 与发布包一致。Broker/Bootstrap 镜像不变，没有重启 Agent/Desktop，没有触碰 MySQL、PVC 或 VPS。
+
+公网验收尚未通过：刷新已登录 Chrome 并读取 DOM 的 Computer Use 调用超过 30 秒，随后一次 `getState` 恢复检查也超时。无法确认页面刷新是否完成或新诊断文案是否可见；未发送新任务、未重放 unknown run，也未用截图/坐标方式替代。发布包的校验脚本已修复一个 rollout 竞态：滚动更新时 Pod 列表会短暂同时包含正在终止的旧 Pod 与新的 Ready Pod，按列表第一个 Pod 校验会得到 NotFound；现改为选 Ready Pod，制品 hash 校验通过。公网 UI 证据与北交所旧 run 的具体诊断仍待 Computer Use 通道恢复。
+
+#### 2026-11-16 默认开放网页与电脑操作（本地源码候选）
+
+用户再次明确权限设计方向：有效的认证用户任务租约内，常规 Browser User 与 Computer User 操作默认可执行，不按自然语言词句、网站、URL 或单个控件逐项推断和审批；只有真实登录凭据、一次性验证码、MFA、CAPTCHA 或其他真人身份验证交接给用户。仍校验认证用户、租户、Bot、活动 run lease 和电脑控制归属；网页/邮件/文件内容只是数据，不能扩张任务授权。
+
+当前唯一 feature 分支的候选源码移除了 Pi capability 中 URL/任务分类授权标志、ComputerBridge 的 per-action approvals 与导航白名单，以及 Worker/DSH 中基于任务分类和逐步审批的路径；通用任务上下文恢复只用于找回用户交接前的同 Bot 任务，不授予或限制能力。认证检测只使用认证路由、页面标题/可见认证标题、敏感输入控件和明确的人机验证标记；Gmail 正文里出现“sign-in”之类词不会触发交接。定向回归 75/75、`npm run test:runtime` 196/196、`npm run build`、`npm run build:deployment`、`docker buildx build --check -f deploy/desktop/Dockerfile deploy/desktop` 与 `git diff --check` 均通过；未创建额外测试容器。
+
+本轮仍是本地源码候选，尚未部署这些 Auth/Worker 改动。只读 K3D 检查显示 Auth 运行诊断候选，多个现存用户 Agent/Desktop 运行不同旧镜像；更新 Worker 前必须核对各 namespace 的 immutable image pin，并协调 Auth 与 Agent/Desktop 镜像。Computer Use `getState` 再次超过 30 秒超时；没有截图、重试旧任务或进行公网浏览器操作。因此线上审批卡是否已经消失、北交所多 Bot 真实 E2E 是否恢复，当前均未验收。

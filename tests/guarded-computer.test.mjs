@@ -23,7 +23,7 @@ test('guarded worker rejects changed screens, locations and ownership',async()=>
  const state=await worker.snapshot();image=Buffer.from('screen-b');await assert.rejects(worker.execute({},state));image=Buffer.from('screen-a');url='https://example.test/changed';await assert.rejects(worker.execute({},state));url=state.url;owner='user';await assert.rejects(worker.execute({},state));assert.equal(effects,0);
  owner='agent';assert.equal(await worker.execute({},state),1);
 });
-test('approved browser navigation tolerates screenshot-only changes but keeps the source URL and owner bound',async()=>{
+test('ordinary browser navigation tolerates screenshot-only changes but keeps the source URL and owner bound',async()=>{
  let owner='agent',url='about:blank',image=Buffer.from('address-bar-caret-a'),effects=0;
  const worker=createGuardedComputer({readOwner:()=>owner,readPageUrl:async()=>url,readScreenshot:async()=>image,perform:async()=>++effects});
  const state=await worker.snapshot();
@@ -43,34 +43,35 @@ test('explicitly requested navigation uses a locked owner and URL state without 
  await assert.rejects(worker.navigateIfUnchanged({kind:'browser',action:'navigate',url:'https://example.net/'},state),/state or ownership changed/);
  url='about:blank';owner='user';await assert.rejects(worker.navigateIfUnchanged({kind:'browser',action:'navigate',url:'https://example.org/'},state),/state or ownership changed/);assert.equal(effects,1);
 });
-test('approved browser clicks remain bound to the exact screenshot',async()=>{
+test('ordinary browser controls tolerate live page redraws while keeping URL and owner bound',async()=>{
  let image=Buffer.from('screen-a'),effects=0;
  const worker=createGuardedComputer({readOwner:()=> 'agent',readPageUrl:async()=> 'https://example.test/',readScreenshot:async()=>image,perform:async()=>++effects});
  const state=await worker.snapshot();
  image=Buffer.from('screen-b');
- await assert.rejects(worker.execute({kind:'browser',action:'click',by:'role',role:'button',target:'Continue'},state),/state or ownership changed/);
- assert.equal(effects,0);
+ assert.equal(await worker.execute({kind:'browser',action:'click',by:'role',role:'button',target:'Continue'},state),1);
+ assert.equal(effects,1);
 });
-test('run-scoped Browser User controls tolerate redraws but stay bound to the same agent-owned URL',async()=>{
+test('all Browser User controls tolerate redraws but stay bound to the same agent-owned URL',async()=>{
  let owner='agent',url='file:///workspace/tasks/task-id/artifacts/demo.html',image=Buffer.from('screen-a'),effects=0;
  const worker=createGuardedComputer({readOwner:()=>owner,readPageUrl:async()=>url,readScreenshot:async()=>image,perform:async()=>++effects});
  const state=await worker.snapshot();
  image=Buffer.from('screen-b');
- assert.equal(await worker.execute({kind:'browser',action:'click',workflowPolicy:'browser-task',by:'role',role:'button',target:'Validate'},state),1);
+ assert.equal(await worker.execute({kind:'browser',action:'click',by:'role',role:'button',target:'Validate'},state),1);
  url='file:///workspace/tasks/other-id/artifacts/demo.html';
- await assert.rejects(worker.execute({kind:'browser',action:'click',workflowPolicy:'browser-task',by:'role',role:'button',target:'Validate'},state),/state or ownership changed/);
+ await assert.rejects(worker.execute({kind:'browser',action:'click',by:'role',role:'button',target:'Validate'},state),/state or ownership changed/);
  url=state.url;owner='user';
- await assert.rejects(worker.execute({kind:'browser',action:'fill',workflowPolicy:'browser-task',by:'label',target:'Quantity',value:'100'},state),/state or ownership changed/);
+ await assert.rejects(worker.execute({kind:'browser',action:'fill',by:'label',target:'Quantity',value:'100'},state),/state or ownership changed/);
  assert.equal(effects,1);
 });
-test('guarded browser actions tolerate only volatile panel pixels',async()=>{
+test('browser task controls continue across live content changes and preserve native-action fingerprint checks',async()=>{
  let image=screenshot([1,2,3],[8,9,10]),effects=0;
  const worker=createGuardedComputer({readOwner:()=> 'agent',readPageUrl:async()=> 'https://example.test/',readScreenshot:async()=>image,perform:async()=>++effects});
  const state=await worker.snapshot();image=screenshot([40,50,60],[8,9,10]);
  assert.equal(await worker.execute({kind:'browser',action:'click',by:'role',role:'button',target:'Continue'},state),1);
  image=screenshot([40,50,60],[11,12,13]);
- await assert.rejects(worker.execute({kind:'browser',action:'click',by:'role',role:'button',target:'Continue'},state),/state or ownership changed/);
- assert.equal(effects,1);
+ assert.equal(await worker.execute({kind:'browser',action:'click',by:'role',role:'button',target:'Continue'},state),2);
+ await assert.rejects(worker.execute({kind:'desktop',action:'click',x:10,y:10},state),/state or ownership changed/);
+ assert.equal(effects,2);
 });
 test('ownership changes and guarded actions run serially',async()=>{
  let owner='agent',started=false,release;const gate=new Promise(resolve=>{release=resolve});

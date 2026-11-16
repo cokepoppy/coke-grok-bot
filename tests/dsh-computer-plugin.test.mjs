@@ -108,15 +108,14 @@ test('DSH direct Gmail navigation consumes an immediate completion without creat
     assert.deepEqual(JSON.parse(value.text), destination);
     assert.equal(calls.filter(call => call.path.endsWith('/computer/actions')).length, 1);
     assert.equal(calls.length, 2, 'only check control and navigate; do not create, poll, or execute an approval');
-    assert.match(browser.description, /needed navigation and page controls without per-step approval on any site/i);
-    assert.match(browser.description, /Natural-language requests to search or read email/i);
-    assert.match(browser.description, /page controls without per-step approval/i);
-    assert.match(browser.description, /If sign-in or human verification appears, stop and tell the owner to open the Computer screen and choose Take control/i);
-    assert.match(browser.description, /open the Computer screen and choose Take control/i);
-    assert.match(browser.description, /Do not claim control has transferred/i);
-    assert.match(browser.description, /reuse the exact current page\/session when it is already the requested signed-in site/i);
-    assert.match(browser.description, /Do not reload, open another tab, or guess account-specific paths/i);
-    assert.match(browser.description, /after takeover, inspect the same computer and resume on its current page/i);
+    assert.match(browser.description, /available for every live Bot task lease across sites and controls/i);
+    assert.match(browser.description, /Stop only when a real sign-in or human-verification challenge appears/i);
+    assert.match(browser.description, /navigate, reload, open tabs, and use controls as the task requires/i);
+    assert.match(browser.description, /choose Take control/i);
+    assert.match(browser.description, /do not claim control transferred/i);
+    assert.match(browser.description, /reuse an existing signed-in session when it is the right context/i);
+    assert.match(browser.description, /without guessing account routes/i);
+    assert.match(browser.description, /After takeover, inspect the same computer and resume from its current state/i);
   } finally {
     globalThis.fetch = oldFetch;
     if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
@@ -201,7 +200,7 @@ test('DSH surfaces a fixed worker screen-capacity diagnostic without forwarding 
  }
 });
 
-test('DSH routes mistaken desktop navigation to Browser User without showing an approval card', async () => {
+test('DSH Computer User can click Chrome and type in its address bar without approval', async () => {
   const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
   const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
   const oldFetch = globalThis.fetch;
@@ -212,16 +211,17 @@ test('DSH routes mistaken desktop navigation to Browser User without showing an 
     const path = new URL(String(url)).pathname;
     calls.push({ path, method: init.method || 'GET' });
     if (path.endsWith('/computer/control')) return Response.json({ owner: 'agent' });
-    if (path.endsWith('/computer/actions')) return Response.json({ error: 'computer_request_failed', diagnostic: { code: 'COMPUTER_NAVIGATION_USE_BROWSER' } }, { status: 409 });
-    throw new Error('A rejected navigation action must not be polled or executed');
+    if (path.endsWith('/computer/actions')) return Response.json({ status: 'completed', result: { ready: true, url: 'https://mail.google.com/' } }, { status: 201 });
+    throw new Error('A direct desktop action must not be polled or retried');
   };
   try {
     const { tools } = mount(), desktop = tools.get('computer_desktop');
-    await assert.rejects(desktop.execute({ action: 'click', x: 295, y: 90 }, { signal: new AbortController().signal }), /browser action.*no approval was requested.*Use computer_browser for navigation and page interactions/i);
+    const result = await desktop.execute({ action: 'click', x: 295, y: 90 }, { signal: new AbortController().signal });
+    assert.match(result.text, /https:\/\/mail\.google\.com/);
     assert.equal(calls.filter(call => call.path.endsWith('/computer/actions')).length, 1);
-    assert.equal(calls.length, 1, 'receive the navigation directive without polling or executing an approval');
-    assert.match(desktop.description, /use computer_browser even when the user describes the outcome in natural language/i);
-    assert.match(desktop.description, /Do not use desktop coordinates for web page controls/i);
+    assert.equal(calls.length, 1, 'the live task lease checks ownership atomically with the direct computer action');
+    assert.match(desktop.description, /Chrome tabs and the address bar are ordinary computer controls/i);
+    assert.match(desktop.description, /Browser User and Computer User actions needed for the task run without per-step or per-site approval/i);
   } finally {
     globalThis.fetch = oldFetch;
     if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
@@ -266,7 +266,7 @@ test('DSH computer plugin fails closed instead of polling legacy approval ids', 
   };
   try {
     const browser = mount().tools.get('computer_browser');
-    await assert.rejects(browser.execute({ action: 'navigate', url: 'https://example.test/' }, { signal: new AbortController().signal }), /approval prompts are disabled and no action was performed/);
+    await assert.rejects(browser.execute({ action: 'navigate', url: 'https://example.test/' }, { signal: new AbortController().signal }), /Worker did not confirm that the computer action ran/);
     assert.equal(proposals, 1,'stale approval responses are not polled or executed');
   } finally {
     globalThis.fetch = oldFetch;

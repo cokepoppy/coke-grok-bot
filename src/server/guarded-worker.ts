@@ -9,7 +9,6 @@ const workerDiagnosticCodes:Record<string,SafeDiagnosticError['diagnosticCode']>
  ACTIVE_TAB_UNRESOLVED:'COMPUTER_ACTIVE_TAB_UNRESOLVED',
  DOTS_RENDERER_UNRESPONSIVE:'COMPUTER_RENDERER_UNRESPONSIVE',
   COMPUTER_SIGNIN_HANDOFF_REQUIRED:'COMPUTER_SIGNIN_HANDOFF_REQUIRED',
-  COMPUTER_ACTION_REQUIRES_APPROVAL:'COMPUTER_ACTION_REQUIRES_APPROVAL',
 };
 const workerDiagnosticMessages:Record<string,SafeDiagnosticError['diagnosticCode']>={
  'This user computer has no free Bot screen slot':'COMPUTER_SCREEN_CAPACITY',
@@ -33,7 +32,7 @@ async function throwWorkerResponseError(response:Response,fallback:SafeDiagnosti
   }
  }
  if(response.status===401)throw new SafeDiagnosticError('COMPUTER_WORKER_AUTH_REJECTED',401);
- if(code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED'||code==='COMPUTER_ACTION_REQUIRES_APPROVAL')throw new SafeDiagnosticError(code,response.status);
+ if(code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED')throw new SafeDiagnosticError(code,response.status);
  if(response.status===403)throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN',403);
  throw new SafeDiagnosticError(code??fallback,response.status);
 }
@@ -95,12 +94,12 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   if((item.owner!=='agent'&&item.owner!=='user')||typeof item.url!=='string'||item.url.length>4096)throw new Error('Invalid computer navigation state');
   return {owner:item.owner,url:item.url};
  }
- async navigateIfUnchanged(input:unknown,expected:ComputerNavigationState,signal:AbortSignal,workflowPolicy?:'browser-task'|'gmail-read-draft'):Promise<unknown>{
+ async navigateIfUnchanged(input:unknown,expected:ComputerNavigationState,signal:AbortSignal):Promise<unknown>{
   if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Invalid computer navigation');
   const action=input as Record<string,unknown>;
   if('taskId' in action||action.kind!=='browser'||action.action!=='navigate')throw new Error('Invalid computer navigation');
   let response:Response;
-  try{response=await this.request(new URL('/v1/guarded/navigate',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({action:{...action,taskId:this.taskId,...(workflowPolicy?{workflowPolicy}:{})},expected:{owner:expected.owner,url:expected.url}}),signal,redirect:'error'})}
+  try{response=await this.request(new URL('/v1/guarded/navigate',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({action:{...action,taskId:this.taskId},expected:{owner:expected.owner,url:expected.url}}),signal,redirect:'error'})}
   catch(error){throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED',undefined,'navigate',safeWorkerTransportCode(error))}
   if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_HTTP_ERROR');
   let value:unknown;try{value=await response.json()}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE')}
@@ -146,12 +145,12 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   if(!response.ok)throw new Error('Computer action was not confirmed');
   const result:unknown=await response.json();if(!result||typeof result!=='object'||(result as {ready?:unknown}).ready!==true)throw new Error('Computer action was not confirmed');
  }
- async performIfUnchanged(input:unknown,expected:ComputerState,signal:AbortSignal,workflowPolicy?:'browser-task'|'gmail-read-draft'):Promise<unknown>{
+ async performIfUnchanged(input:unknown,expected:ComputerState,signal:AbortSignal):Promise<unknown>{
   if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Invalid computer action');
   const action=input as Record<string,unknown>;
   if('taskId' in action)throw new Error('Task identity is controlled by the server');
   let response:Response;
-  try{response=await this.request(new URL('/v1/guarded/execute',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({action:{...action,...(action.kind==='browser'?{taskId:this.taskId,...(workflowPolicy?{workflowPolicy}:{})}:{})},expected}),signal,redirect:'error'})}
+  try{response=await this.request(new URL('/v1/guarded/execute',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({action:{...action,...(action.kind==='browser'?{taskId:this.taskId}:{})},expected}),signal,redirect:'error'})}
   catch(error){throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED',undefined,'execute',safeWorkerTransportCode(error))}
   if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_HTTP_ERROR');
   let value:unknown;try{value=await response.json()}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE')}

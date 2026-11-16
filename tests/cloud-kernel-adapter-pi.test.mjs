@@ -81,19 +81,19 @@ test('Pi fails closed instead of polling a legacy computer approval id',async()=
  try{
   await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:token},prompt:'Check the browser tool.',signal:new AbortController().signal},{piSdk:sdk});
   const browser=options.customTools.find(tool=>tool.name==='computer_browser');assert.ok(browser);
-  await assert.rejects(()=>browser.execute('call',{action:'navigate',url:'https://example.com/'},new AbortController().signal),/approval prompts are disabled and no action was performed/);
+  await assert.rejects(()=>browser.execute('call',{action:'navigate',url:'https://example.com/'},new AbortController().signal),/Worker did not confirm that the computer action ran/);
   assert.deepEqual(requests,[{pathname:'/v1/computer/actions',method:'POST'}],'a legacy id must never be polled or executed');
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });
 
-test('Pi redirects a desktop attempt to open a requested website to Browser User without approval',async()=>{
+test('Pi Computer User can operate Chrome tabs and address bar without approval',async()=>{
  const workspace=await mkdtemp(path.join(os.tmpdir(),'grok-pi-navigation-directive-')),cwd=path.join(workspace,'tasks','navigation');await mkdir(cwd,{recursive:true});
  const oldFetch=globalThis.fetch,token='x'.repeat(43),requests=[];let options;
  globalThis.fetch=async(url,init={})=>{
   const pathname=new URL(String(url)).pathname;requests.push({pathname,method:init.method||'GET'});
   if(pathname==='/v1/computer/control')return Response.json({owner:'agent'});
-  if(pathname==='/v1/computer/actions')return Response.json({error:'computer_request_failed',diagnostic:{code:'COMPUTER_NAVIGATION_USE_BROWSER'}},{status:409});
-  throw new Error('A rejected navigation must not be polled or executed');
+  if(pathname==='/v1/computer/actions')return Response.json({status:'completed',result:{ready:true,url:'https://example.org/'}},{status:201});
+  throw new Error('A direct desktop action must not be polled or retried');
  };
  const sdk={
   AuthStorage:{inMemory:()=>({setRuntimeApiKey(){}})},ModelRegistry:{inMemory:()=>({registerProvider(){},find:()=>({id:'deepseek-v4.1-flash'})})},
@@ -103,11 +103,12 @@ test('Pi redirects a desktop attempt to open a requested website to Browser User
  try{
   await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:token},prompt:'Open https://example.org/ and report its title.',signal:new AbortController().signal},{piSdk:sdk});
   const desktop=options.customTools.find(tool=>tool.name==='computer_desktop');assert.ok(desktop);
-  await assert.rejects(()=>desktop.execute('desktop-address-bar-click',{action:'click',x:295,y:90},new AbortController().signal),/browser action.*no approval was requested.*computer_browser for navigation and page interactions/i);
+  const result=await desktop.execute('desktop-address-bar-click',{action:'click',x:295,y:90},new AbortController().signal);
+  assert.match(result.content[0].text,/https:\/\/example\.org/);
   assert.equal(requests.filter(request=>request.pathname==='/v1/computer/actions').length,1);
-  assert.equal(requests.length,2,'no approval status poll or execute call follows the navigation directive');
-  assert.match(desktop.promptGuidelines.join(' '),/Natural-language requests to search or read email.*count as browser tasks/i);
-  assert.match(desktop.promptGuidelines.join(' '),/never use desktop coordinates for webpage controls/i);
+  assert.equal(requests.length,2,'only the owner check and direct computer action are needed');
+  assert.match(desktop.promptGuidelines.join(' '),/Browser User and Computer User are available on every live task lease/i);
+  assert.match(desktop.promptGuidelines.join(' '),/Chrome tabs and the address bar are ordinary computer controls/i);
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });
 
@@ -128,9 +129,9 @@ test('Pi does not poll or execute legacy approval ids for browser or desktop act
  try{
   await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:token},prompt:'Use the requested browser site.',signal:new AbortController().signal},{piSdk:sdk});
   const browser=options.customTools.find(tool=>tool.name==='computer_browser'),desktop=options.customTools.find(tool=>tool.name==='computer_desktop');assert.ok(browser);assert.ok(desktop);
-  await assert.rejects(()=>browser.execute('browser-navigate',{action:'navigate',url:'https://www.google.com/'},new AbortController().signal),/approval prompts are disabled and no action was performed/);
+  await assert.rejects(()=>browser.execute('browser-navigate',{action:'navigate',url:'https://www.google.com/'},new AbortController().signal),/Worker did not confirm that the computer action ran/);
   assert.equal(approvalIds.length,1);
-  await assert.rejects(()=>desktop.execute('desktop-click',{action:'click',x:10,y:10},new AbortController().signal),/approval prompts are disabled and no action was performed/);
+  await assert.rejects(()=>desktop.execute('desktop-click',{action:'click',x:10,y:10},new AbortController().signal),/Worker did not confirm that the computer action ran/);
   assert.equal(approvalIds.length,2,'each direct tool call fails fast and neither action is polled or executed');
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });

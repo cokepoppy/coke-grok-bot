@@ -46,70 +46,15 @@ function namesUnregisteredBrowserDestination(text:string):boolean{
 }
 
 /**
- * A short-lived permission derived only from the signed-in user's current
- * request. It recognizes direct site/app tasks even when the user doesn't
- * explicitly say "browser" and authorizes task-needed Browser User interactions
- * on any site; the desktop Worker stops at authentication and credential entry.
+ * Recognize an earlier direct Browser task only to restore its text after an
+ * explicit same-Bot continuation. This result never grants or denies computer
+ * actions; a live authenticated task lease always carries Browser and Computer access.
  */
 export function requestsBrowserTask(request: string): boolean {
   const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';
   if (!text || deniesBrowserTask.test(text) || quotedSourceInstructions.test(text) || openedQuotedSource.test(text) || quotedChineseSourceInstructions.test(text)) return false;
-  // Explicit destinations (including arbitrary URLs and named services) and
-  // plain-language mail/site tasks all use the same per-run browser scope.
-  // Gmail's specialized read/draft policy is an additional task instruction,
-  // not a prerequisite for using ordinary browser controls.
-  return directBrowserTaskRequest.test(text) || directChineseBrowserTaskRequest.test(text) || directChineseOnlineResearchRequest.test(text) || explicitComputerBrowserTaskRequest.test(text) || namesUnregisteredBrowserDestination(text) || requestedNavigationOrigins(text).length > 0;
-}
-
-/**
- * Narrow, run-scoped destinations directly requested by the signed-in user.
- * This origin scope controls where the run may navigate. The broader,
- * run-scoped Browser User permission for routine page controls is represented
- * separately by requestsBrowserTask and is not restricted to these origins.
- */
-export function requestedNavigationOrigins(request: string): string[] {
-  const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';
-  if (!text || !(directNavigationRequest.test(text) || groupAcceptanceNavigationRequest.test(text)) || deniedNavigationVerbs.test(text) || quotedSourceInstructions.test(text) || openedQuotedSource.test(text) || /^\s*(?:打开|查看|读取|检查)(?:这封|这个|该)?(?:邮件|消息|网页|页面|文件|文档|附件)[^\n]{0,120}(?:写着|内容|要求)/i.test(text)) return [];
-
-  const origins = new Set<string>(),addOrigin=(origin:string)=>{if(origins.size<4)origins.add(origin)};
-  for (const match of text.matchAll(urlPattern)) {
-    const raw = match[0].replace(/[.,!?;:]+$/u, '');
-    try {
-      const url = new URL(raw);
-      if ((url.protocol === 'https:' || url.protocol === 'http:') && !url.username && !url.password) addOrigin(url.origin);
-    } catch { /* Ignore malformed destinations. */ }
-    if (origins.size >= 4) break;
-  }
-
-  // A common service name can stand in for a URL when the user directly asks
-  // to open that service. Preserve named destinations alongside explicit URLs
-  // and preserve both hosts when a request names Google and Gmail.
-  const serviceNameText = text.replace(urlPattern, ' ');
-  const namesGoogle=/\b(?:open|navigate(?:\s+to)?|go\s+to|visit|load|search(?:\s+for)?|access|log\s+in\s+to|sign\s+in\s+to)\s+(?:the\s+)?google\b|(?:打开|访问|进入|导航到|前往|搜索|登录|登陆)\s*(?:谷歌|google)/i.test(serviceNameText);
-  const namesGmail=/\b(?:open|navigate(?:\s+to)?|go\s+to|visit|load|access|log\s+in\s+to|sign\s+in\s+to)\s+(?:(?:my|the)\s+)?(?:gmail|google\s+mail)\b|(?:打开|访问|进入|导航到|前往|登录|登陆)\s*(?:我的\s*)?(?:gmail|google\s+mail|谷歌邮箱)/i.test(serviceNameText);
-  if (namesGoogle) { addOrigin('https://google.com'); addOrigin('https://www.google.com'); }
-  if (namesGmail) {
-    addOrigin('https://mail.google.com');
-    if (/\b(?:log[ -]?in|sign[ -]?in)\b|登录|登陆/i.test(text)) addOrigin('https://accounts.google.com');
-  }
-  return [...origins];
-}
-
-/** Extra task guidance for Gmail unread review and reply drafting. Browser access itself is site-generic. */
-export function requestsGmailReadDraftWorkflow(request: string): boolean {
-  const text = typeof request === 'string' ? request.trim().slice(0, 20_000) : '';
-  if (!text || quotedSourceInstructions.test(text) || openedQuotedSource.test(text)) return false;
-  const namesGmail = /\b(?:gmail|google mail|mail\.google\.com)\b/i.test(text);
-  const readsUnread = /\b(?:review|read|inspect|check)\b.{0,120}\b(?:unread|inbox)\b|\b(?:unread|inbox)\b.{0,120}\b(?:review|read|inspect|check)\b|(?:查看|读取|检查|审阅).{0,30}未读|未读.{0,30}(?:查看|读取|检查|审阅)/i.test(text);
-  const draftsReplies = /\b(?:draft|save|write|compose)\b.{0,100}\b(?:reply|replies)\b|\b(?:reply|replies)\b.{0,100}\b(?:draft|save|write|compose)\b|(?:拟写|起草|撰写|保存).{0,30}(?:回复|回信|草稿)|(?:回复|回信).{0,30}(?:草稿|拟写|起草)/i.test(text);
-  const sendIntentText = text
-    .replace(/\b(?:never|do not|don't|draft(?:s)? only)\b[\s\S]{0,32}\b(?:send|forward)\b(?:\s*(?:,|or|and)\s*\b(?:send|forward)\b)*/gi, ' ')
-    .replace(/(?:不要|不准|禁止|绝不|别|仅|只).{0,8}(?:发送|转发)/g, ' ');
-  const explicitlySending = /\b(?:send|forward)\b|(?:发送|转发)/i.test(sendIntentText);
-  const deniesReadingOrDrafting = /\b(?:do not|don't|never)\s+(?:read|review|inspect|check|open|draft|write|compose)\b.{0,60}\b(?:unread|inbox|reply|replies)\b|(?:不要|不准|禁止).{0,8}(?:查看|读取|检查|审阅|打开).{0,16}(?:未读|收件箱|所有邮件|全部邮件|任何邮件|gmail|回复|回信)|(?:不要|不准|禁止).{0,8}(?:拟写|起草|撰写|草拟).{0,16}(?:回复|回信|草稿)|(?:不要|不准|禁止).{0,8}(?:回复|回信)(?:任何|所有|全部)?(?:邮件|消息|草稿)?/i.test(text);
-  // A user request to draft a reply means save it as a draft; it does not
-  // require an extra "do not send" phrase. Sending stays independently gated.
-  return namesGmail && readsUnread && draftsReplies && !explicitlySending && !deniesReadingOrDrafting;
+  // This is continuation context only, not a capability or approval classifier.
+  return directBrowserTaskRequest.test(text) || directChineseBrowserTaskRequest.test(text) || directChineseOnlineResearchRequest.test(text) || explicitComputerBrowserTaskRequest.test(text) || namesUnregisteredBrowserDestination(text) || ((directNavigationRequest.test(text) || groupAcceptanceNavigationRequest.test(text)) && urlPattern.test(text));
 }
 
 /** Whether the owner explicitly asked the Agent to stop and hand off at sign-in. */
@@ -141,10 +86,9 @@ export function continuesUserSignInHandoff(request: string): boolean {
 }
 
 /**
- * Return the originating direct Browser User request only when the current
- * user message explicitly continues an unbroken same-Bot follow-up chain.
- * An unrelated user prompt breaks the chain; webpage text is never included
- * in this history and cannot grant permission.
+ * Return the prior Browser task text only for an unbroken same-Bot continuation.
+ * This restores task context; it does not grant permissions. An unrelated user
+ * prompt breaks the chain, and webpage text is never included in this history.
  */
 export function continuedBrowserTaskRequest(request: string, previousPrompts: readonly string[] = []): string | null {
   if (!continuesUserSignInHandoff(request)) return null;

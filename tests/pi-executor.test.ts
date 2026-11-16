@@ -80,20 +80,18 @@ test('Pi sends an explicit Gmail navigation and user sign-in handoff instruction
  try{
   const result=await executor.execute(screen,gmailRun,new AbortController().signal,randomUUID());
   assert.equal(result.result,'Gmail is open for sign-in.');
-  assert.match(receivedPrompt,/https:\/\/mail\.google\.com/);
-  assert.match(receivedPrompt,/Use computer_browser\.navigate/);
-  assert.match(receivedPrompt,/Once the sign-in or human-verification page is visible, stop.*Take control/i);
+  assert.match(receivedPrompt,/Browser User and Computer User are available for every task/i);
+  assert.match(receivedPrompt,/without per-step approvals/i);
   assert.match(receivedPrompt,/open the Computer screen and choose Take control/i);
-  assert.match(receivedPrompt,/do not claim control has already transferred/i);
-  assert.match(receivedPrompt,/This run ends at a user sign-in handoff/i);
-  assert.match(receivedPrompt,/never enter or request credentials/i);
+  assert.match(receivedPrompt,/Pause only at a real sign-in or a request to enter a password/i);
+  assert.match(receivedPrompt,/do not enter or request credentials/i);
  }finally{await executor.close();gateway.close()}
 });
 
-test('Pi grants generic Browser User scope for an unregistered app named in the user task',async()=>{
+test('Pi exposes computer actions without URL or prompt-word classifiers and pauses only for human verification',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
- const task:AgentRun={...run,prompt:'Search Slack for the latest project channel.'};
- let issuedScope:{browserTask?:boolean;requestedNavigationOrigins?:readonly string[]}|undefined,receivedPrompt='';
+ const task:AgentRun={...run,prompt:'Make a file'};
+ let issuedScope:unknown,receivedPrompt='';
  const issue=gateway.issue.bind(gateway);
  gateway.issue=options=>{issuedScope=options.scope;return issue(options)};
  const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
@@ -103,17 +101,19 @@ test('Pi grants generic Browser User scope for an unregistered app named in the 
  try{
   const result=await executor.execute(screen,task,new AbortController().signal,randomUUID());
   assert.equal(result.status,'completed');
-  assert.equal(issuedScope?.browserTask,true,"the user's direct task must produce the generic Browser User capability");
-  assert.deepEqual(issuedScope?.requestedNavigationOrigins,[],'an unknown service does not need a site-specific origin entry');
-  assert.match(receivedPrompt,/directly requested a website task in this run/i);
-  assert.match(receivedPrompt,/generic, short-lived user-request scope/i);
+  assert.doesNotMatch(JSON.stringify(issuedScope),/browserTask|requestedNavigationOrigins|signInHandoff|gmailReadDraftWorkflow/,'the task capability contains no prompt-derived browser permissions');
+  assert.match(receivedPrompt,/Browser User and Computer User are available for every task/i);
+  assert.match(receivedPrompt,/Do not use URL, site, prompt-wording, control, or action classifiers/i);
+  assert.match(receivedPrompt,/page or desktop controls needed for the user's task without per-step approvals/i);
+  assert.match(receivedPrompt,/Pause only at a real sign-in or a request to enter a password/i);
+  assert.match(receivedPrompt,/Do not enter or request credentials/i);
  }finally{await executor.close();gateway.close()}
 });
 
-test('Pi does not turn a negative login constraint plus an unrelated stop condition into a sign-in handoff',async()=>{
+test('Pi does not classify user wording to decide whether ordinary browser actions are enabled',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const task:AgentRun={...run,prompt:'请在云电脑里打开 Chrome，访问 https://c-m-ai-copilot.github.io/coke-bse-trading-demo/ 并点击边界校验。不要登录，不要连接真实系统，不要提交订单。若按钮不可用，请停止并报告实际看到的控件。'};
- let issuedScope:{browserTask?:boolean;signInHandoff?:boolean;requestedNavigationOrigins?:readonly string[]}|undefined,receivedPrompt='';
+ let issuedScope:unknown,receivedPrompt='';
  const issue=gateway.issue.bind(gateway);gateway.issue=options=>{issuedScope=options.scope;return issue(options)};
  const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
   receivedPrompt=JSON.parse(String(init?.body)).prompt;
@@ -122,17 +122,16 @@ test('Pi does not turn a negative login constraint plus an unrelated stop condit
  try{
   const result=await executor.execute(screen,task,new AbortController().signal,randomUUID());
   assert.equal(result.status,'completed');
-  assert.equal(issuedScope?.browserTask,true,'the requested public-page work should receive Browser User scope');
-  assert.equal(issuedScope?.signInHandoff,false,'an unrelated stop condition must not lock the run to sign-in navigation');
-  assert.deepEqual(issuedScope?.requestedNavigationOrigins,['https://c-m-ai-copilot.github.io']);
-  assert.doesNotMatch(receivedPrompt,/This run ends at a user sign-in handoff/i);
+  assert.doesNotMatch(JSON.stringify(issuedScope),/browserTask|requestedNavigationOrigins|signInHandoff|gmailReadDraftWorkflow/,'permissions are not derived from the current prompt wording or URL');
+  assert.match(receivedPrompt,/Do not use URL, site, prompt-wording, control, or action classifiers/i);
+  assert.match(receivedPrompt,/ordinary actions are allowed/i);
  }finally{await executor.close();gateway.close()}
 });
 
-test('Pi recognizes an ordinary Chinese mail request as Browser User work',async()=>{
+test('Pi supports an ordinary Chinese mail request without explicit browser wording',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const task:AgentRun={...run,prompt:'找一封最近未读的邮件，点击进去详情，然后看看，帮我拟写一个回复呀。'};
- let issuedScope:{browserTask?:boolean}|undefined,receivedPrompt='';
+ let issuedScope:unknown,receivedPrompt='';
  const issue=gateway.issue.bind(gateway);gateway.issue=options=>{issuedScope=options.scope;return issue(options)};
  const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
   receivedPrompt=JSON.parse(String(init?.body)).prompt;
@@ -141,17 +140,17 @@ test('Pi recognizes an ordinary Chinese mail request as Browser User work',async
  try{
   const result=await executor.execute(screen,task,new AbortController().signal,randomUUID());
   assert.equal(result.status,'completed');
-  assert.equal(issuedScope?.browserTask,true,'natural Chinese mail instructions must receive generic task-scoped Browser User permission');
-  assert.match(receivedPrompt,/Natural-language requests to search or read email/i);
-  assert.match(receivedPrompt,/saving drafts.*do not need per-step approval/i);
-  assert.doesNotMatch(receivedPrompt,/Sending, form submission.*still require their existing approval/i);
+  assert.doesNotMatch(JSON.stringify(issuedScope),/browserTask|requestedNavigationOrigins|signInHandoff|gmailReadDraftWorkflow/,'natural-language phrasing does not control the task capability');
+  assert.match(receivedPrompt,/Browser User and Computer User are available for every task/i);
+  assert.match(receivedPrompt,/without per-step approvals/i);
+  assert.doesNotMatch(receivedPrompt,/Never send or forward, delete, archive/i);
  }finally{await executor.close();gateway.close()}
 });
 
-test('Pi grants Browser User scope when a direct task explicitly names computer_browser.open_artifact',async()=>{
+test('Pi does not require tool names to enable Browser User artifact preview',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const task:AgentRun={...run,prompt:'请完成页面后用 computer_browser.open_artifact 打开本次任务 artifacts/bse-demo/index.html，并检查页面标题与委托控件。'};
- let issuedScope:{browserTask?:boolean}|undefined,receivedPrompt='';
+ let issuedScope:unknown,receivedPrompt='';
  const issue=gateway.issue.bind(gateway);gateway.issue=options=>{issuedScope=options.scope;return issue(options)};
  const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
   receivedPrompt=JSON.parse(String(init?.body)).prompt;
@@ -160,13 +159,13 @@ test('Pi grants Browser User scope when a direct task explicitly names computer_
  try{
   const result=await executor.execute(screen,task,new AbortController().signal,randomUUID());
   assert.equal(result.status,'completed');
-  assert.equal(issuedScope?.browserTask,true,'the explicit tool-oriented task must receive run-scoped Browser User authorization');
-  assert.match(receivedPrompt,/generic, short-lived user-request scope/i);
-  assert.match(receivedPrompt,/Do not enter usernames, passwords, one-time codes/i);
+  assert.doesNotMatch(JSON.stringify(issuedScope),/browserTask|requestedNavigationOrigins|signInHandoff|gmailReadDraftWorkflow/,'artifact preview is not gated by a task classifier');
+  assert.match(receivedPrompt,/Do not enter or request credentials/i);
+  assert.match(receivedPrompt,/Pause only at a real sign-in or a request to enter a password/i);
  }finally{await executor.close();gateway.close()}
 });
 
-test('Pi carries a recent same-Bot sign-in handoff into an approval follow-up without expanding its scope',async()=>{
+test('Pi carries a recent same-Bot sign-in handoff into a continuation without adding an action gate',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const original='帮我打开谷歌，然后登录我的 Gmail，然后你在登录的时候停下来，让我去操作。在云电脑里面打开 Chrome 浏览器。';
  const followup:AgentRun={...run,prompt:'不需要我的批准呢，你直接去打开它，你不要每步都让我批准。',previousPrompts:[original]};
@@ -178,12 +177,12 @@ test('Pi carries a recent same-Bot sign-in handoff into an approval follow-up wi
  try{
   const result=await executor.execute(screen,followup,new AbortController().signal,randomUUID());
   assert.equal(result.status,'completed');
-  assert.match(receivedPrompt,/https:\/\/accounts\.google\.com/);
-  assert.match(receivedPrompt,/continuing the same Bot's earlier browser task/i);
-  assert.match(receivedPrompt,/verify that the computer is back under Agent control/i);
+  assert.doesNotMatch(receivedPrompt,/https:\/\/accounts\.google\.com/);
+  assert.match(receivedPrompt,/continued this same Bot task/i);
+  assert.match(receivedPrompt,/never claim the handoff completed without checking ownership/i);
   assert.match(receivedPrompt,/open the Computer screen and choose Take control/i);
-  assert.match(receivedPrompt,/If sign-in or human verification appears again, stop/i);
-  assert.match(receivedPrompt,/never enter or request credentials/i);
+  assert.match(receivedPrompt,/If an actual sign-in or human-verification challenge is visible, stop/i);
+  assert.match(receivedPrompt,/do not enter or request credentials/i);
  }finally{await executor.close();gateway.close()}
 });
 
@@ -191,7 +190,7 @@ test('Pi resumes the original Gmail task and generic Browser User scope after a 
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const original='请检查 Gmail 最近的未读邮件并为最新一封拟写回复草稿。登录页出现后请停下来让我接管；我登录并把控制权还给你后继续。不要发送。';
  const followup:AgentRun={...run,prompt:'继续',previousPrompts:[original,'已登录并点了 Return to Bot']};
- let receivedPrompt='',issuedScope:{browserTask?:boolean;gmailReadDraftWorkflow?:boolean;signInHandoff?:boolean;requestedNavigationOrigins?:readonly string[]}|undefined;
+ let receivedPrompt='',issuedScope:unknown;
  const issue=gateway.issue.bind(gateway);gateway.issue=options=>{issuedScope=options.scope;return issue(options)};
  const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
   receivedPrompt=JSON.parse(String(init?.body)).prompt;
@@ -200,24 +199,21 @@ test('Pi resumes the original Gmail task and generic Browser User scope after a 
  try{
   const result=await executor.execute(screen,followup,new AbortController().signal,randomUUID());
   assert.equal(result.status,'completed');
-  assert.equal(issuedScope?.browserTask,true,'the prior user-authorized browser task remains available after sign-in');
-  assert.equal(issuedScope?.gmailReadDraftWorkflow,true,'the Gmail unread-and-draft scope resumes');
-  assert.equal(issuedScope?.signInHandoff,true,'a second authentication challenge still hands control back');
-  assert.ok(issuedScope?.requestedNavigationOrigins?.includes('https://mail.google.com'));
+  assert.doesNotMatch(JSON.stringify(issuedScope),/browserTask|requestedNavigationOrigins|signInHandoff|gmailReadDraftWorkflow/,'the resumed task receives the same lease-wide Browser and Computer capability');
   assert.match(receivedPrompt,/Original user task:[\s\S]*请检查 Gmail 最近的未读邮件/);
   assert.match(receivedPrompt,/User's current message:\n继续/);
-  assert.match(receivedPrompt,/complete only the remaining parts of the original task/i);
-  assert.match(receivedPrompt,/Do not claim control returned without state proof/i);
-  assert.match(receivedPrompt,/If sign-in or human verification appears again, stop/i);
+  assert.match(receivedPrompt,/resume the original user-requested task from the current state/i);
+  assert.match(receivedPrompt,/Never claim the handoff completed without checking ownership/i);
+  assert.match(receivedPrompt,/If an actual sign-in or human-verification challenge is visible, stop/i);
   assert.doesNotMatch(receivedPrompt,/Do not interpret.*permission.*take account actions/i);
  }finally{await executor.close();gateway.close()}
 });
 
-test('Pi retains generic Browser User scope when a same-Bot user explicitly continues a non-login web task',async()=>{
+test('Pi resumes a same-Bot web task without a Browser User classifier flag',async()=>{
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
  const original='Search Slack for the latest project channel and report its name.';
  const followup:AgentRun={...run,prompt:'继续',previousPrompts:[original]};
- let receivedPrompt='',issuedScope:{browserTask?:boolean;signInHandoff?:boolean}|undefined;
+ let receivedPrompt='',issuedScope:unknown;
  const issue=gateway.issue.bind(gateway);gateway.issue=options=>{issuedScope=options.scope;return issue(options)};
  const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
   receivedPrompt=JSON.parse(String(init?.body)).prompt;
@@ -226,11 +222,10 @@ test('Pi retains generic Browser User scope when a same-Bot user explicitly cont
  try{
   const result=await executor.execute(screen,followup,new AbortController().signal,randomUUID());
   assert.equal(result.status,'completed');
-  assert.equal(issuedScope?.browserTask,true,'an explicit same-Bot continuation preserves Browser User scope');
-  assert.equal(issuedScope?.signInHandoff,false,'a normal web continuation does not invent a sign-in handoff');
+  assert.doesNotMatch(JSON.stringify(issuedScope),/browserTask|requestedNavigationOrigins|signInHandoff|gmailReadDraftWorkflow/,'continuations do not acquire prompt-derived Browser or Computer permission flags');
   assert.match(receivedPrompt,/Original user task:\nSearch Slack for the latest project channel/);
   assert.match(receivedPrompt,/User's current message:\n继续/);
-  assert.match(receivedPrompt,/only the remaining parts of the original task/i);
+  assert.match(receivedPrompt,/resume the original user-requested task from the current state/i);
  }finally{await executor.close();gateway.close()}
 });
 

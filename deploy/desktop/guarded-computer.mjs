@@ -4,7 +4,7 @@ import { inflateSync } from 'node:zlib';
 const pngSignature=Buffer.from([137,80,78,71,13,10,26,10]);
 const desktopPanelHeight=27;
 
-/** Fingerprint the desktop beneath the volatile 26px Xfce panel while retaining the full approval image hash. */
+/** Fingerprint stable desktop pixels for native actions; browser controls use live page locators. */
 export function stableScreenshotFingerprint(png) {
   if (!Buffer.isBuffer(png) || png.length < 33 || !png.subarray(0,8).equals(pngSignature)) throw new Error('Computer screenshot is invalid');
   let width=0,height=0,bitDepth=0,colorType=0,interlace=0;
@@ -86,9 +86,8 @@ export function createGuardedComputer({readOwner,readPageUrl,readScreenshot,perf
     execute:(input,expected)=>locked(async()=>{
       if(!expected||typeof expected!=='object'||expected.owner!=='agent'||typeof expected.url!=='string'||!/^[a-f0-9]{64}$/.test(expected.screenshotSha256||'')||!/^[a-f0-9]{64}$/.test(expected.guardFingerprint||''))throw new Error('Invalid expected computer state');
       const current=await capture();
-      const approvedNavigation=input?.kind==='browser'&&input.action==='navigate';
-      const browserTaskPageAction=input?.kind==='browser'&&input.workflowPolicy==='browser-task'&&['click','fill','select','check','uncheck','press','upload_file'].includes(input.action);
-      if(current.owner!=='agent'||current.url!==expected.url||(!approvedNavigation&&!browserTaskPageAction&&current.guardFingerprint!==expected.guardFingerprint))throw new Error('Computer state or ownership changed');
+      const browserAction=input?.kind==='browser';
+      if(current.owner!=='agent'||current.url!==expected.url||(!browserAction&&current.guardFingerprint!==expected.guardFingerprint))throw new Error('Computer state or ownership changed');
       return perform(input);
     }),
   };

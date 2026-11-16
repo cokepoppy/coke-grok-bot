@@ -14,7 +14,7 @@ import { captureOwnedDesktopScreen, clickDesktop, createDesktopActionGate, creat
 import { ensureSharedComputerRoots } from './shared-computer-root.mjs';
 import { appendControlOwnerEvent, computerScreenKey } from './control-owner-audit.mjs';
 import { createGuardedComputer } from '/opt/coke-grok/guarded-computer.mjs';
-import { browserActionRequiresApproval, isAuthenticationChallenge, isCredentialEntry } from './browser-task-policy.mjs';
+import { isAuthenticationChallenge } from './browser-task-policy.mjs';
 
 const exec = promisify(execFile);
 const token = String(process.env.LINUX_DESKTOP_WORKER_TOKEN || '');
@@ -372,6 +372,7 @@ async function command(input, screenId) {
     // Resolve the Bot page before taking the one physical X11 lock. A slow CDP
     // lookup should delay only this Bot, never every other Bot's keyboard.
     const browserPage = await pageForScreen(screenId);
+    if (actor === 'agent') await assertAgentMayInteractWithPage(browserPage);
     const bounds = await screenPages.geometry(screenId);
     return desktopActionGate(async () => {
       if (action === 'click') {
@@ -382,6 +383,7 @@ async function command(input, screenId) {
       else await withFocusedDesktopPage(browserPage, () => pressDesktopKey(exec, String(input.key || '')), operation => rendererHealth.run(operation));
       const currentOwner = await screenOwner(screenId);
       if (actor !== currentOwner) throw new Error('Computer ownership changed');
+      if (actor === 'agent') await assertAgentMayInteractWithPage(browserPage);
       return {
         ready: true,
         url: browserPage.url(),
@@ -436,8 +438,8 @@ function browserLocator(browserPage, input) {
   throw new Error('A supported browser locator type is required');
 }
 
-function browserTaskPolicyError(code) {
-  const error = new Error('Browser action requires a protected decision');
+function authenticationHandoffError(code) {
+  const error = new Error('Computer action must pause for sign-in or human verification');
   error.code = code;
   return error;
 }
@@ -462,29 +464,22 @@ async function browserSecurityState(browserPage) {
       const descriptor = `${element.getAttribute('src') || ''} ${element.getAttribute('title') || ''} ${element.getAttribute('aria-label') || ''}`;
       return /captcha|recaptcha|prove you(?:'|’)re human|human verification/i.test(descriptor);
     });
-    return { title: document.title.slice(0, 200), text: (document.body?.innerText || '').slice(0, 1200), controls, humanChallenge };
+    const headings = Array.from(document.querySelectorAll('h1,h2,[role="heading"]'))
+      .filter(visible).slice(0, 20).map(element => (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+    return { title: document.title.slice(0, 200), headings, text: (document.body?.innerText || '').slice(0, 1200), controls, humanChallenge };
   });
 }
 
-async function assertBrowserTaskAction(browserPage, input, action, locator) {
-  if (!input.workflowPolicy) return;
-  if (input.workflowPolicy !== 'browser-task') throw new Error('Unsupported browser task policy');
-  const pageState = await browserSecurityState(browserPage);
-  if (isAuthenticationChallenge({ url: browserPage.url(), ...pageState })) throw browserTaskPolicyError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
-  const control = await locator.evaluate(element => {
-    const labels = Array.from(element.labels || []).map(label => label.innerText).filter(Boolean);
-    const tag = element.tagName.toLowerCase();
-    return {
-      type: ['input','button'].includes(tag) ? element.type : tag,
-      role: element.getAttribute('role') || '', name: element.getAttribute('name') || '',
-      autocomplete: element.getAttribute('autocomplete') || '', ariaLabel: element.getAttribute('aria-label') || '',
-      label: labels.join(' ').trim(), placeholder: element.getAttribute('placeholder') || '',
-      title: element.getAttribute('title') || '', text: element.innerText || element.textContent || '',
-      href: element.getAttribute('href') || '',
-    };
-  });
-  if (isCredentialEntry({ input, control })) throw browserTaskPolicyError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
-  if (browserActionRequiresApproval({ action, input, control })) throw browserTaskPolicyError('COMPUTER_ACTION_REQUIRES_APPROVAL');
+async function assertAgentMayInteractWithPage(browserPage) {
+  let url = '';
+  try { url = browserPage.url(); } catch { return; }
+  if (!/^https?:\/\//i.test(url)) return;
+  const pageState = await rendererHealth.run(() => browserSecurityState(browserPage));
+  if (isAuthenticationChallenge({ url, ...pageState })) throw authenticationHandoffError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
+}
+
+async function assertBrowserTaskAction(browserPage) {
+  await assertAgentMayInteractWithPage(browserPage);
 }
 
 async function agentBrowserAction(input, screenId) {
@@ -499,14 +494,12 @@ async function agentBrowserAction(input, screenId) {
     // the explicit 30s navigation timeout without latching the renderer as
     // unresponsive after the probe's 3s deadline.
     await browserPage.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    if (input.workflowPolicy === 'browser-task') {
-      const pageState = await browserSecurityState(browserPage);
-      if (isAuthenticationChallenge({ url: browserPage.url(), ...pageState })) throw browserTaskPolicyError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
-    }
+    await assertAgentMayInteractWithPage(browserPage);
     return { ready: true, action, url: safePageUrl(browserPage.url()), title: await rendererHealth.run(() => browserPage.title()) };
   }
   return rendererHealth.run(async () => {
     if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
+    await assertAgentMayInteractWithPage(browserPage);
     if (action === 'inspect') {
       const snapshot = await browserPage.evaluate(() => {
         const visible = element => {
@@ -572,14 +565,14 @@ async function agentBrowserAction(input, screenId) {
       const fileInput = await locator.evaluate(element => ({ tag: element.tagName.toLowerCase(), type: element.getAttribute('type') || '' }));
       if (fileInput.tag !== 'input' || fileInput.type.toLowerCase() !== 'file') throw new Error('Browser upload target must be an input[type="file"] control');
       if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
-      await assertBrowserTaskAction(browserPage, input, action, locator);
+      await assertBrowserTaskAction(browserPage);
       await locator.setInputFiles(resolved.real, { timeout: 10_000 });
     } else if (['click', 'fill', 'select', 'check', 'uncheck', 'press'].includes(action)) {
       const locator = browserLocator(browserPage, input);
       const count = await locator.count();
       if (count !== 1) throw new Error(`Browser target matched ${count} controls; inspect the page and choose a unique label or selector`);
       if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
-      await assertBrowserTaskAction(browserPage, input, action, locator);
+      await assertBrowserTaskAction(browserPage);
       if (action === 'click') await locator.click({ timeout: 10_000 });
       else if (action === 'fill') {
         const value = String(input.value ?? '');
@@ -600,6 +593,7 @@ async function agentBrowserAction(input, screenId) {
     } else throw new Error('Unsupported Agent browser action');
 
     const title = await browserPage.title();
+    await assertAgentMayInteractWithPage(browserPage);
     return { ready: true, action, url: safePageUrl(browserPage.url()), title: title.slice(0, 300) };
   });
 }
@@ -728,20 +722,17 @@ http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname === '/v1/screenshot') return send(res, 200, await screenshot(screenId), 'image/png');
     if (req.method === 'POST' && pathname === '/v1/commands') {
       const input=await body(req);
-      if (guardedMode && input.actor !== 'user') return send(res, 403, {error:'Guarded actions require approval'});
       return await guardedComputer.locked(async () => send(res, 200, await command(input,screenId)));
     }
     if (req.method === 'POST' && pathname === '/v1/browser') {
-      if (guardedMode) return send(res, 403, {error:'Guarded actions require approval'});
       return await guardedComputer.locked(async () => send(res, 200, await agentBrowserAction(await body(req),screenId)));
     }
     return send(res, 404, { error: 'not found' });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'computer command failed';
-    if (error && typeof error === 'object' && ['COMPUTER_SIGNIN_HANDOFF_REQUIRED','COMPUTER_ACTION_REQUIRES_APPROVAL'].includes(error.code)) {
+    if (error && typeof error === 'object' && error.code === 'COMPUTER_SIGNIN_HANDOFF_REQUIRED') {
       const code = error.code;
-      const safeMessage = code === 'COMPUTER_SIGNIN_HANDOFF_REQUIRED' ? 'Human sign-in or verification is required' : 'This browser control requires owner approval';
-      return send(res, 403, { code, error: safeMessage });
+      return send(res, 403, { code, error: 'Human sign-in or verification is required' });
     }
     const contextUnavailable = error instanceof BrowserContextNotReadyError;
     const rendererUnresponsive = error instanceof RendererUnresponsiveError;

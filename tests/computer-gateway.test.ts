@@ -14,7 +14,6 @@ import {ApprovalStore} from '../src/server/approval-store.ts';
 import {ModelGateway} from '../src/server/model-gateway.ts';
 import {ComputerBridge} from '../src/server/computer-bridge.ts';
 import {SafeDiagnosticError} from '../src/server/safe-diagnostics.ts';
-import {requestedNavigationOrigins} from '../src/server/computer-navigation-policy.ts';
 import {apply as applyDshComputer} from '../deploy/desktop/dsh-computer-plugin.mjs';
 import {runCloudKernel} from '../deploy/desktop/cloud-kernel-adapter.mjs';
 const port=Number(process.env.COKE_GROK_TEST_MYSQL_PORT);if(!port)throw new Error('Disposable MySQL port required');
@@ -27,7 +26,7 @@ test('computer gateway binds run actions to one live user and skips per-action a
  const bridge=new ComputerBridge(runs,computerApprovals,()=>worker),gateway=new ModelGateway('fake-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'),approvals,bridge),server=gateway.createServer();server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();if(!address||typeof address==='string')throw new Error('No gateway');const base=`http://127.0.0.1:${address.port}/v1/computer`;
  try{
   const identity=await ids.signInGoogle({subject:'gateway',email:'gateway@example.test',name:'Gateway'}),session:Session={...identity,email:'gateway@example.test',name:'Gateway',role:'owner'},bot=await bots.create(session,{name:'A',shape:'round',color:'#abcdef'}),run=await runs.create(session,bot.id,randomUUID(),'work');assert.ok(run);const claim=await runs.claimNext({...session,botId:bot.id},30);assert.ok(claim);
-  const token=gateway.issue({ttlMs:30000,calls:1,scope:{runId:run.id,leaseId:claim.leaseId,botId:bot.id,owner:identity,browserTask:true}}),wrong=gateway.issue({ttlMs:30000,calls:1,scope:{runId:run.id,leaseId:claim.leaseId,botId:bot.id,owner:{...identity,userId:randomUUID()}}});
+  const token=gateway.issue({ttlMs:30000,calls:1,scope:{runId:run.id,leaseId:claim.leaseId,botId:bot.id,owner:identity}}),wrong=gateway.issue({ttlMs:30000,calls:1,scope:{runId:run.id,leaseId:claim.leaseId,botId:bot.id,owner:{...identity,userId:randomUUID()}}});
   const call=(path:string,cap:string,body?:unknown)=>fetch(base+path,{method:body===undefined?'GET':'POST',headers:{authorization:`Bearer ${cap}`,...(body!==undefined?{'content-type':'application/json'}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});
   assert.equal((await call('/inspect',wrong)).status,409);assert.equal((await call('/inspect',token)).status,200);assert.equal((await call('/screenshot',token)).headers.get('content-type'),'image/png');assert.equal((await runs.list(session,bot.id))?.[0].computerUsed,true);assert.equal((await bots.list(session,true))[0].preview,'Working…');
   const action={kind:'browser',action:'click',by:'role',role:'button',target:'Submit'},proposed=await call('/actions',token,{action});assert.equal(proposed.status,201);assert.deepEqual(await proposed.json(),{status:'completed',result:{ready:true}});assert.equal(effects,1);assert.equal(approvalProposals,0);
@@ -36,7 +35,7 @@ test('computer gateway binds run actions to one live user and skips per-action a
   const failedResponse=await call('/actions',token,{action});assert.equal(failedResponse.status,409);
   assert.deepEqual(await failedResponse.json(),{error:'computer_request_failed',diagnostic:{code:'COMPUTER_WORKER_HTTP_ERROR',status:503}});
   assert.equal(effects,2);assert.equal(approvalProposals,0);failExecution=false;
-  const gmailPrompt='帮我打开谷歌，然后登录我的 Gmail，登录时停下来让我操作。',gmailCapability=gateway.issue({ttlMs:30000,calls:3,scope:{runId:run.id,leaseId:claim.leaseId,botId:bot.id,owner:identity,requestedNavigationOrigins:requestedNavigationOrigins(gmailPrompt),signInHandoff:true,browserTask:true}});
+  const gmailPrompt='帮我打开谷歌，然后登录我的 Gmail，登录时停下来让我操作。',gmailCapability=gateway.issue({ttlMs:30000,calls:3,scope:{runId:run.id,leaseId:claim.leaseId,botId:bot.id,owner:identity}});
   const previousFetch=globalThis.fetch,previousBridgeUrl=process.env.COKE_GROK_COMPUTER_BRIDGE_URL,previousBridgeToken=process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN,approvalsBeforeGmail=approvalProposals,effectsBeforeGmail=effects;
   process.env.COKE_GROK_COMPUTER_BRIDGE_URL='https://gateway.example.test/v1';process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN=gmailCapability;
   globalThis.fetch=async(input,init)=>{const url=new URL(String(input));if(url.origin==='https://gateway.example.test')return previousFetch(`http://127.0.0.1:${address.port}${url.pathname}${url.search}`,init);return previousFetch(input,init)};
@@ -52,17 +51,18 @@ test('computer gateway binds run actions to one live user and skips per-action a
    assert.equal(approvalProposals,approvalsBeforeGmail,'direct Google and Gmail navigation must not create per-action approvals');
    assert.equal(effects,effectsBeforeGmail+3,'the DSH browser tool must navigate to exact requested Google/Gmail destinations, including a repeated navigation, through ModelGateway and ComputerBridge');
    const desktop=tools.get('computer_desktop');assert.ok(desktop);
-   await assert.rejects(desktop.execute({action:'click',x:100,y:100},{signal:AbortSignal.timeout(5000)}),/This run ends at a user sign-in handoff/);
-   assert.equal(approvalProposals,approvalsBeforeGmail,'an address-bar desktop click must be rejected without queuing approval');
-   assert.equal(effects,effectsBeforeGmail+3,'a blocked desktop click must not reach the worker');
+   const desktopResult=await desktop.execute({action:'click',x:100,y:100},{signal:AbortSignal.timeout(5000)});
+   assert.match(desktopResult.text,/ready/);
+   assert.equal(approvalProposals,approvalsBeforeGmail,'Chrome desktop controls must not queue approval even during a sign-in handoff task');
+   assert.equal(effects,effectsBeforeGmail+4,'the authorized desktop click reaches the Worker under the same live task lease');
 
-   const browseCapability=gateway.issue({ttlMs:30000,calls:1,scope:{runId:run.id,leaseId:claim.leaseId,botId:bot.id,owner:identity,browserTask:true}});
+   const browseCapability=gateway.issue({ttlMs:30000,calls:1,scope:{runId:run.id,leaseId:claim.leaseId,botId:bot.id,owner:identity}});
    process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN=browseCapability;
    const browseTools=new Map<string,any>();applyDshComputer({tools:{register(tool:any){browseTools.set(tool.name,tool)}},get(){return {async saveImage(){return null}}}} as any);
    const browseResult=await browseTools.get('computer_browser').execute({action:'navigate',url:'https://example.org/'},{signal:AbortSignal.timeout(5000)});
    assert.deepEqual(JSON.parse(browseResult.text),{ready:true,url:'https://example.org/'});
    assert.equal(approvalProposals,approvalsBeforeGmail,'ordinary browsing to a page discovered during the task must not require approval');
-   assert.equal(effects,effectsBeforeGmail+4,'the unscoped ordinary HTTP/HTTPS navigation reaches the guarded worker without approval');
+   assert.equal(effects,effectsBeforeGmail+5,'ordinary HTTP/HTTPS navigation reaches the guarded worker without approval');
    gateway.revoke(browseCapability);
   }finally{
    globalThis.fetch=previousFetch;
@@ -70,7 +70,7 @@ test('computer gateway binds run actions to one live user and skips per-action a
    if(previousBridgeToken===undefined)delete process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;else process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN=previousBridgeToken;
    gateway.revoke(gmailCapability);
   }
-  const piCapability=gateway.issue({ttlMs:30000,calls:3,scope:{runId:run.id,leaseId:claim.leaseId,botId:bot.id,owner:identity,requestedNavigationOrigins:requestedNavigationOrigins(gmailPrompt),signInHandoff:true,browserTask:true}}),workspace=await mkdtemp(join(tmpdir(),'grok-pi-gmail-navigation-'));
+  const piCapability=gateway.issue({ttlMs:30000,calls:3,scope:{runId:run.id,leaseId:claim.leaseId,botId:bot.id,owner:identity}}),workspace=await mkdtemp(join(tmpdir(),'grok-pi-gmail-navigation-'));
   await mkdir(join(workspace,'tasks','gmail'),{recursive:true});
   let piOptions:Record<string,any>|undefined;
   const piSdk={AuthStorage:{inMemory:()=>({setRuntimeApiKey(){}})},ModelRegistry:{inMemory:()=>({registerProvider(){},find:()=>({id:'deepseek-flash'})})},SessionManager:{list:async()=>[],create:()=>({getSessionId:()=>randomUUID()})},createAgentSession:async(value:Record<string,any>)=>{piOptions=value;return{session:{messages:[{role:'assistant',stopReason:'stop',content:[{type:'text',text:'{"status":"done","message":"Pi adapter initialized."}'}]}],async prompt(){},dispose(){}}}}};
@@ -79,8 +79,8 @@ test('computer gateway binds run actions to one live user and skips per-action a
    globalThis.fetch=async(input,init)=>{const url=new URL(String(input));if(url.origin==='https://gateway.example.test')return previousFetch(`http://127.0.0.1:${address.port}${url.pathname}${url.search}`,init);return previousFetch(input,init)};
    await runCloudKernel({engine:'pi',modelConfig:{apiKey:piCapability,baseUrl:'https://gateway.example.test/v1',model:'deepseek-flash'},workspace,cwd:'tasks/gmail',taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:piCapability},prompt:gmailPrompt,signal:new AbortController().signal},{piSdk} as any);
    const browser=piOptions?.customTools.find((tool:any)=>tool.name==='computer_browser');assert.ok(browser);
-   assert.ok(browser.promptGuidelines.some((value:string)=>value.includes('computer_browser for ordinary navigation and controls')&&value.includes('not computer_desktop coordinates')));
-   assert.ok(browser.promptGuidelines.some((value:string)=>value.includes('do not need per-step approval')));
+   assert.ok(browser.promptGuidelines.some((value:string)=>value.includes('Browser User and Computer User are available on every live task lease')&&value.includes('Chrome tabs and the address bar are ordinary computer controls')));
+   assert.ok(browser.promptGuidelines.some((value:string)=>value.includes('without per-step approval')));
    const googleNavigation=await browser.execute('google-navigation',{action:'navigate',url:'https://www.google.com/'},new AbortController().signal);
    assert.deepEqual(JSON.parse(googleNavigation.content[0].text),{ready:true,url:'https://www.google.com/'});
    const repeatedGoogleNavigation=await browser.execute('repeat-google-navigation',{action:'navigate',url:'https://www.google.com/'},new AbortController().signal);
@@ -90,9 +90,10 @@ test('computer gateway binds run actions to one live user and skips per-action a
    assert.equal(approvalProposals,approvalCountBeforePi,'Pi direct Google and Gmail navigation must not create per-action approvals');
    assert.equal(effects,effectCountBeforePi+3,'Pi computer_browser must navigate to exact requested Google/Gmail destinations, including repeated navigation, through ModelGateway and ComputerBridge');
    const desktop=piOptions?.customTools.find((tool:any)=>tool.name==='computer_desktop');assert.ok(desktop);
-   await assert.rejects(desktop.execute('desktop-address-bar-click',{action:'click',x:100,y:100},new AbortController().signal),/This run ends at a user sign-in handoff/);
-   assert.equal(approvalProposals,approvalCountBeforePi,'a Pi desktop click must be rejected without queuing approval');
-   assert.equal(effects,effectCountBeforePi+3,'a blocked Pi desktop click must not reach the worker');
+   const desktopResult=await desktop.execute('desktop-address-bar-click',{action:'click',x:100,y:100},new AbortController().signal);
+   assert.match(desktopResult.content[0].text,/ready/);
+   assert.equal(approvalProposals,approvalCountBeforePi,'a Pi Chrome desktop click must not create an approval');
+   assert.equal(effects,effectCountBeforePi+4,'a Pi Chrome desktop click reaches the Worker under the live lease');
   }finally{globalThis.fetch=previousFetch;gateway.revoke(piCapability);await rm(workspace,{recursive:true,force:true})}
   await runs.markUnknown(run.id,claim.leaseId);assert.equal((await call('/inspect',token)).status,409);
  }finally{gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()));await pool.end();await admin.query(`DROP DATABASE \`${db}\``);await admin.end()}

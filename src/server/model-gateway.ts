@@ -18,7 +18,8 @@ import { safeDiagnosticMetadata } from './safe-diagnostics.ts';
  * A run receives a short-lived capability; the upstream credential stays in
  * the control process. Never attach this server to the public ingress.
  */
-type Grant = { expires: number; remaining: number; memoryRemaining:number; handoffRemaining:number; routineRemaining:number; skillRemaining:number; abort: AbortController; timer: NodeJS.Timeout; scope?:{runId:string;leaseId:string;botId?:string;owner?:RunOwner;requestedNavigationOrigins?:string[];signInHandoff?:boolean;continuedSignInHandoff?:boolean;gmailReadDraftWorkflow?:boolean;browserTask?:boolean;skillMutations?:{create:boolean;update:boolean;delete:boolean}}; modelRateLimit?:{retryAfterSeconds?:number} };
+type CapabilityScope={runId:string;leaseId:string;botId?:string;owner?:RunOwner;skillMutations?:{create:boolean;update:boolean;delete:boolean}};
+type Grant = { expires: number; remaining: number; memoryRemaining:number; handoffRemaining:number; routineRemaining:number; skillRemaining:number; abort: AbortController; timer: NodeJS.Timeout; scope?:CapabilityScope; modelRateLimit?:{retryAfterSeconds?:number} };
 type UpstreamModelResponse = {response?:Response;retryAfterSeconds?:number};
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function retryAfterSeconds(value:string|null,now=Date.now()):number|undefined {
@@ -61,19 +62,13 @@ export class ModelGateway {
     if (this.upstream.protocol !== 'https:' || this.upstream.username || this.upstream.password || this.upstream.search || this.upstream.hash || (!deepSeekOfficial&&!this.upstream.pathname.endsWith('/compatible-mode/v1'))) throw new Error('Invalid model endpoint');
     if (!apiKey || apiKey.length > 4096 || /[\r\n]/.test(apiKey) || !model) throw new Error('Invalid model configuration');
   }
-  issue(options: { ttlMs: number; calls: number; scope?:{runId:string;leaseId:string;botId?:string;owner?:RunOwner;requestedNavigationOrigins?:readonly string[];signInHandoff?:boolean;continuedSignInHandoff?:boolean;gmailReadDraftWorkflow?:boolean;browserTask?:boolean;skillMutations?:{create:boolean;update:boolean;delete:boolean}} }): string {
+  issue(options: { ttlMs: number; calls: number; scope?:CapabilityScope }): string {
     if (!Number.isSafeInteger(options.ttlMs) || options.ttlMs < 1 || options.ttlMs > 15 * 60_000 || !Number.isSafeInteger(options.calls) || options.calls < 1 || options.calls > 100) throw new Error('Invalid capability limits');
     if(options.scope && (!uuid.test(options.scope.runId) || !uuid.test(options.scope.leaseId) || (options.scope.botId && !uuid.test(options.scope.botId)) || (options.scope.owner && (!uuid.test(options.scope.owner.tenantId)||!uuid.test(options.scope.owner.userId))))) throw new Error('Invalid capability scope');
-    const navigationOrigins=options.scope?.requestedNavigationOrigins;
-    if(navigationOrigins!==undefined&&(!Array.isArray(navigationOrigins)||navigationOrigins.length>4||navigationOrigins.some(origin=>{if(typeof origin!=='string'||origin.length>256)return true;try{const url=new URL(origin);return !['http:','https:'].includes(url.protocol)||url.origin!==origin||url.username!==''||url.password!==''}catch{return true}})))throw new Error('Invalid capability navigation scope');
-    if(options.scope?.signInHandoff!==undefined&&typeof options.scope.signInHandoff!=='boolean')throw new Error('Invalid capability sign-in handoff scope');
-    if(options.scope?.continuedSignInHandoff!==undefined&&typeof options.scope.continuedSignInHandoff!=='boolean')throw new Error('Invalid capability continued sign-in handoff scope');
-    if(options.scope?.gmailReadDraftWorkflow!==undefined&&typeof options.scope.gmailReadDraftWorkflow!=='boolean')throw new Error('Invalid capability Gmail workflow scope');
-    if(options.scope?.browserTask!==undefined&&typeof options.scope.browserTask!=='boolean')throw new Error('Invalid capability browser task scope');
     if(options.scope?.skillMutations&&Object.values(options.scope.skillMutations).some(value=>typeof value!=='boolean'))throw new Error('Invalid capability Skill mutation scope');
     const token = randomBytes(32).toString('base64url');
     const timer = setTimeout(() => this.revoke(token), options.ttlMs); timer.unref();
-    const scope=options.scope ? { ...options.scope, ...(options.scope.owner ? {owner:{...options.scope.owner}} : {}), requestedNavigationOrigins:navigationOrigins?[...navigationOrigins]:undefined } : undefined;
+    const scope=options.scope ? { ...options.scope, ...(options.scope.owner ? {owner:{...options.scope.owner}} : {}), ...(options.scope.skillMutations?{skillMutations:{...options.scope.skillMutations}}:{}) } : undefined;
     this.grants.set(token, { expires: Date.now() + options.ttlMs, remaining: options.calls, memoryRemaining:100, handoffRemaining:8, routineRemaining:20, skillRemaining:100, abort: new AbortController(), timer, scope });
     return token;
   }

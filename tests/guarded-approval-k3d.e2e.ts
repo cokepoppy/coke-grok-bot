@@ -35,7 +35,7 @@ try{
  const open=await request('/v1/guarded/execute',{expected:await snap(),action:{kind:'browser',action:'open_artifact',taskId:run.id,path:'guard.html'}});assert.equal(open.status,200);await new Promise(resolve=>setTimeout(resolve,1500));
  const transport:typeof fetch=async(url,init)=>fetch(local+new URL(String(url)).pathname,init);
  const worker=new HttpGuardedComputerWorker(owner,bot.id,new URL(`http://desktop.${namespace}.svc.cluster.local:8082/`),identity.controlToken,run.id,transport),bridge=new ComputerBridge(runs,approvals,()=>worker),signal=new AbortController().signal;
- const scope={owner:{tenantId:owner.tenantId,userId:owner.userId},botId:bot.id,runId:run.id,leaseId:claim.leaseId,browserTask:true},action={kind:'browser',action:'click',by:'role',role:'button',target:'Submit test'};
+ const scope={owner:{tenantId:owner.tenantId,userId:owner.userId},botId:bot.id,runId:run.id,leaseId:claim.leaseId},action={kind:'browser',action:'click',by:'role',role:'button',target:'Submit test'};
  const direct=await bridge.propose(scope,action,signal);assert.equal(direct.status,'completed');
  const view=await request('/v1/guarded/inspect'),observed=await view.json() as {text?:string};assert.ok(observed.text?.includes('APPROVED_CLICK_OK'));
  const [approvalRows]=await pool.execute<RowDataPacket[]>('SELECT COUNT(*) AS count FROM run_approvals');assert.equal(Number(approvalRows[0]?.count),0);
