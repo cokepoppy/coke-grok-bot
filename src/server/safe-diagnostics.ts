@@ -35,8 +35,39 @@ export type SafeDiagnosticCode =
   | 'COMPUTER_APPROVAL_REJECTED'
   | 'INTERNAL_FAILURE';
 
+export type SafeWorkerOperation = 'control' | 'navigate' | 'execute';
+export type SafeWorkerTransportCode =
+  | 'ECONNRESET'
+  | 'ECONNREFUSED'
+  | 'ETIMEDOUT'
+  | 'EHOSTUNREACH'
+  | 'ENETUNREACH'
+  | 'ENOTFOUND'
+  | 'EAI_AGAIN'
+  | 'EPIPE'
+  | 'ECONNABORTED'
+  | 'ERR_SOCKET_CLOSED'
+  | 'UND_ERR_CONNECT_TIMEOUT'
+  | 'UND_ERR_HEADERS_TIMEOUT'
+  | 'UND_ERR_BODY_TIMEOUT'
+  | 'UND_ERR_SOCKET'
+  | 'UNKNOWN';
+
+const safeWorkerOperations: readonly SafeWorkerOperation[] = ['control', 'navigate', 'execute'];
+const safeWorkerTransportCodes: readonly SafeWorkerTransportCode[] = [
+  'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH',
+  'ENOTFOUND', 'EAI_AGAIN', 'EPIPE', 'ECONNABORTED', 'ERR_SOCKET_CLOSED',
+  'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT',
+  'UND_ERR_SOCKET', 'UNKNOWN',
+];
+
 export class SafeDiagnosticError extends Error {
-  constructor(readonly diagnosticCode: SafeDiagnosticCode, readonly status?: number) {
+  constructor(
+    readonly diagnosticCode: SafeDiagnosticCode,
+    readonly status?: number,
+    readonly workerOperation?: SafeWorkerOperation,
+    readonly transportCode?: SafeWorkerTransportCode,
+  ) {
     super(diagnosticCode);
     this.name = 'SafeDiagnosticError';
   }
@@ -46,8 +77,27 @@ export function safeDiagnosticCode(error: unknown): SafeDiagnosticCode {
   return error instanceof SafeDiagnosticError ? error.diagnosticCode : 'INTERNAL_FAILURE';
 }
 
-export function safeDiagnosticMetadata(error: unknown): {code:SafeDiagnosticCode;status?:number} {
+export function safeWorkerTransportCode(error: unknown): SafeWorkerTransportCode {
+  let current: unknown = error;
+  for (let depth = 0; depth < 3 && current && typeof current === 'object'; depth += 1) {
+    const value = current as {code?: unknown; cause?: unknown};
+    if (typeof value.code === 'string' && safeWorkerTransportCodes.includes(value.code as SafeWorkerTransportCode) && value.code !== 'UNKNOWN') {
+      return value.code as SafeWorkerTransportCode;
+    }
+    current = value.cause;
+  }
+  return 'UNKNOWN';
+}
+
+export function safeDiagnosticMetadata(error: unknown): {code:SafeDiagnosticCode;status?:number;workerOperation?:SafeWorkerOperation;transportCode?:SafeWorkerTransportCode} {
   if(!(error instanceof SafeDiagnosticError))return {code:'INTERNAL_FAILURE'};
   const status=Number.isInteger(error.status)&&error.status!>=100&&error.status!<=599?error.status:undefined;
-  return {code:error.diagnosticCode,...(status===undefined?{}:{status})};
+  const workerOperation=error.workerOperation&&safeWorkerOperations.includes(error.workerOperation)?error.workerOperation:undefined;
+  const transportCode=error.transportCode&&safeWorkerTransportCodes.includes(error.transportCode)?error.transportCode:undefined;
+  return {
+    code:error.diagnosticCode,
+    ...(status===undefined?{}:{status}),
+    ...(workerOperation?{workerOperation}:{}),
+    ...(transportCode?{transportCode}:{}),
+  };
 }

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { ComputerNavigationState,ComputerState,GuardedComputerWorker } from './computer-broker.ts';
 import type { RunOwner } from './run-store.ts';
-import {SafeDiagnosticError} from './safe-diagnostics.ts';
+import {SafeDiagnosticError,safeWorkerTransportCode} from './safe-diagnostics.ts';
 
 export type ComputerViewport={left:number;top:number;width:number;height:number};
 const workerDiagnosticCodes:Record<string,SafeDiagnosticError['diagnosticCode']>={
@@ -101,13 +101,13 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   if('taskId' in action||action.kind!=='browser'||action.action!=='navigate')throw new Error('Invalid computer navigation');
   let response:Response;
   try{response=await this.request(new URL('/v1/guarded/navigate',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({action:{...action,taskId:this.taskId,...(workflowPolicy?{workflowPolicy}:{})},expected:{owner:expected.owner,url:expected.url}}),signal,redirect:'error'})}
-  catch{throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED')}
+  catch(error){throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED',undefined,'navigate',safeWorkerTransportCode(error))}
   if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_HTTP_ERROR');
   let value:unknown;try{value=await response.json()}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE')}
   if(!value||typeof value!=='object'||Array.isArray(value))throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE');return value;
  }
  async control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>{
-  let response:Response;try{response=await this.request(new URL('/v1/guarded/control',this.endpoint),{headers:this.headers(),signal,redirect:'error'})}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED')}
+  let response:Response;try{response=await this.request(new URL('/v1/guarded/control',this.endpoint),{headers:this.headers(),signal,redirect:'error'})}catch(error){throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED',undefined,'control',safeWorkerTransportCode(error))}
   if(response.status===401)throw new SafeDiagnosticError('COMPUTER_WORKER_AUTH_REJECTED',response.status);
   if(response.status===403)throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN',response.status);
   if(!response.ok)throw new SafeDiagnosticError('COMPUTER_WORKER_HTTP_ERROR',response.status);
@@ -152,7 +152,7 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   if('taskId' in action)throw new Error('Task identity is controlled by the server');
   let response:Response;
   try{response=await this.request(new URL('/v1/guarded/execute',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({action:{...action,...(action.kind==='browser'?{taskId:this.taskId,...(workflowPolicy?{workflowPolicy}:{})}:{})},expected}),signal,redirect:'error'})}
-  catch{throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED')}
+  catch(error){throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED',undefined,'execute',safeWorkerTransportCode(error))}
   if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_HTTP_ERROR');
   let value:unknown;try{value=await response.json()}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE')}
   if(!value||typeof value!=='object'||Array.isArray(value))throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE');return value;

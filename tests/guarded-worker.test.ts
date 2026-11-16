@@ -47,6 +47,22 @@ test('guarded computer control records only safe auth and status failure codes',
  const offline=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>{throw new Error('private URL and token must not be logged')});
  await assert.rejects(offline.control(signal),error=>error instanceof Error&&error.message==='COMPUTER_WORKER_TRANSPORT_FAILED');
 });
+test('guarded worker transport diagnostics identify the operation and safe socket code without leaking error text',async()=>{
+ const nested=Object.assign(new Error(`private upstream ${url.href} ${token}`),{code:'ECONNRESET'});
+ const failure=Object.assign(new Error(`private request ${url.href} ${token}`),{cause:nested});
+ const cases=[
+  {operation:'control',run:(worker:HttpGuardedComputerWorker)=>worker.control(signal)},
+  {operation:'navigate',run:(worker:HttpGuardedComputerWorker)=>worker.navigateIfUnchanged({kind:'browser',action:'navigate',url:'https://example.org/'},{owner:'agent',url:'about:blank'},signal)},
+  {operation:'execute',run:(worker:HttpGuardedComputerWorker)=>worker.performIfUnchanged({kind:'browser',action:'click',by:'role',role:'button',target:'Continue'},{owner:'agent',url:'https://example.org/',screenshotSha256:'a'.repeat(64)},signal)},
+ ] as const;
+ for(const item of cases){
+  const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>{throw failure});
+  await assert.rejects(item.run(worker),error=>{
+   const metadata=safeDiagnosticMetadata(error);
+   return metadata.code==='COMPUTER_WORKER_TRANSPORT_FAILED'&&metadata.workerOperation===item.operation&&metadata.transportCode==='ECONNRESET'&&!JSON.stringify(metadata).includes(token)&&!JSON.stringify(metadata).includes(url.href);
+  });
+ }
+});
 test('guarded desktop failures preserve only fixed worker diagnostics and never response text',async()=>{
  for(const [workerCode,expected] of [['BOT_SCREEN_CAPACITY','COMPUTER_SCREEN_CAPACITY'],['ACTIVE_TAB_UNRESOLVED','COMPUTER_ACTIVE_TAB_UNRESOLVED'],['DOTS_RENDERER_UNRESPONSIVE','COMPUTER_RENDERER_UNRESPONSIVE']] as const){
   const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>Response.json({code:workerCode,error:`private URL ${url.href} token ${token}`},{status:503}));
