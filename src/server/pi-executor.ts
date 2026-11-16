@@ -26,6 +26,11 @@ const agentTaskDispatcherOptions={
 } as const;
 
 export type AgentRejectionClass = 'agent_adapter_failed'|'agent_adapter_output_invalid'|'bot_bridge_invalid'|'computer_control_unavailable'|'group_context_invalid'|'kernel_unavailable'|'model_config_invalid'|'task_attachments_invalid'|'task_cancelled'|'task_workspace_invalid'|'unknown_agent_rejection';
+const agentAttachmentReasonCodes=new Set([
+  'task_attachment_list_invalid','task_attachment_item_invalid','task_attachment_metadata_invalid','task_attachment_location_invalid',
+  'task_attachment_size_limit_exceeded','task_attachment_image_limit_exceeded','task_attachment_source_unavailable',
+  'task_attachment_checksum_mismatch','task_attachment_destination_invalid','task_attachment_copy_failed','task_attachment_copy_verification_failed',
+]);
 
 /** Convert Agent error text into fixed, non-sensitive operational metadata. */
 export function classifyAgentRejection(value:unknown):AgentRejectionClass {
@@ -46,15 +51,19 @@ export function classifyAgentRejection(value:unknown):AgentRejectionClass {
 }
 
 async function logAgentRejection(response:Response):Promise<void> {
-  let error:unknown;
+  let error:unknown,reasonCode:string|undefined;
   const declared=Number(response.headers.get('content-length'));
   if(Number.isSafeInteger(declared)&&declared>=0&&declared<=4096) {
     try {
       const body:unknown=await response.clone().json();
-      error=body&&typeof body==='object'&&!Array.isArray(body)?(body as {error?:unknown}).error:undefined;
+      if(body&&typeof body==='object'&&!Array.isArray(body)) {
+        const record=body as {error?:unknown;code?:unknown};
+        error=record.error;
+        if(typeof record.code==='string'&&agentAttachmentReasonCodes.has(record.code))reasonCode=record.code;
+      }
     } catch { /* Keep only the status and a fixed fallback code. */ }
   }
-  console.warn('Agent task endpoint rejected request',{status:response.status,code:classifyAgentRejection(error)});
+  console.warn('Agent task endpoint rejected request',{status:response.status,code:classifyAgentRejection(error),...(reasonCode?{reasonCode}:{})});
 }
 
 export interface DesktopConnection { agentUrl: URL; agentToken: string }

@@ -25,6 +25,19 @@ test('Agent rejection diagnostics expose only fixed classes, never response text
  assert.equal(classifyAgentRejection(undefined),'unknown_agent_rejection');
 });
 
+test('Pi logs an allowlisted attachment reason code without logging Agent response text',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const body=Buffer.from(JSON.stringify({error:'Task attachment is unavailable at a private workspace path',code:'task_attachment_source_unavailable'}));
+ const response=new Response(body,{status:400,headers:{'content-type':'application/json','content-length':String(body.length)}});
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>response);
+ const warnings:unknown[][]=[];const originalWarn=console.warn;
+ console.warn=(...args)=>{warnings.push(args)};
+ try {
+  await assert.rejects(executor.execute(screen,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='agent_http_400');
+ } finally {console.warn=originalWarn;gateway.close()}
+ assert.deepEqual(warnings,[['Agent task endpoint rejected request',{status:400,code:'task_attachments_invalid',reasonCode:'task_attachment_source_unavailable'}]]);
+});
+
 test('Pi and DSH preload only enabled Skills named by the direct message and scope mutations to that request',async()=>{
  for(const [engine,Executor] of [['pi',PiExecutor],['dsh',DshExecutor]] as const){
   const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));

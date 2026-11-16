@@ -195,32 +195,52 @@ async function sha256File(file) {
   return digest.digest('hex');
 }
 
+class TaskAttachmentError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'TaskAttachmentError';
+    this.code = code;
+  }
+}
+
 async function prepareTaskAttachments(value, taskDirectory) {
   if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > 20) throw new Error('Invalid task attachments');
+  if (!Array.isArray(value) || value.length > 20) throw new TaskAttachmentError('task_attachment_list_invalid', 'Invalid task attachments');
   const attachmentsDirectory = path.join(taskDirectory, 'attachments');
-  await mkdir(attachmentsDirectory, { recursive: true, mode: 0o770 });
-  if (await realpath(attachmentsDirectory) !== attachmentsDirectory) throw new Error('Task attachment directory is invalid');
+  try {
+    await mkdir(attachmentsDirectory, { recursive: true, mode: 0o770 });
+    if (await realpath(attachmentsDirectory) !== attachmentsDirectory) throw new Error('invalid destination');
+  } catch {
+    throw new TaskAttachmentError('task_attachment_destination_invalid', 'Task attachment directory is invalid');
+  }
   const names = new Set(); let totalImages = 0;
   const results = [];
   for (const item of value) {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Invalid task attachment');
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new TaskAttachmentError('task_attachment_item_invalid', 'Invalid task attachment');
     const id = String(item.id || ''), name = String(item.name || ''), mimeType = String(item.mimeType || '');
     const size = Number(item.size), sha256 = String(item.sha256 || ''), storageKey = String(item.storageKey || '');
-    if (!fileIdPattern.test(id) || !safeArtifactRelativePath(name) || !/^[\w.+-]+\/[\w.+-]+$/.test(mimeType) || !Number.isSafeInteger(size) || size < 1 || size > maxUploadBytes || !/^[a-f0-9]{64}$/i.test(sha256)) throw new Error('Invalid task attachment metadata');
+    if (!fileIdPattern.test(id) || !safeArtifactRelativePath(name) || !/^[\w.+-]+\/[\w.+-]+$/.test(mimeType) || !Number.isSafeInteger(size) || size < 1 || size > maxUploadBytes || !/^[a-f0-9]{64}$/i.test(sha256)) throw new TaskAttachmentError('task_attachment_metadata_invalid', 'Invalid task attachment metadata');
     const extension = path.extname(name).slice(1).toLowerCase();
     const expectedUploadKey = `shared/uploads/${id}${extension ? `.${extension}` : ''}`;
     const artifactParts = storageKey.split('/');
     const isPreviousArtifact = artifactParts.length >= 4 && artifactParts[0] === 'tasks' && fileIdPattern.test(artifactParts[1]) && artifactParts[2] === 'artifacts' && artifactParts.slice(3).join('/') === name && safeArtifactRelativePath(artifactParts.slice(3).join('/'));
-    if (storageKey !== expectedUploadKey && !isPreviousArtifact) throw new Error('Invalid task attachment location');
+    if (storageKey !== expectedUploadKey && !isPreviousArtifact) throw new TaskAttachmentError('task_attachment_location_invalid', 'Invalid task attachment location');
     const sizeLimit = mimeType.startsWith('image/') ? maxImageBytes : mimeType.startsWith('video/') ? maxUploadBytes : maxDocumentBytes;
-    if (size > sizeLimit) throw new Error('Task attachment exceeds its size limit');
+    if (size > sizeLimit) throw new TaskAttachmentError('task_attachment_size_limit_exceeded', 'Task attachment exceeds its size limit');
     if (mimeType.startsWith('image/')) totalImages += size;
-    if (totalImages > maxImagesTotalBytes) throw new Error('Image attachments exceed the per-message limit');
-    const source = await checkedWorkspacePath(storageKey);
-    const sourceInfo = await lstat(source);
-    if (sourceInfo.isSymbolicLink() || !sourceInfo.isFile() || sourceInfo.size !== size || await realpath(source) !== source) throw new Error('Task attachment is unavailable');
-    if (await sha256File(source) !== sha256.toLowerCase()) throw new Error('Task attachment checksum did not match');
+    if (totalImages > maxImagesTotalBytes) throw new TaskAttachmentError('task_attachment_image_limit_exceeded', 'Image attachments exceed the per-message limit');
+    let source;
+    try {
+      source = await checkedWorkspacePath(storageKey);
+      const sourceInfo = await lstat(source);
+      if (sourceInfo.isSymbolicLink() || !sourceInfo.isFile() || sourceInfo.size !== size || await realpath(source) !== source) throw new Error('unavailable');
+    } catch {
+      throw new TaskAttachmentError('task_attachment_source_unavailable', 'Task attachment is unavailable');
+    }
+    let sourceHash;
+    try { sourceHash = await sha256File(source); }
+    catch { throw new TaskAttachmentError('task_attachment_source_unavailable', 'Task attachment is unavailable'); }
+    if (sourceHash !== sha256.toLowerCase()) throw new TaskAttachmentError('task_attachment_checksum_mismatch', 'Task attachment checksum did not match');
     const lower = name.toLowerCase(); let selected = name, suffix = 2;
     while (names.has(selected.toLowerCase())) {
       const slash = name.lastIndexOf('/'), base = name.slice(slash + 1), prefix = slash >= 0 ? `${name.slice(0, slash + 1)}` : '';
@@ -232,16 +252,26 @@ async function prepareTaskAttachments(value, taskDirectory) {
     let parent = attachmentsDirectory;
     for (const segment of selected.split('/').slice(0, -1)) {
       parent = path.join(parent, segment);
-      try { await mkdir(parent, { mode: 0o770 }); }
-      catch (error) { if (error?.code !== 'EEXIST') throw error; }
-      const parentInfo = await lstat(parent);
-      if (parentInfo.isSymbolicLink() || !parentInfo.isDirectory() || await realpath(parent) !== parent || !parent.startsWith(`${attachmentsDirectory}${path.sep}`)) throw new Error('Task attachment directory is invalid');
+      try {
+        try { await mkdir(parent, { mode: 0o770 }); }
+        catch (error) { if (error?.code !== 'EEXIST') throw error; }
+        const parentInfo = await lstat(parent);
+        if (parentInfo.isSymbolicLink() || !parentInfo.isDirectory() || await realpath(parent) !== parent || !parent.startsWith(`${attachmentsDirectory}${path.sep}`)) throw new Error('invalid destination');
+      } catch {
+        throw new TaskAttachmentError('task_attachment_destination_invalid', 'Task attachment directory is invalid');
+      }
     }
-    await copyFile(source, destination, fsConstants.COPYFILE_EXCL);
-    const copied = await lstat(destination);
-    if (!copied.isFile() || copied.size !== size || await sha256File(destination) !== sha256.toLowerCase()) {
+    try { await copyFile(source, destination, fsConstants.COPYFILE_EXCL); }
+    catch { throw new TaskAttachmentError('task_attachment_copy_failed', 'Task attachment copy failed'); }
+    try {
+      const copied = await lstat(destination);
+      if (!copied.isFile() || copied.isSymbolicLink() || copied.size !== size || await realpath(destination) !== destination || await sha256File(destination) !== sha256.toLowerCase()) {
+        throw new TaskAttachmentError('task_attachment_copy_verification_failed', 'Task attachment copy could not be verified');
+      }
+    } catch (error) {
       await rm(destination, { force: true }).catch(() => undefined);
-      throw new Error('Task attachment copy could not be verified');
+      if(error instanceof TaskAttachmentError)throw error;
+      throw new TaskAttachmentError('task_attachment_copy_verification_failed', 'Task attachment copy could not be verified');
     }
     results.push({ id, name: selected, mimeType, size, sha256: sha256.toLowerCase(), path: path.join('attachments', ...selected.split('/')) });
   }
@@ -646,7 +676,12 @@ http.createServer(async (req, res) => {
         const files = result.status === 'done' ? await listTaskArtifacts(result.taskId) : [];
         return send(res, 200, { ...result, files });
       }
-      catch (error) { return send(res, 400, { error: error instanceof Error ? error.message.slice(0, 500) : 'Agent task failed' }); }
+      catch (error) {
+        return send(res, 400, {
+          error: error instanceof Error ? error.message.slice(0, 500) : 'Agent task failed',
+          ...(error instanceof TaskAttachmentError ? { code: error.code } : {}),
+        });
+      }
     }
     if (req.method === 'POST' && ['/v1/tasks/pause','/v1/tasks/stop'].includes(pathname)) {
       const input=await readJson(req),botId=String(input.botId||'');
