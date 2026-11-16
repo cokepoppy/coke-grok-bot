@@ -714,6 +714,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .computer-activity-status.failed i,.computer-activity-status.unknown i { background: #d64b44; }
 .computer-activity-screen { display: block; width: 100%; max-height: 310px; padding: 0; overflow: hidden; border: 0; border-radius: 10px; background: #e6e6e6; cursor: pointer; }
 .computer-activity-screen img { display: block; width: 100%; aspect-ratio: 16/10; object-fit: cover; }
+.computer-screen-stale { margin: 7px 0 0; color: #9a711e; font-size: 12px; line-height: 1.35; }
 .computer-activity-open { width: 100%; min-height: 34px; padding: 7px 9px; border: 1px solid #e2e2e2; border-radius: 9px; color: #5e5e5e; background: #fff; text-align: left; font-size: 12px; cursor: pointer; }
 .computer-activity-open:hover { background: #f1f1f1; }
 .computer-activity-audit { padding-top: 2px; color: #666; font-size: 11px; }

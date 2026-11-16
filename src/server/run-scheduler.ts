@@ -12,14 +12,27 @@ export interface SchedulerStore {
 export type ExecutionResult = {status:'completed'|'failed';result:string;artifacts?:unknown;executionAudit?:AgentExecutionAudit|null};
 export interface RunExecutor { execute(screen:RunScreenScope,run:AgentRun,signal:AbortSignal,leaseId:string):Promise<ExecutionResult> }
 export type SchedulerClaimEvent = {
-  event: 'grok_scheduler_claim_failed' | 'grok_scheduler_claim_still_running';
+  event: 'grok_scheduler_claim_failed' | 'grok_scheduler_claim_still_running' | 'grok_scheduler_finish_retry' | 'grok_scheduler_finish_failed' | 'grok_scheduler_unknown_mark_failed';
   elapsedMs: number;
   at: string;
+  failureClass?: 'database_deadlock' | 'database_lock_timeout' | 'database_connection' | 'unknown';
 };
 type PendingClaim = { startedAt: number; slowTimer?: ReturnType<typeof setTimeout> };
 type ActiveRun = { abort: AbortController; done: Promise<void> };
 
 const defaultClaimLog = (event: SchedulerClaimEvent) => process.stderr.write(`${JSON.stringify(event)}\n`);
+
+function classifyClaimFailure(error: unknown): NonNullable<SchedulerClaimEvent['failureClass']> {
+  const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+    ? error.code.toUpperCase()
+    : '';
+  if (code === 'ER_LOCK_DEADLOCK' || code === '1213') return 'database_deadlock';
+  if (code === 'ER_LOCK_WAIT_TIMEOUT' || code === '1205') return 'database_lock_timeout';
+  if (['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EPIPE','PROTOCOL_CONNECTION_LOST','PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR'].includes(code)) return 'database_connection';
+  return 'unknown';
+}
+
+const pause = (ms:number) => new Promise<void>(resolve=>setTimeout(resolve,ms));
 
 /**
  * One process may run multiple computers concurrently; each computer is locked
@@ -71,10 +84,10 @@ export class RunScheduler {
       if(!claim)return;
       if(this.stopped){await this.store.markUnknown(claim.run.id,claim.leaseId,'execution_aborted').catch(()=>undefined);return;}
       this.startExecution(screen,key,claim);
-    }).catch(()=>{
+    }).catch(error=>{
       if(this.claiming.get(key)===pending)this.claiming.delete(key);
       if(pending.slowTimer)clearTimeout(pending.slowTimer);
-      this.reportClaimEvent({event:'grok_scheduler_claim_failed',elapsedMs:Date.now()-pending.startedAt,at:new Date().toISOString()});
+      this.reportClaimEvent({event:'grok_scheduler_claim_failed',elapsedMs:Date.now()-pending.startedAt,at:new Date().toISOString(),failureClass:classifyClaimFailure(error)});
     });
   }
   private reportClaimEvent(event:SchedulerClaimEvent):void { try{this.logClaimEvent(event);}catch{/* Diagnostics must not stop dispatch. */} }
@@ -123,8 +136,16 @@ export class RunScheduler {
       const outcome = await this.executor.execute(screen,claim.run,abort.signal,claim.leaseId);
       if (leaseLost || abort.signal.aborted) { await this.store.markUnknown(claim.run.id,claim.leaseId,leaseLost?'lease_lost':'execution_aborted',outcome.executionAudit); return; }
       if (!outcome || !['completed','failed'].includes(outcome.status) || typeof outcome.result !== 'string' || !outcome.result.trim() || outcome.result.length > 20000) throw new Error('Invalid executor result');
-      const saved = await this.store.finish(claim.run.id,claim.leaseId,outcome.status,outcome.result,outcome.artifacts,outcome.executionAudit);
-      if (!saved) await this.store.markUnknown(claim.run.id,claim.leaseId,'result_persist_failed',outcome.executionAudit);
+      const persistStartedAt=Date.now();
+      let saved:boolean;
+      try {
+        saved=await this.finishWithRetry(claim.run.id,claim.leaseId,outcome,()=>!leaseLost&&!abort.signal.aborted);
+      } catch(error) {
+        this.reportClaimEvent({event:'grok_scheduler_finish_failed',elapsedMs:Date.now()-persistStartedAt,at:new Date().toISOString(),failureClass:classifyClaimFailure(error)});
+        await this.markUnknownAfterPersistFailure(claim.run.id,claim.leaseId,outcome.executionAudit);
+        return;
+      }
+      if (!saved) await this.markUnknownAfterPersistFailure(claim.run.id,claim.leaseId,outcome.executionAudit);
     } catch (error) {
       // The executor might already have performed an external side effect. Do not repeat it.
       const executionAudit=error instanceof RunDiagnosticError?error.executionAudit:undefined;
@@ -133,6 +154,21 @@ export class RunScheduler {
       clearInterval(timer);
       if(retryTimer)clearTimeout(retryTimer);
     }
+  }
+  private async finishWithRetry(runId:string,leaseId:string,outcome:ExecutionResult,mayRetry:()=>boolean):Promise<boolean>{
+    const startedAt=Date.now();
+    for(let attempt=0;;attempt++){
+      try{return await this.store.finish(runId,leaseId,outcome.status,outcome.result,outcome.artifacts,outcome.executionAudit)}
+      catch(error){
+        if(attempt>=2||!mayRetry()||classifyClaimFailure(error)==='unknown')throw error;
+        this.reportClaimEvent({event:'grok_scheduler_finish_retry',elapsedMs:Date.now()-startedAt,at:new Date().toISOString(),failureClass:classifyClaimFailure(error)});
+        await pause(attempt===0?100:250);
+      }
+    }
+  }
+  private async markUnknownAfterPersistFailure(runId:string,leaseId:string,executionAudit?:AgentExecutionAudit|null):Promise<void>{
+    try{await this.store.markUnknown(runId,leaseId,'result_persist_failed',executionAudit)}
+    catch(error){this.reportClaimEvent({event:'grok_scheduler_unknown_mark_failed',elapsedMs:0,at:new Date().toISOString(),failureClass:classifyClaimFailure(error)})}
   }
   async stop():Promise<void> {
     this.stopped = true;
