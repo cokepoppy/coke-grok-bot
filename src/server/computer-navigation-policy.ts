@@ -17,6 +17,10 @@ const explicitComputerBrowserTaskRequest = /(?:\b(?:please\s+)?(?:use|call|invok
 // request about online content as Browser User work so the model gets the same
 // short-lived task capability as an English "search Gmail" request.
 const directChineseBrowserTaskRequest = /(?:(?:打开|访问|浏览|导航到|搜索|查找|找|阅读|读取|查看|检查|点击|点开|进入|填写|选择|提交|管理|操作|拟写|起草|撰写|回复|筛选).{0,120}(?:网页|网站|浏览器|邮箱|收件箱|未读邮件|邮件|Gmail|谷歌邮箱|日历|网盘|云盘|门户|后台|系统|平台|应用|工作区|表单|工单|在线页面|页面)|(?:网页|网站|浏览器|邮箱|收件箱|未读邮件|邮件|Gmail|谷歌邮箱|日历|网盘|云盘|门户|后台|系统|平台|应用|工作区|表单|工单|在线页面|页面).{0,120}(?:打开|访问|浏览|导航|搜索|查找|找|阅读|读取|查看|检查|点击|点开|进入|填写|选择|提交|管理|操作|拟写|起草|撰写|回复|筛选))/iu;
+// Direct Chinese research tasks often name authoritative sources and ask to
+// verify or compare current rules without saying "open a webpage". They still
+// need the same short-lived Browser User scope as ordinary site tasks.
+const directChineseOnlineResearchRequest = /(?:(?:调研|研究|核对|核实|查询|查证|核验|检索|调查|对照).{0,120}(?:官方(?:网站|网页|渠道|公告|发布|规则|文档|资料)|官网|公开网页|公开公告|公开信息)|(?:官方(?:网站|网页|渠道|公告|发布|规则|文档|资料)|官网|公开网页|公开公告|公开信息).{0,120}(?:调研|研究|核对|核实|查询|查证|核验|检索|调查|对照))/iu;
 const genericBrowserTaskPatterns = [
   /\b(?:open|go\s+to|navigate(?:\s+to)?|visit|load|access|launch)\s+(?:my\s+|the\s+)?(?<destination>[\p{L}\p{N}][\p{L}\p{N}._-]{1,60})\b/iu,
   /\b(?:search|find|look\s+up|check|review|read|view|inspect|browse|manage)\b[\s\S]{0,80}\b(?:in|on|at|from|using|via)\s+(?:my\s+|the\s+)?(?<destination>[\p{L}\p{N}][\p{L}\p{N}._-]{1,60})\b/iu,
@@ -54,7 +58,7 @@ export function requestsBrowserTask(request: string): boolean {
   // plain-language mail/site tasks all use the same per-run browser scope.
   // Gmail's specialized read/draft policy is an additional task instruction,
   // not a prerequisite for using ordinary browser controls.
-  return directBrowserTaskRequest.test(text) || directChineseBrowserTaskRequest.test(text) || explicitComputerBrowserTaskRequest.test(text) || namesUnregisteredBrowserDestination(text) || requestedNavigationOrigins(text).length > 0;
+  return directBrowserTaskRequest.test(text) || directChineseBrowserTaskRequest.test(text) || directChineseOnlineResearchRequest.test(text) || explicitComputerBrowserTaskRequest.test(text) || namesUnregisteredBrowserDestination(text) || requestedNavigationOrigins(text).length > 0;
 }
 
 /**

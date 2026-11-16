@@ -36,6 +36,8 @@ test('browser task scope is generic across sites and only comes from direct user
  assert.equal(requestsBrowserTask('查看一下 Gmail 最近的未读邮件，然后拟写一些回复。'),true,'ordinary Gmail tasks do not need explicit browser wording or a no-send phrase');
  assert.equal(requestsBrowserTask('找一封最近未读的邮件，点击进去详情，然后看看，帮我拟写一个回复呀。'),true,'plain Chinese email tasks receive Browser User scope without naming Gmail or the browser');
  assert.equal(requestsBrowserTask('打开项目管理平台，查看最新工单并填写处理结果。'),true,'plain Chinese app tasks receive generic Browser User scope');
+ assert.equal(requestsBrowserTask('请独立完成北交所交易规则适配调研，使用北交所官方网页/公告核对当前有效规则。'),true,'Chinese official-source research must receive generic Browser User scope even without an explicit open/search verb');
+ assert.equal(requestsBrowserTask('请研究我上传的交易规则文档并整理摘要。'),false,'local document research without an online-source request does not grant browser scope');
  assert.equal(requestsBrowserTask('Search the expense portal for the latest reimbursement policy.'),true,'unknown websites use the same generic task scope');
  assert.equal(requestsBrowserTask('在 Workday 里搜索最近的工资单。'),true,'named services do not require per-site registration');
  assert.equal(requestsBrowserTask('Search Slack for the latest project channel.'),true,'an unregistered lowercase service name still enables generic browsing');
