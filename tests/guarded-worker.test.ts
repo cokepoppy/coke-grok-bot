@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomBytes,randomUUID,createHash} from 'node:crypto';
 import {HttpGuardedComputerWorker} from '../src/server/guarded-worker.ts';
-import {safeDiagnosticMetadata} from '../src/server/safe-diagnostics.ts';
+import {safeDiagnosticMetadata,safeWorkerTarget} from '../src/server/safe-diagnostics.ts';
 const owner={tenantId:randomUUID(),userId:randomUUID()},hash=createHash('sha256').update(`${owner.tenantId}:${owner.userId}`).digest('hex').slice(0,32),url=new URL(`http://desktop.grok-user-${hash}.svc.cluster.local:8082/`),token=randomBytes(32).toString('base64url'),taskId=randomUUID(),screenId=randomUUID(),signal=new AbortController().signal;
 test('guarded worker scopes endpoint and task identity to the owner',async()=>{
  let calls=0;const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async (request,init)=>{calls++;assert.equal(new Headers(init?.headers).get('authorization'),`Bearer ${token}`);assert.equal(new Headers(init?.headers).get('x-coke-grok-screen-id'),screenId);if(calls===1){assert.equal(new URL(String(request)).pathname,'/v1/guarded/snapshot');return Response.json({owner:'agent',url:'https://example.test/',screenshotSha256:'a'.repeat(64)})}const body=JSON.parse(String(init?.body));assert.equal(body.action.taskId,taskId);assert.equal(body.action.action,'click');return Response.json({ready:true})});
@@ -83,7 +83,7 @@ test('guarded action failures preserve only a safe diagnostic code and HTTP stat
   const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>Response.json({error:'private upstream detail',token},{status}));
   await assert.rejects(worker.performIfUnchanged(action,state,signal),error=>{
    const metadata=safeDiagnosticMetadata(error);
-   return metadata.code==='COMPUTER_WORKER_HTTP_ERROR'&&metadata.status===status&&error instanceof Error&&error.message==='COMPUTER_WORKER_HTTP_ERROR';
+   return metadata.code==='COMPUTER_WORKER_HTTP_ERROR'&&metadata.status===status&&metadata.workerOperation==='execute'&&safeWorkerTarget(error)===`grok-user-${hash}`&&!JSON.stringify(metadata).includes(`grok-user-${hash}`)&&error instanceof Error&&error.message==='COMPUTER_WORKER_HTTP_ERROR';
   });
  }
  const forbidden=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>Response.json({error:`private upstream detail ${token}`},{status:403}));
@@ -105,6 +105,18 @@ test('guarded action failures preserve only a safe diagnostic code and HTTP stat
  await assert.rejects(offline.performIfUnchanged(action,state,signal),error=>safeDiagnosticMetadata(error).code==='COMPUTER_WORKER_TRANSPORT_FAILED');
  const invalid=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>new Response('private upstream detail'));
  await assert.rejects(invalid.performIfUnchanged(action,state,signal),error=>safeDiagnosticMetadata(error).code==='COMPUTER_WORKER_INVALID_RESPONSE');
+});
+test('guarded snapshot failures identify the request stage and keep the worker target out of API diagnostics',async()=>{
+ const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async request=>{
+  assert.equal(new URL(String(request)).pathname,'/v1/guarded/snapshot');
+  return Response.json({error:'private worker detail',token},{status:400});
+ });
+ await assert.rejects(worker.snapshot(signal),error=>{
+  const metadata=safeDiagnosticMetadata(error);
+  return metadata.code==='COMPUTER_SNAPSHOT_FAILED'&&metadata.status===400&&metadata.workerOperation==='snapshot'&&safeWorkerTarget(error)===`grok-user-${hash}`&&!JSON.stringify(metadata).includes(`grok-user-${hash}`)&&!JSON.stringify(metadata).includes(token);
+ });
+ const unsafeTarget=Object.assign(new Error('x'),{workerTarget:`grok-user-${'x'.repeat(32)}`});
+ assert.equal(safeWorkerTarget(unsafeTarget),undefined);
 });
 test('guarded worker maps browser worker diagnostics to fixed safe codes',async()=>{
  const action={kind:'browser',action:'click',by:'role',role:'link',target:'Business Rules'},state={owner:'agent' as const,url:'https://www.bse.cn/',screenshotSha256:'a'.repeat(64)};

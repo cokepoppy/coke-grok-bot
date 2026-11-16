@@ -3258,3 +3258,9 @@ Developer Bot 只读核对 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`
 当前唯一 feature 分支的候选源码移除了 Pi capability 中 URL/任务分类授权标志、ComputerBridge 的 per-action approvals 与导航白名单，以及 Worker/DSH 中基于任务分类和逐步审批的路径；通用任务上下文恢复只用于找回用户交接前的同 Bot 任务，不授予或限制能力。认证检测只使用认证路由、页面标题/可见认证标题、敏感输入控件和明确的人机验证标记；Gmail 正文里出现“sign-in”之类词不会触发交接。定向回归 75/75、`npm run test:runtime` 196/196、`npm run build`、`npm run build:deployment`、`docker buildx build --check -f deploy/desktop/Dockerfile deploy/desktop` 与 `git diff --check` 均通过；未创建额外测试容器。
 
 本轮仍是本地源码候选，尚未部署这些 Auth/Worker 改动。只读 K3D 检查显示 Auth 运行诊断候选，多个现存用户 Agent/Desktop 运行不同旧镜像；更新 Worker 前必须核对各 namespace 的 immutable image pin，并协调 Auth 与 Agent/Desktop 镜像。Computer Use `getState` 再次超过 30 秒超时；没有截图、重试旧任务或进行公网浏览器操作。因此线上审批卡是否已经消失、北交所多 Bot 真实 E2E 是否恢复，当前均未验收。
+
+#### 2026-11-16 公网 BSE 页面点击 400 阶段归因
+
+19:30 Asia/Shanghai 的真实公网 Browser User run 中，Pi/DeepSeek 检查北交所首页、导航至 `https://www.bse.cn/` 均成功；点击“业务规则”链接返回 `COMPUTER_WORKER_HTTP_ERROR` / HTTP 400。Auth 在 11:30:29Z 记录该状态；模型上游请求同期为 200。当前 BSE Research 租户 Desktop 镜像为 `sha-1bd99f0`，其日志没有对应的 `guarded-execute-failed` 事件。由于 400 也可能来自执行前的 snapshot，且旧 Worker/其他 owner namespace 还没有按 run 映射，这些证据不足以确定失败发生在哪个 HTTP 路由或哪个租户 Worker；不得据此推断为权限审批问题，也不要盲目重复点击。
+
+同一 feature 分支新增了 Worker HTTP 请求阶段诊断（snapshot、navigation-state、execute 等）和仅供服务端日志关联的 owner namespace hash；API/模型响应不包含内部 Worker 标识或原始异常文本。定向 guarded-worker 与 model-gateway 测试 17/17、Auth bundle build 与 `git diff --check` 通过。此补充诊断目前尚未提交、推送或部署；下一步需生成新的独立候选、仅部署 Auth，再通过一次新的公网可见任务读取安全阶段与 Worker 标识，之后才确定根因及目标租户镜像。普通网页操作仍默认开放，无 URL/site/control allowlist 或逐步审批；真人登录、密码、MFA、验证码或 CAPTCHA 才交给用户接管。北交所多 Bot 全链路尚未完成。

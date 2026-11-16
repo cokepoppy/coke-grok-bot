@@ -12,7 +12,7 @@ import type { BotRoutineBridge, BotRoutineScope } from './bot-routine-bridge.ts'
 import type { RoutineEditInput } from './routine-store.ts';
 import type { BotSkillBridge } from './bot-skill-bridge.ts';
 import type { BotSkillInput, BotSkillScope } from './bot-skill-store.ts';
-import { safeDiagnosticMetadata } from './safe-diagnostics.ts';
+import { safeDiagnosticMetadata,safeWorkerTarget } from './safe-diagnostics.ts';
 
 /**
  * A run receives a short-lived capability; the upstream credential stays in
@@ -288,7 +288,8 @@ export class ModelGateway {
           return reply(200,await this.computer.execute(scope,computerMatch[1],action,signal));
         } catch (error) {
           const diagnostic=safeDiagnosticMetadata(error);
-          console.error('Model gateway computer request failed',diagnostic);
+          const workerTarget=safeWorkerTarget(error);
+          console.error('Model gateway computer request failed',{...diagnostic,...(workerTarget?{workerTarget}:{})});
           return reply(409,{error:'computer_request_failed',diagnostic});
         }
       }

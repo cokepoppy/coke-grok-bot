@@ -43,7 +43,19 @@ export type SafeDiagnosticCode =
   | 'COMPUTER_APPROVAL_REJECTED'
   | 'INTERNAL_FAILURE';
 
-export type SafeWorkerOperation = 'control' | 'navigate' | 'execute';
+export type SafeWorkerOperation =
+  | 'viewport'
+  | 'snapshot'
+  | 'snapshot-image'
+  | 'navigation-state'
+  | 'control'
+  | 'navigate'
+  | 'inspect'
+  | 'screenshot'
+  | 'user-screenshot'
+  | 'set-control'
+  | 'user-action'
+  | 'execute';
 export type SafeWorkerTransportCode =
   | 'ECONNRESET'
   | 'ECONNREFUSED'
@@ -61,7 +73,10 @@ export type SafeWorkerTransportCode =
   | 'UND_ERR_SOCKET'
   | 'UNKNOWN';
 
-const safeWorkerOperations: readonly SafeWorkerOperation[] = ['control', 'navigate', 'execute'];
+const safeWorkerOperations: readonly SafeWorkerOperation[] = [
+  'viewport', 'snapshot', 'snapshot-image', 'navigation-state', 'control', 'navigate',
+  'inspect', 'screenshot', 'user-screenshot', 'set-control', 'user-action', 'execute',
+];
 const safeWorkerTransportCodes: readonly SafeWorkerTransportCode[] = [
   'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH',
   'ENOTFOUND', 'EAI_AGAIN', 'EPIPE', 'ECONNABORTED', 'ERR_SOCKET_CLOSED',
@@ -75,6 +90,7 @@ export class SafeDiagnosticError extends Error {
     readonly status?: number,
     readonly workerOperation?: SafeWorkerOperation,
     readonly transportCode?: SafeWorkerTransportCode,
+    readonly workerTarget?: string,
   ) {
     super(diagnosticCode);
     this.name = 'SafeDiagnosticError';
@@ -108,4 +124,12 @@ export function safeDiagnosticMetadata(error: unknown): {code:SafeDiagnosticCode
     ...(workerOperation?{workerOperation}:{}),
     ...(transportCode?{transportCode}:{}),
   };
+}
+
+/** Internal log correlation only; never include this tenant-scoped worker id in API responses. */
+export function safeWorkerTarget(error: unknown): string|undefined {
+  if (!(error instanceof SafeDiagnosticError)) return undefined;
+  return typeof error.workerTarget === 'string' && /^grok-user-[a-f0-9]{32}$/.test(error.workerTarget)
+    ? error.workerTarget
+    : undefined;
 }

@@ -24,7 +24,7 @@ const workerDiagnosticMessages:Record<string,SafeDiagnosticError['diagnosticCode
  'This user computer has no free Bot screen slot':'COMPUTER_SCREEN_CAPACITY',
  'The active Chrome tab could not be identified safely':'COMPUTER_ACTIVE_TAB_UNRESOLVED',
 };
-async function throwWorkerResponseError(response:Response,fallback:SafeDiagnosticError['diagnosticCode']):Promise<never>{
+async function throwWorkerResponseError(response:Response,fallback:SafeDiagnosticError['diagnosticCode'],operation:SafeDiagnosticError['workerOperation'],workerTarget:string):Promise<never>{
  let code:SafeDiagnosticError['diagnosticCode']|undefined;
  const type=response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
  const length=Number(response.headers.get('content-length'));
@@ -41,10 +41,10 @@ async function throwWorkerResponseError(response:Response,fallback:SafeDiagnosti
    }catch{/* Only fixed worker codes and exact fixed messages are surfaced. */}
   }
  }
- if(response.status===401)throw new SafeDiagnosticError('COMPUTER_WORKER_AUTH_REJECTED',401);
- if(code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED')throw new SafeDiagnosticError(code,response.status);
- if(response.status===403)throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN',403);
- throw new SafeDiagnosticError(code??fallback,response.status);
+ if(response.status===401)throw new SafeDiagnosticError('COMPUTER_WORKER_AUTH_REJECTED',401,operation,undefined,workerTarget);
+ if(code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED')throw new SafeDiagnosticError(code,response.status,operation,undefined,workerTarget);
+ if(response.status===403)throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN',403,operation,undefined,workerTarget);
+ throw new SafeDiagnosticError(code??fallback,response.status,operation,undefined,workerTarget);
 }
 export function parseComputerViewport(value:unknown):ComputerViewport{
  if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid computer viewport');
@@ -56,6 +56,7 @@ export function parseComputerViewport(value:unknown):ComputerViewport{
 /** Private worker connection; callers must authenticate the run before constructing it. */
 export class HttpGuardedComputerWorker implements GuardedComputerWorker {
  private readonly endpoint:URL;
+ private readonly workerTarget:string;
  constructor(owner:RunOwner,private readonly screenId:string,endpoint:URL,private readonly controlToken:string,private readonly taskId:string,private readonly request:typeof fetch=fetch) {
   const hash=createHash('sha256').update(`${owner.tenantId.toLowerCase()}:${owner.userId.toLowerCase()}`).digest('hex').slice(0,32);
   const validEndpoint=endpoint.protocol==='http:'&&endpoint.hostname===`desktop.grok-user-${hash}.svc.cluster.local`&&endpoint.port==='8082'&&!endpoint.username&&!endpoint.password&&!endpoint.search&&!endpoint.hash&&endpoint.pathname==='/';
@@ -64,18 +65,19 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   const validTask=uuid.test(taskId),validScreen=uuid.test(screenId);
   if(!validEndpoint||!validToken||!validTask||!validScreen)throw new Error('Invalid guarded worker');
   this.endpoint=endpoint;
+  this.workerTarget=`grok-user-${hash}`;
  }
  private headers(json=false):Record<string,string>{return {authorization:`Bearer ${this.controlToken}`,'x-coke-grok-screen-id':this.screenId,...(json?{'content-type':'application/json'}:{})}}
  vncEndpoint():URL{const endpoint=new URL(this.endpoint);endpoint.port='6080';endpoint.pathname='/';return endpoint}
  async vncViewport(signal:AbortSignal):Promise<ComputerViewport>{
   const response=await this.request(new URL('/v1/guarded/viewport',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
-  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_FAILED');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_FAILED','viewport',this.workerTarget);
   const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>4096)throw new Error('Computer viewport too large');
   return parseComputerViewport(await response.json());
  }
  async snapshot(signal:AbortSignal):Promise<ComputerState>{
   const response=await this.request(new URL('/v1/guarded/snapshot',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
-  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_SNAPSHOT_FAILED');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_SNAPSHOT_FAILED','snapshot',this.workerTarget);
   const state:unknown=await response.json();
   if(!state||typeof state!=='object'||Array.isArray(state))throw new Error('Invalid computer snapshot');
   const item=state as Partial<ComputerState>;
@@ -85,7 +87,7 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
  }
  async snapshotWithImage(signal:AbortSignal):Promise<{state:ComputerState;image:Buffer}>{
   const response=await this.request(new URL('/v1/guarded/snapshot-image',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
-  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_SNAPSHOT_FAILED');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_SNAPSHOT_FAILED','snapshot-image',this.workerTarget);
   const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>1500000)throw new Error('Computer snapshot too large');
   const text=await response.text();if(text.length>1500000)throw new Error('Computer snapshot too large');
   const item=JSON.parse(text) as Partial<ComputerState>&{image?:unknown};
@@ -96,8 +98,8 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
  }
  async navigationState(signal:AbortSignal):Promise<ComputerNavigationState>{
   const response=await this.request(new URL('/v1/guarded/navigation-state',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
-  if(response.status===404)throw new SafeDiagnosticError('COMPUTER_WORKER_HTTP_ERROR',404);
-  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_HTTP_ERROR');
+  if(response.status===404)throw new SafeDiagnosticError('COMPUTER_WORKER_HTTP_ERROR',404,'navigation-state',undefined,this.workerTarget);
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_HTTP_ERROR','navigation-state',this.workerTarget);
   const value:unknown=await response.json();
   if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid computer navigation state');
   const item=value as Partial<ComputerNavigationState>;
@@ -110,49 +112,49 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   if('taskId' in action||action.kind!=='browser'||action.action!=='navigate')throw new Error('Invalid computer navigation');
   let response:Response;
   try{response=await this.request(new URL('/v1/guarded/navigate',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({action:{...action,taskId:this.taskId},expected:{owner:expected.owner,url:expected.url}}),signal,redirect:'error'})}
-  catch(error){throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED',undefined,'navigate',safeWorkerTransportCode(error))}
-  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_HTTP_ERROR');
+  catch(error){throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED',undefined,'navigate',safeWorkerTransportCode(error),this.workerTarget)}
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_HTTP_ERROR','navigate',this.workerTarget);
   let value:unknown;try{value=await response.json()}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE')}
   if(!value||typeof value!=='object'||Array.isArray(value))throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE');return value;
  }
  async control(signal:AbortSignal):Promise<{owner:'agent'|'user'}>{
-  let response:Response;try{response=await this.request(new URL('/v1/guarded/control',this.endpoint),{headers:this.headers(),signal,redirect:'error'})}catch(error){throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED',undefined,'control',safeWorkerTransportCode(error))}
-  if(response.status===401)throw new SafeDiagnosticError('COMPUTER_WORKER_AUTH_REJECTED',response.status);
-  if(response.status===403)throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN',response.status);
-  if(!response.ok)throw new SafeDiagnosticError('COMPUTER_WORKER_HTTP_ERROR',response.status);
+  let response:Response;try{response=await this.request(new URL('/v1/guarded/control',this.endpoint),{headers:this.headers(),signal,redirect:'error'})}catch(error){throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED',undefined,'control',safeWorkerTransportCode(error),this.workerTarget)}
+  if(response.status===401)throw new SafeDiagnosticError('COMPUTER_WORKER_AUTH_REJECTED',response.status,'control',undefined,this.workerTarget);
+  if(response.status===403)throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN',response.status,'control',undefined,this.workerTarget);
+  if(!response.ok)throw new SafeDiagnosticError('COMPUTER_WORKER_HTTP_ERROR',response.status,'control',undefined,this.workerTarget);
   let value:unknown;try{value=await response.json()}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE')}
   if(!value||typeof value!=='object'||Array.isArray(value)||!['agent','user'].includes(String((value as {owner?:unknown}).owner)))throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE');
   return {owner:(value as {owner:'agent'|'user'}).owner};
  }
  async inspect(signal:AbortSignal):Promise<unknown>{
   const response=await this.request(new URL('/v1/guarded/inspect',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
-  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_FAILED');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_FAILED','inspect',this.workerTarget);
   const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>65536)throw new Error('Computer inspection too large');
   const text=await response.text();if(text.length>65536)throw new Error('Computer inspection too large');
   const value:unknown=JSON.parse(text);if(!value||typeof value!=='object'||Array.isArray(value)||(value as {ready?:unknown}).ready!==true)throw new Error('Invalid computer inspection');return value;
  }
  async screenshot(signal:AbortSignal):Promise<Buffer>{
   const response=await this.request(new URL('/v1/guarded/screenshot',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
-  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_FAILED');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_FAILED','screenshot',this.workerTarget);
   if(response.headers.get('content-type')?.split(';')[0]!=='image/png')throw new Error('Computer screenshot unavailable');
   const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>1024*1024)throw new Error('Computer screenshot too large');
   const bytes=Buffer.from(await response.arrayBuffer());if(!bytes.length||bytes.length>1024*1024)throw new Error('Computer screenshot too large');return bytes;
  }
  async userScreenshot(signal:AbortSignal):Promise<Buffer>{
   const response=await this.request(new URL('/v1/screenshot',this.endpoint),{headers:this.headers(),signal,redirect:'error'});
-  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_FAILED');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_FAILED','user-screenshot',this.workerTarget);
   if(response.headers.get('content-type')?.split(';')[0]!=='image/png')throw new Error('Computer screenshot unavailable');
   const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>1024*1024)throw new Error('Computer screenshot too large');
   const image=Buffer.from(await response.arrayBuffer());if(!image.length||image.length>1024*1024)throw new Error('Computer screenshot too large');return image;
  }
  async setControl(owner:'agent'|'user',signal:AbortSignal):Promise<{owner:'agent'|'user'}>{
   const response=await this.request(new URL('/v1/control',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({owner}),signal,redirect:'error'});
-  if(!response.ok)throw new Error('Computer control unavailable');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_HTTP_ERROR','set-control',this.workerTarget);
   const result:unknown=await response.json();if(!result||typeof result!=='object'||(result as {owner?:unknown}).owner!==owner)throw new Error('Computer control was not confirmed');return {owner};
  }
  async userAction(action:UserComputerAction,signal:AbortSignal):Promise<void>{
   const response=await this.request(new URL('/v1/commands',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({...action,actor:'user'}),signal,redirect:'error'});
-  if(!response.ok)throw new Error('Computer action was not confirmed');
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_HTTP_ERROR','user-action',this.workerTarget);
   const result:unknown=await response.json();if(!result||typeof result!=='object'||(result as {ready?:unknown}).ready!==true)throw new Error('Computer action was not confirmed');
  }
  async performIfUnchanged(input:unknown,expected:ComputerState,signal:AbortSignal):Promise<unknown>{
@@ -161,8 +163,8 @@ export class HttpGuardedComputerWorker implements GuardedComputerWorker {
   if('taskId' in action)throw new Error('Task identity is controlled by the server');
   let response:Response;
   try{response=await this.request(new URL('/v1/guarded/execute',this.endpoint),{method:'POST',headers:this.headers(true),body:JSON.stringify({action:{...action,...(action.kind==='browser'?{taskId:this.taskId}:{})},expected}),signal,redirect:'error'})}
-  catch(error){throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED',undefined,'execute',safeWorkerTransportCode(error))}
-  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_HTTP_ERROR');
+  catch(error){throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED',undefined,'execute',safeWorkerTransportCode(error),this.workerTarget)}
+  if(!response.ok)await throwWorkerResponseError(response,'COMPUTER_WORKER_HTTP_ERROR','execute',this.workerTarget);
   let value:unknown;try{value=await response.json()}catch{throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE')}
   if(!value||typeof value!=='object'||Array.isArray(value))throw new SafeDiagnosticError('COMPUTER_WORKER_INVALID_RESPONSE');return value;
  }
