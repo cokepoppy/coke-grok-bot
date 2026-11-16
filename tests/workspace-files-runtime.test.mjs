@@ -35,8 +35,14 @@ test('tenant Agent runtime streams attachments into a task, reads them, and retu
       return{response,body:await response.json()};
     };
     const validUpload={id:uploadId,name:'note.txt',mimeType:'text/plain',size:payload.length,sha256:receipt.sha256,storageKey:uploadKey};
+    // Bot handoffs create a recipient file ID while retaining the owner's
+    // original shared upload key; the worker must accept this verified alias.
+    const aliasId=randomUUID(),aliasTaskId=randomUUID(),aliasBotId=randomUUID();
+    const aliasedTask=await fetch(`${base}/v1/tasks/run`,{method:'POST',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({engine:'pi',taskId:aliasTaskId,botId:aliasBotId,screenId:aliasBotId,cwd:`tasks/${aliasTaskId}`,prompt:`Read the attached note and create a verified result. Authorized file ID ${aliasId} via bot_handoff.fileIds.`,attachments:[{...validUpload,id:aliasId}],modelConfig:{apiKey:'test-only-key',baseUrl:`http://127.0.0.1:${controlPort}/v1`,model:'local-test-model'}})});
+    const aliasResult=await aliasedTask.json();assert.equal(aliasedTask.status,200,JSON.stringify(aliasResult));assert.equal(aliasResult.status,'done');assert.equal(await readFile(path.join(workspace,'tasks',aliasTaskId,'attachments','note.txt'),'utf8'),payload.toString());
     const invalidMetadata=await rejectedAttachment({...validUpload,mimeType:'invalid'});assert.equal(invalidMetadata.response.status,400);assert.equal(invalidMetadata.body.code,'task_attachment_metadata_invalid');
-    const invalidLocation=await rejectedAttachment({...validUpload,storageKey:`shared/uploads/${randomUUID()}.txt`});assert.equal(invalidLocation.response.status,400);assert.equal(invalidLocation.body.code,'task_attachment_location_invalid');
+    const invalidLocation=await rejectedAttachment({...validUpload,storageKey:`shared/uploads-not-allowed/${randomUUID()}.txt`});assert.equal(invalidLocation.response.status,400);assert.equal(invalidLocation.body.code,'task_attachment_location_invalid');
+    const invalidUploadExtension=await rejectedAttachment({...validUpload,storageKey:`shared/uploads/${uploadId}.md`});assert.equal(invalidUploadExtension.response.status,400);assert.equal(invalidUploadExtension.body.code,'task_attachment_location_invalid');
     const missingArtifact=await rejectedAttachment({...validUpload,storageKey:`tasks/${randomUUID()}/artifacts/note.txt`});assert.equal(missingArtifact.response.status,400);assert.equal(missingArtifact.body.code,'task_attachment_source_unavailable');
     const checksumMismatch=await rejectedAttachment({...validUpload,sha256:createHash('sha256').update('different bytes').digest('hex')});assert.equal(checksumMismatch.response.status,400);assert.equal(checksumMismatch.body.code,'task_attachment_checksum_mismatch');
     const linkedTaskId=randomUUID(),linkedBotId=randomUUID(),linkedTaskDirectory=path.join(workspace,'tasks',linkedTaskId),linkedOutside=path.join(workspace,'linked-attachments-outside');

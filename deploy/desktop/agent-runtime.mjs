@@ -222,9 +222,15 @@ async function prepareTaskAttachments(value, taskDirectory) {
     if (!fileIdPattern.test(id) || !safeArtifactRelativePath(name) || !/^[\w.+-]+\/[\w.+-]+$/.test(mimeType) || !Number.isSafeInteger(size) || size < 1 || size > maxUploadBytes || !/^[a-f0-9]{64}$/i.test(sha256)) throw new TaskAttachmentError('task_attachment_metadata_invalid', 'Invalid task attachment metadata');
     const extension = path.extname(name).slice(1).toLowerCase();
     const expectedUploadKey = `shared/uploads/${id}${extension ? `.${extension}` : ''}`;
+    const uploadParts = storageKey.match(/^shared\/uploads\/([0-9a-f-]{36})(?:\.([a-z0-9]+))?$/i);
+    const isSharedUpload = Boolean(uploadParts && fileIdPattern.test(uploadParts[1]) && (uploadParts[2] || '').toLowerCase() === extension);
     const artifactParts = storageKey.split('/');
     const isPreviousArtifact = artifactParts.length >= 4 && artifactParts[0] === 'tasks' && fileIdPattern.test(artifactParts[1]) && artifactParts[2] === 'artifacts' && artifactParts.slice(3).join('/') === name && safeArtifactRelativePath(artifactParts.slice(3).join('/'));
-    if (storageKey !== expectedUploadKey && !isPreviousArtifact) throw new TaskAttachmentError('task_attachment_location_invalid', 'Invalid task attachment location');
+    // Handoff aliases receive a new bot_files ID but deliberately retain the
+    // source upload's storageKey. Accept any UUID upload key with a matching
+    // filename extension; ownership and file IDs are checked by the server,
+    // while checkedWorkspacePath + hash verification still validate the bytes.
+    if ((storageKey !== expectedUploadKey && !isSharedUpload) && !isPreviousArtifact) throw new TaskAttachmentError('task_attachment_location_invalid', 'Invalid task attachment location');
     const sizeLimit = mimeType.startsWith('image/') ? maxImageBytes : mimeType.startsWith('video/') ? maxUploadBytes : maxDocumentBytes;
     if (size > sizeLimit) throw new TaskAttachmentError('task_attachment_size_limit_exceeded', 'Task attachment exceeds its size limit');
     if (mimeType.startsWith('image/')) totalImages += size;
