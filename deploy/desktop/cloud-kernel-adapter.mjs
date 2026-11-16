@@ -251,6 +251,7 @@ const safeComputerDiagnosticCodes=new Set([
   'COMPUTER_RUN_LEASE_UNAVAILABLE','COMPUTER_SNAPSHOT_FAILED','COMPUTER_SCREEN_CAPACITY','COMPUTER_ACTIVE_TAB_UNRESOLVED','COMPUTER_RENDERER_UNRESPONSIVE','COMPUTER_WORKER_AUTH_REJECTED',
   'COMPUTER_WORKER_FAILED','COMPUTER_WORKER_FORBIDDEN','COMPUTER_WORKER_HTTP_ERROR',
   'COMPUTER_STATE_CHANGED','COMPUTER_BROWSER_TARGET_NOT_FOUND','COMPUTER_BROWSER_TARGET_AMBIGUOUS','COMPUTER_BROWSER_ACTION_TIMEOUT','COMPUTER_BROWSER_ACTION_FAILED',
+  'COMPUTER_WORKER_SCREEN_SCOPE_INVALID','COMPUTER_WORKER_SCREEN_OWNER_FAILED','COMPUTER_WORKER_REQUEST_BODY_INVALID','COMPUTER_WORKER_ACTION_EXECUTION_FAILED',
   'COMPUTER_WORKER_INVALID_RESPONSE','COMPUTER_WORKER_TRANSPORT_FAILED','INTERNAL_FAILURE',
 ]);
 
@@ -262,7 +263,7 @@ async function computerExecutionError(response,fallback=`Computer action was not
     const text=await response.text();
     if(Buffer.byteLength(text,'utf8')>4096)return new Error(fallback);
     const value=JSON.parse(text);
-    const diagnostic=value?.error==='computer_request_failed'&&value?.diagnostic&&typeof value.diagnostic==='object'?value.diagnostic:null;
+    const diagnostic=value?.diagnostic&&typeof value.diagnostic==='object'?value.diagnostic:null;
     if(!diagnostic||!safeComputerDiagnosticCodes.has(diagnostic.code))return new Error(fallback);
     if(diagnostic.code==='COMPUTER_NAVIGATION_USE_BROWSER')return new Error('This is a browser action. The desktop action was not executed and no approval was requested. Use computer_browser for navigation and page interactions; do not use desktop coordinates for browser controls.');
     if(diagnostic.code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED')return new Error('A sign-in or human-verification challenge is visible. Stop Agent input at that challenge and tell the owner to open the Computer screen and choose Take control. Ordinary navigation and page interaction remain available across sites until that challenge. Do not enter credentials or claim control has transferred.');

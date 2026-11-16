@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { browserActionDiagnostic } from '../deploy/desktop/browser-action-diagnostics.mjs';
+import { browserActionDiagnostic, computerWorkerRequestDiagnostic } from '../deploy/desktop/browser-action-diagnostics.mjs';
 
 test('browser worker failures become fixed diagnostics without forwarding locator text', () => {
   const cases = [
@@ -34,4 +34,24 @@ test('browser timeout classification also recognizes Playwright timeout errors',
 test('authentication handoff errors preserve the existing exact human boundary', () => {
   const handoff = Object.assign(new Error('Computer action must pause for sign-in or human verification'), { code: 'COMPUTER_SIGNIN_HANDOFF_REQUIRED' });
   assert.equal(browserActionDiagnostic(handoff), handoff);
+});
+
+test('guarded worker request stages use fixed diagnostics without exposing request details', () => {
+  assert.deepEqual(computerWorkerRequestDiagnostic('screen-scope'), {
+    code: 'COMPUTER_WORKER_SCREEN_SCOPE_INVALID', status: 400,
+    message: 'The computer worker rejected the Bot screen scope before running the action.',
+  });
+  assert.deepEqual(computerWorkerRequestDiagnostic('screen-owner'), {
+    code: 'COMPUTER_WORKER_SCREEN_OWNER_FAILED', status: 503,
+    message: 'The computer worker could not read the current computer control state before running the action.',
+  });
+  assert.deepEqual(computerWorkerRequestDiagnostic('action-body'), {
+    code: 'COMPUTER_WORKER_REQUEST_BODY_INVALID', status: 400,
+    message: 'The computer worker could not read the browser action request.',
+  });
+  assert.deepEqual(computerWorkerRequestDiagnostic('action-execute'), {
+    code: 'COMPUTER_WORKER_ACTION_EXECUTION_FAILED', status: 500,
+    message: 'The computer worker could not complete the action.',
+  });
+  assert.equal(computerWorkerRequestDiagnostic('action-body').message.includes('secret'), false);
 });

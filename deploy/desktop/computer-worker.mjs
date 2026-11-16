@@ -15,7 +15,7 @@ import { ensureSharedComputerRoots } from './shared-computer-root.mjs';
 import { appendControlOwnerEvent, computerScreenKey } from './control-owner-audit.mjs';
 import { createGuardedComputer } from '/opt/coke-grok/guarded-computer.mjs';
 import { isAuthenticationChallenge } from './browser-task-policy.mjs';
-import { browserActionDiagnostic } from './browser-action-diagnostics.mjs';
+import { browserActionDiagnostic, computerWorkerRequestDiagnostic } from './browser-action-diagnostics.mjs';
 
 const exec = promisify(execFile);
 const token = String(process.env.LINUX_DESKTOP_WORKER_TOKEN || '');
@@ -619,8 +619,12 @@ function guardedComputerFor(screenId) {
 }
 
 http.createServer(async (req, res) => {
+  let pathname = '/';
+  let requestStage = 'route';
+  let guardedExecuteRequest = false;
   try {
-    const pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;
+    pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;
+    guardedExecuteRequest = req.method === 'POST' && pathname === '/v1/guarded/execute';
     if (req.method === 'GET' && pathname === '/healthz') return send(res, 200, { ok: true });
     if (pathname === '/v1/internal/active-tabs') {
       if (req.headers.origin !== activeTabExtensionOrigin) return send(res, 403, { error: 'active tab extension origin is required' });
@@ -659,9 +663,13 @@ http.createServer(async (req, res) => {
     if (!isControl && !isWorker) return send(res, 401, { error: 'worker token is required' });
     if (guardedMode && !isControl && !(req.method === 'GET' && pathname === '/v1/control')) return send(res, 403, { error: 'control authorization is required' });
     const needsScreen = pathname.startsWith('/v1/guarded/') || ['/v1/control','/v1/state','/v1/screenshot','/v1/commands','/v1/browser'].includes(pathname);
+    requestStage = 'screen-scope';
     const screenId = needsScreen ? screenIdFromRequest(req) : null;
     const guardedComputer = screenId ? guardedComputerFor(screenId) : null;
-    if (screenId) await screenOwner(screenId);
+    if (screenId) {
+      requestStage = 'screen-owner';
+      await screenOwner(screenId);
+    }
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/control') return send(res, 200, {owner:await screenOwner(screenId)});
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/viewport') {
       if (await screenOwner(screenId) !== 'user') throw new Error('The user does not control this computer');
@@ -682,7 +690,9 @@ http.createServer(async (req, res) => {
       return send(res, 200, await screenshot(screenId), 'image/png');
     });
     if (guardedMode && isControl && req.method === 'POST' && pathname === '/v1/guarded/execute') {
+      requestStage = 'action-body';
       const input = await body(req);
+      requestStage = 'action-execute';
       try { return send(res, 200, await guardedComputer.execute(input.action, input.expected)); }
       catch (error) { if (input.action?.kind === 'browser') throw browserActionDiagnostic(error); throw error; }
     }
@@ -748,9 +758,21 @@ http.createServer(async (req, res) => {
     const browserDiagnostic = error && typeof error === 'object' && typeof error.code === 'string' && error.code.startsWith('COMPUTER_BROWSER_');
     const computerStateChanged = error && typeof error === 'object' && error.code === 'COMPUTER_STATE_CHANGED';
     const computerOwnerUser = error && typeof error === 'object' && error.code === 'COMPUTER_OWNER_USER';
+    const knownGuardedDiagnostic = browserDiagnostic || computerStateChanged || computerOwnerUser || contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved;
     if (rendererUnresponsive || screenAllocationTimeout) {
       rendererHealth.fail();
       void recoverChromium();
+    }
+    if (guardedExecuteRequest) {
+      const diagnostic = knownGuardedDiagnostic
+        ? { code: browserDiagnostic ? error.code : computerStateChanged ? 'COMPUTER_STATE_CHANGED' : computerOwnerUser ? 'COMPUTER_OWNER_USER' : rendererUnresponsive ? 'COMPUTER_RENDERER_UNRESPONSIVE' : screenCapacity ? 'COMPUTER_SCREEN_CAPACITY' : activeTabUnresolved ? 'COMPUTER_ACTIVE_TAB_UNRESOLVED' : 'COMPUTER_BROWSER_ACTION_FAILED', status: browserDiagnostic ? error.status : computerStateChanged || computerOwnerUser ? 409 : 503 }
+        : computerWorkerRequestDiagnostic(requestStage);
+      process.stderr.write(`${JSON.stringify({ event:'guarded-execute-failed', stage:requestStage, code:diagnostic.code, status:diagnostic.status })}\n`);
+      const safeMessage = browserDiagnostic ? error.message
+        : computerStateChanged ? 'The computer page or owner changed before the action completed.'
+        : computerOwnerUser ? 'The owner currently controls this computer.'
+        : diagnostic.message || `Computer action failed: ${diagnostic.code}`;
+      return send(res, diagnostic.status, { code:diagnostic.code, error:safeMessage });
     }
     const status = browserDiagnostic ? error.status : computerStateChanged || computerOwnerUser ? 409 : contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved ? 503 : 400;
     return send(res, status, {

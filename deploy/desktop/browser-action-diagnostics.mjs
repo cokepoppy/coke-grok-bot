@@ -5,7 +5,23 @@ const messages = Object.freeze({
   COMPUTER_BROWSER_TARGET_AMBIGUOUS: 'More than one browser control matched. Inspect the current page and choose a unique visible target.',
   COMPUTER_BROWSER_ACTION_TIMEOUT: 'The browser action timed out and its outcome may be unknown. Inspect the current page before deciding whether to continue; do not repeat it blindly.',
   COMPUTER_BROWSER_ACTION_FAILED: 'The browser action was not confirmed. Inspect the current page and task state before deciding whether to continue.',
+  COMPUTER_WORKER_SCREEN_SCOPE_INVALID: 'The computer worker rejected the Bot screen scope before running the action.',
+  COMPUTER_WORKER_SCREEN_OWNER_FAILED: 'The computer worker could not read the current computer control state before running the action.',
+  COMPUTER_WORKER_REQUEST_BODY_INVALID: 'The computer worker could not read the browser action request.',
+  COMPUTER_WORKER_ACTION_EXECUTION_FAILED: 'The computer worker could not complete the action.',
 });
+
+const requestStageDiagnostics = Object.freeze({
+  'screen-scope': { code: 'COMPUTER_WORKER_SCREEN_SCOPE_INVALID', status: 400 },
+  'screen-owner': { code: 'COMPUTER_WORKER_SCREEN_OWNER_FAILED', status: 503 },
+  'action-body': { code: 'COMPUTER_WORKER_REQUEST_BODY_INVALID', status: 400 },
+  'action-execute': { code: 'COMPUTER_WORKER_ACTION_EXECUTION_FAILED', status: 500 },
+});
+
+export function computerWorkerRequestDiagnostic(stage) {
+  const value = requestStageDiagnostics[stage] || requestStageDiagnostics['action-body'];
+  return Object.freeze({ ...value, message: messages[value.code] });
+}
 
 export function browserActionDiagnostic(error) {
   const message = error instanceof Error ? error.message : '';

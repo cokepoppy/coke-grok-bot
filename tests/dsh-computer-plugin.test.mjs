@@ -178,19 +178,19 @@ test('DSH Browser User uploads a same-user task artifact through the live page f
   }
 });
 
-test('DSH surfaces a fixed worker screen-capacity diagnostic without forwarding response text',async()=>{
+test('DSH surfaces fixed Auth diagnostics without forwarding response text',async()=>{
  const oldUrl=process.env.COKE_GROK_COMPUTER_BRIDGE_URL,oldToken=process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN,oldFetch=globalThis.fetch;
  process.env.COKE_GROK_COMPUTER_BRIDGE_URL='https://gateway.example.test/v1';process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN=bridgeToken;
  const calls=[];
  globalThis.fetch=async(url,init={})=>{
   const path=new URL(String(url)).pathname;calls.push({path,method:init.method||'GET'});
   if(path.endsWith('/computer/control'))return Response.json({owner:'agent'});
-  if(path.endsWith('/computer/actions'))return Response.json({error:'computer_request_failed',diagnostic:{code:'COMPUTER_SCREEN_CAPACITY',status:503},message:'private URL and credential detail'},{status:409});
+  if(path.endsWith('/computer/actions'))return Response.json({error:'Service unavailable',diagnostic:{code:'COMPUTER_WORKER_REQUEST_BODY_INVALID',status:400},message:'private URL and credential detail'},{status:503});
   throw new Error('A direct navigation diagnostic must not be polled or executed');
  };
  try{
   const browser=mount().tools.get('computer_browser');
-  await assert.rejects(browser.execute({action:'navigate',url:'https://example.test/'},{signal:new AbortController().signal}),/Computer action failed: COMPUTER_SCREEN_CAPACITY/);
+  await assert.rejects(browser.execute({action:'navigate',url:'https://example.test/'},{signal:new AbortController().signal}),/Computer action failed: COMPUTER_WORKER_REQUEST_BODY_INVALID/);
   assert.equal(calls.filter(call=>call.path.endsWith('/computer/actions')).length,1);
   assert.equal(calls.length,2,'one control check and one direct-navigation request; never retry or poll');
  }finally{

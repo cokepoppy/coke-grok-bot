@@ -86,6 +86,27 @@ test('Pi fails closed instead of polling a legacy computer approval id',async()=
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });
 
+test('Pi preserves fixed Worker diagnostics in the Auth service error response',async()=>{
+ const workspace=await mkdtemp(path.join(os.tmpdir(),'grok-pi-worker-diagnostic-')),cwd=path.join(workspace,'tasks','diagnostic');await mkdir(cwd,{recursive:true});
+ const oldFetch=globalThis.fetch,token='x'.repeat(43);let options;
+ globalThis.fetch=async(url,init={})=>{
+  const pathname=new URL(String(url)).pathname;
+  if(pathname==='/v1/computer/control')return Response.json({owner:'agent'});
+  if(pathname==='/v1/computer/actions'&&init.method==='POST')return Response.json({error:'Service unavailable',diagnostic:{code:'COMPUTER_WORKER_REQUEST_BODY_INVALID',status:400},message:'private browser content'},{status:503});
+  throw new Error('Unexpected computer gateway request');
+ };
+ const sdk={
+  AuthStorage:{inMemory:()=>({setRuntimeApiKey(){}})},ModelRegistry:{inMemory:()=>({registerProvider(){},find:()=>({id:'deepseek-v4.1-flash'})})},
+  SessionManager:{list:async()=>[],create:()=>({getSessionId:()=>randomUUID()})},
+  createAgentSession:async value=>{options=value;return{session:{messages:[{role:'assistant',stopReason:'stop',content:[{type:'text',text:'{"status":"done","message":"Adapter ready."}'}]}],async prompt(){},dispose(){}}}},
+ };
+ try{
+  await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:token},prompt:'Check the browser tool.',signal:new AbortController().signal},{piSdk:sdk});
+  const browser=options.customTools.find(tool=>tool.name==='computer_browser');assert.ok(browser);
+  await assert.rejects(()=>browser.execute('browser-click',{action:'click',by:'role',role:'link',target:'Business Rules'},new AbortController().signal),/Computer action failed: COMPUTER_WORKER_REQUEST_BODY_INVALID \(worker HTTP 400\)/);
+ }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
+});
+
 test('Pi Computer User can operate Chrome tabs and address bar without approval',async()=>{
  const workspace=await mkdtemp(path.join(os.tmpdir(),'grok-pi-navigation-directive-')),cwd=path.join(workspace,'tasks','navigation');await mkdir(cwd,{recursive:true});
  const oldFetch=globalThis.fetch,token='x'.repeat(43),requests=[];let options;
