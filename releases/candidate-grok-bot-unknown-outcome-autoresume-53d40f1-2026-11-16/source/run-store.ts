@@ -1,0 +1,362 @@
+import { createHash, randomUUID } from 'node:crypto';
+import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
+import type { ResultSetHeader } from 'mysql2';
+import type { Session } from './tenant-store.ts';
+import { WorkspaceFileStore, type RunFile } from './file-store.ts';
+import { isRunDiagnosticCode, type RunDiagnosticCode } from './run-diagnostics.ts';
+import { validateAgentExecutionAudit, type AgentExecutionAudit } from './execution-audit.ts';
+
+export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'unknown';
+export type RecoveryState = 'none' | 'pending' | 'retried' | 'acknowledged' | 'auto_resumed';
+export interface GroupRunContext { kind:'group-chat';groupName:string;currentBot:{name:string;label:string};members:Array<{name:string;label:string}>;targeted:boolean }
+export interface BotMentionRunContext { kind:'bot-mentions';targets:Array<{id:string;name:string;label:string}> }
+export type AgentRuntimeContext = GroupRunContext | BotMentionRunContext;
+export interface AgentRun { id: string; botId: string; prompt: string; status: RunStatus; result: string | null; recoveryState: RecoveryState; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: RunDiagnosticCode | null; runtimeContext?:AgentRuntimeContext|null; executionAudit?:AgentExecutionAudit|null; previousPrompts?:string[] }
+export interface RunRecoveryResult { decision: 'retry' | 'acknowledge'; run: AgentRun | null }
+export type RunOwner = Pick<Session, 'tenantId' | 'userId'>;
+export interface RunScreenScope extends RunOwner { botId: string }
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export class RunRequestConflict extends Error {}
+export class RunRecoveryConflict extends Error {}
+
+/** Persistent run queue. An expired lease is unknown, never automatically retried. */
+export class RunStore {
+  constructor(private readonly pool: Pool) {}
+  async migrate(): Promise<void> {
+    await this.pool.execute(`CREATE TABLE IF NOT EXISTS agent_runs (
+      id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+      sequence BIGINT UNSIGNED NOT NULL AUTO_INCREMENT UNIQUE,
+      bot_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+      request_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+      prompt TEXT NOT NULL,
+      status ENUM('queued','running','completed','failed','unknown') NOT NULL,
+      result TEXT NULL,
+      recovery_state ENUM('none','pending','retried','acknowledged','auto_resumed') NOT NULL DEFAULT 'none',
+      replacement_run_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+      attachment_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '',
+      runtime_context TEXT NULL,
+      computer_used BOOLEAN NOT NULL DEFAULT FALSE,
+      execution_audit JSON NULL,
+      lease_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+      lease_until DATETIME(3) NULL,
+      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+      UNIQUE KEY request_dedup (bot_id, request_id),
+      KEY queue_order (status, sequence),
+      KEY bot_runs (bot_id, sequence),
+      FOREIGN KEY (bot_id) REFERENCES bots(id)
+    ) ENGINE=InnoDB`);
+    const [columns] = await this.pool.execute<RowDataPacket[]>(`SELECT COLUMN_NAME,COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='agent_runs'`);
+    const names = new Set(columns.map(column => String(column.COLUMN_NAME)));
+    if (!names.has('recovery_state')) await this.pool.execute(`ALTER TABLE agent_runs ADD COLUMN recovery_state ENUM('none','pending','retried','acknowledged','auto_resumed') NOT NULL DEFAULT 'none' AFTER result`);
+    else if (!String(columns.find(column => String(column.COLUMN_NAME)==='recovery_state')?.COLUMN_TYPE||'').includes('auto_resumed')) await this.pool.execute(`ALTER TABLE agent_runs MODIFY COLUMN recovery_state ENUM('none','pending','retried','acknowledged','auto_resumed') NOT NULL DEFAULT 'none'`);
+    if (!names.has('replacement_run_id')) await this.pool.execute('ALTER TABLE agent_runs ADD COLUMN replacement_run_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER recovery_state');
+    if (!names.has('attachment_hash')) await this.pool.execute("ALTER TABLE agent_runs ADD COLUMN attachment_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' AFTER replacement_run_id");
+    if (!names.has('runtime_context')) await this.pool.execute('ALTER TABLE agent_runs ADD COLUMN runtime_context TEXT NULL AFTER attachment_hash');
+    if (!names.has('computer_used')) await this.pool.execute('ALTER TABLE agent_runs ADD COLUMN computer_used BOOLEAN NOT NULL DEFAULT FALSE AFTER attachment_hash');
+    if (!names.has('execution_audit')) await this.pool.execute('ALTER TABLE agent_runs ADD COLUMN execution_audit JSON NULL AFTER computer_used');
+    await this.pool.execute(`CREATE TABLE IF NOT EXISTS agent_run_events (
+      sequence BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      run_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+      status ENUM('queued','running','completed','failed','unknown') NOT NULL,
+      detail TEXT NULL,
+      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      KEY run_history (run_id, sequence),
+      FOREIGN KEY (run_id) REFERENCES agent_runs(id)
+    ) ENGINE=InnoDB`);
+    // Unknown runs are never replayed automatically, but they also must not
+    // block future work behind a manual review card. Preserve their original
+    // status and audit while allowing the Bot's queue to continue.
+    await this.autoResumePendingUnknowns();
+    await new WorkspaceFileStore(this.pool).migrate();
+  }
+  async create(session: Session, botId: string, requestId: string, prompt: string, fileIdsValue?: unknown, mentionBotIdsValue?: unknown): Promise<AgentRun | null> {
+    const clean = prompt.trim();
+    if (!uuid.test(botId) || !uuid.test(requestId) || !clean || clean.length > 10000) throw new Error('Invalid run');
+    const fileIds = WorkspaceFileStore.validateFileIds(fileIdsValue);
+    const mentionBotIds = validateMentionBotIds(mentionBotIdsValue);
+    const attachmentHash = createHash('sha256').update(JSON.stringify(mentionBotIds.length?{files:[...fileIds].sort(),mentionBotIds}:[...fileIds].sort())).digest('hex');
+    return this.transaction(async connection => {
+      const [owned] = await connection.execute<RowDataPacket[]>('SELECT id FROM bots WHERE id=? AND tenant_id=? AND owner_id=? FOR UPDATE', [botId,session.tenantId,session.userId]);
+      if (!owned.length) return null;
+      const mentionedTargets:BotMentionRunContext['targets']=[];
+      if(mentionBotIds.length){
+        const placeholders=mentionBotIds.map(()=>'?').join(',');
+        const [targets]=await connection.execute<RowDataPacket[]>(`SELECT id,name,label FROM bots WHERE tenant_id=? AND owner_id=? AND id<>? AND id IN (${placeholders}) FOR UPDATE`,[session.tenantId,session.userId,botId,...mentionBotIds]);
+        if(targets.length!==mentionBotIds.length)throw new Error('Invalid Bot mention targets');
+        const byId=new Map(targets.map(row=>[String(row.id),row]));
+        for(const id of mentionBotIds){const target=byId.get(id);if(!target)throw new Error('Invalid Bot mention targets');mentionedTargets.push({id,name:String(target.name),label:String(target.label||'')})}
+      }
+      const inputs = await this.inputFiles(connection,session,botId,fileIds);
+      const [existing] = await connection.execute<RowDataPacket[]>(`SELECT id,bot_id AS botId,prompt,status,result,recovery_state AS recoveryState,replacement_run_id AS replacementRunId,
+        attachment_hash AS attachmentHash,computer_used AS computerUsed,
+        DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt,DATE_FORMAT(updated_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS updatedAt
+        FROM agent_runs WHERE bot_id=? AND request_id=?`, [botId,requestId]);
+      if (existing.length) {
+        const storedHash=String(existing[0].attachmentHash||'');
+        if (existing[0].prompt !== clean || (storedHash ? storedHash !== attachmentHash : fileIds.length > 0)) throw new RunRequestConflict('Request ID already used with different content');
+        return { ...existing[0], files:await this.filesForRun(connection,String(existing[0].id)) } as AgentRun;
+      }
+      const runtimeContext:AgentRuntimeContext|null=mentionedTargets.length?{kind:'bot-mentions',targets:mentionedTargets}:null;
+      const run: AgentRun = { id:randomUUID(), botId, prompt:clean, status:'queued', result:null, recoveryState:'none', replacementRunId:null, files:inputs, computerUsed:false,runtimeContext };
+      await connection.execute('INSERT INTO agent_runs (id,bot_id,request_id,prompt,status,recovery_state,attachment_hash,runtime_context) VALUES (?,?,?,?,?,?,?,?)',[run.id,botId,requestId,clean,run.status,run.recoveryState,attachmentHash,runtimeContext?JSON.stringify(runtimeContext):null]);
+      // Return the database's canonical timestamps. Using the Node clock here
+      // can place a new prompt before existing DB-backed history until the next
+      // poll replaces it with created_at from MySQL (whose session timezone may
+      // differ from the application process timezone).
+      const [timestamps]=await connection.execute<RowDataPacket[]>(`SELECT
+        DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt,
+        DATE_FORMAT(updated_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS updatedAt
+        FROM agent_runs WHERE id=?`,[run.id]);
+      if(!timestamps.length)throw new Error('Created run timestamp is unavailable');
+      run.createdAt=String(timestamps[0].createdAt);
+      run.updatedAt=String(timestamps[0].updatedAt);
+      for (const fileId of fileIds) await connection.execute("INSERT INTO agent_run_files (run_id,file_id,kind) VALUES (?,?,'input')",[run.id,fileId]);
+      await connection.execute('INSERT INTO agent_run_events (run_id,status) VALUES (?,?)',[run.id,run.status]);
+      return run;
+    });
+  }
+  async list(session: Session, botId: string): Promise<AgentRun[] | null> {
+    const [owned] = await this.pool.execute<RowDataPacket[]>('SELECT id FROM bots WHERE id=? AND tenant_id=? AND owner_id=?',[botId,session.tenantId,session.userId]);
+    if (!owned.length) return null;
+    const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT id,bot_id AS botId,prompt,status,result,recovery_state AS recoveryState,replacement_run_id AS replacementRunId,
+      computer_used AS computerUsed,execution_audit AS executionAudit,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt,DATE_FORMAT(updated_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS updatedAt,
+      (SELECT SUBSTRING(e.detail,12) FROM agent_run_events e WHERE e.run_id=agent_runs.id AND e.status='unknown' AND e.detail LIKE 'diagnostic:%' ORDER BY e.sequence DESC LIMIT 1) AS diagnosticCode
+      FROM agent_runs WHERE bot_id=? ORDER BY sequence`,[botId]);
+    if (!rows.length) return [];
+    const files = await this.filesForRuns(this.pool,rows.map(row=>String(row.id)));
+    return rows.map(row=>({...row,computerUsed:Boolean(row.computerUsed),diagnosticCode:isRunDiagnosticCode(row.diagnosticCode)?row.diagnosticCode:null,executionAudit:validateAgentExecutionAudit(row.executionAudit),files:files.get(String(row.id))||[]})) as AgentRun[];
+  }
+  async ownsBot(session:Pick<Session,'tenantId'|'userId'>,botId:string):Promise<boolean>{
+    if(!uuid.test(session.tenantId)||!uuid.test(session.userId)||!uuid.test(botId))return false;
+    const [rows]=await this.pool.execute<RowDataPacket[]>('SELECT id FROM bots WHERE id=? AND tenant_id=? AND owner_id=?',[botId,session.tenantId,session.userId]);
+    return rows.length===1;
+  }
+  async queuedOwners(limit: number): Promise<RunOwner[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Invalid owner limit');
+    await this.autoResumePendingUnknowns();
+    const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT b.tenant_id AS tenantId, b.owner_id AS userId, MIN(r.sequence) AS firstRun
+      FROM agent_runs r JOIN bots b ON b.id=r.bot_id
+      WHERE r.status='queued' AND NOT EXISTS (
+        SELECT 1 FROM agent_runs active JOIN bots owner_bot ON owner_bot.id=active.bot_id
+        WHERE owner_bot.tenant_id=b.tenant_id AND owner_bot.owner_id=b.owner_id AND (active.status='running' OR (active.status='unknown' AND active.recovery_state='pending'))
+      ) GROUP BY b.tenant_id,b.owner_id ORDER BY firstRun LIMIT ?`, [limit]);
+    return rows.map(row => ({tenantId:String(row.tenantId),userId:String(row.userId)}));
+  }
+  /** Each Bot owns one queue/screen; different Bots belonging to the same user can run concurrently. */
+  async queuedScreens(limit: number, queueCreatedAfter?: Date): Promise<RunScreenScope[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('Invalid screen limit');
+    if (queueCreatedAfter && !Number.isFinite(queueCreatedAfter.getTime())) throw new Error('Invalid queue creation cutoff');
+    await this.autoResumePendingUnknowns();
+    const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT b.tenant_id AS tenantId,b.owner_id AS userId,b.id AS botId,MIN(r.sequence) AS firstRun
+      FROM agent_runs r JOIN bots b ON b.id=r.bot_id JOIN memberships m ON m.tenant_id=b.tenant_id AND m.user_id=b.owner_id
+      WHERE r.status='queued' AND (? IS NULL OR r.created_at>=?) AND NOT EXISTS (
+        SELECT 1 FROM agent_runs active WHERE active.bot_id=b.id AND (active.status='running' OR (active.status='unknown' AND active.recovery_state='pending'))
+      ) GROUP BY b.id,b.tenant_id,b.owner_id ORDER BY firstRun LIMIT ?`, [queueCreatedAfter??null,queueCreatedAfter??null,limit]);
+    return rows.map(row=>({tenantId:String(row.tenantId),userId:String(row.userId),botId:String(row.botId)}));
+  }
+  /** Claim one Bot's screen. Older callers may omit botId to claim the owner's serialized queue. */
+  async claimNext(session: Pick<Session,'tenantId'|'userId'> | RunScreenScope, leaseSeconds: number, queueCreatedAfter?: Date): Promise<{ run: AgentRun; leaseId: string } | null> {
+    if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 1 || leaseSeconds > 900) throw new Error('Invalid lease');
+    if (queueCreatedAfter && !Number.isFinite(queueCreatedAfter.getTime())) throw new Error('Invalid queue creation cutoff');
+    const botId='botId' in session ? session.botId : undefined;
+    if(botId && !uuid.test(botId))throw new Error('Invalid screen Bot');
+    return this.transaction(async connection => {
+      const [membership] = await connection.execute<RowDataPacket[]>('SELECT user_id FROM memberships WHERE tenant_id=? AND user_id=? LOCK IN SHARE MODE',[session.tenantId,session.userId]);
+      if (!membership.length) return null;
+      if(botId){
+        const [ownedBot]=await connection.execute<RowDataPacket[]>('SELECT id FROM bots WHERE id=? AND tenant_id=? AND owner_id=? FOR UPDATE',[botId,session.tenantId,session.userId]);
+        if(!ownedBot.length)return null;
+      }
+      const [active] = botId
+        ? await connection.execute<RowDataPacket[]>(`SELECT id FROM agent_runs WHERE bot_id=? AND (status='running' OR (status='unknown' AND recovery_state='pending')) LIMIT 1 FOR UPDATE`,[botId])
+        : await connection.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND (r.status='running' OR (r.status='unknown' AND r.recovery_state='pending')) LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId]);
+      if (active.length) return null;
+      const [rows] = botId
+        ? await connection.execute<RowDataPacket[]>(`SELECT id,bot_id AS botId,prompt,status,result,recovery_state AS recoveryState,replacement_run_id AS replacementRunId,runtime_context AS runtimeContext FROM agent_runs WHERE bot_id=? AND status='queued' AND (? IS NULL OR created_at>=?) ORDER BY sequence LIMIT 1 FOR UPDATE`,[botId,queueCreatedAfter??null,queueCreatedAfter??null])
+        : await connection.execute<RowDataPacket[]>(`SELECT r.id,r.bot_id AS botId,r.prompt,r.status,r.result,r.recovery_state AS recoveryState,r.replacement_run_id AS replacementRunId,r.runtime_context AS runtimeContext FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE b.tenant_id=? AND b.owner_id=? AND r.status='queued' AND (? IS NULL OR r.created_at>=?) ORDER BY r.sequence LIMIT 1 FOR UPDATE`,[session.tenantId,session.userId,queueCreatedAfter??null,queueCreatedAfter??null]);
+      if (!rows.length) return null;
+      const row=rows[0],run = row as AgentRun, runtimeContext=parseAgentRuntimeContext(row.runtimeContext), leaseId = randomUUID();
+      // Preserve a bounded same-Bot user-prompt chain so explicit continuations
+      // can resume a Browser User task after a long sign-in handoff. The
+      // executor grants scope only when every intervening prompt is itself a
+      // continuation; unrelated prompts break the chain.
+      const [previousRows]=await connection.execute<RowDataPacket[]>(`SELECT prompt FROM agent_runs WHERE bot_id=? AND sequence<(SELECT sequence FROM agent_runs WHERE id=?) AND created_at>=DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 24 HOUR) ORDER BY sequence DESC LIMIT 8`,[run.botId,run.id]);
+      const previousPrompts=previousRows.map(previous=>String(previous.prompt)).reverse();
+      await connection.execute(`UPDATE agent_runs SET status='running',lease_id=?,lease_until=DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? SECOND) WHERE id=?`,[leaseId,leaseSeconds,run.id]);
+      await connection.execute(`INSERT INTO agent_run_events (run_id,status) VALUES (?,'running')`,[run.id]);
+      return { run:{...run,status:'running',files:await this.filesForRun(connection,run.id),runtimeContext,previousPrompts}, leaseId };
+    });
+  }
+  async finish(runId: string, leaseId: string, status: 'completed' | 'failed', result: string, artifactsValue: unknown = [], executionAuditValue: unknown = null): Promise<boolean> {
+    if (!uuid.test(runId) || !uuid.test(leaseId) || !['completed','failed'].includes(status) || !result.trim() || result.length > 20000) throw new Error('Invalid run result');
+    const artifacts=WorkspaceFileStore.validateArtifacts(artifactsValue,runId);
+    const executionAudit=validateAgentExecutionAudit(executionAuditValue);
+    return this.transaction(async connection => {
+      const [runs]=await connection.execute<RowDataPacket[]>('SELECT bot_id AS botId FROM agent_runs WHERE id=? AND lease_id=? AND status=\'running\' AND lease_until>UTC_TIMESTAMP(3) FOR UPDATE',[runId,leaseId]);
+      if(!runs.length)return false;
+      const [updated] = await connection.execute<ResultSetHeader>(`UPDATE agent_runs SET status=?,result=?,execution_audit=?,lease_id=NULL,lease_until=NULL WHERE id=? AND lease_id=? AND status='running' AND lease_until>UTC_TIMESTAMP(3)`,[status,result,executionAudit?JSON.stringify(executionAudit):null,runId,leaseId]);
+      if (!updated.affectedRows) return false;
+      for(const file of artifacts){
+        const id=randomUUID();
+        await connection.execute('INSERT INTO bot_files (id,bot_id,display_name,mime_type,size,sha256,storage_key) VALUES (?,?,?,?,?,?,?)',[id,runs[0].botId,file.name,file.mimeType,file.size,file.sha256,file.storageKey]);
+        await connection.execute("INSERT INTO agent_run_files (run_id,file_id,kind) VALUES (?,?,'output')",[runId,id]);
+      }
+      await connection.execute('INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,?,?)',[runId,status,result]);
+      return true;
+    });
+  }
+  async renew(runId: string, leaseId: string, leaseSeconds: number): Promise<boolean> {
+    if (!uuid.test(runId) || !uuid.test(leaseId) || !Number.isSafeInteger(leaseSeconds) || leaseSeconds < 1 || leaseSeconds > 900) throw new Error('Invalid lease');
+    const [updated] = await this.pool.execute<ResultSetHeader>(`UPDATE agent_runs SET lease_until=DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? SECOND) WHERE id=? AND lease_id=? AND status='running' AND lease_until>UTC_TIMESTAMP(3)`,[leaseSeconds,runId,leaseId]);
+    return updated.affectedRows === 1;
+  }
+  async hasLiveLease(owner: RunOwner, runId:string, leaseId:string, botId?:string):Promise<boolean> {
+    if(!uuid.test(owner.tenantId)||!uuid.test(owner.userId)||!uuid.test(runId)||!uuid.test(leaseId)||(botId!==undefined&&!uuid.test(botId)))return false;
+    const [rows]=await this.pool.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND r.lease_id=? AND r.status='running' AND r.lease_until>UTC_TIMESTAMP(3) AND b.tenant_id=? AND b.owner_id=? AND (? IS NULL OR r.bot_id=?)`,[runId,leaseId,owner.tenantId,owner.userId,botId||null,botId||null]);
+    return rows.length===1;
+  }
+  /** Mark only successful real Browser User or Computer User activity for its live Bot run. */
+  async markComputerUsed(owner:RunOwner,runId:string,leaseId:string,botId:string):Promise<boolean>{
+    if(!uuid.test(owner.tenantId)||!uuid.test(owner.userId)||!uuid.test(runId)||!uuid.test(leaseId)||!uuid.test(botId))return false;
+    return this.transaction(async connection=>{
+      const [rows]=await connection.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id
+        WHERE r.id=? AND r.lease_id=? AND r.status='running' AND r.lease_until>UTC_TIMESTAMP(3)
+        AND r.bot_id=? AND b.tenant_id=? AND b.owner_id=? FOR UPDATE`,[runId,leaseId,botId,owner.tenantId,owner.userId]);
+      if(!rows.length)return false;
+      await connection.execute('UPDATE agent_runs SET computer_used=TRUE WHERE id=?',[runId]);
+      return true;
+    });
+  }
+  async markUnknown(runId: string, leaseId: string, diagnosticCode: RunDiagnosticCode = 'executor_error', executionAuditValue?: unknown): Promise<boolean> {
+    if (!uuid.test(runId) || !uuid.test(leaseId) || !isRunDiagnosticCode(diagnosticCode)) throw new Error('Invalid lease');
+    const executionAudit=validateAgentExecutionAudit(executionAuditValue);
+    return this.transaction(async connection => {
+      const [updated] = await connection.execute<ResultSetHeader>(`UPDATE agent_runs SET status='unknown',recovery_state='auto_resumed',replacement_run_id=NULL,execution_audit=COALESCE(?,execution_audit),lease_id=NULL,lease_until=NULL WHERE id=? AND lease_id=? AND status='running'`,[executionAudit?JSON.stringify(executionAudit):null,runId,leaseId]);
+      if (!updated.affectedRows) return false;
+      await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown',?)`,[runId,`diagnostic:${diagnosticCode}`]);
+      await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','Queue resumed automatically; the original task was not replayed.')`,[runId]);
+      return true;
+    });
+  }
+  async markExpiredUnknown(): Promise<number> {
+    return this.transaction(async connection => {
+      const [rows] = await connection.execute<RowDataPacket[]>(`SELECT id FROM agent_runs WHERE status='running' AND lease_until<=UTC_TIMESTAMP(3) ORDER BY lease_until LIMIT 100 FOR UPDATE`);
+      for (const row of rows) {
+        await connection.execute(`UPDATE agent_runs SET status='unknown',recovery_state='auto_resumed',replacement_run_id=NULL,lease_id=NULL,lease_until=NULL WHERE id=?`,[row.id]);
+        await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','diagnostic:lease_expired')`,[row.id]);
+        await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','Queue resumed automatically; the original task was not replayed.')`,[row.id]);
+      }
+      return rows.length;
+    });
+  }
+  /** Compatibility endpoint for pending records from older runtime versions. */
+  async resolveUnknown(session: Session, runId: string, decision: 'retry' | 'acknowledge'): Promise<RunRecoveryResult | null> {
+    if (!uuid.test(runId) || !['retry','acknowledge'].includes(decision)) throw new Error('Invalid run recovery');
+    return this.transaction(async connection => {
+      const [rows] = await connection.execute<RowDataPacket[]>(`SELECT r.id,r.bot_id AS botId,r.prompt,r.runtime_context AS runtimeContext,r.status,r.recovery_state AS recoveryState,r.replacement_run_id AS replacementRunId
+        FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND b.tenant_id=? AND b.owner_id=? FOR UPDATE`,[runId,session.tenantId,session.userId]);
+      if (!rows.length) return null;
+      const current = rows[0] as AgentRun;
+      const runtimeContext=typeof rows[0].runtimeContext==='string'?rows[0].runtimeContext:null;
+      if (current.status !== 'unknown') throw new RunRecoveryConflict('Only an unknown run can be resolved');
+      if (decision === 'acknowledge') {
+        if (current.recoveryState === 'acknowledged') return {decision,run:null};
+        if (current.recoveryState !== 'pending') throw new RunRecoveryConflict('This unknown run already has a different resolution');
+        await connection.execute(`UPDATE agent_runs SET recovery_state='acknowledged' WHERE id=? AND status='unknown' AND recovery_state='pending'`,[runId]);
+        await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','Owner reviewed the uncertain outcome and resumed this Bot screen queue.')`,[runId]);
+        return {decision,run:null};
+      }
+      if (current.recoveryState === 'retried' && current.replacementRunId) {
+        const [replacement] = await connection.execute<RowDataPacket[]>(`SELECT id,bot_id AS botId,prompt,status,result,recovery_state AS recoveryState,replacement_run_id AS replacementRunId FROM agent_runs WHERE id=? AND bot_id=?`,[current.replacementRunId,current.botId]);
+        if (replacement.length) return {decision,run:{...replacement[0],files:await this.filesForRun(connection,String(replacement[0].id))} as AgentRun};
+        throw new RunRecoveryConflict('The replacement run is unavailable');
+      }
+      if (current.recoveryState !== 'pending') throw new RunRecoveryConflict('This unknown run already has a different resolution');
+      const [inputs]=await connection.execute<RowDataPacket[]>("SELECT f.id FROM agent_run_files rf JOIN bot_files f ON f.id=rf.file_id WHERE rf.run_id=? AND rf.kind='input' ORDER BY f.id",[runId]);
+      const fileIds=inputs.map(file=>String(file.id));
+      const attachmentHash=createHash('sha256').update(JSON.stringify([...fileIds].sort())).digest('hex');
+      const replacement: AgentRun = {id:randomUUID(),botId:current.botId,prompt:current.prompt,status:'queued',result:null,recoveryState:'none',replacementRunId:null,files:await this.filesForRun(connection,runId)};
+      const requestId=randomUUID();
+      await connection.execute(`INSERT INTO agent_runs (id,bot_id,request_id,prompt,status,recovery_state,attachment_hash,runtime_context) VALUES (?,?,?,?,?,'none',?,?)`,[replacement.id,replacement.botId,requestId,replacement.prompt,replacement.status,attachmentHash,runtimeContext]);
+      for(const fileId of fileIds)await connection.execute("INSERT INTO agent_run_files (run_id,file_id,kind) VALUES (?,?,'input')",[replacement.id,fileId]);
+      await connection.execute(`UPDATE agent_runs SET recovery_state='retried',replacement_run_id=? WHERE id=? AND status='unknown' AND recovery_state='pending'`,[replacement.id,runId]);
+      await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','Owner explicitly approved a new run after reviewing the uncertain outcome.')`,[runId]);
+      await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'queued',?)`,[replacement.id,`Explicit retry of run ${runId}.`]);
+      return {decision,run:replacement};
+    });
+  }
+  async events(session: Session, runId: string): Promise<Array<{ sequence: number; status: RunStatus; detail: string | null }> | null> {
+    const [owned] = await this.pool.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND b.tenant_id=? AND b.owner_id=?`,[runId,session.tenantId,session.userId]);
+    if (!owned.length) return null;
+    const [rows] = await this.pool.execute<RowDataPacket[]>('SELECT sequence,status,detail FROM agent_run_events WHERE run_id=? ORDER BY sequence',[runId]);
+    return rows as Array<{ sequence:number; status:RunStatus; detail:string|null }>;
+  }
+  async fileForDownload(session: Session,fileId:string):Promise<import('./file-store.ts').StoredWorkspaceFile|null>{
+    const files=new WorkspaceFileStore(this.pool);
+    return files.fileForDownload(session,fileId);
+  }
+  private async inputFiles(connection:PoolConnection,session:Session,botId:string,fileIds:string[]):Promise<RunFile[]>{
+    if(!fileIds.length)return [];
+    const [rows]=await connection.execute<RowDataPacket[]>(`SELECT f.id,f.display_name AS name,f.mime_type AS mimeType,f.size,f.sha256,f.storage_key AS storageKey
+      FROM bot_files f JOIN bots b ON b.id=f.bot_id WHERE f.bot_id=? AND b.tenant_id=? AND b.owner_id=? AND f.id IN (${fileIds.map(()=>'?').join(',')})`,[botId,session.tenantId,session.userId,...fileIds]);
+    const mapped=WorkspaceFileStore.validateInputRows(rows,fileIds);
+    const byId=new Map(mapped.map(file=>[file.id,file]));
+    return fileIds.map(id=>byId.get(id)!);
+  }
+  private async filesForRun(database:{execute:PoolConnection['execute']},runId:string):Promise<RunFile[]>{
+    const [rows]=await database.execute<RowDataPacket[]>(`SELECT f.id,f.display_name AS name,f.mime_type AS mimeType,f.size,f.sha256,f.storage_key AS storageKey,rf.kind
+      FROM agent_run_files rf JOIN bot_files f ON f.id=rf.file_id WHERE rf.run_id=? ORDER BY rf.created_at,f.id`,[runId]);
+    return rows.map(row=>({...row,id:String(row.id),name:String(row.name),mimeType:String(row.mimeType),size:Number(row.size),sha256:String(row.sha256),kind:row.kind as RunFile['kind']})) as RunFile[];
+  }
+  private async filesForRuns(database:{execute:PoolConnection['execute']},runIds:string[]):Promise<Map<string,RunFile[]>>{
+    const result=new Map<string,RunFile[]>();
+    if(!runIds.length)return result;
+    const [rows]=await database.execute<RowDataPacket[]>(`SELECT rf.run_id AS runId,f.id,f.display_name AS name,f.mime_type AS mimeType,f.size,f.sha256,f.storage_key AS storageKey,rf.kind
+      FROM agent_run_files rf JOIN bot_files f ON f.id=rf.file_id WHERE rf.run_id IN (${runIds.map(()=>'?').join(',')}) ORDER BY rf.created_at,f.id`,runIds);
+    for(const row of rows){const key=String(row.runId);const files=result.get(key)||[];files.push({...row,id:String(row.id),name:String(row.name),mimeType:String(row.mimeType),size:Number(row.size),sha256:String(row.sha256),kind:row.kind as RunFile['kind']} as RunFile);result.set(key,files)}
+    return result;
+  }
+  private async autoResumePendingUnknowns():Promise<void>{
+    const [candidates]=await this.pool.execute<RowDataPacket[]>(`SELECT id FROM agent_runs WHERE status='unknown' AND recovery_state IN ('none','pending') ORDER BY sequence LIMIT 100`);
+    if(!candidates.length)return;
+    await this.transaction(async connection=>{
+      for(const row of candidates){
+        const id=String(row.id);
+        const [updated]=await connection.execute<ResultSetHeader>(`UPDATE agent_runs SET recovery_state='auto_resumed' WHERE id=? AND status='unknown' AND recovery_state IN ('none','pending')`,[id]);
+        if(!updated.affectedRows)continue;
+        await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','Queue resumed automatically; the original task was not replayed.')`,[id]);
+      }
+    });
+  }
+  private async transaction<T>(work: (connection: PoolConnection) => Promise<T>): Promise<T> {
+    const connection = await this.pool.getConnection();
+    try { await connection.beginTransaction(); const result = await work(connection); await connection.commit(); return result; }
+    catch (error) { await connection.rollback(); throw error; }
+    finally { connection.release(); }
+  }
+}
+
+function parseAgentRuntimeContext(value:unknown):AgentRuntimeContext|null{
+  if(value==null||value==='')return null;
+  let parsed:unknown;
+  try{parsed=typeof value==='string'?JSON.parse(value):value}catch{throw new Error('Stored run context is invalid')}
+  if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw new Error('Stored run context is invalid');
+  const record=parsed as Record<string,unknown>,validName=(candidate:unknown):candidate is string=>typeof candidate==='string'&&candidate.trim().length>0&&candidate.length<=120;
+  const context=record as Partial<GroupRunContext>;
+  if(record.kind==='bot-mentions'){
+    const targets=record.targets;
+    const validTarget=(target:unknown):target is BotMentionRunContext['targets'][number]=>!!target&&typeof target==='object'&&!Array.isArray(target)&&typeof(target as {id?:unknown}).id==='string'&&uuid.test((target as {id:string}).id)&&validName((target as {name?:unknown}).name)&&typeof(target as {label?:unknown}).label==='string'&&(target as {label:string}).label.length<=120;
+    if(!Array.isArray(targets)||targets.length<1||targets.length>6||!targets.every(validTarget)||new Set(targets.map(target=>target.id)).size!==targets.length)throw new Error('Stored Bot mention context is invalid');
+    return{kind:'bot-mentions',targets:targets.map(target=>({id:target.id,name:target.name,label:target.label}))};
+  }
+  const validPerson=(candidate:unknown):candidate is {name:string;label:string}=>!!candidate&&typeof candidate==='object'&&!Array.isArray(candidate)&&validName((candidate as {name?:unknown}).name)&&typeof(candidate as {label?:unknown}).label==='string'&&(candidate as {label:string}).label.length<=120;
+  if(context.kind!=='group-chat'||!validName(context.groupName)||!validPerson(context.currentBot)||!Array.isArray(context.members)||context.members.length<2||context.members.length>6||!context.members.every(validPerson)||typeof context.targeted!=='boolean')throw new Error('Stored group run context is invalid');
+  return{kind:'group-chat',groupName:context.groupName,currentBot:context.currentBot,members:context.members,targeted:context.targeted};
+}
+
+function validateMentionBotIds(value:unknown):string[]{
+  if(value===undefined)return[];
+  if(!Array.isArray(value)||value.length<1||value.length>6||value.some(id=>typeof id!=='string'||!uuid.test(id))||new Set(value).size!==value.length)throw new Error('Invalid Bot mention targets');
+  return value as string[];
+}

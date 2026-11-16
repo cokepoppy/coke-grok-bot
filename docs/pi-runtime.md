@@ -394,3 +394,7 @@ Inbox Manager 在新组任务中保持 `Outcome unknown`，按任务要求没有
 随后在 `kaka` 中通过相同公网 UI 请求 `Browser User` 打开 `https://accounts.google.com/`，到登录页时停止并交还电脑。执行记录仍只有 Pi/DeepSeek 响应以及 Browser User 的 navigate/inspect 成功；产品回复报告标题 `Sign in - Google Accounts`、最终 URL `https://accounts.google.com/v3/signin/identifier`，并明确电脑已交还用户。右侧 `kaka’s screen` 的实际 K3D 桌面截图确实显示 Google 登录表单，邮箱输入框为空。未输入凭据、未操作表单、未查看 Gmail，也未出现逐步审批卡。
 
 这轮可见公网 E2E 证明当前普通网页导航不需要用户批准，登录页之前的导航也由 Bot 自动完成，只有到登录界面才交接。早先 `kaka` 停在 `about:blank` 的失败任务作为独立历史记录保留；这次在不改代码、不滚动 Pod 的情况下，`kaka` 的普通导航和 Google 登录页导航均复现成功，因此旧失败的具体根因仍未确定，不能声称它被代码修复。此证据也不覆盖 Gmail 凭据登录、六 Bot 并发或完整产品验收；当前 feature 分支仍不合并、不打 checkpoint tag。
+
+### 2026-11-16 未知任务恢复卡的公网行为
+
+Auth 候选 `candidate-unknown-outcome-autoresume-53d40f1-20261116-r1` 已部署到 Mac-local K3D 并经已登录公网 Chrome 核对。未知 run 保持 `unknown` 且不自动重跑，历史活动只保留无动作的 `Not confirmed` 状态；旧的人工“检查后继续/作为新任务重试”恢复提示已移除，用户可以直接撰写独立的新消息。用户截图中的一个只读调研任务显示电脑已打开 BSE `规则总览` 页面，但 run 仍没有确认最终答复，因此这是导航完成、结果未确认，不能算完整 Bot 成功。该任务的 unknown 原因尚未从公网卡片中查明，也不等同于 BSE 多 Bot 工作流通过。

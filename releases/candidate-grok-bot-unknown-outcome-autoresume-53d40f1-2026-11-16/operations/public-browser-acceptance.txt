@@ -1,0 +1,20 @@
+2026-11-16 15:18 Asia/Shanghai — signed-in Chrome semantic UI check
+
+URL: https://codex.cokeagent.com/grok-bot/
+Runtime: Mac-local K3D `coke-grok-bot/coke-grok-auth`, candidate image `coke-grok-auth:candidate-unknown-outcome-autoresume-53d40f1-20261116-r1`.
+
+Actions and observations:
+- Reloaded the signed-in public page and opened `BSE 产品调研` using native Chrome Computer Use accessibility controls.
+- The previous-task recovery card and its `I checked · continue` / `Retry as a new task` actions were absent.
+- The prior run remained in history as `Computer activity · Not confirmed`; no ambiguous run was retried or replayed.
+- The private Bot message composer was settable. The `北交所交易规则适配项目组` group composer was also settable in the same public session.
+- Did not submit a new task, alter task history, use screenshots, or substitute API/Playwright/localhost for the public UI check.
+
+Follow-up evidence from the user-provided public UI image:
+- The separate read-only request `请调研并核实北交所官网当前公开的交易规则，确认官网是否设有交易规则或公告栏目，并报告页面标题与栏目名称；只看公开信息，不登录、不提交或发送任何内容。` is marked `Outcome unknown · not retried` / `Computer · Not confirmed`.
+- Its computer preview visibly shows the browser at `bse.cn/business/overview.html` and the BSE `规则总览` page. This confirms that navigation and rendering had occurred by the capture time, but it does not prove the Bot's final analysis or result save completed.
+- The public status does not reveal which scheduler cause was recorded (executor exception, lease loss/abort, invalid result, or result persistence failure). The precise trigger remains unverified; the task was not replayed.
+
+Acceptance scope: actionable recovery-prompt removal and queue/composer availability passed; the quiet `Outcome unknown · not retried` status remains intentionally visible in history. The separate BSE product-research run is still not complete: one reply reports `COMPUTER_WORKER_FORBIDDEN`, three failed Browser User navigations, and an `about:blank` inspection, while the later simple read-only request has a screenshot showing the BSE page but no confirmed final reply. The latter narrows the uncertainty to completion/result confirmation for that run, without identifying its exact cause. Both pieces are preserved separately for the BSE multi-Bot end-to-end investigation.
+
+Read-only runtime cross-check: all three active tenant Desktop Pods inspected had the same `browser-task-policy.mjs` SHA-256 as source (`dc209f6104ffc49517ee160d3a7acaea6345fcaaae9df13d204cfab8a497c302`), and that policy returns `browserActionRequiresApproval() === false`. This rules out the current shared per-control policy as a confirmed cause; the source of the BSE task's `COMPUTER_WORKER_FORBIDDEN` remains unresolved. No tenant Agent/Desktop Pod was restarted in this check.

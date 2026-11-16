@@ -1,0 +1,7 @@
+2026-11-16 local verification
+
+- COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:run-store: passed, 3/3.
+- COKE_GROK_TEST_MYSQL_PORT=13317 npm run test:run-browser: passed. Uses simulated identity/executor; not public K3D or real-model acceptance.
+- npm run build:deployment: passed.
+- git diff --check: passed.
+- The fixed existing MySQL test container coke-grok-test-mysql-cf95778 was reused and stopped after testing; no test container was created.

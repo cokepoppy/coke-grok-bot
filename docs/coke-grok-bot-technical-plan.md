@@ -3228,3 +3228,13 @@ Developer Bot 只读核对 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`
 #### 2026-11-15 Computer Use 原生 Chrome 恢复（23:19 Asia/Shanghai）
 
 在 23:04 的 `cua.getState()` 超时后，23:19 调用 `cua.getApp("Google Chrome")` 成功返回原生无障碍树；随后用语义控件打开北交所项目群、开发 Bot 私聊和本机 GitHub 仓库标签。本机 GitHub 页面可访问只证明本机浏览器会话，不证明开发 Bot 的独立云电脑已登录或 Agent 容器具备 GitHub 出网。开发 Bot 仍显示 `Bot is in control`，最近任务卡显示未登录阻塞且没有写副作用。没有重放 Tester/Ops 的 unknown 任务，没有截图、坐标点击或 CDP。用户登录交接已发出，等待登录并归还后再继续。
+
+#### 2026-11-16 未知结果恢复卡移除与公网核对（15:18 Asia/Shanghai）
+
+复现用户反复看到的“上个任务可能执行但结果未保存”卡片后，提交 `53d40f1cc4febed0df5061626c7d3a2286299da4` 修复：保留原 run 的 `unknown` 审计结果，不自动重跑；旧的 `pending` 未知记录迁移为 `auto_resumed`；移除要求用户确认是否继续/重试的恢复卡和输入框锁定，让用户可以提交一条独立的新任务。候选只更新 K3D `coke-grok-bot/coke-grok-auth`，没有重启 Agent/Desktop，也没有改动 MySQL、PVC 或 VPS。
+
+从部署后 Ready Pod 核对了候选镜像和 `/app/auth.cjs` 哈希。随后在已登录 Chrome 的公网 `https://codex.cokeagent.com/grok-bot/` 刷新并通过无障碍控件打开 `BSE 产品调研`：可操作的“检查后继续/作为新任务重试”恢复提示消失；历史任务仍显示 `Computer activity · Not confirmed` 与简短的 `Outcome unknown · not retried` 状态，私聊输入框可用；群组页面的输入框也可用。没有重放旧 run 或发送无关新任务。详细操作记录见发布目录 `releases/candidate-grok-bot-unknown-outcome-autoresume-53d40f1-2026-11-16/operations/public-browser-acceptance.txt`。这只验收可操作恢复提示移除和队列可继续，不代表北交所调研已成功。
+
+该 Bot 既有调研 run 的失败仍是另一条待办：页面中的 Bot 回执报告 Browser User `navigate` 三次 `COMPUTER_WORKER_FORBIDDEN`、`about:blank` 以及终端无网络出口。只读检查发现三个现存租户 Desktop Pod 的 `browser-task-policy.mjs` 与源码哈希一致，且 `browserActionRequiresApproval()` 返回 `false`；因此目前没有证据将这次错误归因于 Desktop 的逐控件审批策略。ComputerBridge 会把缺失 `browserTask` scope 和 Worker HTTP 403 都折叠为 `COMPUTER_WORKER_FORBIDDEN`，错误来源仍待区分。继续 BSE 全链路前应通过可审计诊断区分这两个路径，并确认浏览器页面实际导航结果；不得重放旧的未知 run。
+
+用户后续截图对应另一条只读调研请求：其任务状态为 `Outcome unknown · not retried` / `Computer · Not confirmed`，但电脑预览清楚显示 `bse.cn/business/overview.html` 的北交所“规则总览”页面。由此可确认该次至少完成了页面导航和渲染，不能据此确认 Bot 已完成规则分析或最终结果已保存。公开 UI 没有暴露该 run 变成 unknown 的具体原因；按当前调度器实现，异常、lease 丢失/中止、无效执行结果及结果持久化失败都可能进入 unknown。本次没有重试。该运行时问题与恢复提示移除是两项不同结果，下一步需取到安全的 run diagnostic/event，定位究竟是执行中断还是完成结果写入。
