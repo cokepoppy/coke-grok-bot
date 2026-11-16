@@ -114,6 +114,34 @@ test('DSH browser control clicks execute directly without approval polling', asy
   }
 });
 
+test('DSH passes an inspected resolved href through as a click locator only', async () => {
+  const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
+  const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
+  const oldFetch = globalThis.fetch;
+  process.env.COKE_GROK_COMPUTER_BRIDGE_URL = 'https://gateway.example.test/v1';
+  process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = bridgeToken;
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const path = new URL(String(url)).pathname;
+    calls.push({ path, body: init.body ? JSON.parse(init.body) : undefined });
+    if (path.endsWith('/computer/control')) return Response.json({ owner: 'agent' });
+    if (path.endsWith('/computer/actions')) return Response.json({ status: 'completed', result: { ready: true } }, { status: 201 });
+    throw new Error('Unexpected computer route');
+  };
+  try {
+    const browser = mount().tools.get('computer_browser');
+    await browser.execute({ action: 'click', by: 'href', target: 'https://www.bse.cn/business/overview.html' }, { signal: new AbortController().signal });
+    assert.deepEqual(calls.find(call => call.path.endsWith('/computer/actions'))?.body, {
+      action: { kind: 'browser', action: 'click', by: 'href', target: 'https://www.bse.cn/business/overview.html' },
+    });
+    await assert.rejects(browser.execute({ action: 'fill', by: 'href', target: 'https://www.bse.cn/business/overview.html', value: 'x' }, { signal: new AbortController().signal }), /only supported for bounded link clicks/i);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
+    if (oldToken === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN; else process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = oldToken;
+  }
+});
+
 test('DSH direct Gmail navigation consumes an immediate completion without creating an approval', async () => {
   const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
   const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;

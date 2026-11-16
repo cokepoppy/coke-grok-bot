@@ -34,6 +34,15 @@ test('computer browser can target an explicitly identified same-user task artifa
  assert.deepEqual(action.arguments,{artifactTaskId:taskId,path:'artifacts/bse-demo/index.html'});
  assert.throws(()=>canonicalComputerAction({kind:'browser',action:'click',artifactTaskId:taskId,by:'role',role:'button',target:'Buy'},snapshot));
 });
+test('computer browser normalizes inspected resolved hrefs and only allows them for clicks',()=>{
+ const action=JSON.parse(canonicalComputerAction({kind:'browser',action:'click',by:'href',target:'https://www.bse.cn/business/overview.html?source=nav#rules'},snapshot));
+ assert.deepEqual(action.arguments,{by:'href',target:'https://www.bse.cn/business/overview.html'});
+ for(const invalid of [
+  {kind:'browser',action:'fill',by:'href',target:'https://www.bse.cn/business/overview.html',value:'x'},
+  {kind:'browser',action:'click',by:'href',target:'javascript:alert(1)'},
+  {kind:'browser',action:'click',by:'href',target:'https://user:password@www.bse.cn/business/overview.html'},
+ ]) assert.throws(()=>canonicalComputerAction(invalid,snapshot));
+});
 test('computer browser upload accepts only explicit same-user artifact paths and page file-input locators',()=>{
  const taskId='8faf80b9-752d-42f1-86fc-38bdaa0e4bc9';
  const action=JSON.parse(canonicalComputerAction({kind:'browser',action:'upload_file',artifactTaskId:taskId,path:'artifacts/bse-demo/index.html',by:'css',target:'input[type="file"]'},snapshot));

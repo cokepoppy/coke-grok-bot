@@ -42,10 +42,11 @@ test('user computer screenshots do not steal focus from the owner', async () => 
   await assert.rejects(captureOwnedDesktopScreen(async () => {}, page, { left: 0, top: 0, width: 1440, height: 900 }, 'unknown'), /owner is invalid/);
 });
 
-test('desktop click routes image coordinates to the Bot X11 region', async () => {
+test('desktop click routes image coordinates to the Bot X11 region without waiting for pointer movement', async () => {
   let call;
   await clickDesktop(async (...args) => { call = args; }, { left: 2944, top: 0, width: 1440, height: 900 }, 72, 91);
-  assert.deepEqual(call.slice(0, 2), ['xdotool', ['mousemove', '--sync', '3016', '91', 'click', '1']]);
+  assert.deepEqual(call.slice(0, 2), ['xdotool', ['mousemove', '3016', '91', 'click', '1']]);
+  assert.equal(call[2].timeout, 5_000);
   await assert.rejects(clickDesktop(async () => {}, { left: 0, top: 0, width: 1440, height: 900 }, 1440, 0), /outside the Bot screen/);
 });
 

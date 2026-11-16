@@ -162,19 +162,20 @@ try {
   await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'node', '-e', `require('node:fs').mkdirSync(require('node:path').dirname(${JSON.stringify(uploadArtifactPath)}),{recursive:true});require('node:fs').writeFileSync(${JSON.stringify(uploadArtifactPath)},'GROK_UPLOAD_FILE_OK')`]);
   const fixtureHtml = `<!doctype html><title>SCREEN_LABEL</title><h1>SCREEN_LABEL</h1>
     <div id="screen-marker" style="position:fixed;right:20px;top:20px;width:180px;height:90px;background:SCREEN_COLOR;color:#fff;font:24px sans-serif">SCREEN_LABEL</div>
+    <a id="business-rules" href="/a/rules?source=fixture#section">Business Rules</a>
     <button onclick="document.getElementById('browser').textContent='BROWSER_CLICK_OK'">Mark complete</button><p id="browser">WAITING</p>
     <label for="file-upload">Upload fixture file</label><input id="file-upload" aria-label="Upload fixture file" type="file"><p id="uploaded">WAITING</p><script>document.getElementById('file-upload').addEventListener('change',async event=>{const file=event.target.files[0];document.getElementById('uploaded').textContent=file.name+':'+await file.text()})</script>
     <form onsubmit="event.preventDefault();document.getElementById('computer').textContent='COMPUTER_INPUT_OK'"><input aria-label="Desktop input" oninput="document.getElementById('typed').textContent=this.value" style="position:fixed;left:120px;top:180px;width:360px;height:54px;background:rgb(255,230,20);font:24px sans-serif"><button type="submit" style="position:fixed;left:520px;top:180px;width:200px;height:54px;background:#155ab5;color:white">Submit</button></form>
     <p id="typed"></p>
     <p id="computer">WAITING</p><p id="shared"></p><script>const key='grok-shared',cookie='grok-shared=ok',had=localStorage.getItem(key)==='ok'&&document.cookie.split('; ').includes(cookie);if(localStorage.getItem(key)!=='ok')localStorage.setItem(key,'ok');if(!document.cookie.split('; ').includes(cookie))document.cookie=cookie+'; path=/';document.getElementById('shared').textContent=had?'SHARED_STATE_OK':'SHARED_STATE_INIT'</script>`;
   const fixturePath = '/tmp/grok-screen-fixture.cjs';
-  const fixture = `const http=require('node:http');const fs=require('node:fs');const html=${JSON.stringify(fixtureHtml)};http.createServer((req,res)=>{if(req.url==='/healthz'){res.writeHead(204);return res.end()}const a=req.url==='/a';const label=a?'BOT_A_SCREEN':'BOT_B_SCREEN';const color=a?'rgb(230, 20, 140)':'rgb(20, 140, 230)';res.writeHead(200,{'content-type':'text/html; charset=utf-8'});res.end(html.replaceAll('SCREEN_LABEL',label).replaceAll('SCREEN_COLOR',color))}).listen(18111,'127.0.0.1')`;
-  const fixtureProbe = await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'node', '-e', "fetch('http://127.0.0.1:18111/healthz',{signal:AbortSignal.timeout(500)}).then(r=>process.stdout.write(String(r.status))).catch(()=>process.exitCode=1)"]).catch(() => '');
+  const fixture = `const http=require('node:http');const fs=require('node:fs');const html=${JSON.stringify(fixtureHtml)};http.createServer((req,res)=>{if(req.url==='/healthz'){res.writeHead(204);return res.end()}const a=req.url==='/a'||req.url.startsWith('/a/');const label=a?'BOT_A_SCREEN':'BOT_B_SCREEN';const color=a?'rgb(230, 20, 140)':'rgb(20, 140, 230)';res.writeHead(200,{'content-type':'text/html; charset=utf-8'});res.end(html.replaceAll('SCREEN_LABEL',label).replaceAll('SCREEN_COLOR',color))}).listen(18112,'127.0.0.1')`;
+  const fixtureProbe = await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'node', '-e', "fetch('http://127.0.0.1:18112/healthz',{signal:AbortSignal.timeout(500)}).then(r=>process.stdout.write(String(r.status))).catch(()=>process.exitCode=1)"]).catch(() => '');
   if (fixtureProbe !== '204') {
     await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'node', '-e', `require('node:fs').writeFileSync(${JSON.stringify(fixturePath)},${JSON.stringify(fixture)})`]);
     await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'sh', '-c', `nohup node ${fixturePath} >/tmp/grok-screen-fixture.log 2>&1 </dev/null &`]);
   }
-  const fixtureReady = await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'node', '-e', "fetch('http://127.0.0.1:18111/healthz',{signal:AbortSignal.timeout(3000)}).then(r=>process.stdout.write(String(r.status))).catch(()=>process.exitCode=1)"]).catch(() => '');
+  const fixtureReady = await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'node', '-e', "fetch('http://127.0.0.1:18112/healthz',{signal:AbortSignal.timeout(3000)}).then(r=>process.stdout.write(String(r.status))).catch(()=>process.exitCode=1)"]).catch(() => '');
   assert.equal(fixtureReady, '204', 'reusable fixture should listen inside the isolated shared Pod network');
 
   stage = 'start Worker port-forward';
@@ -200,7 +201,7 @@ try {
 
   const navigate = async (screenId: string, path: string) => {
     stage = `Browser User navigate ${path}`;
-    const response = await worker('/v1/browser', screenId, { action: 'navigate', url: `http://127.0.0.1:18111/${path}` });
+    const response = await worker('/v1/browser', screenId, { action: 'navigate', url: `http://127.0.0.1:18112/${path}` });
     await expectStatus(response, 200, `Browser User navigate ${path}`);
   };
   await navigate(screenA, 'a');
@@ -209,7 +210,7 @@ try {
     stage = 'Browser User inspect';
     const response = await worker('/v1/browser', screenId, { action: 'inspect' });
     await expectStatus(response, 200, 'Browser User inspect');
-    const state = await response.json() as { title: string; text: string; url: string; visibleH1: string[] };
+    const state = await response.json() as { title: string; text: string; url: string; visibleH1: string[]; controls?: Array<{ name?: string; href?: string }> };
     lastScreenState = { screenId, ...state };
     return state;
   };
@@ -219,6 +220,13 @@ try {
   assert.deepEqual(initialA.visibleH1, ['BOT_A_SCREEN']);
   assert.deepEqual(initialB.visibleH1, ['BOT_B_SCREEN']);
   assert.ok(initialB.text.includes('SHARED_STATE_OK'), 'Bots for one user should share the browser profile');
+  const inspectedHref = initialA.controls?.find(control => control.name === 'Business Rules')?.href;
+  assert.equal(inspectedHref, 'http://127.0.0.1:18112/a/rules', 'inspection should report a normalized full href for a relative link');
+
+  stage = 'Browser User click an inspected relative link by its resolved href';
+  const hrefClick = await worker('/v1/browser', screenA, { action: 'click', by: 'href', target: inspectedHref });
+  await expectStatus(hrefClick, 200, stage);
+  assert.equal((await inspect(screenA)).url, inspectedHref, 'href click should navigate to the exact inspected link despite its relative raw attribute');
 
   stage = 'Browser User click';
   const browserClick = await worker('/v1/browser', screenA, { action: 'click', by: 'role', role: 'button', target: 'Mark complete' });
@@ -265,10 +273,14 @@ try {
     assert.ok(state.text.includes('COMPUTER_INPUT_OK'), `Computer User Enter should submit the selected Bot screen form; observed page text: ${JSON.stringify(state.text)}`);
   };
   stage = 'Computer User dual-screen control and input';
-  await Promise.all([userAction(screenA, screenPoints[0]), userAction(screenB, screenPoints[1])]);
+  // X11 native input is serialized by the shared desktop gate. Keep each
+  // multi-step takeover/click/type/return sequence intact instead of
+  // interleaving two screen transactions through Promise.all.
+  await userAction(screenA, screenPoints[0]);
+  await userAction(screenB, screenPoints[1]);
   stage = 'Bot-scoped takeover isolation';
   assert.equal((await worker('/v1/control', screenA, { owner: 'user' })).status, 200);
-  assert.equal((await worker('/v1/browser', screenA, { action: 'inspect' })).status, 400, 'Agent actions should stop during user takeover');
+  assert.equal((await worker('/v1/browser', screenA, { action: 'inspect' })).status, 409, 'Agent actions should stop during user takeover');
   assert.equal((await inspect(screenB)).title, 'BOT_B_SCREEN', 'Bot B should remain usable during Bot A takeover');
   assert.equal((await worker('/v1/control', screenA, { owner: 'agent' })).status, 200);
 

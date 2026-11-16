@@ -422,20 +422,55 @@ function safePageUrl(value) {
   } catch { return ''; }
 }
 
-function browserLocator(browserPage, input) {
+async function browserLocator(browserPage, input) {
   const target = typeof input.target === 'string' ? input.target.trim() : '';
   const by = String(input.by || '');
-  if (!target || target.length > 500) throw new Error('A visible browser control target is required');
+  if (!target || target.length > (by === 'href' ? 2048 : 500)) throw new Error('A visible browser control target is required');
+  if (by === 'href') {
+    if (input.action !== 'click') throw new Error('Resolved href is only supported for link clicks');
+    let expectedHref;
+    try {
+      const url = new URL(target);
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('invalid');
+      url.search = '';
+      url.hash = '';
+      expectedHref = url.href;
+    } catch { throw new Error('A resolved HTTP(S) link target is required'); }
+    const candidates = browserPage.locator('a[href], [role="link"][href]');
+    const indexes = await candidates.evaluateAll((elements, href) => {
+      const visible = element => {
+        const style = getComputedStyle(element), rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      };
+      const normalizedHref = element => {
+        try {
+          const url = new URL(element.href || element.getAttribute('href') || '', location.href);
+          if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return '';
+          url.search = '';
+          url.hash = '';
+          return url.href;
+        } catch { return ''; }
+      };
+      return elements.map((element, index) => ({ element, index }))
+        .filter(({ element }) => visible(element) && normalizedHref(element) === href)
+        .map(({ index }) => index);
+    }, expectedHref);
+    return {
+      locator: candidates.nth(indexes[0] ?? 0),
+      count: indexes.length,
+      expectedHref,
+    };
+  }
   if (by === 'role') {
     const role = String(input.role || '');
     const roles = new Set(['alert', 'button', 'checkbox', 'combobox', 'dialog', 'heading', 'link', 'listbox', 'menuitem', 'option', 'radio', 'searchbox', 'slider', 'spinbutton', 'tab', 'textbox']);
     if (!roles.has(role)) throw new Error('Unsupported accessible role');
-    return browserPage.getByRole(role, { name: target, exact: true });
+    return { locator: browserPage.getByRole(role, { name: target, exact: true }) };
   }
-  if (by === 'text') return browserPage.getByText(target, { exact: true });
-  if (by === 'label') return browserPage.getByLabel(target, { exact: true });
-  if (by === 'placeholder') return browserPage.getByPlaceholder(target, { exact: true });
-  if (by === 'css') return browserPage.locator(target);
+  if (by === 'text') return { locator: browserPage.getByText(target, { exact: true }) };
+  if (by === 'label') return { locator: browserPage.getByLabel(target, { exact: true }) };
+  if (by === 'placeholder') return { locator: browserPage.getByPlaceholder(target, { exact: true }) };
+  if (by === 'css') return { locator: browserPage.locator(target) };
   throw new Error('A supported browser locator type is required');
 }
 
@@ -572,8 +607,9 @@ async function agentBrowserAction(input, screenId) {
       if (artifactTaskId !== taskId && !/^(artifacts|attachments)\//.test(artifactPath)) throw new Error('Cross-task uploads are limited to artifacts and attachments');
       const resolved = await resolveArtifact(artifactTaskId, artifactPath);
       if (input.by !== 'css' && input.by !== 'label') throw new Error('Upload requires a CSS or label locator');
-      const locator = browserLocator(browserPage, input);
-      const count = await locator.count();
+      const resolvedTarget = await browserLocator(browserPage, input);
+      const locator = resolvedTarget.locator;
+      const count = resolvedTarget.count ?? await locator.count();
       if (count !== 1) throw new Error(`Browser upload target matched ${count} controls; inspect the page and choose one file input`);
       const fileInput = await locator.evaluate(element => ({ tag: element.tagName.toLowerCase(), type: element.getAttribute('type') || '' }));
       if (fileInput.tag !== 'input' || fileInput.type.toLowerCase() !== 'file') throw new Error('Browser upload target must be an input[type="file"] control');
@@ -581,12 +617,36 @@ async function agentBrowserAction(input, screenId) {
       await assertBrowserTaskAction(browserPage);
       await locator.setInputFiles(resolved.real, { timeout: 10_000 });
     } else if (['click', 'fill', 'select', 'check', 'uncheck', 'press'].includes(action)) {
-      const locator = browserLocator(browserPage, input);
-      const count = await locator.count();
+      const resolvedTarget = await browserLocator(browserPage, input);
+      const locator = resolvedTarget.locator;
+      const count = resolvedTarget.count ?? await locator.count();
       if (count !== 1) throw new Error(`Browser target matched ${count} controls; inspect the page and choose a unique label or selector`);
       if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
       await assertBrowserTaskAction(browserPage);
-      if (action === 'click') await locator.click({ timeout: 10_000 });
+      if (action === 'click') {
+        if (resolvedTarget.expectedHref) {
+          const stillUnique = await locator.evaluate((element, href) => {
+            const visible = candidate => {
+              const style = getComputedStyle(candidate), rect = candidate.getBoundingClientRect();
+              return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+            };
+            const normalizedHref = candidate => {
+              try {
+                const url = new URL(candidate.href || candidate.getAttribute('href') || '', location.href);
+                if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return '';
+                url.search = '';
+                url.hash = '';
+                return url.href;
+              } catch { return ''; }
+            };
+            const matches = Array.from(document.querySelectorAll('a[href], [role="link"][href]'))
+              .filter(candidate => visible(candidate) && normalizedHref(candidate) === href);
+            return matches.length === 1 && matches[0] === element;
+          }, resolvedTarget.expectedHref);
+          if (!stillUnique) throw new Error('Resolved href no longer identifies one visible link; inspect the current page');
+        }
+        await locator.click({ timeout: 10_000 });
+      }
       else if (action === 'fill') {
         const value = String(input.value ?? '');
         if (value.length > 10_000) throw new Error('Browser input is too long');

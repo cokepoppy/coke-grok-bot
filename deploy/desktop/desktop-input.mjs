@@ -73,7 +73,11 @@ export async function withFocusedDesktopPage(page, action, focus = operation => 
 
 export async function clickDesktop(run, bounds, x, y) {
   if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= bounds.width || y >= bounds.height) throw new Error('Click coordinates are outside the Bot screen');
-  await run('xdotool', ['mousemove', '--sync', String(bounds.left + x), String(bounds.top + y), 'click', '1'], { timeout: 5_000 });
+  // xdotool --sync waits for a pointer-moved event. When a click targets the
+  // current pointer position no event is emitted, so the otherwise valid click
+  // stalls until the command timeout. A single xdotool process preserves
+  // request ordering without --sync, including for same-coordinate clicks.
+  await run('xdotool', ['mousemove', String(bounds.left + x), String(bounds.top + y), 'click', '1'], { timeout: 5_000 });
 }
 
 export function typeDesktop(spawnProcess, text, { timeoutMs = 10_000, killGraceMs = 1_000 } = {}) {

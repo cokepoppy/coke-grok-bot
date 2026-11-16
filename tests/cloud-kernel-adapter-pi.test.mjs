@@ -84,6 +84,10 @@ test('Pi fails closed instead of polling a legacy computer approval id',async()=
   const variants=browser.parameters.anyOf||browser.parameters.oneOf;assert.ok(Array.isArray(variants));
   const clickByRole=variants.find(schema=>schema.properties?.action?.const==='click'&&schema.properties?.by?.const==='role');
   assert.deepEqual([...clickByRole.required].sort(),['action','by','role','target']);
+  const clickByHref=variants.find(schema=>schema.properties?.action?.const==='click'&&schema.properties?.by?.const==='href');
+  assert.deepEqual([...clickByHref.required].sort(),['action','by','target']);
+  assert.equal(clickByHref.properties.target.maxLength,2048);
+  assert.equal(variants.some(schema=>schema.properties?.action?.const==='fill'&&schema.properties?.by?.const==='href'),false);
   const fillByRole=variants.find(schema=>schema.properties?.action?.const==='fill'&&schema.properties?.by?.const==='role');
   assert.deepEqual([...fillByRole.required].sort(),['action','by','role','target','value']);
   await assert.rejects(()=>browser.execute('call',{action:'navigate',url:'https://example.com/'},new AbortController().signal),/Worker did not confirm that the computer action ran/);

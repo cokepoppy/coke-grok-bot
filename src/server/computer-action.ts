@@ -9,7 +9,7 @@ const browserActions=new Set(['navigate','open_artifact','upload_file','click','
 const desktopActions=new Set(['click','type','press']);
 const terminalActions=new Set(['run']);
 const keys=new Set(['Enter','Tab','Escape','Backspace','Delete','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','PageUp','PageDown','Home','End','Space','Control+A','Meta+A']);
-const locators=new Set(['role','text','label','placeholder','css']);
+const locators=new Set(['role','text','label','placeholder','css','href']);
 function text(value:unknown,max:number):string { if(typeof value!=='string'||!value||value.length>max||/[\u0000-\u001f\u007f]/.test(value))throw new Error('Invalid computer action');return value; }
 function location(raw:string):{page:string;stateSha256:string} {
  const url=new URL(raw);
@@ -38,7 +38,11 @@ export function canonicalComputerAction(input:unknown,snapshot:ComputerSnapshot)
    if(value.artifactTaskId!==undefined){const artifactTaskId=text(value.artifactTaskId,36);if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(artifactTaskId))throw new Error('Invalid artifact task');args.artifactTaskId=artifactTaskId.toLowerCase();}
    const by=text(value.by,20);if(by!=='css'&&by!=='label')throw new Error('Upload requires a CSS or label locator');args.by=by;args.target=text(value.target,500);
   }else{
-   allowed.push('by','target');const by=text(value.by,20);if(!locators.has(by))throw new Error('Invalid locator');args.by=by;args.target=text(value.target,500);
+   allowed.push('by','target');const by=text(value.by,20);if(!locators.has(by))throw new Error('Invalid locator');args.by=by;
+   if(by==='href'){
+    if(action!=='click')throw new Error('Href locator is only valid for click');
+    const href=new URL(text(value.target,2048));if(!['http:','https:'].includes(href.protocol)||href.username||href.password)throw new Error('Invalid link target');href.search='';href.hash='';args.target=href.href;
+   }else args.target=text(value.target,500);
    if(by==='role'){allowed.push('role');args.role=text(value.role,40)}
    if(action==='fill'||action==='select'){allowed.push('value');if(typeof value.value!=='string'||value.value.length>2000||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value.value))throw new Error('Invalid value');args.value=value.value}
    if(action==='press'){allowed.push('key');const key=text(value.key,32);if(!keys.has(key))throw new Error('Invalid key');args.key=key}

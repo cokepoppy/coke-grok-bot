@@ -3278,3 +3278,11 @@ Developer Bot 只读核对 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`
 #### 2026-11-16 镜像 pin 修复后的公网 Browser 动作失败
 
 在完整 SHA 镜像 pin 修复后，通过已登录公网 UI 给 BSE 产品调研 Bot 发起了一条新的只读任务，目标是在北交所官网导航并点击可见的“业务规则”。没有出现审批卡，任务已越过云电脑连接阶段并进入 Browser User；最终 UI 显示 `Outcome unknown` / `The Agent rejected the request as invalid.`。对应 Auth 安全日志同一任务窗口先后记录 `COMPUTER_BROWSER_TARGET_NOT_FOUND`、`COMPUTER_BROWSER_TARGET_AMBIGUOUS` 和 `COMPUTER_ACTION_INVALID`，模型上游请求返回 200。当前证据说明镜像 pin 修复消除了先前的电脑连接失败，且这次结果不是审批阻塞；但尚不足以证明某个错误码就是最终失败的唯一原因。该 run 保持 unknown，不重复执行；下一步先核对该 run 的安全执行详情和 Worker/Agent 的动作参数校验路径，修复后再启动一条新的只读公网验收。
+
+#### 2026-11-16 Browser 链接定位与 Computer Use 鼠标卡住
+
+复核了上述 BSE 任务并在公网主页再次观察：`inspect` 能返回“业务规则”的完整解析后 `href`，但 `click by=role` 和把完整 URL 当作 CSS 原始 `href` 属性匹配都失败。源码确认检查与点击使用不同语义：检查基于 DOM 可见元素并把相对链接转成绝对地址；CSS locator 匹配的是 HTML 原始属性，`getByRole` 则走 Chromium/Playwright 的 accessible name 规则。因此完整解析地址不能直接当 CSS 属性值；role 失败的站点级 accessible-name 细节尚未单独确认。新增 click-only `by=href`：Worker 在可见 HTTP(S) 链接中按解析后的标准化地址做唯一匹配，并在点击前再次确认仍是唯一同一元素；服务端、Pi 与 DSH 接受同一参数契约，不改变审批或登录交接策略。
+
+另一个 K3D Computer User 点击失败已确认来自 `deploy/desktop/desktop-input.mjs` 使用 `xdotool mousemove --sync`。本机 Worker 测试屏为 `11776 x 900`；失败后指针已在目标 `(304,409)`。容器里的 `xdotool mousemove --help` 明确说明 `--sync` 只在指针发生移动后退出；再次移动到原坐标不会产生 motion event，因此命令一直等到 5 秒超时，Worker 报 `Command failed: xdotool mousemove --sync ...`。去掉 `--sync`，仍在同一 xdotool 进程里依次发送 move 和 click；同坐标点击现在可直接完成。跨屏多步 Computer User 测试也改为依次执行，避免把不同屏的 takeover/click/type/return 序列交错。
+
+回归覆盖：`npm run test:runtime` 207/207；Computer action、Pi、DSH 定向测试 28/28；`tests/desktop-input.test.mjs` 11/11；`npm run build:deployment` 成功；ARM64 候选镜像在固定、项目自有的 K3D Worker 测试租户中通过链接解析/点击、同坐标 Computer User 输入、上传、双屏隔离和归还控制测试。第一次 K3D 运行还发现测试把 Worker 正确的接管状态 `409` 错写成 `400`，已改正；这不是产品运行错误。完整 SHA 候选尚待提交后生成；BSE Research namespace 尚未更新到该候选，因此**公网北交所页面点击和多 Bot 全链路仍未验收**。不可将 K3D 结果说成公网通过；下一步生成精确提交镜像，保存部署前 pin/PVC 状态，只更新对应 Auth/Agent/Desktop 所需范围，再用公网 Browser Use 新建只读任务点击官方“业务规则”链接并继续调研链路。
