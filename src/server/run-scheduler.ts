@@ -3,7 +3,6 @@ import type { AgentExecutionAudit } from './execution-audit.ts';
 import { RunDiagnosticError, safeRunDiagnosticCode, type RunDiagnosticCode } from './run-diagnostics.ts';
 
 export interface SchedulerStore {
-  markExpiredUnknown(): Promise<number>;
   queuedScreens(limit: number, queueCreatedAfter?: Date): Promise<RunScreenScope[]>;
   claimNext(screen: RunScreenScope, leaseSeconds: number, queueCreatedAfter?: Date): Promise<{run:AgentRun;leaseId:string}|null>;
   renew(runId:string, leaseId:string, leaseSeconds:number): Promise<boolean>;
@@ -12,18 +11,33 @@ export interface SchedulerStore {
 }
 export type ExecutionResult = {status:'completed'|'failed';result:string;artifacts?:unknown;executionAudit?:AgentExecutionAudit|null};
 export interface RunExecutor { execute(screen:RunScreenScope,run:AgentRun,signal:AbortSignal,leaseId:string):Promise<ExecutionResult> }
+export type SchedulerClaimEvent = {
+  event: 'grok_scheduler_claim_failed' | 'grok_scheduler_claim_still_running';
+  elapsedMs: number;
+  at: string;
+};
+type PendingClaim = { startedAt: number; slowTimer?: ReturnType<typeof setTimeout> };
+type ActiveRun = { abort: AbortController; done: Promise<void> };
+
+const defaultClaimLog = (event: SchedulerClaimEvent) => process.stderr.write(`${JSON.stringify(event)}\n`);
 
 /**
  * One process may run multiple computers concurrently; each computer is locked
  * by the store. Exceptions or lost leases mean unknown, never automatic retry.
  */
 export class RunScheduler {
-  private readonly active = new Map<string,{ abort:AbortController; done:Promise<void> }>();
+  private readonly active = new Map<string,ActiveRun>();
+  private readonly claiming = new Map<string,PendingClaim>();
   private stopped = false;
   private tickInFlight: Promise<void> | null = null;
-  constructor(private readonly store:SchedulerStore, private readonly executor:RunExecutor, private readonly options: {concurrency:number;leaseSeconds:number;queueCreatedAfter?:Date}) {
+  private readonly claimSlowAfterMs: number;
+  private readonly logClaimEvent: (event: SchedulerClaimEvent) => void;
+  constructor(private readonly store:SchedulerStore, private readonly executor:RunExecutor, private readonly options: {concurrency:number;leaseSeconds:number;queueCreatedAfter?:Date;claimSlowAfterMs?:number;onClaimEvent?:(event:SchedulerClaimEvent)=>void}) {
     if (!Number.isSafeInteger(options.concurrency) || options.concurrency < 1 || options.concurrency > 32 || !Number.isSafeInteger(options.leaseSeconds) || options.leaseSeconds < 3 || options.leaseSeconds > 900) throw new Error('Invalid scheduler configuration');
     if (options.queueCreatedAfter && (!Number.isFinite(options.queueCreatedAfter.getTime()))) throw new Error('Invalid queue creation cutoff');
+    this.claimSlowAfterMs=options.claimSlowAfterMs??10_000;
+    if(!Number.isSafeInteger(this.claimSlowAfterMs)||this.claimSlowAfterMs<1)throw new Error('Invalid scheduler claim warning interval');
+    this.logClaimEvent=options.onClaimEvent??defaultClaimLog;
   }
   async tick():Promise<void> {
     if (this.stopped) return;
@@ -32,21 +46,44 @@ export class RunScheduler {
     try { await tick; } finally { if (this.tickInFlight === tick) this.tickInFlight = null; }
   }
   private async tickOnce():Promise<void> {
-    await this.store.markExpiredUnknown();
-    const remaining = this.options.concurrency - this.active.size;
+    const remaining = this.options.concurrency - this.active.size - this.claiming.size;
     if (remaining <= 0 || this.stopped) return;
     const screens = await this.store.queuedScreens(Math.min(100, this.options.concurrency * 4),this.options.queueCreatedAfter);
     for (const screen of screens) {
-      if (this.stopped || this.active.size >= this.options.concurrency) break;
+      if (this.stopped || this.active.size + this.claiming.size >= this.options.concurrency) break;
       const key = `${screen.tenantId}:${screen.userId}:${screen.botId}`;
-      if (this.active.has(key)) continue;
-      const claim = await this.store.claimNext(screen,this.options.leaseSeconds,this.options.queueCreatedAfter);
-      if (!claim) continue;
-      const abort = new AbortController();
-      // Reserve before the executor is invoked, even when its Promise resolves synchronously.
-      const done = Promise.resolve().then(() => this.execute(screen,claim,abort)).finally(() => { this.active.delete(key); });
-      this.active.set(key,{abort,done});
+      if (this.active.has(key)||this.claiming.has(key)) continue;
+      this.claimScreen(screen,key);
     }
+  }
+  /** A slow database claim reserves its own screen and one global slot, never the scan loop. */
+  private claimScreen(screen:RunScreenScope,key:string):void {
+    const pending:PendingClaim={startedAt:Date.now()};
+    this.claiming.set(key,pending);
+    pending.slowTimer=setTimeout(()=>{
+      if(this.claiming.get(key)!==pending)return;
+      this.reportClaimEvent({event:'grok_scheduler_claim_still_running',elapsedMs:Date.now()-pending.startedAt,at:new Date().toISOString()});
+    },this.claimSlowAfterMs);
+    pending.slowTimer.unref();
+    void Promise.resolve().then(()=>this.store.claimNext(screen,this.options.leaseSeconds,this.options.queueCreatedAfter)).then(async claim=>{
+      if(this.claiming.get(key)===pending)this.claiming.delete(key);
+      if(pending.slowTimer)clearTimeout(pending.slowTimer);
+      if(!claim)return;
+      if(this.stopped){await this.store.markUnknown(claim.run.id,claim.leaseId,'execution_aborted').catch(()=>undefined);return;}
+      this.startExecution(screen,key,claim);
+    }).catch(()=>{
+      if(this.claiming.get(key)===pending)this.claiming.delete(key);
+      if(pending.slowTimer)clearTimeout(pending.slowTimer);
+      this.reportClaimEvent({event:'grok_scheduler_claim_failed',elapsedMs:Date.now()-pending.startedAt,at:new Date().toISOString()});
+    });
+  }
+  private reportClaimEvent(event:SchedulerClaimEvent):void { try{this.logClaimEvent(event);}catch{/* Diagnostics must not stop dispatch. */} }
+  private startExecution(screen:RunScreenScope,key:string,claim:{run:AgentRun;leaseId:string}):void {
+    const abort=new AbortController();
+    let work:ActiveRun;
+    // Reserve the screen before the executor is invoked, even when its Promise resolves synchronously.
+    work={abort,done:Promise.resolve().then(()=>this.execute(screen,claim,abort)).finally(()=>{if(this.active.get(key)===work)this.active.delete(key);})};
+    this.active.set(key,work);
   }
   private async execute(screen:RunScreenScope, claim:{run:AgentRun;leaseId:string}, abort:AbortController):Promise<void> {
     const leaseMs=this.options.leaseSeconds*1000;

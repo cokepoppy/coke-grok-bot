@@ -1,0 +1,48 @@
+{
+  "name": "candidate-grok-poll-loop-isolation-2026-11-15",
+  "status": "candidate-deployed-awaiting-public-computer-use-acceptance",
+  "source": {
+    "branch": "codex/grok-poll-loop-isolation",
+    "commit": "40c1f156f300653385410f48ccdb62dcd93c1b60",
+    "codeCommit": "a5767211b578011ed29837ad4add05bcb3f581e0",
+    "baseCommit": "6645a5043f6b1559126ee06329f0cf1da46bf783",
+    "snapshot": "source/worktree.patch"
+  },
+  "runtime": {
+    "clusterContext": "k3d-tp1121-sandbox-dev",
+    "cluster": "tp1121-sandbox-dev",
+    "namespace": "coke-grok-bot",
+    "deployment": "coke-grok-auth",
+    "publicUrl": "https://codex.cokeagent.com/grok-bot/",
+    "scope": "Auth Deployment only; Mac-local K3D; VPS is tunnel only"
+  },
+  "images": {
+    "candidate": "coke-grok-auth:candidate-poll-loop-isolation-20261115",
+    "candidateDigest": "sha256:93c66b975d779cdfbf26fbe2a6cb55272ec74b412df8d4e735547b368ab2f566",
+    "rollback": "coke-grok-auth:candidate-library-files-20261115-r2",
+    "platform": "linux/arm64",
+    "archive": "artifacts/images/coke-grok-auth-linux-arm64.tar.gz"
+  },
+  "verification": {
+    "pollerTests": "passed 2/2",
+    "runtimeTests": "passed 206/206",
+    "mysqlIntegration": "passed 20/20 using the existing stopped test service on port 13317",
+    "typecheck": "passed",
+    "deploymentBuild": "passed",
+    "publicComputerUse": "pending: Computer Use observed Mac locked after deploy; await unlock for signed-in public task E2E",
+    "mysqlOrPvcTouched": false
+  },
+  "deployment": {
+    "deployed": true,
+    "authRestarted": true,
+    "brokerRestarted": false,
+    "agentDesktopRestarted": false,
+    "mysqlTouched": false,
+    "pvcChanged": false,
+    "previousAuthImage": "coke-grok-auth:candidate-library-files-20261115-r2",
+    "currentAuthImage": "coke-grok-auth:candidate-poll-loop-isolation-20261115",
+    "authPodReady": "1/1",
+    "authPodRestarts": 0,
+    "deployedAt": "2026-11-15T06:33:32Z"
+  }
+}

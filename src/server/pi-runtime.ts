@@ -22,6 +22,7 @@ import { RoutineStore } from './routine-store.ts';
 import { VoiceGateway } from './voice-gateway.ts';
 import { BotSkillStore } from './bot-skill-store.ts';
 import { BotSkillBridge } from './bot-skill-bridge.ts';
+import { startRuntimePollers } from './runtime-pollers.ts';
 
 function required(env:NodeJS.ProcessEnv,key:string):string { const value=env[key]?.trim();if(!value)throw new Error(`Missing ${key}`);return value; }
 async function privateFile(path:string):Promise<Buffer>{
@@ -81,8 +82,7 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  const scheduler=new RunScheduler(runs,executor,{concurrency:2,leaseSeconds:30,queueCreatedAfter});
  const server=gateway.createServer({key:tlsKey,cert});
  try{server.listen(3002,'0.0.0.0');await once(server,'listening')}catch(error){await executor.close();gateway.close();server.close();throw error}
- let routineTickInFlight=false;
- const timer=setInterval(()=>{if(routineTickInFlight)return;routineTickInFlight=true;void routines.dispatchDue().then(()=>scheduler.tick()).then(()=>handoffs.deliverReplies()).catch(()=>console.error('Pi scheduler polling failed.')).finally(()=>{routineTickInFlight=false})},2000);timer.unref();
+ const pollers=startRuntimePollers({scheduler,routines,handoffs,runs});
  const screenshotCleanup=setInterval(()=>{void approvals.purgeExpiredScreenshots().catch(()=>console.error('Approval screenshot cleanup failed.'))},60000);screenshotCleanup.unref();
- return {runs,approvals,computer,files,workspaceFiles,routines,skills,voice,engine,async close(){clearInterval(timer);clearInterval(screenshotCleanup);await scheduler.stop();await executor.close();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
+ return {runs,approvals,computer,files,workspaceFiles,routines,skills,voice,engine,async close(){pollers.stop();clearInterval(screenshotCleanup);await scheduler.stop();await executor.close();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}};
 }
