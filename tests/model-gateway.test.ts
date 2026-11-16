@@ -20,6 +20,21 @@ test('DeepSeek official root endpoint routes OpenAI Chat Completions without add
  }finally{gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}
 });
 
+test('a bounded model capability supports more than 100 calls and reports exhaustion distinctly',async()=>{
+ let upstreamCalls=0;
+ const gateway=new ModelGateway(fakeKey,'https://example.test/compatible-mode/v1',model,async()=>{upstreamCalls++;return new Response('{}')});
+ const server=gateway.createServer();server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();if(!address||typeof address==='string')throw new Error('No test port');
+ const url=`http://127.0.0.1:${address.port}/v1/chat/completions`,token=gateway.issue({ttlMs:10_000,calls:ModelGateway.maxModelCallsPerRun});
+ const call=(capability:string)=>fetch(url,{method:'POST',headers:{authorization:`Bearer ${capability}`,'content-type':'application/json'},body:JSON.stringify({model,messages:[{role:'user',content:'hello'}]})});
+ try{
+  for(let i=0;i<101;i++){const response=await call(token);assert.equal(response.status,200,`model call ${i+1} should remain available`);await response.arrayBuffer()}
+  assert.equal(upstreamCalls,101);assert.equal(gateway.diagnosticCode(token),null);
+  const bounded=gateway.issue({ttlMs:10_000,calls:1});const first=await call(bounded);assert.equal(first.status,200);await first.arrayBuffer();
+  const exhausted=await call(bounded);assert.equal(exhausted.status,401);await exhausted.arrayBuffer();
+  assert.equal(gateway.diagnosticCode(bounded),'model_gateway_call_limit');assert.equal(upstreamCalls,102);
+ }finally{gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}
+});
+
 test('run capability limits model routing and redacts secrets across streaming chunks', async () => {
   let calls = 0;
   const upstream: typeof fetch = async (input, init) => {

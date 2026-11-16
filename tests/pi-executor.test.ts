@@ -304,6 +304,24 @@ test('Pi task transport uses the configured long-response dispatcher with Node f
  }finally{await executor.close();gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}
 });
 
+test('Pi reports model-call budget exhaustion instead of a generic Agent runtime failure',async()=>{
+ let upstreamCalls=0;
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>{upstreamCalls++;return new Response('{}')});
+ const gatewayServer=gateway.createServer();gatewayServer.listen(0,'127.0.0.1');await once(gatewayServer,'listening');const address=gatewayServer.address();if(!address||typeof address==='string')throw new Error('No gateway');
+ const gatewayUrl=`http://127.0.0.1:${address.port}/v1/chat/completions`;
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async(_url,init)=>{
+  const request=JSON.parse(String(init?.body)) as {modelConfig:{apiKey:string}};
+  const call=()=>fetch(gatewayUrl,{method:'POST',headers:{authorization:`Bearer ${request.modelConfig.apiKey}`,'content-type':'application/json'},body:JSON.stringify({model:'model',messages:[{role:'user',content:'hello'}]})});
+  for(let i=0;i<ModelGateway.maxModelCallsPerRun;i++){const response=await call();assert.equal(response.status,200);await response.arrayBuffer()}
+  const exhausted=await call();assert.equal(exhausted.status,401);await exhausted.arrayBuffer();
+  return Response.json({error:'Agent adapter exited after the Model Gateway denied the exhausted capability.'},{status:400});
+ });
+ try{
+  await assert.rejects(executor.execute(screen,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='model_gateway_call_limit');
+  assert.equal(upstreamCalls,ModelGateway.maxModelCallsPerRun);
+ }finally{await executor.close();gateway.close();await new Promise<void>(resolve=>gatewayServer.close(()=>resolve()))}
+});
+
 test('Pi maps a gateway rate limit to a fixed run diagnostic without reading Agent error text',async()=>{
  let upstreamCalls=0,agentCalls=0;
  const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>{

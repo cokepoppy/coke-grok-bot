@@ -256,6 +256,7 @@ const runDiagnosticSummaries:Record<string,string>={
   executor_error:'The Agent stopped before it could confirm a result.',
   desktop_connect_failed:'The Bot could not connect to its computer.',
   model_upstream_429:'The model service was rate-limited before a result was confirmed.',
+  model_gateway_call_limit:'The task used its model-call budget before it could confirm a result.',
   bot_memory_preload_failed:'The Bot could not load its saved memory.',
   bot_memory_scope_invalid:'The Bot could not access its saved memory for this run.',
   bot_skill_preload_failed:'The Bot could not load one of its enabled skills.',

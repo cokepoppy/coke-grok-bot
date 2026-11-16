@@ -4,6 +4,7 @@ const runDiagnosticCodes = [
   'executor_error',
   'desktop_connect_failed',
   'model_upstream_429',
+  'model_gateway_call_limit',
   'bot_memory_preload_failed',
   'bot_memory_scope_invalid',
   'bot_skill_preload_failed',

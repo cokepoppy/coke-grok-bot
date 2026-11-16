@@ -1,6 +1,6 @@
 import type { AgentRun, RunOwner, RunScreenScope } from './run-store.ts';
 import type { RunExecutor, ExecutionResult } from './run-scheduler.ts';
-import type { ModelGateway } from './model-gateway.ts';
+import { ModelGateway } from './model-gateway.ts';
 import type { BotMemoryStore } from './bot-memory-store.ts';
 import { containsSensitiveData } from './bot-memory-store.ts';
 import type { BotMemoryRunScope } from './bot-memory-bridge.ts';
@@ -143,7 +143,7 @@ export class DesktopAgentExecutor implements RunExecutor {
       if(!handoffBots)throw new RunDiagnosticError('bot_handoff_scope_invalid');
     }
     let capability:string;
-    try { capability=this.gateway.issue({ttlMs:14*60_000,calls:100,scope:{...memoryScope,skillMutations}}); }
+    try { capability=this.gateway.issue({ttlMs:14*60_000,calls:ModelGateway.maxModelCallsPerRun,scope:{...memoryScope,skillMutations}}); }
     catch { throw new RunDiagnosticError('capability_issue_failed'); }
     try {
       const memoryContext=this.memories?formatBotMemory(storedMemories||[]):'';
