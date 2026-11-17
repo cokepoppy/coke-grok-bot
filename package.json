@@ -36,6 +36,7 @@
     "test:runtime-mysql": "node --import tsx --test tests/run-store.test.ts tests/run-store-order.test.ts tests/run-scheduler.test.ts tests/run-http.test.ts tests/run-pipeline.test.ts tests/approval-store.test.ts tests/approval-http.test.ts tests/approval-gateway.test.ts tests/computer-broker.test.ts tests/computer-gateway.test.ts tests/bot-memory.test.ts tests/bot-skill-store.test.ts tests/bot-handoff.test.ts tests/group-chat-store.test.ts tests/routine-store.test.ts tests/test-data-cleanup.test.ts",
     "test:data-cleanup": "node --import tsx --test tests/test-data-cleanup.test.ts",
     "cleanup:test-data": "node --import tsx scripts/cleanup-test-data.ts",
+    "test:chat-timestamps": "node --import tsx --test tests/chat-timestamps.test.ts",
     "test:run-browser": "node --import tsx tests/run-browser.e2e.ts",
     "test:computer-vnc-input-protocol": "node --import tsx tests/computer-vnc-input.protocol.ts",
     "test:provisioner-k3d": "node --import tsx tests/desktop-provisioner-k3d.e2e.ts",

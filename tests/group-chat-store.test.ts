@@ -110,8 +110,9 @@ test('group chats persist six Bot memberships, authorized input files, isolated 
   const sendPayload={requestId:turnRequestId,text,files:[uploaded.id]};
   const send=await request(`/api/groups/${group.id}/messages`,alice.cookie,{method:'POST',headers:{origin,'content-type':'application/json'},body:JSON.stringify(sendPayload)});
   assert.equal(send.status,202);
-  const view=(await send.json() as {group:{id:string};messages:{role:string;botId:string|null;runId:string|null;status:string|null;files?:{id:string;kind:string}[]}[]});
+  const view=(await send.json() as {group:{id:string};messages:{role:string;botId:string|null;runId:string|null;status:string|null;createdAt:string;files?:{id:string;kind:string}[]}[]});
   assert.equal(view.messages.length,7);assert.equal(view.messages[0].role,'user');
+  assert.ok(Number.isFinite(Date.parse(view.messages[0].createdAt)),'group user messages include their creation timestamp');
   assert.deepEqual(view.messages[0].files?.map(file=>({id:file.id,kind:file.kind})),[{id:uploaded.id,kind:'input'}]);
   const botMessages=view.messages.filter(message=>message.role==='bot');assert.equal(botMessages.length,6);
   assert.equal(new Set(botMessages.map(message=>message.botId)).size,6);

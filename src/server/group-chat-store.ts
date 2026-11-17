@@ -16,7 +16,7 @@ export interface StoredGroupReplacementRun {
  id:string;status:'queued'|'running'|'completed'|'failed'|'unknown';result:string|null;computerUsed:boolean;updatedAt:string|null;diagnosticCode:RunDiagnosticCode|null;executionAudit:AgentExecutionAudit|null;files:RunFile[];
 }
 export interface StoredGroupMessage {
- id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;targetBotIds:string[];
+ id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;createdAt:string;targetBotIds:string[];
  runId:string|null;status:'queued'|'running'|'completed'|'failed'|'unknown'|null;
  recoveryState:RecoveryState|null;replacementRunId:string|null;computerUsed:boolean;updatedAt:string|null;diagnosticCode:RunDiagnosticCode|null;executionAudit:AgentExecutionAudit|null;
  files:RunFile[];replacementRun:StoredGroupReplacementRun|null;
@@ -180,7 +180,7 @@ export class GroupChatStore {
   if(!uuid.test(groupId))return null;
   const group=(await this.list(session)).find(item=>item.id===groupId);if(!group)return null;
   const [rows]=await this.pool.execute<RowDataPacket[]>(`SELECT m.id,m.turn_id AS turnId,m.sender_type AS senderType,m.sender_bot_id AS botId,b.name AS botName,
-    m.message_text AS messageText,m.run_id AS runId,r.status,r.result,r.recovery_state AS recoveryState,r.replacement_run_id AS replacementRunId,
+    m.message_text AS messageText,DATE_FORMAT(m.created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt,m.run_id AS runId,r.status,r.result,r.recovery_state AS recoveryState,r.replacement_run_id AS replacementRunId,
     r.computer_used AS computerUsed,r.execution_audit AS executionAudit,DATE_FORMAT(r.updated_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS updatedAt,
     (SELECT SUBSTRING(e.detail,12) FROM agent_run_events e WHERE e.run_id=r.id AND e.status='unknown' AND e.detail LIKE 'diagnostic:%' ORDER BY e.sequence DESC LIMIT 1) AS diagnosticCode,
     rr.status AS replacementStatus,rr.result AS replacementResult,rr.computer_used AS replacementComputerUsed,rr.execution_audit AS replacementExecutionAudit,
@@ -217,7 +217,7 @@ export class GroupChatStore {
    for(const row of files){const key=String(row.messageId),items=filesByMessage.get(key)||[];items.push({id:String(row.id),name:String(row.name),mimeType:String(row.mimeType),size:Number(row.size),sha256:String(row.sha256),kind:'input'});filesByMessage.set(key,items)}
   }
   const messages=rows.map(row=>({
-   id:String(row.id),turnId:String(row.turnId),role:String(row.senderType) as 'user'|'bot',botId:row.botId==null?null:String(row.botId),botName:row.botName==null?null:String(row.botName),
+   id:String(row.id),turnId:String(row.turnId),role:String(row.senderType) as 'user'|'bot',botId:row.botId==null?null:String(row.botId),botName:row.botName==null?null:String(row.botName),createdAt:String(row.createdAt),
    text:row.runId==null?(row.messageText==null?null:String(row.messageText)):row.result==null?null:String(row.result),targetBotIds:recipientsByTurn.get(String(row.turnId))||[],runId:row.runId==null?null:String(row.runId),
    status:row.status==null?null:String(row.status) as StoredGroupMessage['status'],recoveryState:row.recoveryState==null?null:String(row.recoveryState) as StoredGroupMessage['recoveryState'],
    replacementRunId:row.replacementRunId==null?null:String(row.replacementRunId),computerUsed:Boolean(row.computerUsed),updatedAt:row.updatedAt==null?null:String(row.updatedAt),diagnosticCode:isRunDiagnosticCode(row.diagnosticCode)?row.diagnosticCode:null,executionAudit:validateAgentExecutionAudit(row.executionAudit),

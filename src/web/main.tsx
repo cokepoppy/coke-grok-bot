@@ -4,6 +4,7 @@ import { avatarPaths } from './avatar-paths';
 import { computerScreenRetryDelay } from './computer-screen-polling';
 import { WebsiteDemoApp } from './website-demo';
 import { VoiceCallCard, VoiceChatOverlay, type VoiceCallData } from './voice-chat';
+import { formatChatTimestamp, shouldShowChatTimestamp } from './chat-timestamps';
 import {findGroupMentionQuery,groupMentionRecipientBotIds,groupRecipientBotIds,rebaseGroupMentionTokens,type GroupMentionQuery,type GroupMentionToken} from './group-mentions';
 import './shell.css';
 
@@ -19,7 +20,7 @@ type GroupMember = Pick<Bot,'id'|'name'|'label'|'color'|'shape'> & { position: n
 type BotMentionCandidate = {kind:'bot';id:string;bot:GroupMember|Bot}|{kind:'everyone';id:'everyone'};
 type GroupChat = { id: string; name: string; members: GroupMember[]; preview: string; lastActivityAt: string | null };
 type GroupReplacementRun = { id:string; status:AgentRun['status']; result:string|null; computerUsed:boolean; executionAudit?:ExecutionAudit|null; updatedAt:string|null; diagnosticCode?:string|null; files:RunFile[] };
-type GroupMessage = { id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;runId:string|null;status:AgentRun['status']|null;recoveryState:AgentRun['recoveryState']|null;replacementRunId:string|null;replacementRun:GroupReplacementRun|null;computerUsed:boolean;executionAudit?:ExecutionAudit|null;updatedAt:string|null;diagnosticCode?:string|null;targetBotIds?:string[];files?:RunFile[] };
+type GroupMessage = { id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;createdAt:string;runId:string|null;status:AgentRun['status']|null;recoveryState:AgentRun['recoveryState']|null;replacementRunId:string|null;replacementRun:GroupReplacementRun|null;computerUsed:boolean;executionAudit?:ExecutionAudit|null;updatedAt:string|null;diagnosticCode?:string|null;targetBotIds?:string[];files?:RunFile[] };
 type GroupChatView = { group: GroupChat; messages: GroupMessage[] };
 type Routine = { id:string; name:string; instruction:string; schedule:{kind:'weekly';weekday:number;hour:number;minute:number}|{kind:'interval';minutes:number}|{kind:'webhook'}; timezone:string; paused:boolean; when:string; nextRunAt:string|null; runs:{id:string;status:string;scheduledFor:string;result:string|null}[] };
 type RoutineWebhook = {endpointPath:string;key:string;authorizationHeader:string};
@@ -1265,6 +1266,31 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       {showRetryNote&&<p className="run-recovery-note">A separate queued task was created; the original outcome remains in history.</p>}
     </div></div>;
   }
+  function renderGroupChatMessage(message:GroupMessage,index:number,messages:GroupMessage[],group:GroupChat):React.ReactNode {
+    const at=timelineTime(message.createdAt),previousAt=index>0?timelineTime(messages[index-1].createdAt):null;
+    return <React.Fragment key={message.id}>
+      {shouldShowChatTimestamp(at,previousAt)&&<div className="date-line"><time dateTime={new Date(at).toISOString()}>{formatChatTimestamp(at)}</time></div>}
+      {message.role==='user'
+        ? <div className="message-line user group-user-message"><div className="message-bubble">{renderGroupUserText(message,group.members)}<RunFileCards files={(message.files||[]).filter(file=>file.kind==='input')} onPreview={setPreviewFile}/></div></div>
+        : <div className="message-line bot group-bot-message">
+          <Avatar bot={group.members.find(member=>member.id===message.botId)||group.members[0]} size={27}/>
+          <div className="message-bubble">
+            <header className="group-message-heading"><strong>{message.botName||'Bot'}</strong><span className={`group-run-status ${message.status||'queued'}`} title={groupRunStatusLabel(message)}>{groupRunStatusLabel(message)}</span></header>
+            <p>{message.text||groupRunFallback(message)}</p>
+            <RunFileCards files={(message.files||[]).filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
+            {message.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.runId||message.id,prompt:'',status:message.status||'queued',result:message.text,recoveryState:message.recoveryState||'none',replacementRunId:message.replacementRunId,files:message.files||[],computerUsed:true,diagnosticCode:message.diagnosticCode,executionAudit:message.executionAudit}} botId={message.botId} showScreen={message.status==='running'||message.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
+            {message.status==='unknown'&&<><p className="run-recovery-note">The result could not be confirmed. The task was not replayed; this Bot’s queue can continue.</p>{!message.computerUsed&&runDiagnosticSummary(message.diagnosticCode)&&<p className="run-recovery-diagnostic">{runDiagnosticSummary(message.diagnosticCode)}</p>}</>}
+            {message.status==='unknown'&&message.recoveryState==='retried'&&message.replacementRunId&&<p className="run-recovery-note">The original task outcome remains unknown. The separate retry is shown below.</p>}
+            {message.replacementRun&&<section className="group-replacement-run" aria-label={`Separate retry for ${message.botName||'Bot'}`}>
+              <header><strong>Separate retry</strong><span className={`group-run-status ${message.replacementRun.status}`}>{replacementRunLabel(message.replacementRun.status)}</span></header>
+              <p>{message.replacementRun.result||replacementRunFallback(message.replacementRun.status)}</p>
+              <RunFileCards files={message.replacementRun.files.filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
+              {message.replacementRun.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.replacementRun.id,prompt:'',status:message.replacementRun.status,result:message.replacementRun.result,recoveryState:'none',replacementRunId:null,files:message.replacementRun.files,computerUsed:true,diagnosticCode:message.replacementRun.diagnosticCode,executionAudit:message.replacementRun.executionAudit}} botId={message.botId} showScreen={message.replacementRun.status==='running'||message.replacementRun.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
+            </section>}
+          </div>
+        </div>}
+    </React.Fragment>;
+  }
   async function saveVoiceCallFeedback(botId:string,callId:string,feedback:'good'|'bad'){
     if(!botId)throw new Error('Bot is unavailable');
     const response=await fetch(`${import.meta.env.BASE_URL}api/bots/${encodeURIComponent(botId)}/voice/calls/${encodeURIComponent(callId)}/feedback`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({feedback})});
@@ -1779,33 +1805,20 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
               {activeGroup ? <>
                 {groupChat.id===activeGroup.id&&groupChat.status==='loading'&&<div role="status">Loading group chat…</div>}
                 {groupChat.id===activeGroup.id&&groupChat.status==='error'&&<div role="alert">Could not confirm this group chat. Checking again; refresh before submitting another task.</div>}
-                {(groupChat.view?.messages.length||0)>0&&<div className="date-line">{formatBotTime(activeGroup.lastActivityAt)||'Today'}</div>}
-                {groupChat.id===activeGroup.id&&groupChat.view?.messages.map(message=>message.role==='user'
-                  ? <div key={message.id} className="message-line user group-user-message"><div className="message-bubble">{renderGroupUserText(message,activeGroup.members)}<RunFileCards files={(message.files||[]).filter(file=>file.kind==='input')} onPreview={setPreviewFile}/></div></div>
-                  : <div key={message.id} className="message-line bot group-bot-message">
-                    <Avatar bot={activeGroup.members.find(member=>member.id===message.botId)||activeGroup.members[0]} size={27}/>
-                    <div className="message-bubble">
-                      <header className="group-message-heading"><strong>{message.botName||'Bot'}</strong><span className={`group-run-status ${message.status||'queued'}`} title={groupRunStatusLabel(message)}>{groupRunStatusLabel(message)}</span></header>
-                      <p>{message.text||groupRunFallback(message)}</p>
-                      <RunFileCards files={(message.files||[]).filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
-                      {message.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.runId||message.id,prompt:'',status:message.status||'queued',result:message.text,recoveryState:message.recoveryState||'none',replacementRunId:message.replacementRunId,files:message.files||[],computerUsed:true,diagnosticCode:message.diagnosticCode,executionAudit:message.executionAudit}} botId={message.botId} showScreen={message.status==='running'||message.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
-                      {message.status==='unknown'&&<><p className="run-recovery-note">The result could not be confirmed. The task was not replayed; this Bot’s queue can continue.</p>{!message.computerUsed&&runDiagnosticSummary(message.diagnosticCode)&&<p className="run-recovery-diagnostic">{runDiagnosticSummary(message.diagnosticCode)}</p>}</>}
-                      {message.status==='unknown'&&message.recoveryState==='retried'&&message.replacementRunId&&<p className="run-recovery-note">The original task outcome remains unknown. The separate retry is shown below.</p>}
-                      {message.replacementRun&&<section className="group-replacement-run" aria-label={`Separate retry for ${message.botName||'Bot'}`}>
-                        <header><strong>Separate retry</strong><span className={`group-run-status ${message.replacementRun.status}`}>{replacementRunLabel(message.replacementRun.status)}</span></header>
-                        <p>{message.replacementRun.result||replacementRunFallback(message.replacementRun.status)}</p>
-                        <RunFileCards files={message.replacementRun.files.filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
-                        {message.replacementRun.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.replacementRun.id,prompt:'',status:message.replacementRun.status,result:message.replacementRun.result,recoveryState:'none',replacementRunId:null,files:message.replacementRun.files,computerUsed:true,diagnosticCode:message.replacementRun.diagnosticCode,executionAudit:message.replacementRun.executionAudit}} botId={message.botId} showScreen={message.replacementRun.status==='running'||message.replacementRun.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
-                      </section>}
-                    </div>
-                  </div>)}
+                {groupChat.id===activeGroup.id&&groupChat.view?.messages.map((message,index,messages)=>renderGroupChatMessage(message,index,messages,activeGroup))}
                 {groupChat.id===activeGroup.id&&groupChat.view?.messages.length===0&&<div className="empty-chat group-empty"><GroupAvatar members={activeGroup.members} size={56}/><p>Start a conversation with {activeGroup.name}.</p><small>{activeGroup.members.length} Bots are ready to work on their own computers.</small></div>}
                 {groupError&&<div className="local-feedback" role="status">{groupError}</div>}
               </> : <>
               {remote && history.id === active.id && history.status === 'loading' && <div role="status">Loading messages…</div>}
               {remote && history.id === active.id && history.status === 'error' && <div role="alert">Could not confirm message history. Refresh to check it.</div>}
-              {botTimeline.length > 0 && !panel && <div className="date-line">{formatBotTime(active.lastActivityAt) || 'Today'}</div>}
-              {botTimeline.map(renderBotTimelineEntry)}
+              {botTimeline.map((entry,index,entries)=>{
+                const previousAt=index>0?entries[index-1].at:null;
+                const showTimestamp=shouldShowChatTimestamp(entry.at,previousAt);
+                return <React.Fragment key={entry.key}>
+                  {showTimestamp&&<div className="date-line"><time dateTime={new Date(entry.at).toISOString()}>{formatChatTimestamp(entry.at)}</time></div>}
+                  {renderBotTimelineEntry(entry)}
+                </React.Fragment>;
+              })}
               {remote && agentFeature === 'enabled' && runHistory.id === active.id && runHistory.status === 'error' && <div role="alert">Could not confirm task history. Checking again; refresh before submitting another task.</div>}
               {state.showOnboarding[active.id] && <div className="onboarding-card">
                 <div className="onboarding-title">What do you want me helping with most right now?<IconButton name="close" label="Dismiss suggestions" onClick={() => setState(current => ({ ...current, showOnboarding: { ...current.showOnboarding, [active.id]: false } }))} /></div>
