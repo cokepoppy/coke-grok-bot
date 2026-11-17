@@ -49,7 +49,9 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
         {to:[{namespaceSelector:{matchLabels:{'kubernetes.io/metadata.name':'kube-system'}}}],ports:[{protocol:'UDP',port:53},{protocol:'TCP',port:53}]},
         {to:[{namespaceSelector:{matchLabels:{'kubernetes.io/metadata.name':options.controlNamespace}},podSelector:{matchLabels:{app:'coke-grok-auth'}}}],ports:[{protocol:'TCP',port:3002}]},
         ...(proxyConfigured?[{to:[{ipBlock:{cidr:`${proxyHostIp!}/32`}}],ports:[{protocol:'TCP',port:17891}]}]:[]),
-        {to:[{ipBlock:{cidr:'0.0.0.0/0',except:['10.0.0.0/8','172.16.0.0/12','192.168.0.0/16','169.254.0.0/16','127.0.0.0/8']}}],ports:[{protocol:'TCP',port:80},{protocol:'TCP',port:443}]},
+        // Allow any public destination protocol and port for user-directed browser/computer work.
+        // Private, cluster, link-local, and loopback address ranges remain isolated per tenant.
+        {to:[{ipBlock:{cidr:'0.0.0.0/0',except:['10.0.0.0/8','172.16.0.0/12','192.168.0.0/16','169.254.0.0/16','127.0.0.0/8']}}]},
       ],
     } },
     { apiVersion:'apps/v1',kind:'Deployment',metadata:meta('desktop'),spec:{replicas:1,strategy:{type:'Recreate'},selector:{matchLabels:{app:'grok-desktop'}},template:{metadata:{labels:{...labels,app:'grok-desktop'}},spec:{

@@ -72,6 +72,10 @@ test('desktop Google proxy is explicit, host-scoped, and available only to Chrom
  const resources=splitDesktopResources(identity,options),desktop=resources.find(item=>item.kind==='Deployment'&&(item.metadata as {name:string}).name==='desktop') as any,agent=resources.find(item=>item.kind==='Deployment'&&(item.metadata as {name:string}).name==='agent') as any,desktopPolicy=resources.find(item=>item.kind==='NetworkPolicy'&&(item.metadata as {name:string}).name==='desktop-isolation') as any;
  assert.equal(desktop.spec.template.spec.containers[0].env.find((entry:any)=>entry.name==='COKE_DESKTOP_PROXY_SERVER').value,options.desktopProxyServer);
  assert.equal(agent.spec.template.spec.containers[0].env.some((entry:any)=>entry.name==='COKE_DESKTOP_PROXY_SERVER'),false);
+ const publicEgress=desktopPolicy.spec.egress.find((rule:any)=>rule.to?.some((target:any)=>target.ipBlock?.cidr==='0.0.0.0/0'));
+ assert.ok(publicEgress);
+ assert.equal('ports' in publicEgress,false);
+ assert.deepEqual(publicEgress.to[0].ipBlock.except,['10.0.0.0/8','172.16.0.0/12','192.168.0.0/16','169.254.0.0/16','127.0.0.0/8']);
  assert.ok(desktopPolicy.spec.egress.some((rule:any)=>rule.to?.some((target:any)=>target.ipBlock?.cidr==='192.168.65.254/32')&&rule.ports?.some((port:any)=>port.protocol==='TCP'&&port.port===17891)));
  assert.throws(()=>splitDesktopResources(identity,{...options,desktopProxyServer:'http://host.docker.internal:7890'}));
  assert.throws(()=>splitDesktopResources(identity,{...options,desktopProxyHostIp:'0.0.0.0'}));
