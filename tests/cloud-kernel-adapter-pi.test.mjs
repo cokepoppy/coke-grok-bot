@@ -253,6 +253,9 @@ test('Pi keeps group orchestration context in the system prompt and the user mes
   assert.match(sections[0],/Product crew/);
   assert.match(sections[1],/Grok Bot task-result contract/);
   assert.match(sections[1],/exactly one JSON object/);
+  assert.match(sections[1],/The only model-authored statuses are done, failed, scheduled, or delegating\. Never return waiting/u);
+  assert.match(sections[1],/a real computer-control pause is emitted by the runtime and includes explicit pausedForControl and controlOwner fields/u);
+  assert.doesNotMatch(sections[1],/waiting when deliberately paused/u);
   assert.ok(userMessage.startsWith('Give one concise project update.'));
   assert.match(userMessage,/Grok Bot task-result contract/);
   assert.match(userMessage,/exactly one JSON object/);

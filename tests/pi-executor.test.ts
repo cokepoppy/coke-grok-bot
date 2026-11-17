@@ -208,7 +208,10 @@ test('Pi carries a recent same-Bot sign-in handoff into a continuation without a
   assert.match(receivedPrompt,/continued this same Bot task/i);
   assert.match(receivedPrompt,/never claim the handoff completed without checking ownership/i);
   assert.match(receivedPrompt,/open the Computer screen and choose Take control/i);
-  assert.match(receivedPrompt,/If an actual sign-in or human-verification challenge is visible, stop/i);
+  assert.match(receivedPrompt,/If an actual sign-in or human-verification challenge is still visible, stop/i);
+  assert.match(receivedPrompt,/The only model-authored statuses are done, failed, scheduled, or delegating; never return waiting/i);
+  assert.match(receivedPrompt,/the runtime has assigned the computer to the Agent/i);
+  assert.doesNotMatch(receivedPrompt,/If the user still owns the computer, wait for them to return control/i);
   assert.match(receivedPrompt,/do not enter or request credentials/i);
  }finally{await executor.close();gateway.close()}
 });
@@ -230,8 +233,11 @@ test('Pi resumes the original Gmail task and generic Browser User scope after a 
   assert.match(receivedPrompt,/Original user task:[\s\S]*请检查 Gmail 最近的未读邮件/);
   assert.match(receivedPrompt,/User's current message:\n继续/);
   assert.match(receivedPrompt,/resume the original user-requested task from the current state/i);
+  assert.match(receivedPrompt,/do not repeat completed actions or wait merely because the earlier task required sign-in/i);
+  assert.match(receivedPrompt,/If the owner takes control during execution, the runtime interrupts the task and records the explicit control state/i);
+  assert.match(receivedPrompt,/never return waiting/i);
   assert.match(receivedPrompt,/Never claim the handoff completed without checking ownership/i);
-  assert.match(receivedPrompt,/If an actual sign-in or human-verification challenge is visible, stop/i);
+  assert.match(receivedPrompt,/If an actual sign-in or human-verification challenge is still visible, stop/i);
   assert.doesNotMatch(receivedPrompt,/Do not interpret.*permission.*take account actions/i);
  }finally{await executor.close();gateway.close()}
 });

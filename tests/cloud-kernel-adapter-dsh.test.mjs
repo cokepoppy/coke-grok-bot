@@ -97,6 +97,9 @@ test('DeepSeekHarness receives the supported SDK launch options', async () => {
     assert.equal(options.env.DSH_MODEL, 'deepseek-v4.1-flash');
     assert.match(resultPluginContent, /Grok Bot task-result contract/u);
     assert.match(resultPluginContent, /exactly one JSON object/u);
+    assert.match(resultPluginContent,/The only model-authored statuses are done, failed, scheduled, or delegating\. Never return waiting/u);
+    assert.match(resultPluginContent,/a real computer-control pause is emitted by the runtime and includes explicit pausedForControl and controlOwner fields/u);
+    assert.doesNotMatch(resultPluginContent,/waiting when deliberately paused/u);
     assert.match(resultPluginContent, /order: 9000/u);
     assert.equal(closeCalls, 1);
   } finally {
