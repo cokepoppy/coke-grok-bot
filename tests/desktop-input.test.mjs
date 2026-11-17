@@ -87,13 +87,24 @@ test('desktop typing times out and kills a stuck xdotool process before releasin
   assert.deepEqual(signals,['SIGTERM','SIGKILL']);
 });
 
-test('desktop key mapping uses the Linux X key names', async () => {
+test('desktop key mapping accepts arbitrary key names and modifier combinations', async () => {
   const calls = [];
   const run = async (...args) => calls.push(args);
   await pressDesktopKey(run, 'Enter');
   await pressDesktopKey(run, 'ArrowDown');
-  assert.deepEqual(calls.map(call => call[1]), [['key', '--clearmodifiers', 'Return'], ['key', '--clearmodifiers', 'Down']]);
-  await assert.rejects(pressDesktopKey(run, 'Meta+A'), /Unsupported desktop key/);
+  await pressDesktopKey(run, 'Control+L');
+  await pressDesktopKey(run, 'Control+Shift+T');
+  await pressDesktopKey(run, 'Meta+L');
+  await pressDesktopKey(run, 'F12');
+  await pressDesktopKey(run, 'A');
+  assert.deepEqual(calls.map(call => call[1]), [
+    ['key', '--clearmodifiers', 'Return'], ['key', '--clearmodifiers', 'Down'],
+    ['key', '--clearmodifiers', 'ctrl+l'], ['key', '--clearmodifiers', 'ctrl+shift+t'],
+    ['key', '--clearmodifiers', 'super+l'], ['key', '--clearmodifiers', 'F12'], ['key', '--clearmodifiers', 'A'],
+  ]);
+  await pressDesktopKey(run, ';');
+  assert.deepEqual(calls.at(-1)[1], ['key', '--clearmodifiers', ';']);
+  await assert.rejects(pressDesktopKey(run, 'Control+\u0000L'), /key is invalid/);
 });
 
 test('desktop X11 actions serialize focus plus input while allowing async completion', async () => {

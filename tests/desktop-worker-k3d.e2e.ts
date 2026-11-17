@@ -166,16 +166,21 @@ try {
     <button onclick="document.getElementById('browser').textContent='BROWSER_CLICK_OK'">Mark complete</button><p id="browser">WAITING</p>
     <label for="file-upload">Upload fixture file</label><input id="file-upload" aria-label="Upload fixture file" type="file"><p id="uploaded">WAITING</p><script>document.getElementById('file-upload').addEventListener('change',async event=>{const file=event.target.files[0];document.getElementById('uploaded').textContent=file.name+':'+await file.text()})</script>
     <form onsubmit="event.preventDefault();document.getElementById('computer').textContent='COMPUTER_INPUT_OK'"><input aria-label="Desktop input" oninput="document.getElementById('typed').textContent=this.value" style="position:fixed;left:120px;top:180px;width:360px;height:54px;background:rgb(255,230,20);font:24px sans-serif"><button type="submit" style="position:fixed;left:520px;top:180px;width:200px;height:54px;background:#155ab5;color:white">Submit</button></form>
-    <p id="typed"></p>
-    <p id="computer">WAITING</p><p id="shared"></p><script>const key='grok-shared',cookie='grok-shared=ok',had=localStorage.getItem(key)==='ok'&&document.cookie.split('; ').includes(cookie);if(localStorage.getItem(key)!=='ok')localStorage.setItem(key,'ok');if(!document.cookie.split('; ').includes(cookie))document.cookie=cookie+'; path=/';document.getElementById('shared').textContent=had?'SHARED_STATE_OK':'SHARED_STATE_INIT'</script>`;
+    <p id="typed"></p><p id="key-events">F13_COUNT:0</p>
+    <p id="computer">WAITING</p><p id="shared"></p><script>document.addEventListener('keydown',event=>{if(event.key==='F13'){const target=document.getElementById('key-events');target.textContent='F13_COUNT:'+String(Number(target.textContent.split(':')[1])+1)}});const key='grok-shared',cookie='grok-shared=ok',had=localStorage.getItem(key)==='ok'&&document.cookie.split('; ').includes(cookie);if(localStorage.getItem(key)!=='ok')localStorage.setItem(key,'ok');if(!document.cookie.split('; ').includes(cookie))document.cookie=cookie+'; path=/';document.getElementById('shared').textContent=had?'SHARED_STATE_OK':'SHARED_STATE_INIT'</script>`;
   const fixturePath = '/tmp/grok-screen-fixture.cjs';
   const fixture = `const http=require('node:http');const fs=require('node:fs');const html=${JSON.stringify(fixtureHtml)};http.createServer((req,res)=>{if(req.url==='/healthz'){res.writeHead(204);return res.end()}const a=req.url==='/a'||req.url.startsWith('/a/');const label=a?'BOT_A_SCREEN':'BOT_B_SCREEN';const color=a?'rgb(230, 20, 140)':'rgb(20, 140, 230)';res.writeHead(200,{'content-type':'text/html; charset=utf-8'});res.end(html.replaceAll('SCREEN_LABEL',label).replaceAll('SCREEN_COLOR',color))}).listen(18112,'127.0.0.1')`;
+  await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'sh', '-c', `for pid in $(ps -eo pid=,args= | awk '$2=="node" && $3=="${fixturePath}" {print $1}'); do kill "$pid"; done`]);
   const fixtureProbe = await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'node', '-e', "fetch('http://127.0.0.1:18112/healthz',{signal:AbortSignal.timeout(500)}).then(r=>process.stdout.write(String(r.status))).catch(()=>process.exitCode=1)"]).catch(() => '');
   if (fixtureProbe !== '204') {
     await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'node', '-e', `require('node:fs').writeFileSync(${JSON.stringify(fixturePath)},${JSON.stringify(fixture)})`]);
     await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'sh', '-c', `nohup node ${fixturePath} >/tmp/grok-screen-fixture.log 2>&1 </dev/null &`]);
   }
-  const fixtureReady = await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'node', '-e', "fetch('http://127.0.0.1:18112/healthz',{signal:AbortSignal.timeout(3000)}).then(r=>process.stdout.write(String(r.status))).catch(()=>process.exitCode=1)"]).catch(() => '');
+  let fixtureReady = '';
+  for (let attempt = 0; attempt < 20 && fixtureReady !== '204'; attempt++) {
+    fixtureReady = await kubectl(['-n', identity.namespace, 'exec', podName, '-c', 'agent', '--', 'node', '-e', "fetch('http://127.0.0.1:18112/healthz',{signal:AbortSignal.timeout(500)}).then(r=>process.stdout.write(String(r.status))).catch(()=>process.exitCode=1)"]).catch(() => '');
+    if (fixtureReady !== '204') await new Promise(resolve => setTimeout(resolve, 100));
+  }
   assert.equal(fixtureReady, '204', 'reusable fixture should listen inside the isolated shared Pod network');
 
   stage = 'start Worker port-forward';
@@ -220,6 +225,10 @@ try {
   assert.deepEqual(initialA.visibleH1, ['BOT_A_SCREEN']);
   assert.deepEqual(initialB.visibleH1, ['BOT_B_SCREEN']);
   assert.ok(initialB.text.includes('SHARED_STATE_OK'), 'Bots for one user should share the browser profile');
+  stage = 'Browser User navigates to a non-HTTP data URL';
+  await expectStatus(await worker('/v1/browser', screenA, { action: 'navigate', url: 'data:text/html,%3Ctitle%3EUNLISTED_SCHEME_OK%3C%2Ftitle%3E%3Ch1%3EData%20URL%20loaded%3C%2Fh1%3E' }), 200, stage);
+  assert.equal((await inspect(screenA)).title, 'UNLISTED_SCHEME_OK', 'Browser User should pass non-HTTP schemes through to Chromium');
+  await navigate(screenA, 'a');
   const inspectedHref = initialA.controls?.find(control => control.name === 'Business Rules')?.href;
   assert.equal(inspectedHref, 'http://127.0.0.1:18112/a/rules', 'inspection should report a normalized full href for a relative link');
 
@@ -232,6 +241,9 @@ try {
   const browserClick = await worker('/v1/browser', screenA, { action: 'click', by: 'role', role: 'button', target: 'Mark complete' });
   await expectStatus(browserClick, 200, 'Browser User click');
   assert.ok((await inspect(screenA)).text.includes('BROWSER_CLICK_OK'));
+  stage = 'Browser User accepts an unlisted function key';
+  await expectStatus(await worker('/v1/browser', screenA, { action: 'press', by: 'label', target: 'Desktop input', key: 'F13' }), 200, stage);
+  assert.ok((await inspect(screenA)).text.includes('F13_COUNT:1'), 'the real page should receive the unlisted Browser User key event');
 
   stage = 'Browser User uploads an artifact through the webpage file input';
   const upload = await worker('/v1/browser', screenA, { action: 'upload_file', taskId: artifactTaskId, path: 'artifacts/upload-check.txt', by: 'css', target: 'input[type="file"][aria-label="Upload fixture file"]' });
@@ -265,12 +277,15 @@ try {
     await expectStatus(await worker('/v1/commands', screenId, { action: 'type', text: 'K3D_COMPUTER_USER_OK', actor: 'user' }), 200, stage);
     stage = `Computer User press Enter ${screenId}`;
     await expectStatus(await worker('/v1/commands', screenId, { action: 'press', key: 'Enter', actor: 'user' }), 200, stage);
+    stage = `Computer User press unlisted F13 ${screenId}`;
+    await expectStatus(await worker('/v1/commands', screenId, { action: 'press', key: 'F13', actor: 'user' }), 200, stage);
     stage = `Computer User return control ${screenId}`;
     await expectStatus(await worker('/v1/control', screenId, { owner: 'agent' }), 200, stage);
     stage = `Computer User verify ${screenId}`;
     const state = await inspect(screenId);
     assert.ok(state.text.includes('K3D_COMPUTER_USER_OK'), `Computer User text should reach the selected Bot screen; observed page text: ${JSON.stringify(state.text)}`);
     assert.ok(state.text.includes('COMPUTER_INPUT_OK'), `Computer User Enter should submit the selected Bot screen form; observed page text: ${JSON.stringify(state.text)}`);
+    assert.ok(state.text.includes(`F13_COUNT:${screenId === screenA ? 2 : 1}`), `Computer User F13 should reach only its selected Bot screen; observed page text: ${JSON.stringify(state.text)}`);
   };
   stage = 'Computer User dual-screen control and input';
   // X11 native input is serialized by the shared desktop gate. Keep each

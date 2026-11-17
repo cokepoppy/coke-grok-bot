@@ -114,7 +114,8 @@ test('Pi explains invalid computer action parameters without adding an approval 
   const browser=options.customTools.find(tool=>tool.name==='computer_browser');
   await assert.rejects(()=>browser.execute('invalid-click',{action:'click' },new AbortController().signal),error=>{
    assert.match(error.message,/parameters were incomplete or invalid/i);
-   assert.match(error.message,/click\/check\/uncheck/);
+   assert.match(error.message,/any URL scheme/i);
+   assert.match(error.message,/any key name or combination/i);
    assert.doesNotMatch(error.message,/approval/i);
    assert.doesNotMatch(error.message,/never-return-this/);
    return true;

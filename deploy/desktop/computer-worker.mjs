@@ -400,7 +400,7 @@ async function command(input, screenId) {
     await browserPage.goto(pathToFileURL(resolved.real).href, { waitUntil: 'domcontentloaded', timeout: 15000 });
   } else if (action === 'navigate') {
     const url = new URL(String(input.url || ''));
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Only credential-free HTTP and HTTPS URLs are allowed');
+    if (url.username || url.password) throw authenticationHandoffError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
     await browserPage.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
   } else throw new Error('Unsupported desktop command');
   await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => undefined, operation => rendererHealth.run(operation)));
@@ -418,6 +418,8 @@ function safePageUrl(value) {
     const url = new URL(value);
     url.search = '';
     url.hash = '';
+    url.username = '';
+    url.password = '';
     return url.href;
   } catch { return ''; }
 }
@@ -431,11 +433,11 @@ async function browserLocator(browserPage, input) {
     let expectedHref;
     try {
       const url = new URL(target);
-      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('invalid');
+      if (url.username || url.password) throw new Error('invalid');
       url.search = '';
       url.hash = '';
       expectedHref = url.href;
-    } catch { throw new Error('A resolved HTTP(S) link target is required'); }
+    } catch { throw new Error('A resolved link target is required'); }
     const candidates = browserPage.locator('a[href], [role="link"][href]');
     const indexes = await candidates.evaluateAll((elements, href) => {
       const visible = element => {
@@ -445,7 +447,7 @@ async function browserLocator(browserPage, input) {
       const normalizedHref = element => {
         try {
           const url = new URL(element.href || element.getAttribute('href') || '', location.href);
-          if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return '';
+          if (url.username || url.password) return '';
           url.search = '';
           url.hash = '';
           return url.href;
@@ -524,7 +526,8 @@ async function agentBrowserAction(input, screenId) {
   const browserPage = await pageForScreen(screenId);
   if (action === 'navigate') {
     const url = new URL(String(input.url || ''));
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.href.length > 2048) throw new Error('Only credential-free HTTP and HTTPS URLs are allowed');
+    if (url.username || url.password) throw authenticationHandoffError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
+    if (url.href.length > 2048) throw new Error('Browser destination is too long');
     if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
     // Real sites can take longer than the short renderer health probe. Keep
     // the explicit 30s navigation timeout without latching the renderer as
@@ -554,12 +557,12 @@ async function agentBrowserAction(input, screenId) {
             if (tag === 'a' || element.getAttribute('role') === 'link') {
               try {
                 const target = new URL(element.getAttribute('href') || element.href || '', location.href);
-                if (['http:', 'https:'].includes(target.protocol) && !target.username && !target.password) {
+                if (!target.username && !target.password) {
                   target.search = '';
                   target.hash = '';
                   href = target.href.slice(0, 2048);
                 }
-              } catch { /* Do not expose non-web or malformed link targets. */ }
+              } catch { /* Do not expose malformed link targets. */ }
             }
             return {
               role: element.getAttribute('role') || ({ button: 'button', a: 'link', input: element.getAttribute('type') === 'checkbox' ? 'checkbox' : element.getAttribute('type') === 'radio' ? 'radio' : 'textbox', textarea: 'textbox', select: 'combobox' }[tag] || tag),
@@ -633,7 +636,7 @@ async function agentBrowserAction(input, screenId) {
             const normalizedHref = candidate => {
               try {
                 const url = new URL(candidate.href || candidate.getAttribute('href') || '', location.href);
-                if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return '';
+                if (url.username || url.password) return '';
                 url.search = '';
                 url.hash = '';
                 return url.href;
@@ -659,9 +662,11 @@ async function agentBrowserAction(input, screenId) {
       else if (action === 'uncheck') await locator.uncheck({ timeout: 10_000 });
       else {
         const key = String(input.key || '');
-        const allowedKeys = new Set(['Enter', 'Tab', 'Escape', 'Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End', 'Space', 'Control+A', 'Meta+A']);
-        if (!allowedKeys.has(key)) throw new Error('Unsupported browser key');
-        await locator.press(key, { timeout: 10_000 });
+        if (!key || key.length > 256 || /[\u0000-\u001f\u007f]/.test(key)) throw new Error('Browser key is invalid');
+        await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => {
+          await locator.focus({ timeout: 10_000 });
+          await pressDesktopKey(exec, key);
+        }, operation => rendererHealth.run(operation)));
       }
     } else throw new Error('Unsupported Agent browser action');
 

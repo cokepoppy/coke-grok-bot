@@ -163,7 +163,7 @@ test('DSH direct Gmail navigation consumes an immediate completion without creat
     assert.deepEqual(JSON.parse(value.text), destination);
     assert.equal(calls.filter(call => call.path.endsWith('/computer/actions')).length, 1);
     assert.equal(calls.length, 2, 'only check control and navigate; do not create, poll, or execute an approval');
-    assert.match(browser.description, /available for every live Bot task lease across sites and controls/i);
+    assert.match(browser.description, /available for every live Bot task lease across sites, URL schemes, keys, and controls/i);
     assert.match(browser.description, /Stop only when a real sign-in or human-verification challenge appears/i);
     assert.match(browser.description, /navigate, reload, open tabs, and use controls as the task requires/i);
     assert.match(browser.description, /choose Take control/i);

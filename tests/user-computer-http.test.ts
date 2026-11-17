@@ -40,7 +40,8 @@ test('computer API selects the authenticated user and protects actions with orig
   assert.equal((await post(botA,'/action','a',{action:'click',x:1440,y:1})).status,400);
   assert.equal((await post(botA,'/action','a',{action:'click',x:1,y:2,actor:'agent'})).status,400);
   assert.equal((await post(botA,'/action','a',{action:'click',x:1,y:2})).status,200);
-  assert.deepEqual(calls,[`${a.userId}:${botA}:click`]);assert.equal(owners.get(`${b.userId}:${botB}`),'agent');
+  assert.equal((await post(botA,'/action','a',{action:'press',key:'Control+Shift+T'})).status,200);
+  assert.deepEqual(calls,[`${a.userId}:${botA}:click`,`${a.userId}:${botA}:press`]);assert.equal(owners.get(`${b.userId}:${botB}`),'agent');
   assert.equal((await post(botA,'/control','a',{owner:'agent'})).status,200);
   assert.equal((await post(botA,'/action','a',{action:'press',key:'Enter'})).status,503);
  }finally{await new Promise<void>(resolve=>server.close(()=>resolve()))}

@@ -21,8 +21,8 @@ test('computer actions reject unexpected fields, unsafe paths and invalid contro
   {kind:'browser',action:'inspect'}, {kind:'browser',action:'click',by:'role',role:'button',target:'Submit',unexpected:true},
   {kind:'browser',action:'navigate',url:'https://user:password@example.test/'}, {kind:'browser',action:'open_artifact',path:'../secret'},
   {kind:'browser',action:'open_artifact',path:'artifacts/index.html',artifactTaskId:'not-a-task-id'},
-  {kind:'desktop',action:'click',x:1440,y:1}, {kind:'desktop',action:'click',x:1.5,y:1}, {kind:'desktop',action:'press',key:'Super+q'},
-  {kind:'browser',action:'fill',by:'bad',target:'x',value:'x'}, {kind:'browser',action:'press',by:'label',target:'x',key:'Super+q'},
+  {kind:'desktop',action:'click',x:1440,y:1}, {kind:'desktop',action:'click',x:1.5,y:1},
+  {kind:'browser',action:'fill',by:'bad',target:'x',value:'x'},
  ];
  for(const action of invalid)assert.throws(()=>canonicalComputerAction(action,snapshot));
  assert.throws(()=>canonicalComputerAction({kind:'desktop',action:'click',x:1,y:2},{...snapshot,screenshotSha256:'bad'}));
@@ -39,9 +39,12 @@ test('computer browser normalizes inspected resolved hrefs and only allows them 
  assert.deepEqual(action.arguments,{by:'href',target:'https://www.bse.cn/business/overview.html'});
  for(const invalid of [
   {kind:'browser',action:'fill',by:'href',target:'https://www.bse.cn/business/overview.html',value:'x'},
-  {kind:'browser',action:'click',by:'href',target:'javascript:alert(1)'},
   {kind:'browser',action:'click',by:'href',target:'https://user:password@www.bse.cn/business/overview.html'},
  ]) assert.throws(()=>canonicalComputerAction(invalid,snapshot));
+ const scriptLink=JSON.parse(canonicalComputerAction({kind:'browser',action:'click',by:'href',target:'javascript:alert(1)'},snapshot));
+ assert.equal(scriptLink.arguments.target,'javascript:alert(1)');
+ const key=JSON.parse(canonicalComputerAction({kind:'desktop',action:'press',key:'Control+Shift+T'},snapshot));
+ assert.equal(key.arguments.key,'Control+Shift+T');
 });
 test('computer browser upload accepts only explicit same-user artifact paths and page file-input locators',()=>{
  const taskId='8faf80b9-752d-42f1-86fc-38bdaa0e4bc9';
@@ -55,15 +58,18 @@ test('computer browser upload accepts only explicit same-user artifact paths and
   {kind:'browser',action:'upload_file',path:'artifacts/file.txt',by:'role',role:'button',target:'Upload'},
  ]) assert.throws(()=>canonicalComputerAction(invalid,snapshot));
 });
-test('computer actions can recover from Chromium’s canonical network error page',()=>{
+test('computer action snapshots accept browser internal and other URL schemes',()=>{
  const failedPage={...snapshot,url:'chrome-error://chromewebdata/'};
  const navigate=JSON.parse(canonicalComputerAction({kind:'browser',action:'navigate',url:'http://127.0.0.1:8765/'},failedPage));
  assert.equal(navigate.page,'chrome-error://chromewebdata/');
  assert.equal(navigate.arguments.url,'http://127.0.0.1:8765/');
  const reload=JSON.parse(canonicalComputerAction({kind:'desktop',action:'click',x:295,y:48},failedPage));
  assert.equal(reload.page,'chrome-error://chromewebdata/');
- for(const url of ['chrome://settings/','chrome-error://other/','chrome-error://chromewebdata/path','chrome-error://chromewebdata/?x=1'])
-  assert.throws(()=>canonicalComputerAction({kind:'browser',action:'navigate',url:'https://example.test/'},{...failedPage,url}));
+ for(const url of ['chrome://settings/','chrome://newtab/','data:text/plain,hello','file:///workspace/index.html','custom-scheme://app/window']) {
+  const action=JSON.parse(canonicalComputerAction({kind:'browser',action:'navigate',url},{...failedPage,url}));
+  assert.equal(action.arguments.url,url);
+  assert.equal(action.page,url.split(/[?#]/,1)[0]);
+ }
 });
 test('terminal approvals bind the exact command and selected computer directory',()=>{
  const action={kind:'terminal',action:'run',command:'printf "done" > result.txt',directory:'shared'};

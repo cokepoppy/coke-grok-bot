@@ -8,14 +8,12 @@ export interface ApprovedComputerAction { kind:'browser'|'desktop'|'terminal'; a
 const browserActions=new Set(['navigate','open_artifact','upload_file','click','fill','select','check','uncheck','press']);
 const desktopActions=new Set(['click','type','press']);
 const terminalActions=new Set(['run']);
-const keys=new Set(['Enter','Tab','Escape','Backspace','Delete','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','PageUp','PageDown','Home','End','Space','Control+A','Meta+A']);
 const locators=new Set(['role','text','label','placeholder','css','href']);
 function text(value:unknown,max:number):string { if(typeof value!=='string'||!value||value.length>max||/[\u0000-\u001f\u007f]/.test(value))throw new Error('Invalid computer action');return value; }
 function location(raw:string):{page:string;stateSha256:string} {
  const url=new URL(raw);
- const recoverableChromiumErrorPage=url.href==='chrome-error://chromewebdata/';
- if((url.href!=='about:blank'&&!recoverableChromiumErrorPage&&!['http:','https:','file:'].includes(url.protocol))||url.username||url.password||raw.length>4096)throw new Error('Invalid page location');
- const stateSha256=createHash('sha256').update(url.href).digest('hex');url.search='';url.hash='';
+ if(raw.length>4096)throw new Error('Invalid page location');
+ const stateSha256=createHash('sha256').update(url.href).digest('hex');url.search='';url.hash='';url.username='';url.password='';
  return {page:url.href,stateSha256};
 }
 /** Canonicalize on the trusted server, not from a free-form model summary. */
@@ -27,7 +25,7 @@ export function canonicalComputerAction(input:unknown,snapshot:ComputerSnapshot)
  const args:Record<string,string|number>={};let allowed:string[]=['kind','action'];
  if(kind==='browser'){
   if(action==='navigate'){
-   allowed.push('url');const url=new URL(text(value.url,2048));if(!['https:','http:'].includes(url.protocol)||url.username||url.password)throw new Error('Invalid destination');args.url=url.href;
+   allowed.push('url');const url=new URL(text(value.url,2048));if(url.username||url.password)throw new Error('Invalid destination');args.url=url.href;
   }else if(action==='open_artifact'){
    allowed.push('path','artifactTaskId');const path=text(value.path,500);if(path.startsWith('/')||path.includes('\\')||path.split('/').some(part=>!part||part==='.'||part==='..'))throw new Error('Invalid artifact path');args.path=path;
    if(value.artifactTaskId!==undefined){const artifactTaskId=text(value.artifactTaskId,36);if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(artifactTaskId))throw new Error('Invalid artifact task');args.artifactTaskId=artifactTaskId.toLowerCase();}
@@ -41,11 +39,11 @@ export function canonicalComputerAction(input:unknown,snapshot:ComputerSnapshot)
    allowed.push('by','target');const by=text(value.by,20);if(!locators.has(by))throw new Error('Invalid locator');args.by=by;
    if(by==='href'){
     if(action!=='click')throw new Error('Href locator is only valid for click');
-    const href=new URL(text(value.target,2048));if(!['http:','https:'].includes(href.protocol)||href.username||href.password)throw new Error('Invalid link target');href.search='';href.hash='';args.target=href.href;
+    const href=new URL(text(value.target,2048));if(href.username||href.password)throw new Error('Invalid link target');href.search='';href.hash='';args.target=href.href;
    }else args.target=text(value.target,500);
    if(by==='role'){allowed.push('role');args.role=text(value.role,40)}
    if(action==='fill'||action==='select'){allowed.push('value');if(typeof value.value!=='string'||value.value.length>2000||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value.value))throw new Error('Invalid value');args.value=value.value}
-   if(action==='press'){allowed.push('key');const key=text(value.key,32);if(!keys.has(key))throw new Error('Invalid key');args.key=key}
+   if(action==='press'){allowed.push('key');args.key=text(value.key,256)}
   }
  }else if(kind==='terminal'){
   allowed.push('command','directory');
@@ -57,7 +55,7 @@ export function canonicalComputerAction(input:unknown,snapshot:ComputerSnapshot)
  }else if(action==='type'){
   allowed.push('text');if(typeof value.text!=='string'||value.text.length>2000||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value.text))throw new Error('Invalid text');args.text=value.text;
  }else{
-  allowed.push('key');const key=text(value.key,32);if(!keys.has(key))throw new Error('Invalid key');args.key=key;
+  allowed.push('key');args.key=text(value.key,256);
  }
  if(Object.keys(value).some(key=>!allowed.includes(key)))throw new Error('Unexpected computer action field');
  if(snapshot.guardFingerprint!==undefined&&!/^[a-f0-9]{64}$/.test(snapshot.guardFingerprint))throw new Error('Invalid computer state fingerprint');
