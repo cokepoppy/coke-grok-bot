@@ -3311,6 +3311,12 @@ Developer Bot 只读核对 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`
 
 本轮 K3D 复用项目自有固定测试 namespace `grok-user-b6c851fd5b4fc610966aba5c03018772` 与原有单一 Worker Pod，没有创建新 namespace/容器。真实 Worker 用 `data:text/html,...` 导航并读回页面标题成功；测试 fixture 在 Browser User 通过 X11 收到 `F13`，Computer User 在两块 Bot 屏幕分别收到同一按键且没有串屏；共享登录浏览器、网页点击/文件上传、1440x900 屏幕、接管/归还和跨 Bot 隔离全通过。第一次 K3D 尝试发现 Browser Worker 参数虽接受任意键名，Playwright `locator.press('F13')` 仍在实际执行层报失败；改为聚焦目标控件后通过共享 X11 输入队列发送，复测通过。复测还发现固定 Pod 留存旧网页 fixture，导致新事件探针没有加载；测试现会只终止精确命名的项目测试 fixture 进程并重启，不动其他 Pod/容器。`npm run test:desktop-worker-k3d` 最终通过（不含模型调用）；随后 `npm run test:runtime` 214/214、`npm run build:deployment`、Dockerfile 检查和 `git diff --check` 通过。当前镜像只部署到这个合成测试 namespace，公网实例未更新；北交所公网 Browser/Computer Use 验收仍未完成。
 
+#### 2026-11-17 当前 K3D 版本一致性与公网验收入口
+
+在 `k3d-tp1121-sandbox-dev` 对当前活跃应用 Deployment、Pod 标签、镜像 tag 与容器内 `COKE_GROK_RELEASE_ID` 执行只读发布校验，`sha-c5b203ddcfa8cd2e44f8503a0069b2c3779349e3` 全部通过。Auth、Desktop Broker、Namespace Bootstrap，以及两个现存用户 namespace 的 Agent/Desktop 均为 Ready 且使用该完整 SHA；MySQL `coke-auth/mysql:8.4` 是独立数据服务，不属于应用镜像 release ID。当前两组用户 namespace 的 Agent/Desktop 都在运行，workspace PVC 各为 Bound/10Gi；此快照不把 namespace 数量当成账号数量，也未删除工作区。
+
+本轮尝试从 Codex Computer Use 检查公网已登录 Chrome 时，Chrome 进程存在，但 `cua.getState()` 返回 `browsers: []` 和 `Local browser access is unavailable for this chat`。这是本次会话的浏览器访问不可用提示，不等同于已确认 Work 设置关闭；未改用截图、坐标、CDP 或 Playwright 绕过。故本轮没有完成新的公网 BSE 或其他任务验收；普通任务、DeepSeek、Browser/Computer runtime 的版本一致性检查不能替代公网可见点击证据。
+
 #### 2026-11-17 Browser User 全协议透传与任意按键
 
 本功能分支把浏览器/电脑动作 schema 改为开放参数对象，移除 Pi、DeepSeek Harness、ComputerBridge canonical action 与 Worker 执行前的动作名称/字段枚举。导航目标 scheme 直接交给 Chromium；有效的任意按键名和组合键透传到 Chromium 聚焦输入队列或 X11 `xdotool`，是否受支持由浏览器/桌面运行时决定。Pi/DSH 的只读 `open_public_page` 旧工具固定描述“public HTTPS”并使用 HTTP `fetch`，本分支停止向模型注册它，统一用完整的 Browser User，避免 Agent 选中另一条协议受限路径。
