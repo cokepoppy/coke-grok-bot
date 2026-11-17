@@ -7,6 +7,7 @@ import { createAuthServer } from './auth-http.ts';
 import { parsePublicUrl } from './public-url.ts';
 import { BotStore } from './bot-store.ts';
 import { GroupChatStore } from './group-chat-store.ts';
+import { TestDataCleanupStore } from './test-data-cleanup-store.ts';
 import { startPiRuntime } from './pi-runtime.ts';
 
 function required(key: string): string {
@@ -39,6 +40,7 @@ async function main() {
   const store = new TenantStore(pool);
   const bots = new BotStore(pool);
   const groupChats = new GroupChatStore(pool);
+  const testDataCleanup = new TestDataCleanupStore(pool);
   try { await store.migrate(); await bots.migrate(); await store.pruneExpiredAuth(); }
   catch (error) { await pool.end(); throw error; }
   let pi: Awaited<ReturnType<typeof startPiRuntime>>;
@@ -49,7 +51,7 @@ async function main() {
   }
   const cleanup = setInterval(() => { void store.pruneExpiredAuth().catch(() => console.error('Expired auth cleanup failed.')); }, 60 * 60 * 1000);
   cleanup.unref();
-  const server = createAuthServer(new GoogleAuthService(store, provider, origin), origin, staticDirectory, bots, pi?.runs, pi?.approvals, pi?.computer, pi?.engine || 'pi', pi?.files, pi?.workspaceFiles, pi ? groupChats : undefined, pi?.routines, pi?.voice, pi?.skills);
+  const server = createAuthServer(new GoogleAuthService(store, provider, origin), origin, staticDirectory, bots, pi?.runs, pi?.approvals, pi?.computer, pi?.engine || 'pi', pi?.files, pi?.workspaceFiles, pi ? groupChats : undefined, pi?.routines, pi?.voice, pi?.skills, testDataCleanup);
   server.listen(port, process.env.COKE_GROK_AUTH_HOST || '127.0.0.1', () => console.log(`Auth service listening on port ${port}`));
   for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => { clearInterval(cleanup); server.close(() => { void (async () => { await pi?.close(); await pool.end(); })(); }); });
 }

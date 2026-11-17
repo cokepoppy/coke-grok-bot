@@ -10,5 +10,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "scripts/compare-reference.ts", "vite.config.ts"]
+  "include": ["src", "scripts/compare-reference.ts", "scripts/cleanup-test-data.ts", "vite.config.ts"]
 }

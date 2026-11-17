@@ -16,6 +16,7 @@ import {RoutineRequestConflict,type RoutineStore,type RoutineSchedule} from './r
 import {computerVncViewerHtml} from './computer-vnc-viewer.ts';
 import {VoiceGatewayError, type VoiceGatewayApi} from './voice-gateway.ts';
 import type {BotSkillStore} from './bot-skill-store.ts';
+import type {TestDataCleanupStore} from './test-data-cleanup-store.ts';
 
 function validatedNovncAsset(value:string):string|null{
  let path:string;try{path=decodeURIComponent(value)}catch{return null}
@@ -81,7 +82,7 @@ async function proxyNovncSocket(endpoint:URL,req:IncomingMessage,client:Duplex,h
 }
 
 // Mount only behind a trusted proxy that preserves the configured Host.
-export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi', files?:WorkspaceFileStore, workspaceFiles?:WorkspaceFileTransportApi, groupChats?:GroupChatStore, routines?:RoutineStore, voice?:VoiceGatewayApi, skills?:BotSkillStore) {
+export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, staticDirectory?: string, bots?: BotStore, runs?: RunStore, approvals?: ApprovalStore, computer?: UserComputer, agentEngine:'pi'|'dsh'='pi', files?:WorkspaceFileStore, workspaceFiles?:WorkspaceFileTransportApi, groupChats?:GroupChatStore, routines?:RoutineStore, voice?:VoiceGatewayApi, skills?:BotSkillStore, testDataCleanup?:TestDataCleanupStore) {
   const origin = parsePublicUrl(publicOrigin);
   const server=createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -99,6 +100,35 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         if (!session) { res.writeHead(401, { 'Cache-Control': 'no-store' }); return res.end(); }
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
         return res.end(JSON.stringify({ agent: Boolean(runs), engine: runs ? agentEngine : null, voice: Boolean(voice) }));
+      }
+      if (url.pathname === `${origin.prefix}/api/test-data/cleanup`) {
+        if (req.method !== 'POST') return replyJson(res,405,{error:'Method not allowed'});
+        if (!testDataCleanup) return replyJson(res,503,{error:'Test data cleanup is unavailable'});
+        const session = await auth.session(req);
+        if (!session) return replyJson(res,401,{error:'Unauthenticated'});
+        if (req.headers.origin !== origin.origin) return replyJson(res,403,{error:'Invalid origin'});
+        const parsed = await readJsonBody(req,4096);
+        if (!parsed.ok) return replyJson(res,parsed.status,{error:'Invalid cleanup request'});
+        const body = parsed.value && typeof parsed.value === 'object' && !Array.isArray(parsed.value) ? parsed.value as Record<string,unknown> : null;
+        if (!body || Object.keys(body).some(key => !['botNamePrefixes','groupNamePrefixes','apply','confirmation'].includes(key)) ||
+            (body.apply !== undefined && typeof body.apply !== 'boolean') ||
+            (body.confirmation !== undefined && body.confirmation !== 'DELETE_MATCHING_TEST_FIXTURES')) return replyJson(res,400,{error:'Invalid cleanup request'});
+        try {
+          if (body.apply === true) {
+            if (body.confirmation !== 'DELETE_MATCHING_TEST_FIXTURES') return replyJson(res,400,{error:'Explicit cleanup confirmation is required'});
+            const plan = await testDataCleanup.apply(session,body);
+            return replyJson(res,200,{mode:'applied',plan});
+          }
+          if (body.confirmation !== undefined) return replyJson(res,400,{error:'Preview requests must not include deletion confirmation'});
+          const plan = await testDataCleanup.preview(session,body);
+          return replyJson(res,200,{mode:'preview',plan});
+        } catch (error) {
+          const message = error instanceof Error ? error.message : '';
+          if (message.startsWith('Invalid ') || message.startsWith('Choose ') || message === 'Group chat storage is unavailable') return replyJson(res,400,{error:message});
+          if (message.startsWith('Cleanup blocked:')) return replyJson(res,409,{error:message.slice('Cleanup blocked:'.length).trim()});
+          console.error('Test data cleanup failed.');
+          return replyJson(res,503,{error:'Test data cleanup failed'});
+        }
       }
       if(url.pathname===`${origin.prefix}/api/auth/workspaces/create`){
         if(req.method!=='POST')return replyJson(res,405,{error:'Method not allowed'});
