@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateRunTraceEvent } from '../src/server/run-trace.ts';
+import { computerActionTraceEvent,validateRunTraceEvent } from '../src/server/run-trace.ts';
+
+test('computer action trace names expose only a fixed action type',()=>{
+ const url='https://mail.example/private?token=secret';
+ const event=computerActionTraceEvent('computer.propose',{kind:'browser',action:'navigate',url});
+ assert.equal(event,'computer.propose.browser.navigate');
+ assert.equal(event.includes('private'),false);
+ assert.equal(event.includes('secret'),false);
+ assert.equal(validateRunTraceEvent({component:'computer-worker',event,outcome:'failed',httpStatus:500,diagnosticCode:'COMPUTER_BROWSER_NAVIGATION_NETWORK_FAILED'} )?.event,event);
+ assert.equal(computerActionTraceEvent('computer.propose',{kind:'browser',action:'secret-input'}),'computer.propose.browser.unknown');
+ assert.equal(computerActionTraceEvent('computer.execute',{kind:'desktop',action:'press',key:'Cmd+Shift+Secret'}),'computer.execute.desktop.press');
+ assert.equal(computerActionTraceEvent('model.request',{kind:'browser',action:'navigate'}),'model.request');
+});
 
 test('run traces retain only bounded operational metadata',()=>{
  const event=validateRunTraceEvent({

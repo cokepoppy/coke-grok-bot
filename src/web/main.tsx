@@ -761,6 +761,15 @@ function RunTraceButton({runId,compact=false}:{runId:string;compact?:boolean}) {
   const releaseIds=[...new Set(state.events.map(event=>event.releaseId).filter((value):value is string=>Boolean(value)))];
   const componentLabels:Record<RunTraceEntry['component'],string>={'control-plane':'Auth / control plane',scheduler:'Task scheduler','agent-runtime':'Pi / DeepSeek Harness','model-gateway':'Model gateway','computer-worker':'Cloud computer worker',mysql:'MySQL'};
   const eventLabels:Record<string,string>={'run.queued':'Task queued','run.claimed':'Task claimed','desktop.connect':'Cloud computer connection','agent.dispatch':'Agent runtime request','agent.result':'Agent response','model.request':'Model request','computer.control':'Computer control check','computer.inspect':'Computer page inspection','computer.screenshot':'Computer screen read','computer.status':'Computer status check','computer.propose':'Computer action prepared','computer.execute':'Computer action executed','run.persisted':'Result saved','run.outcome_unknown':'Outcome marked unknown'};
+  const diagnosticLabels:Record<string,string>={COMPUTER_BROWSER_ACTION_FAILED:'Unclassified browser action failure',COMPUTER_BROWSER_ACTION_TIMEOUT:'Browser action timed out; outcome needs inspection',COMPUTER_BROWSER_NAVIGATION_ABORTED:'Navigation was interrupted',COMPUTER_BROWSER_NAVIGATION_NETWORK_FAILED:'Chromium could not load the destination',COMPUTER_BROWSER_NAVIGATION_FAILED:'Navigation failed before completion',COMPUTER_BROWSER_CONTROL_ACTION_FAILED:'Browser control action failed',COMPUTER_BROWSER_CONTEXT_CLOSED:'Browser page or context closed during the action',COMPUTER_BROWSER_PAGE_INSPECTION_FAILED:'Page inspection failed',COMPUTER_BROWSER_ARTIFACT_OPEN_FAILED:'Task artifact could not be opened',COMPUTER_BROWSER_TARGET_NOT_FOUND:'No visible control matched',COMPUTER_BROWSER_TARGET_AMBIGUOUS:'More than one visible control matched',COMPUTER_STATE_CHANGED:'Page or computer owner changed during the action',COMPUTER_OWNER_USER:'The owner currently controls the computer',COMPUTER_RENDERER_UNRESPONSIVE:'Chromium did not respond'};
+  const actionLabels:Record<string,string>={inspect:'page inspection',navigate:'navigation',open_artifact:'artifact open',upload_file:'file upload',click:'click',fill:'text entry',select:'selection',check:'checkbox check',uncheck:'checkbox clear',press:'key press',open:'desktop open',type:'desktop text entry',unknown:'unknown action'};
+  const traceEventLabel=(event:string)=>{
+    const match=event.match(/^computer\.(propose|execute)\.(browser|desktop)\.([a-z_-]+)$/);
+    if(!match)return eventLabels[event]||event;
+    const action=actionLabels[match[3]]||'action';
+    const channel=match[2]==='browser'?'Browser':'Desktop';
+    return `${channel} ${action} ${match[1]==='propose'?'prepared':'executed'}`;
+  };
   const outcomeLabels:Record<RunTraceEntry['outcome'],string>={started:'Started',succeeded:'Succeeded',failed:'Failed',info:'Info'};
   const traceIcon=<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h3l2 4.5 2-4.5h5M2 12.5h3l2-4.5 2 4.5h5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"/></svg>;
   return <>
@@ -774,9 +783,9 @@ function RunTraceButton({runId,compact=false}:{runId:string;compact?:boolean}) {
         {state.status==='ready'&&!state.events.length&&<p>No backend trace was recorded for this run.</p>}
         {state.status==='ready'&&state.events.length>0&&<ol className="run-trace-list">{state.events.map(event=><li key={event.sequence} className={`run-trace-event ${event.outcome}`}>
           <time dateTime={event.at}>{new Date(event.at).toLocaleString()}</time>
-          <strong>{componentLabels[event.component]} · {eventLabels[event.event]||event.event}</strong>
+          <strong>{componentLabels[event.component]} · {traceEventLabel(event.event)}</strong>
           <span>{outcomeLabels[event.outcome]}{event.httpStatus?` · HTTP ${event.httpStatus}`:''}{event.durationMs!==null?` · ${event.durationMs} ms`:''}</span>
-          {event.diagnosticCode&&<code>{event.diagnosticCode}</code>}
+          {event.diagnosticCode&&<div className="run-trace-diagnostic"><span>{diagnosticLabels[event.diagnosticCode]||'A backend diagnostic was recorded'}</span><code>{event.diagnosticCode}</code></div>}
           {event.releaseId&&<small>Release {event.releaseId}</small>}
         </li>)}</ol>}
         <p className="run-trace-footnote">Contains sanitized operational events only. Prompts, page contents, request bodies, and credentials are not included.</p>

@@ -13,6 +13,18 @@ export interface RunTraceEvent {
 
 const components = new Set<RunTraceComponent>(['control-plane','scheduler','agent-runtime','model-gateway','computer-worker','mysql']);
 const outcomes = new Set<RunTraceOutcome>(['started','succeeded','failed','info']);
+const browserTraceActions = new Set(['inspect','navigate','open_artifact','upload_file','click','fill','select','check','uncheck','press']);
+const desktopTraceActions = new Set(['open','navigate','open-artifact','click','type','press']);
+
+/** Add only a fixed action name to the trace event; never include URLs or action arguments. */
+export function computerActionTraceEvent(baseEvent:string, action:unknown):string {
+  if(baseEvent!=='computer.propose'&&baseEvent!=='computer.execute')return baseEvent;
+  if(!action||typeof action!=='object'||Array.isArray(action))return `${baseEvent}.unknown`;
+  const value=action as Record<string,unknown>;
+  if(value.kind==='browser')return `${baseEvent}.browser.${typeof value.action==='string'&&browserTraceActions.has(value.action)?value.action:'unknown'}`;
+  if(value.kind==='desktop')return `${baseEvent}.desktop.${typeof value.action==='string'&&desktopTraceActions.has(value.action)?value.action:'unknown'}`;
+  return `${baseEvent}.unknown`;
+}
 
 /** Trace rows contain only bounded operational metadata; never request/response bodies or page data. */
 export function validateRunTraceEvent(value: unknown): RunTraceEvent | null {

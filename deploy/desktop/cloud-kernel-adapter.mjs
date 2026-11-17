@@ -244,6 +244,7 @@ const safeComputerDiagnosticCodes=new Set([
   'COMPUTER_RUN_LEASE_UNAVAILABLE','COMPUTER_SNAPSHOT_FAILED','COMPUTER_SCREEN_CAPACITY','COMPUTER_ACTIVE_TAB_UNRESOLVED','COMPUTER_RENDERER_UNRESPONSIVE','COMPUTER_WORKER_AUTH_REJECTED',
   'COMPUTER_WORKER_FAILED','COMPUTER_WORKER_FORBIDDEN','COMPUTER_WORKER_HTTP_ERROR',
   'COMPUTER_STATE_CHANGED','COMPUTER_BROWSER_TARGET_NOT_FOUND','COMPUTER_BROWSER_TARGET_AMBIGUOUS','COMPUTER_BROWSER_ACTION_TIMEOUT','COMPUTER_BROWSER_ACTION_FAILED',
+  'COMPUTER_BROWSER_NAVIGATION_ABORTED','COMPUTER_BROWSER_NAVIGATION_NETWORK_FAILED','COMPUTER_BROWSER_NAVIGATION_FAILED','COMPUTER_BROWSER_CONTROL_ACTION_FAILED','COMPUTER_BROWSER_CONTEXT_CLOSED','COMPUTER_BROWSER_PAGE_INSPECTION_FAILED','COMPUTER_BROWSER_ARTIFACT_OPEN_FAILED',
   'COMPUTER_WORKER_SCREEN_SCOPE_INVALID','COMPUTER_WORKER_SCREEN_OWNER_FAILED','COMPUTER_WORKER_REQUEST_BODY_INVALID','COMPUTER_WORKER_ACTION_EXECUTION_FAILED',
   'COMPUTER_WORKER_INVALID_RESPONSE','COMPUTER_WORKER_TRANSPORT_FAILED','INTERNAL_FAILURE',
 ]);
@@ -267,6 +268,13 @@ async function computerExecutionError(response,fallback=`Computer action was not
     if(diagnostic.code==='COMPUTER_BROWSER_TARGET_AMBIGUOUS')return new Error('More than one browser control matched. Inspect the current page and choose a unique visible target.');
     if(diagnostic.code==='COMPUTER_BROWSER_ACTION_TIMEOUT')return new Error('The browser action timed out and its outcome may be unknown. Inspect the current page before deciding whether to continue; do not repeat it blindly.');
     if(diagnostic.code==='COMPUTER_BROWSER_ACTION_FAILED')return new Error('The browser action was not confirmed. Inspect the current page and task state before deciding whether to continue.');
+    if(diagnostic.code==='COMPUTER_BROWSER_NAVIGATION_ABORTED')return new Error('Browser navigation was interrupted. Inspect the current page before continuing; do not repeat it blindly.');
+    if(diagnostic.code==='COMPUTER_BROWSER_NAVIGATION_NETWORK_FAILED')return new Error('Chromium could not load the requested page. Inspect the current page and network state before continuing.');
+    if(diagnostic.code==='COMPUTER_BROWSER_NAVIGATION_FAILED')return new Error('Browser navigation failed before completion. Inspect the current page and destination before continuing.');
+    if(diagnostic.code==='COMPUTER_BROWSER_CONTROL_ACTION_FAILED')return new Error('The browser control action failed. Inspect the current page and visible controls before continuing.');
+    if(diagnostic.code==='COMPUTER_BROWSER_CONTEXT_CLOSED')return new Error('The browser page or context closed during the action. Reconnect to the same computer and inspect its current state before continuing.');
+    if(diagnostic.code==='COMPUTER_BROWSER_PAGE_INSPECTION_FAILED')return new Error('The browser page could not be inspected. Check the live computer before continuing.');
+    if(diagnostic.code==='COMPUTER_BROWSER_ARTIFACT_OPEN_FAILED')return new Error('The task artifact could not be opened in the browser. Check the artifact and live computer before continuing.');
     const workerStatus=Number.isInteger(diagnostic.status)&&diagnostic.status>=100&&diagnostic.status<=599?` (worker HTTP ${diagnostic.status})`:'';
     return new Error(`Computer action failed: ${diagnostic.code}${workerStatus}`);
   } catch { return new Error(fallback); }

@@ -562,10 +562,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .run-trace-event strong { font-size: 13px; font-weight: 620; }
 .run-trace-event > span { color: #5f5967; font-size: 12px; text-align: right; }
 .run-trace-event.failed { border-color: #f0d2cd; background: #fff9f8; }
-.run-trace-event.failed code { grid-column: 1 / -1; color: #a33b31; font-size: 12px; }
+.run-trace-diagnostic { grid-column: 1 / -1; display: grid; gap: 3px; color: #8f372e; font-size: 12px; }
+.run-trace-diagnostic code { color: #a33b31; font-size: 11px; }
 .run-trace-event small { grid-column: 1 / -1; color: #77717f; font-size: 11px; }
 .run-trace-footnote { margin: 18px 0 0; color: #797380; font-size: 12px; }
-@media (max-width: 580px) { .run-trace-backdrop { padding: 10px; } .run-trace-dialog { padding: 16px; } .run-trace-event { grid-template-columns: 1fr; } .run-trace-event time,.run-trace-event.failed code,.run-trace-event small { grid-column: auto; } .run-trace-event > span { text-align: left; } }
+@media (max-width: 580px) { .run-trace-backdrop { padding: 10px; } .run-trace-dialog { padding: 16px; } .run-trace-event { grid-template-columns: 1fr; } .run-trace-event time,.run-trace-diagnostic,.run-trace-event small { grid-column: auto; } .run-trace-event > span { text-align: left; } }
 
 /* Match the current x.ai/bot workspace window: two columns by default, with
    the computer/details surface opened from the monitor control on demand. */

@@ -178,6 +178,7 @@ async function readJson(response, message) {
           else if(code==='COMPUTER_BROWSER_TARGET_AMBIGUOUS')forwardedDiagnostic='More than one browser control matched. Inspect the current page and choose a unique visible target.';
           else if(code==='COMPUTER_BROWSER_ACTION_TIMEOUT')forwardedDiagnostic='The browser action timed out and its outcome may be unknown. Inspect the current page before deciding whether to continue; do not repeat it blindly.';
           else if(code==='COMPUTER_BROWSER_ACTION_FAILED')forwardedDiagnostic='The browser action was not confirmed. Inspect the current page and task state before deciding whether to continue.';
+          else if(['COMPUTER_BROWSER_NAVIGATION_ABORTED','COMPUTER_BROWSER_NAVIGATION_NETWORK_FAILED','COMPUTER_BROWSER_NAVIGATION_FAILED','COMPUTER_BROWSER_CONTROL_ACTION_FAILED','COMPUTER_BROWSER_CONTEXT_CLOSED','COMPUTER_BROWSER_PAGE_INSPECTION_FAILED','COMPUTER_BROWSER_ARTIFACT_OPEN_FAILED'].includes(code))forwardedDiagnostic=`Computer action failed: ${code}`;
           else if(['COMPUTER_WORKER_SCREEN_SCOPE_INVALID','COMPUTER_WORKER_SCREEN_OWNER_FAILED','COMPUTER_WORKER_REQUEST_BODY_INVALID','COMPUTER_WORKER_ACTION_EXECUTION_FAILED'].includes(code))forwardedDiagnostic=`Computer action failed: ${code}`;
           else if(['COMPUTER_SCREEN_CAPACITY','COMPUTER_ACTIVE_TAB_UNRESOLVED','COMPUTER_RENDERER_UNRESPONSIVE'].includes(code))forwardedDiagnostic=`Computer action failed: ${code}`;
         }

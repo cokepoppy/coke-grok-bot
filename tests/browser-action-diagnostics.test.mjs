@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { browserActionDiagnostic, computerWorkerRequestDiagnostic } from '../deploy/desktop/browser-action-diagnostics.mjs';
+import { browserActionDiagnostic, computerWorkerRequestDiagnostic, safeComputerActionLogFields } from '../deploy/desktop/browser-action-diagnostics.mjs';
 
 test('browser worker failures become fixed diagnostics without forwarding locator text', () => {
   const cases = [
@@ -21,6 +21,38 @@ test('browser worker failures become fixed diagnostics without forwarding locato
     assert.equal(diagnostic.message.includes('private'), false);
     assert.equal(diagnostic.message.includes('sensitive'), false);
   }
+});
+
+test('browser failures identify the action class without exposing URL or page text', () => {
+  const cases = [
+    [Object.assign(new Error('net::ERR_NAME_NOT_RESOLVED at https://private.example/path?token=secret'), { code: 'ERR_NAME_NOT_RESOLVED' }), 'navigate', 'COMPUTER_BROWSER_NAVIGATION_NETWORK_FAILED'],
+    [new Error('Navigation interrupted by a second goto to https://private.example'), 'navigate', 'COMPUTER_BROWSER_NAVIGATION_ABORTED'],
+    [new Error('The target page, context or browser has been closed. private page contents'), 'click', 'COMPUTER_BROWSER_CONTEXT_CLOSED'],
+    [new Error('Unexpected failure with private form text and locator value'), 'fill', 'COMPUTER_BROWSER_CONTROL_ACTION_FAILED'],
+    [new Error('Unexpected failure with private page text'), 'navigate', 'COMPUTER_BROWSER_NAVIGATION_FAILED'],
+    [new Error('Unexpected failure with private page text'), 'inspect', 'COMPUTER_BROWSER_PAGE_INSPECTION_FAILED'],
+    [new Error('Unexpected failure with /workspace/private/path'), 'open_artifact', 'COMPUTER_BROWSER_ARTIFACT_OPEN_FAILED'],
+  ];
+  for (const [error, action, expected] of cases) {
+    const diagnostic = browserActionDiagnostic(error, action);
+    assert.equal(diagnostic.code, expected);
+    assert.equal(diagnostic.status, 500);
+    assert.equal(diagnostic.message.includes('private'), false);
+    assert.equal(diagnostic.message.includes('secret'), false);
+    assert.equal(diagnostic.message.includes('/workspace'), false);
+  }
+});
+
+test('computer worker log metadata keeps run ID and action name but drops all action arguments', () => {
+  const runId = '8833ae86-d2a0-422c-a07b-bb0c71b35eea';
+  const fields = safeComputerActionLogFields({
+    kind: 'browser', action: 'navigate', taskId: runId,
+    url: 'https://private.example/path?token=secret', target: 'private account', value: 'password',
+  });
+  assert.deepEqual(fields, { actionKind: 'browser', action: 'navigate', runId });
+  assert.equal(JSON.stringify(fields).includes('private'), false);
+  assert.equal(JSON.stringify(fields).includes('secret'), false);
+  assert.deepEqual(safeComputerActionLogFields({ action: 'untrusted-action', taskId: 'not-a-run-id', value: 'secret' }, 'browser'), { actionKind: 'browser', action: 'unknown' });
 });
 
 test('browser timeout classification also recognizes Playwright timeout errors', () => {
@@ -50,6 +82,10 @@ test('guarded worker request stages use fixed diagnostics without exposing reque
     message: 'The computer worker could not read the browser action request.',
   });
   assert.deepEqual(computerWorkerRequestDiagnostic('action-execute'), {
+    code: 'COMPUTER_WORKER_ACTION_EXECUTION_FAILED', status: 500,
+    message: 'The computer worker could not complete the action.',
+  });
+  assert.deepEqual(computerWorkerRequestDiagnostic('action-navigate'), {
     code: 'COMPUTER_WORKER_ACTION_EXECUTION_FAILED', status: 500,
     message: 'The computer worker could not complete the action.',
   });

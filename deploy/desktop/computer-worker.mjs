@@ -15,7 +15,7 @@ import { ensureSharedComputerRoots } from './shared-computer-root.mjs';
 import { appendControlOwnerEvent, computerScreenKey } from './control-owner-audit.mjs';
 import { createGuardedComputer } from '/opt/coke-grok/guarded-computer.mjs';
 import { isAuthenticationChallenge } from './browser-task-policy.mjs';
-import { browserActionDiagnostic, computerWorkerRequestDiagnostic } from './browser-action-diagnostics.mjs';
+import { browserActionDiagnostic, computerWorkerRequestDiagnostic, safeComputerActionLogFields } from './browser-action-diagnostics.mjs';
 
 const exec = promisify(execFile);
 const token = String(process.env.LINUX_DESKTOP_WORKER_TOKEN || '');
@@ -696,10 +696,11 @@ function guardedComputerFor(screenId) {
 http.createServer(async (req, res) => {
   let pathname = '/';
   let requestStage = 'route';
-  let guardedExecuteRequest = false;
+  let computerActionRequest = false;
+  let computerActionLogFields = safeComputerActionLogFields(null);
   try {
     pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;
-    guardedExecuteRequest = req.method === 'POST' && pathname === '/v1/guarded/execute';
+    computerActionRequest = req.method === 'POST' && ['/v1/guarded/navigate','/v1/guarded/execute','/v1/browser'].includes(pathname);
     if (req.method === 'GET' && pathname === '/healthz') return send(res, 200, { ok: true });
     if (pathname === '/v1/internal/active-tabs') {
       if (req.headers.origin !== activeTabExtensionOrigin) return send(res, 403, { error: 'active tab extension origin is required' });
@@ -755,9 +756,12 @@ http.createServer(async (req, res) => {
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/snapshot-image') return send(res, 200, await guardedComputer.snapshotWithImage());
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/navigation-state') return send(res, 200, await guardedComputer.navigationState());
     if (guardedMode && isControl && req.method === 'POST' && pathname === '/v1/guarded/navigate') {
+      requestStage = 'action-body';
       const input = await body(req);
+      computerActionLogFields = safeComputerActionLogFields(input.action, 'browser');
+      requestStage = 'action-navigate';
       try { return send(res, 200, await guardedComputer.navigateIfUnchanged(input.action, input.expected)); }
-      catch (error) { if (input.action?.kind === 'browser') throw browserActionDiagnostic(error); throw error; }
+      catch (error) { if (input.action?.kind === 'browser') throw browserActionDiagnostic(error, input.action.action); throw error; }
     }
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/inspect') return await guardedComputer.locked(async () => send(res, 200, await agentBrowserAction({action:'inspect'}, screenId)));
     if (guardedMode && isControl && req.method === 'GET' && pathname === '/v1/guarded/screenshot') return await guardedComputer.locked(async () => {
@@ -767,9 +771,10 @@ http.createServer(async (req, res) => {
     if (guardedMode && isControl && req.method === 'POST' && pathname === '/v1/guarded/execute') {
       requestStage = 'action-body';
       const input = await body(req);
+      computerActionLogFields = safeComputerActionLogFields(input.action);
       requestStage = 'action-execute';
       try { return send(res, 200, await guardedComputer.execute(input.action, input.expected)); }
-      catch (error) { if (input.action?.kind === 'browser') throw browserActionDiagnostic(error); throw error; }
+      catch (error) { if (input.action?.kind === 'browser') throw browserActionDiagnostic(error, input.action.action); throw error; }
     }
     if (req.method === 'GET' && pathname === '/v1/artifacts') {
       const taskId = new URL(req.url || '/', 'http://127.0.0.1').searchParams.get('taskId') || '';
@@ -813,9 +818,12 @@ http.createServer(async (req, res) => {
       return await guardedComputer.locked(async () => send(res, 200, await command(input,screenId)));
     }
     if (req.method === 'POST' && pathname === '/v1/browser') {
+      requestStage = 'action-body';
       const input = await body(req);
+      computerActionLogFields = safeComputerActionLogFields(input, 'browser');
+      requestStage = 'action-execute';
       try { return await guardedComputer.locked(async () => send(res, 200, await agentBrowserAction(input,screenId))); }
-      catch (error) { throw browserActionDiagnostic(error); }
+      catch (error) { throw browserActionDiagnostic(error, input.action); }
     }
     return send(res, 404, { error: 'not found' });
   } catch (error) {
@@ -838,11 +846,12 @@ http.createServer(async (req, res) => {
       rendererHealth.fail();
       void recoverChromium();
     }
-    if (guardedExecuteRequest) {
+    if (computerActionRequest) {
       const diagnostic = knownGuardedDiagnostic
         ? { code: browserDiagnostic ? error.code : computerStateChanged ? 'COMPUTER_STATE_CHANGED' : computerOwnerUser ? 'COMPUTER_OWNER_USER' : rendererUnresponsive ? 'COMPUTER_RENDERER_UNRESPONSIVE' : screenCapacity ? 'COMPUTER_SCREEN_CAPACITY' : activeTabUnresolved ? 'COMPUTER_ACTIVE_TAB_UNRESOLVED' : 'COMPUTER_BROWSER_ACTION_FAILED', status: browserDiagnostic ? error.status : computerStateChanged || computerOwnerUser ? 409 : 503 }
         : computerWorkerRequestDiagnostic(requestStage);
-      process.stderr.write(`${JSON.stringify({ event:'guarded-execute-failed', stage:requestStage, code:diagnostic.code, status:diagnostic.status })}\n`);
+      const releaseId = /^sha-[a-f0-9]{40}$/.test(process.env.COKE_GROK_RELEASE_ID || '') ? process.env.COKE_GROK_RELEASE_ID : undefined;
+      process.stderr.write(`${JSON.stringify({ event:'computer-action-failed', stage:requestStage, ...computerActionLogFields, code:diagnostic.code, status:diagnostic.status, ...(releaseId ? { releaseId } : {}) })}\n`);
       const safeMessage = browserDiagnostic ? error.message
         : computerStateChanged ? 'The computer page or owner changed before the action completed.'
         : computerOwnerUser ? 'The owner currently controls this computer.'

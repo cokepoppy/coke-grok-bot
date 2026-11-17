@@ -13,7 +13,7 @@ import type { RoutineEditInput } from './routine-store.ts';
 import type { BotSkillBridge } from './bot-skill-bridge.ts';
 import type { BotSkillInput, BotSkillScope } from './bot-skill-store.ts';
 import { safeDiagnosticMetadata,safeWorkerTarget } from './safe-diagnostics.ts';
-import type { RunTraceEvent } from './run-trace.ts';
+import { computerActionTraceEvent,type RunTraceEvent } from './run-trace.ts';
 
 /**
  * A run receives a short-lived capability; the upstream credential stays in
@@ -277,7 +277,7 @@ export class ModelGateway {
         const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
         if(!this.computer||!grant.scope?.owner||!grant.scope.botId){console.error('Model gateway computer request failed',{code:'COMPUTER_GATEWAY_SCOPE_UNAVAILABLE',status:404});return fail(404)}
         const traceStartedAt=Date.now();
-        const traceEvent=req.method==='GET'&&req.url==='/v1/computer/control'?'computer.control'
+        let traceEvent=req.method==='GET'&&req.url==='/v1/computer/control'?'computer.control'
           :req.method==='GET'&&req.url==='/v1/computer/inspect'?'computer.inspect'
           :req.method==='GET'&&req.url==='/v1/computer/screenshot'?'computer.screenshot'
           :req.method==='POST'&&computerMatch?'computer.execute':req.method==='POST'?'computer.propose':'computer.request';
@@ -311,6 +311,7 @@ export class ModelGateway {
           let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{return fail(400)}
           const action=body&&typeof body==='object'&&!Array.isArray(body)?(body as {action?:unknown}).action:undefined;
           if(!action||typeof action!=='object'||Array.isArray(action))return fail(400);
+          traceEvent=computerActionTraceEvent(traceEvent,action);
           if(!token||this.grants.get(token)!==grant||grant.expires<=Date.now())return fail(401);
           if(!computerMatch){
             const value=await this.computer.propose(scope,action,signal);
