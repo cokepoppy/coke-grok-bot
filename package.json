@@ -57,7 +57,9 @@
     "test:computer-ui-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts --gmail-handoff-only --computer-ui-only",
     "build:deployment": "VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build && VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true node scripts/mark-web-build.mjs && npm run build:server && npm run build:desktop-broker && npm run build:namespace-bootstrap",
     "release:build-images": "node scripts/build-release-images.mjs",
-    "release:verify-k3d": "node scripts/verify-k3d-release.mjs"
+    "release:verify-k3d": "node scripts/verify-k3d-release.mjs",
+    "release:deploy-k3d": "node scripts/deploy-k3d-release.mjs",
+    "release:rollback-k3d": "node scripts/rollback-k3d-release.mjs"
   },
   "dependencies": {
     "google-auth-library": "11.1.0",

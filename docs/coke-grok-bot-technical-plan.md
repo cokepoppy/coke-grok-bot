@@ -211,6 +211,7 @@ releases/<checkpoint>/
 #### 同版本部署闸门
 
 - 每次应用发布使用完整 Git commit 生成不可变发布号 `sha-<40位commit>`。Auth、Desktop Broker、Namespace Bootstrap、Agent、Desktop Worker 的镜像名可以不同，但镜像 tag 与 OCI `coke-grok-bot.io/release-id` 标签及容器运行时 `COKE_GROK_RELEASE_ID` 必须指向同一发布号。
+- K3D 发布必须通过 `npm run release:deploy-k3d`：脚本只选择 Coke Grok Bot 控制面和 `grok-user-*` 电脑 Deployment，先把镜像导入本机 K3D，再一起更新 Auth、Broker、Namespace Bootstrap、Agent、Desktop Worker 和用户镜像 pin。脚本先保存不含凭据的镜像、Pin、MySQL 与 PVC 身份快照；所有 Deployment Ready 后运行 `release:verify-k3d`，任一步失败会恢复快照中的应用镜像与 Pin。验收前必须验证同一完整 SHA、所有 Pod Ready，且 MySQL Pod 和持久卷身份不变。MySQL 是独立基础设施版本，不参与应用 SHA 对齐。
 - 验收前检查全部活动 Grok Bot Deployment、init container 和 Pod；任一应用镜像、容器运行时版本不一致或 Pod 未 Ready，就阻止 E2E。已终止的历史 Pod 不属于活动版本集合。
 - MySQL 是独立的持久化依赖，应单独记录镜像/digest 和 schema 版本；应用发布不滚动或重建 MySQL。发布过程中保留 MySQL 数据卷、电脑 PVC 和浏览器登录态。
 - 每次发布记录逐 Pod 的版本和镜像 ID；版本检查通过后再进行真实网页 E2E，并将发布号写入该任务的诊断链。
