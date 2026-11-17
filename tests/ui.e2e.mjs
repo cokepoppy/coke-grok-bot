@@ -263,6 +263,14 @@ try {
       }
       return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ group: demoGroups[0], messages: demoGroupMessages }) });
     }
+    if (path === '/api/runs/live-computer-run/trace' && route.request().method() === 'GET') {
+      const releaseId = `sha-${'a'.repeat(40)}`;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ events: [
+        { sequence: 1, component: 'control-plane', event: 'run.queued', outcome: 'info', httpStatus: null, diagnosticCode: null, durationMs: null, releaseId, at: '2026-11-17T07:30:00.000Z' },
+        { sequence: 2, component: 'agent-runtime', event: 'agent.dispatch', outcome: 'started', httpStatus: null, diagnosticCode: null, durationMs: null, releaseId, at: '2026-11-17T07:30:01.000Z' },
+        { sequence: 3, component: 'model-gateway', event: 'model.request', outcome: 'failed', httpStatus: 502, diagnosticCode: 'model_upstream_unavailable', durationMs: 421, releaseId, at: '2026-11-17T07:30:02.000Z' },
+      ] }) });
+    }
     if (path.includes('/approvals')) {
       approvalApiRequests++;
       // Simulate a stale legacy pending row. The current UI must not poll it
@@ -353,6 +361,18 @@ try {
   const completedActivityCard=productShellPage.getByRole('region',{name:'Computer activity · Done'});
   await completedActivityCard.waitFor();
   await productShellPage.getByText('Renamed to Sales Outbound', { exact: true }).waitFor();
+  await completedActivityCard.getByRole('button', { name: 'View task call chain' }).click();
+  const traceDialog = productShellPage.getByRole('dialog', { name: 'Task call chain' });
+  await traceDialog.waitFor();
+  await traceDialog.locator('.run-trace-release').getByText(`Release sha-${'a'.repeat(40)}`, { exact: true }).waitFor();
+  await traceDialog.getByText('Auth / control plane · Task queued', { exact: true }).waitFor();
+  await traceDialog.getByText('Pi / DeepSeek Harness · Agent runtime request', { exact: true }).waitFor();
+  await traceDialog.getByText('Model gateway · Model request', { exact: true }).waitFor();
+  await traceDialog.getByText('Failed · HTTP 502 · 421 ms', { exact: true }).waitFor();
+  await traceDialog.getByText('model_upstream_unavailable', { exact: true }).waitFor();
+  assert.equal(await traceDialog.getByText('private prompt', { exact: false }).count(), 0, 'The visible call chain must not expose prompts or request content');
+  await traceDialog.getByRole('button', { name: 'Close call chain' }).click();
+  await traceDialog.waitFor({ state: 'hidden' });
   const visibleTimelineOrder = await productShellPage.locator('.message-content > .message-line, .message-content > .system-event-line, .message-content > .computer-activity-line').evaluateAll(elements => elements.map(element => element.textContent || ''));
   const timelinePosition = (text) => visibleTimelineOrder.findIndex(item => item.includes(text));
   assert.ok(timelinePosition('Overnight pipeline generation and outbound.') < timelinePosition('Renamed to Sales Outbound') && timelinePosition('Renamed to Sales Outbound') < timelinePosition("Checking what's connected."), 'User tasks, persisted rename events, and Agent results should follow their event times');
@@ -458,6 +478,8 @@ try {
   const webhookUrlText = await productShellPage.locator('.routine-webhook-field').filter({ hasText: 'POST to' }).locator('code').innerText();
   assert.match(webhookUrlText,/\/api\/routine-webhooks\/webhook-routine$/);
   await productShellPage.getByText(`Authorization: Bearer ${'w'.repeat(43)}`, { exact: true }).waitFor();
+  await productShellPage.getByRole('button', { name: 'Back to routines' }).click();
+  await productShellPage.getByRole('button', { name: 'Open screen' }).waitFor();
   const openScreen = productShellPage.getByRole('button', { name: 'Open screen' });
   await openScreen.click();
   const computerScreenDialog = productShellPage.getByRole('dialog', { name: "Sales Outbound's computer screen" });

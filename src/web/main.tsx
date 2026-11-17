@@ -114,7 +114,7 @@ const initialBots: Bot[] = [
 function initialState(reference: boolean): PreviewState {
   if (reference) return {
     bots: initialBots.map(bot => ({ ...bot })), activeId: 'new',
-    messages: { new: [{ id: 'welcome', role: 'bot', text: 'Hey Martin — good to meet you. What do you want me helping with most right now?' }] },
+    messages: { new: [{ id: 'welcome', role: 'bot', text: 'Hey Martin — good to meet you. What do you want me helping with most right now?', createdAt: new Date().toISOString() }] },
     showOnboarding: { new: true },
   };
   const starter = { ...initialBots[0], id: 'starter', name: 'New Bot', preview: 'Ready for a conversation' };
