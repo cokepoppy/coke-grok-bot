@@ -1,0 +1,10 @@
+e54dc4943fc7b40b8f7870416832c00edf6a729a8594cae97a2fcfb5053aa136  ./README.md
+e0af699801dd7b05fb651e8ea1806666f54dd63a6c36e3eef06586ba2a926e53  ./artifacts/Dockerfile.desktop-broker
+4d563e4544e888fd1f1c67bcb6ff23eee3be912fe43ffa9c22c982fb1a2246bd  ./artifacts/desktop-broker-image.txt
+40553234180a0ffe949563d3cad1828a769021c93f7e7bbc018e270bb3eb5a3f  ./artifacts/desktop-broker.cjs
+a5c77ecc2816e9f348addbcb34e14767ce282caa9ce18b193e292cb68e4489ae  ./manifest.json
+37469e2bb7d1cf31b9546c56dda174a519a5fb9a1f0fea1f88e1c4d7f1dd6993  ./operations/2026-11-17.md
+9427ae3d47d615f8e3202072c606a31dd735a818cb186aedc12ca69d2b2b91e1  ./scripts/deploy.sh
+a32ff26646bc7f0b0ce0b8d1f65ed3274a2096c3508a97dfaabfd8ee2153d54d  ./scripts/rollback.sh
+a6a48c3f55618b3576d5c2a041211eca5b25c14c198eb844e6145e7132589d76  ./scripts/verify.sh
+048496580307086ba1d96f56979d672ce0ff60d4d31a8af9afe2a81fef66de70  ./source/source.tar.gz
