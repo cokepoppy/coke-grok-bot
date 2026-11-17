@@ -856,7 +856,7 @@ http.createServer(async (req, res) => {
         : computerStateChanged ? 'The computer page or owner changed before the action completed.'
         : computerOwnerUser ? 'The owner currently controls this computer.'
         : diagnostic.message || `Computer action failed: ${diagnostic.code}`;
-      return send(res, diagnostic.status, { code:diagnostic.code, error:safeMessage });
+      return send(res, diagnostic.status, { code:diagnostic.code, error:safeMessage, stage:requestStage });
     }
     const status = browserDiagnostic ? error.status : computerStateChanged || computerOwnerUser ? 409 : contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved ? 503 : 400;
     return send(res, status, {

@@ -33,6 +33,7 @@ const workerDiagnosticMessages:Record<string,SafeDiagnosticError['diagnosticCode
 };
 async function throwWorkerResponseError(response:Response,fallback:SafeDiagnosticError['diagnosticCode'],operation:SafeDiagnosticError['workerOperation'],workerTarget:string):Promise<never>{
  let code:SafeDiagnosticError['diagnosticCode']|undefined;
+ let stage:SafeDiagnosticError['workerStage']|undefined;
  const type=response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
  const length=Number(response.headers.get('content-length'));
  if(type==='application/json'&&(!Number.isFinite(length)||length<=4096)){
@@ -41,17 +42,18 @@ async function throwWorkerResponseError(response:Response,fallback:SafeDiagnosti
    try{
     const value:unknown=JSON.parse(text);
     if(value&&typeof value==='object'&&!Array.isArray(value)){
-     const body=value as {code?:unknown;error?:unknown};
+     const body=value as {code?:unknown;error?:unknown;stage?:unknown};
      if(typeof body.code==='string')code=workerDiagnosticCodes[body.code];
      if(!code&&typeof body.error==='string')code=workerDiagnosticMessages[body.error];
+     if(typeof body.stage==='string'&&['route','screen-scope','screen-owner','action-body','action-navigate','action-execute'].includes(body.stage))stage=body.stage as SafeDiagnosticError['workerStage'];
     }
    }catch{/* Only fixed worker codes and exact fixed messages are surfaced. */}
   }
  }
- if(response.status===401)throw new SafeDiagnosticError('COMPUTER_WORKER_AUTH_REJECTED',401,operation,undefined,workerTarget);
- if(code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED')throw new SafeDiagnosticError(code,response.status,operation,undefined,workerTarget);
- if(response.status===403)throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN',403,operation,undefined,workerTarget);
- throw new SafeDiagnosticError(code??fallback,response.status,operation,undefined,workerTarget);
+ if(response.status===401)throw new SafeDiagnosticError('COMPUTER_WORKER_AUTH_REJECTED',401,operation,undefined,workerTarget,stage);
+ if(code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED')throw new SafeDiagnosticError(code,response.status,operation,undefined,workerTarget,stage);
+ if(response.status===403)throw new SafeDiagnosticError('COMPUTER_WORKER_FORBIDDEN',403,operation,undefined,workerTarget,stage);
+ throw new SafeDiagnosticError(code??fallback,response.status,operation,undefined,workerTarget,stage);
 }
 export function parseComputerViewport(value:unknown):ComputerViewport{
  if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid computer viewport');

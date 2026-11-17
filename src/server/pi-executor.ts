@@ -107,6 +107,7 @@ export class DesktopAgentExecutor implements RunExecutor {
     const owner:RunOwner=screen;
     let desktop:DesktopConnection;
     const connectStartedAt=Date.now();
+    await this.recordTrace(run.id,{component:'control-plane',event:'desktop.connect',outcome:'started'});
     try { desktop=await this.desktops.connect(owner,signal); }
     catch { await this.recordTrace(run.id,{component:'control-plane',event:'desktop.connect',outcome:'failed',diagnosticCode:signal.aborted?'execution_aborted':'desktop_connect_failed',durationMs:Date.now()-connectStartedAt});throw new RunDiagnosticError(signal.aborted?'execution_aborted':'desktop_connect_failed'); }
     await this.recordTrace(run.id,{component:'control-plane',event:'desktop.connect',outcome:'succeeded',httpStatus:200,durationMs:Date.now()-connectStartedAt});
@@ -171,6 +172,7 @@ export class DesktopAgentExecutor implements RunExecutor {
       };
       let response:Response;
       const dispatchStartedAt=Date.now();
+      await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'started'});
       try {
         response=await this.request(new URL('/v1/tasks/run',endpoint),requestInit);
       } catch {
@@ -198,7 +200,7 @@ export class DesktopAgentExecutor implements RunExecutor {
       if (result.status==='waiting') throw new RunDiagnosticError(result.controlOwner==='unknown'?'computer_control_state_unknown':'agent_result_status_unconfirmed',executionAudit);
       if (!['done','failed','scheduled','delegating'].includes(String(result.status))) throw new RunDiagnosticError('agent_result_status_unconfirmed',executionAudit);
       if (typeof result.message!=='string' || !result.message.trim()) throw new RunDiagnosticError('agent_result_message_missing',executionAudit);
-      await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:result.status==='failed'?'failed':'succeeded',httpStatus:200,...(result.status==='failed'?{diagnosticCode:'agent_reported_failure'}:{}),...(agentReleaseId?{releaseId:agentReleaseId}:{})});
+      await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:result.status==='failed'?'failed':'succeeded',httpStatus:200,durationMs:Date.now()-dispatchStartedAt,...(result.status==='failed'?{diagnosticCode:'agent_reported_failure'}:{}),...(agentReleaseId?{releaseId:agentReleaseId}:{})});
       let safe=result.message.split(capability).join('[redacted]').split(desktop.agentToken).join('[redacted]').slice(0,20000);
       if(explicitMemorySave==='saved') safe+=/\p{Script=Han}/u.test(run.prompt)?'\n\n已保存到此 Bot 的记忆中。':'\n\nSaved to this Bot’s memory.';
       else if(explicitMemorySave==='blocked') safe+=/\p{Script=Han}/u.test(run.prompt)?'\n\n这条记忆未保存；密码、密钥和联系方式应存放在 Vault 中。':'\n\nThis memory was not saved; keep passwords, keys, and contact details in the Vault.';

@@ -9,12 +9,18 @@ export interface RunTraceEvent {
   diagnosticCode?: string | null;
   durationMs?: number | null;
   releaseId?: string | null;
+  stage?: string | null;
+  operation?: string | null;
+  transportCode?: string | null;
 }
 
 const components = new Set<RunTraceComponent>(['control-plane','scheduler','agent-runtime','model-gateway','computer-worker','mysql']);
 const outcomes = new Set<RunTraceOutcome>(['started','succeeded','failed','info']);
 const browserTraceActions = new Set(['inspect','navigate','open_artifact','upload_file','click','fill','select','check','uncheck','press']);
 const desktopTraceActions = new Set(['open','navigate','open-artifact','click','type','press']);
+const workerStages = new Set(['route','screen-scope','screen-owner','action-body','action-navigate','action-execute']);
+const workerOperations = new Set(['viewport','snapshot','snapshot-image','navigation-state','control','navigate','inspect','screenshot','user-screenshot','set-control','user-action','execute']);
+const workerTransportCodes = new Set(['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET','UNKNOWN']);
 
 /** Add only a fixed action name to the trace event; never include URLs or action arguments. */
 export function computerActionTraceEvent(baseEvent:string, action:unknown):string {
@@ -37,10 +43,16 @@ export function validateRunTraceEvent(value: unknown): RunTraceEvent | null {
   const diagnosticCode = row.diagnosticCode === undefined || row.diagnosticCode === null ? null : row.diagnosticCode;
   const durationMs = row.durationMs === undefined || row.durationMs === null ? null : row.durationMs;
   const releaseId = row.releaseId === undefined || row.releaseId === null ? null : row.releaseId;
+  const stage = row.stage === undefined || row.stage === null ? null : row.stage;
+  const operation = row.operation === undefined || row.operation === null ? null : row.operation;
+  const transportCode = row.transportCode === undefined || row.transportCode === null ? null : row.transportCode;
   if (httpStatus !== null && (!Number.isInteger(httpStatus) || Number(httpStatus) < 100 || Number(httpStatus) > 599)) return null;
   if (diagnosticCode !== null && (typeof diagnosticCode !== 'string' || !/^[A-Za-z0-9_.-]{1,96}$/.test(diagnosticCode))) return null;
   if (durationMs !== null && (!Number.isSafeInteger(durationMs) || Number(durationMs) < 0 || Number(durationMs) > 3_600_000)) return null;
   if (releaseId !== null && (typeof releaseId !== 'string' || !/^sha-[a-f0-9]{40}$/.test(releaseId))) return null;
+  if (stage !== null && (typeof stage !== 'string' || !workerStages.has(stage))) return null;
+  if (operation !== null && (typeof operation !== 'string' || !workerOperations.has(operation))) return null;
+  if (transportCode !== null && (typeof transportCode !== 'string' || !workerTransportCodes.has(transportCode))) return null;
   return {
     component: row.component as RunTraceComponent,
     event: row.event,
@@ -49,5 +61,8 @@ export function validateRunTraceEvent(value: unknown): RunTraceEvent | null {
     diagnosticCode: diagnosticCode as string | null,
     durationMs: durationMs as number | null,
     releaseId: releaseId as string | null,
+    stage: stage as string | null,
+    operation: operation as string | null,
+    transportCode: transportCode as string | null,
   };
 }

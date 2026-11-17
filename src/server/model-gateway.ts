@@ -286,21 +286,25 @@ export class ModelGateway {
         const signal=AbortSignal.any([grant.abort.signal,disconnected.signal,AbortSignal.timeout(30_000)]);
         try {
           if(req.method==='GET'&&req.url==='/v1/computer/control'){
+            await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'started'});
             const value=await this.computer.control(scope,signal);
             await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'succeeded',httpStatus:200,durationMs:Date.now()-traceStartedAt});
             return reply(200,value);
           }
           if(req.method==='GET'&&req.url==='/v1/computer/inspect'){
+            await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'started'});
             const value=await this.computer.inspect(scope,signal);
             await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'succeeded',httpStatus:200,durationMs:Date.now()-traceStartedAt});
             return reply(200,value);
           }
           if(req.method==='GET'&&req.url==='/v1/computer/screenshot'){
+            await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'started'});
             const image=await this.computer.screenshot(scope,signal);
             await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'succeeded',httpStatus:200,durationMs:Date.now()-traceStartedAt});
             res.writeHead(200,{'Content-Type':'image/png','Content-Length':image.length,'Cache-Control':'no-store'});return res.end(image);
           }
           if(req.method==='GET'&&computerMatch&&!computerMatch[2]){
+            await this.recordTrace(grant,{component:'computer-worker',event:'computer.status',outcome:'started'});
             const status=await this.computer.status(scope,computerMatch[1],signal);
             await this.recordTrace(grant,{component:'computer-worker',event:'computer.status',outcome:status?'succeeded':'failed',httpStatus:status?200:404,durationMs:Date.now()-traceStartedAt,...(status?{}:{diagnosticCode:'COMPUTER_STATUS_NOT_FOUND'})});
             return status?reply(200,{status}):fail(404);
@@ -314,17 +318,19 @@ export class ModelGateway {
           traceEvent=computerActionTraceEvent(traceEvent,action);
           if(!token||this.grants.get(token)!==grant||grant.expires<=Date.now())return fail(401);
           if(!computerMatch){
+            await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'started'});
             const value=await this.computer.propose(scope,action,signal);
             await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'succeeded',httpStatus:201,durationMs:Date.now()-traceStartedAt});
             return reply(201,value);
           }
+          await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'started'});
           const value=await this.computer.execute(scope,computerMatch[1],action,signal);
           await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'succeeded',httpStatus:200,durationMs:Date.now()-traceStartedAt});
           return reply(200,value);
         } catch (error) {
           const diagnostic=safeDiagnosticMetadata(error);
           const workerTarget=safeWorkerTarget(error);
-          await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'failed',httpStatus:diagnostic.status??409,diagnosticCode:diagnostic.code,durationMs:Date.now()-traceStartedAt});
+          await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'failed',httpStatus:diagnostic.status??409,diagnosticCode:diagnostic.code,durationMs:Date.now()-traceStartedAt,...(diagnostic.workerStage?{stage:diagnostic.workerStage}:{}),...(diagnostic.workerOperation?{operation:diagnostic.workerOperation}:{}),...(diagnostic.transportCode?{transportCode:diagnostic.transportCode}:{})});
           console.error('Model gateway computer request failed',{...diagnostic,...(workerTarget?{workerTarget}:{})});
           return reply(409,{error:'computer_request_failed',diagnostic});
         }
@@ -349,6 +355,7 @@ export class ModelGateway {
         res.once('close', () => disconnected.abort());
         const upstreamBase=this.upstream.href.replace(/\/+$/,'');
         modelStartedAt=Date.now();
+        await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'started'});
         const result = await this.requestUpstreamModel(`${upstreamBase}/chat/completions`, {
           method: 'POST', redirect: 'error', headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json' },
           body: JSON.stringify(payload), signal: AbortSignal.any([grant.abort.signal, disconnected.signal, AbortSignal.timeout(120_000)]),

@@ -15,7 +15,7 @@ type RunFile = { id: string; name: string; mimeType: string; size: number; sha25
 type BotLibraryCategory = 'All'|'Pages'|'Media'|'Links'|'Files'|'Apps'|'Pinned';
 type BotLibraryItem = RunFile & {kind:'output';createdAt:string;pinned:boolean};
 type ExecutionAudit = {engine:'pi'|'dsh';model:string;modelCompleted:boolean;calls:{tool:string;action:string|null;outcome:'succeeded'|'failed'|'unconfirmed'}[];truncated:boolean};
-type RunTraceEntry = {sequence:number;component:'control-plane'|'scheduler'|'agent-runtime'|'model-gateway'|'computer-worker'|'mysql';event:string;outcome:'started'|'succeeded'|'failed'|'info';httpStatus:number|null;diagnosticCode:string|null;durationMs:number|null;releaseId:string|null;at:string};
+type RunTraceEntry = {sequence:number;component:'control-plane'|'scheduler'|'agent-runtime'|'model-gateway'|'computer-worker'|'mysql';event:string;outcome:'started'|'succeeded'|'failed'|'info';httpStatus:number|null;diagnosticCode:string|null;durationMs:number|null;releaseId:string|null;stage:string|null;operation:string|null;transportCode:string|null;at:string};
 type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged' | 'auto_resumed'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; executionAudit?:ExecutionAudit|null; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: string | null };
 type GroupMember = Pick<Bot,'id'|'name'|'label'|'color'|'shape'> & { position: number };
 type BotMentionCandidate = {kind:'bot';id:string;bot:GroupMember|Bot}|{kind:'everyone';id:'everyone'};
@@ -770,7 +770,8 @@ function RunTraceButton({runId,compact=false}:{runId:string;compact?:boolean}) {
     const channel=match[2]==='browser'?'Browser':'Desktop';
     return `${channel} ${action} ${match[1]==='propose'?'prepared':'executed'}`;
   };
-  const outcomeLabels:Record<RunTraceEntry['outcome'],string>={started:'Started',succeeded:'Succeeded',failed:'Failed',info:'Info'};
+  const outcomeLabels:Record<RunTraceEntry['outcome'],string>={started:'In progress',succeeded:'Succeeded',failed:'Failed',info:'Info'};
+  const stageLabels:Record<string,string>={route:'Worker route', 'screen-scope':'Resolve Bot screen','screen-owner':'Check computer owner','action-body':'Validate action request','action-navigate':'Run browser navigation','action-execute':'Run browser or desktop action'};
   const traceIcon=<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h3l2 4.5 2-4.5h5M2 12.5h3l2-4.5 2 4.5h5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"/></svg>;
   return <>
     <button type="button" className={`run-trace-open${compact?' compact':''}`} aria-label={compact?'View task call chain':undefined} title="View task call chain" onClick={()=>void load()}>{compact?traceIcon:'View task call chain'}</button>
@@ -786,6 +787,7 @@ function RunTraceButton({runId,compact=false}:{runId:string;compact?:boolean}) {
           <strong>{componentLabels[event.component]} · {traceEventLabel(event.event)}</strong>
           <span>{outcomeLabels[event.outcome]}{event.httpStatus?` · HTTP ${event.httpStatus}`:''}{event.durationMs!==null?` · ${event.durationMs} ms`:''}</span>
           {event.diagnosticCode&&<div className="run-trace-diagnostic"><span>{diagnosticLabels[event.diagnosticCode]||'A backend diagnostic was recorded'}</span><code>{event.diagnosticCode}</code></div>}
+          {(event.stage||event.operation||event.transportCode)&&<div className="run-trace-metadata">{event.stage&&<span>Stage: {stageLabels[event.stage]||event.stage}</span>}{event.operation&&<span>Worker operation: {event.operation}</span>}{event.transportCode&&<span>Transport: <code>{event.transportCode}</code></span>}</div>}
           {event.releaseId&&<small>Release {event.releaseId}</small>}
         </li>)}</ol>}
         <p className="run-trace-footnote">Contains sanitized operational events only. Prompts, page contents, request bodies, and credentials are not included.</p>

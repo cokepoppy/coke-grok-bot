@@ -18,11 +18,13 @@ test('run traces retain only bounded operational metadata',()=>{
  const event=validateRunTraceEvent({
   component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:400,
   diagnosticCode:'agent_adapter_failed',durationMs:37,releaseId:`sha-${'a'.repeat(40)}`,
+  stage:'action-execute',operation:'execute',transportCode:'ECONNRESET',
   prompt:'private user prompt',pageUrl:'https://mail.google.com/private',apiKey:'must not persist',
  });
  assert.deepEqual(event,{
   component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:400,
   diagnosticCode:'agent_adapter_failed',durationMs:37,releaseId:`sha-${'a'.repeat(40)}`,
+  stage:'action-execute',operation:'execute',transportCode:'ECONNRESET',
  });
  assert.equal(JSON.stringify(event).includes('private'),false);
  assert.equal(JSON.stringify(event).includes('apiKey'),false);
@@ -35,4 +37,7 @@ test('run traces reject malformed component, status, diagnostic, timing, and rel
  assert.equal(validateRunTraceEvent({...base,diagnosticCode:'includes private text'}),null);
  assert.equal(validateRunTraceEvent({...base,durationMs:-1}),null);
  assert.equal(validateRunTraceEvent({...base,releaseId:'latest'}),null);
+ assert.equal(validateRunTraceEvent({...base,stage:'private URL https://example.test'}),null);
+ assert.equal(validateRunTraceEvent({...base,operation:'private operation'}),null);
+ assert.equal(validateRunTraceEvent({...base,transportCode:'private error text'}),null);
 });

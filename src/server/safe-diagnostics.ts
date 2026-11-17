@@ -63,6 +63,7 @@ export type SafeWorkerOperation =
   | 'set-control'
   | 'user-action'
   | 'execute';
+export type SafeWorkerStage = 'route' | 'screen-scope' | 'screen-owner' | 'action-body' | 'action-navigate' | 'action-execute';
 export type SafeWorkerTransportCode =
   | 'ECONNRESET'
   | 'ECONNREFUSED'
@@ -98,6 +99,7 @@ export class SafeDiagnosticError extends Error {
     readonly workerOperation?: SafeWorkerOperation,
     readonly transportCode?: SafeWorkerTransportCode,
     readonly workerTarget?: string,
+    readonly workerStage?: SafeWorkerStage,
   ) {
     super(diagnosticCode);
     this.name = 'SafeDiagnosticError';
@@ -120,16 +122,18 @@ export function safeWorkerTransportCode(error: unknown): SafeWorkerTransportCode
   return 'UNKNOWN';
 }
 
-export function safeDiagnosticMetadata(error: unknown): {code:SafeDiagnosticCode;status?:number;workerOperation?:SafeWorkerOperation;transportCode?:SafeWorkerTransportCode} {
+export function safeDiagnosticMetadata(error: unknown): {code:SafeDiagnosticCode;status?:number;workerOperation?:SafeWorkerOperation;transportCode?:SafeWorkerTransportCode;workerStage?:SafeWorkerStage} {
   if(!(error instanceof SafeDiagnosticError))return {code:'INTERNAL_FAILURE'};
   const status=Number.isInteger(error.status)&&error.status!>=100&&error.status!<=599?error.status:undefined;
   const workerOperation=error.workerOperation&&safeWorkerOperations.includes(error.workerOperation)?error.workerOperation:undefined;
   const transportCode=error.transportCode&&safeWorkerTransportCodes.includes(error.transportCode)?error.transportCode:undefined;
+  const workerStage=error.workerStage&&['route','screen-scope','screen-owner','action-body','action-navigate','action-execute'].includes(error.workerStage)?error.workerStage:undefined;
   return {
     code:error.diagnosticCode,
     ...(status===undefined?{}:{status}),
     ...(workerOperation?{workerOperation}:{}),
     ...(transportCode?{transportCode}:{}),
+    ...(workerStage?{workerStage}:{}),
   };
 }
 

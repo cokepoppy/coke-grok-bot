@@ -269,6 +269,7 @@ try {
         { sequence: 1, component: 'control-plane', event: 'run.queued', outcome: 'info', httpStatus: null, diagnosticCode: null, durationMs: null, releaseId, at: '2026-11-17T07:30:00.000Z' },
         { sequence: 2, component: 'agent-runtime', event: 'agent.dispatch', outcome: 'started', httpStatus: null, diagnosticCode: null, durationMs: null, releaseId, at: '2026-11-17T07:30:01.000Z' },
         { sequence: 3, component: 'model-gateway', event: 'model.request', outcome: 'failed', httpStatus: 502, diagnosticCode: 'model_upstream_unavailable', durationMs: 421, releaseId, at: '2026-11-17T07:30:02.000Z' },
+        { sequence: 4, component: 'computer-worker', event: 'computer.execute.browser.navigate', outcome: 'failed', httpStatus: 500, diagnosticCode: 'COMPUTER_BROWSER_NAVIGATION_NETWORK_FAILED', durationMs: 806, releaseId, stage: 'action-navigate', operation: 'navigate', transportCode: 'ECONNRESET', at: '2026-11-17T07:30:03.000Z' },
       ] }) });
     }
     if (path.includes('/approvals')) {
@@ -370,6 +371,8 @@ try {
   await traceDialog.getByText('Model gateway · Model request', { exact: true }).waitFor();
   await traceDialog.getByText('Failed · HTTP 502 · 421 ms', { exact: true }).waitFor();
   await traceDialog.getByText('model_upstream_unavailable', { exact: true }).waitFor();
+  await traceDialog.getByText('Stage: Run browser navigation', { exact: true }).waitFor();
+  await traceDialog.getByText('Transport: ECONNRESET', { exact: true }).waitFor();
   assert.equal(await traceDialog.getByText('private prompt', { exact: false }).count(), 0, 'The visible call chain must not expose prompts or request content');
   await traceDialog.getByRole('button', { name: 'Close call chain' }).click();
   await traceDialog.waitFor({ state: 'hidden' });
