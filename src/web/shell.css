@@ -543,6 +543,27 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
   }
 }
 
+.run-trace-open { margin-top: 10px; min-height: 36px; padding: 7px 12px; border: 1px solid #dedbe7; border-radius: 10px; background: #fff; color: #51466f; font: inherit; font-size: 13px; cursor: pointer; }
+.run-trace-open:hover { background: #f8f6fb; border-color: #bcb3cf; }
+.run-trace-backdrop { position: fixed; inset: 0; z-index: 1400; display: grid; place-items: center; padding: 22px; background: rgba(22, 20, 27, .42); }
+.run-trace-dialog { width: min(720px, 100%); max-height: min(82vh, 820px); overflow: auto; padding: 22px; border: 1px solid #e6e2eb; border-radius: 18px; background: #fff; color: #201d25; box-shadow: 0 24px 80px rgba(24, 20, 30, .24); }
+.run-trace-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.run-trace-dialog h2 { margin: 0; font-size: 20px; font-weight: 650; }
+.run-trace-dialog header p { margin: 5px 0 0; color: #77717f; font-size: 12px; overflow-wrap: anywhere; }
+.run-trace-dialog header button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #f3f1f5; color: #625c68; font-size: 23px; line-height: 1; cursor: pointer; }
+.run-trace-release { margin: 16px 0 4px; padding: 9px 12px; border-radius: 10px; background: #eef7f1; color: #26734c; font-size: 13px; }
+.run-trace-release.mismatch { background: #fff0ed; color: #a33b31; }
+.run-trace-list { display: grid; gap: 8px; margin: 16px 0; padding: 0; list-style: none; }
+.run-trace-event { display: grid; grid-template-columns: minmax(145px, .75fr) minmax(0, 1.5fr); gap: 4px 12px; padding: 12px; border: 1px solid #e8e5ec; border-radius: 12px; background: #fcfbfd; }
+.run-trace-event time { grid-column: 1 / -1; color: #817b89; font-size: 11px; }
+.run-trace-event strong { font-size: 13px; font-weight: 620; }
+.run-trace-event > span { color: #5f5967; font-size: 12px; text-align: right; }
+.run-trace-event.failed { border-color: #f0d2cd; background: #fff9f8; }
+.run-trace-event.failed code { grid-column: 1 / -1; color: #a33b31; font-size: 12px; }
+.run-trace-event small { grid-column: 1 / -1; color: #77717f; font-size: 11px; }
+.run-trace-footnote { margin: 18px 0 0; color: #797380; font-size: 12px; }
+@media (max-width: 580px) { .run-trace-backdrop { padding: 10px; } .run-trace-dialog { padding: 16px; } .run-trace-event { grid-template-columns: 1fr; } .run-trace-event time,.run-trace-event.failed code,.run-trace-event small { grid-column: auto; } .run-trace-event > span { text-align: left; } }
+
 /* Match the current x.ai/bot workspace window: two columns by default, with
    the computer/details surface opened from the monitor control on demand. */
 .app.product-shell {

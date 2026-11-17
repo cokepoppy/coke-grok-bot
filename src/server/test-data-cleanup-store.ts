@@ -195,6 +195,7 @@ export class TestDataCleanupStore {
       if (routineIds.length && await tableExists(connection, 'routine_runs')) await deleteIds(connection, 'routine_runs', 'routine_id', routineIds);
       if (groupIds.length) await deleteIds(connection, 'bot_group_chats', 'id', groupIds);
       if (runIds.length) {
+        if (await tableExists(connection, 'agent_run_traces')) await deleteIds(connection, 'agent_run_traces', 'run_id', runIds);
         await deleteIds(connection, 'agent_run_events', 'run_id', runIds);
         await deleteIds(connection, 'agent_runs', 'id', runIds);
       }

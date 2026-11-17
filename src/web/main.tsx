@@ -15,6 +15,7 @@ type RunFile = { id: string; name: string; mimeType: string; size: number; sha25
 type BotLibraryCategory = 'All'|'Pages'|'Media'|'Links'|'Files'|'Apps'|'Pinned';
 type BotLibraryItem = RunFile & {kind:'output';createdAt:string;pinned:boolean};
 type ExecutionAudit = {engine:'pi'|'dsh';model:string;modelCompleted:boolean;calls:{tool:string;action:string|null;outcome:'succeeded'|'failed'|'unconfirmed'}[];truncated:boolean};
+type RunTraceEntry = {sequence:number;component:'control-plane'|'scheduler'|'agent-runtime'|'model-gateway'|'computer-worker'|'mysql';event:string;outcome:'started'|'succeeded'|'failed'|'info';httpStatus:number|null;diagnosticCode:string|null;durationMs:number|null;releaseId:string|null;at:string};
 type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged' | 'auto_resumed'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; executionAudit?:ExecutionAudit|null; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: string | null };
 type GroupMember = Pick<Bot,'id'|'name'|'label'|'color'|'shape'> & { position: number };
 type BotMentionCandidate = {kind:'bot';id:string;bot:GroupMember|Bot}|{kind:'everyone';id:'everyone'};
@@ -740,7 +741,47 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
     {showScreen&&image?<button type="button" className="computer-activity-screen" onClick={onOpenComputer} aria-label="Open this Bot's computer"><img src={image} alt="Current cloud computer screen" /></button>:<button type="button" className="computer-activity-open" onClick={onOpenComputer}>{unavailable?'Open computer to inspect the screen':'View computer screen'}</button>}
     {screenStale&&image&&<p className="computer-screen-stale" role="status">Screen update delayed · showing the last received screen.</p>}
     {run.executionAudit&&<details className="computer-activity-audit"><summary>Execution details</summary><div className="computer-activity-audit-body"><span>{run.executionAudit.engine==='dsh'?'DeepSeek Harness':'Pi'} · {run.executionAudit.model} · {run.executionAudit.modelCompleted?'response received':'response not confirmed'}</span>{run.executionAudit.calls.map((call,index)=><span key={`${call.tool}-${call.action||''}-${index}`}>{toolLabel(call.tool)}{call.action?` · ${call.action}`:''} · {call.outcome}</span>)}{run.executionAudit.truncated&&<span>Additional tool calls omitted</span>}</div></details>}
+    <RunTraceButton runId={run.id}/>
   </section>;
+}
+
+function RunTraceButton({runId}:{runId:string}) {
+  const [open,setOpen]=useState(false);
+  const [state,setState]=useState<{status:'loading'|'ready'|'error';events:RunTraceEntry[]}>({status:'loading',events:[]});
+  const load=async()=>{
+    setOpen(true);setState({status:'loading',events:[]});
+    try{
+      const response=await fetch(`${import.meta.env.BASE_URL}api/runs/${encodeURIComponent(runId)}/trace`,{credentials:'same-origin',cache:'no-store'});
+      if(!response.ok)throw new Error('Trace unavailable');
+      const value=await response.json() as {events?:RunTraceEntry[]};
+      if(!Array.isArray(value.events))throw new Error('Trace unavailable');
+      setState({status:'ready',events:value.events});
+    }catch{setState({status:'error',events:[]})}
+  };
+  const releaseIds=[...new Set(state.events.map(event=>event.releaseId).filter((value):value is string=>Boolean(value)))];
+  const componentLabels:Record<RunTraceEntry['component'],string>={'control-plane':'Auth / control plane',scheduler:'Task scheduler','agent-runtime':'Pi / DeepSeek Harness','model-gateway':'Model gateway','computer-worker':'Cloud computer worker',mysql:'MySQL'};
+  const eventLabels:Record<string,string>={'run.queued':'Task queued','run.claimed':'Task claimed','desktop.connect':'Cloud computer connection','agent.dispatch':'Agent runtime request','agent.result':'Agent response','model.request':'Model request','computer.control':'Computer control check','computer.inspect':'Computer page inspection','computer.screenshot':'Computer screen read','computer.status':'Computer status check','computer.propose':'Computer action prepared','computer.execute':'Computer action executed','run.persisted':'Result saved','run.outcome_unknown':'Outcome marked unknown'};
+  const outcomeLabels:Record<RunTraceEntry['outcome'],string>={started:'Started',succeeded:'Succeeded',failed:'Failed',info:'Info'};
+  return <>
+    <button type="button" className="run-trace-open" onClick={()=>void load()}>View task call chain</button>
+    {open&&<div className="run-trace-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setOpen(false)}}>
+      <section className="run-trace-dialog" role="dialog" aria-modal="true" aria-labelledby={`run-trace-title-${runId}`}>
+        <header><div><h2 id={`run-trace-title-${runId}`}>Task call chain</h2><p>Run {runId}</p></div><button type="button" aria-label="Close call chain" onClick={()=>setOpen(false)}>×</button></header>
+        {releaseIds.length>0&&<p className={`run-trace-release ${releaseIds.length>1?'mismatch':''}`}>{releaseIds.length===1?`Release ${releaseIds[0]}`:`Mixed releases: ${releaseIds.join(', ')}`}</p>}
+        {state.status==='loading'&&<p role="status">Loading run trace…</p>}
+        {state.status==='error'&&<p role="alert">Could not load this run trace.</p>}
+        {state.status==='ready'&&!state.events.length&&<p>No backend trace was recorded for this run.</p>}
+        {state.status==='ready'&&state.events.length>0&&<ol className="run-trace-list">{state.events.map(event=><li key={event.sequence} className={`run-trace-event ${event.outcome}`}>
+          <time dateTime={event.at}>{new Date(event.at).toLocaleString()}</time>
+          <strong>{componentLabels[event.component]} · {eventLabels[event.event]||event.event}</strong>
+          <span>{outcomeLabels[event.outcome]}{event.httpStatus?` · HTTP ${event.httpStatus}`:''}{event.durationMs!==null?` · ${event.durationMs} ms`:''}</span>
+          {event.diagnosticCode&&<code>{event.diagnosticCode}</code>}
+          {event.releaseId&&<small>Release {event.releaseId}</small>}
+        </li>)}</ol>}
+        <p className="run-trace-footnote">Contains sanitized operational events only. Prompts, page contents, request bodies, and credentials are not included.</p>
+      </section>
+    </div>}
+  </>;
 }
 
 function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () => void }) {

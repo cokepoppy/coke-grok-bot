@@ -5,6 +5,7 @@ import type { Session } from './tenant-store.ts';
 import { WorkspaceFileStore, type RunFile } from './file-store.ts';
 import { isRunDiagnosticCode, type RunDiagnosticCode } from './run-diagnostics.ts';
 import { validateAgentExecutionAudit, type AgentExecutionAudit } from './execution-audit.ts';
+import { validateRunTraceEvent, type RunTraceEvent } from './run-trace.ts';
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'unknown';
 export type RecoveryState = 'none' | 'pending' | 'retried' | 'acknowledged' | 'auto_resumed';
@@ -64,6 +65,20 @@ export class RunStore {
       KEY run_history (run_id, sequence),
       FOREIGN KEY (run_id) REFERENCES agent_runs(id)
     ) ENGINE=InnoDB`);
+    await this.pool.execute(`CREATE TABLE IF NOT EXISTS agent_run_traces (
+      sequence BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      run_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+      component VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+      event VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+      outcome ENUM('started','succeeded','failed','info') NOT NULL,
+      http_status SMALLINT UNSIGNED NULL,
+      diagnostic_code VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
+      duration_ms INT UNSIGNED NULL,
+      release_id VARCHAR(80) CHARACTER SET ascii COLLATE ascii_bin NULL,
+      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      KEY run_trace (run_id, sequence),
+      FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB`);
     // Unknown runs are never replayed automatically, but they also must not
     // block future work behind a manual review card. Preserve their original
     // status and audit while allowing the Bot's queue to continue.
@@ -113,6 +128,7 @@ export class RunStore {
       run.updatedAt=String(timestamps[0].updatedAt);
       for (const fileId of fileIds) await connection.execute("INSERT INTO agent_run_files (run_id,file_id,kind) VALUES (?,?,'input')",[run.id,fileId]);
       await connection.execute('INSERT INTO agent_run_events (run_id,status) VALUES (?,?)',[run.id,run.status]);
+      await connection.execute("INSERT INTO agent_run_traces (run_id,component,event,outcome) VALUES (?,'control-plane','run.queued','succeeded')",[run.id]);
       return run;
     });
   }
@@ -185,6 +201,7 @@ export class RunStore {
       const previousPrompts=previousRows.map(previous=>String(previous.prompt)).reverse();
       await connection.execute(`UPDATE agent_runs SET status='running',lease_id=?,lease_until=DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ? SECOND) WHERE id=?`,[leaseId,leaseSeconds,run.id]);
       await connection.execute(`INSERT INTO agent_run_events (run_id,status) VALUES (?,'running')`,[run.id]);
+      await connection.execute("INSERT INTO agent_run_traces (run_id,component,event,outcome) VALUES (?,'scheduler','run.claimed','succeeded')",[run.id]);
       return { run:{...run,status:'running',files:await this.filesForRun(connection,run.id),runtimeContext,previousPrompts}, leaseId };
     });
   }
@@ -203,6 +220,7 @@ export class RunStore {
         await connection.execute("INSERT INTO agent_run_files (run_id,file_id,kind) VALUES (?,?,'output')",[runId,id]);
       }
       await connection.execute('INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,?,?)',[runId,status,result]);
+      await connection.execute("INSERT INTO agent_run_traces (run_id,component,event,outcome) VALUES (?,'control-plane','run.persisted','succeeded')",[runId]);
       return true;
     });
   }
@@ -236,6 +254,7 @@ export class RunStore {
       if (!updated.affectedRows) return false;
       await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown',?)`,[runId,`diagnostic:${diagnosticCode}`]);
       await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','Queue resumed automatically; the original task was not replayed.')`,[runId]);
+      await connection.execute("INSERT INTO agent_run_traces (run_id,component,event,outcome,diagnostic_code) VALUES (?,'scheduler','run.outcome_unknown','failed',?)",[runId,diagnosticCode]);
       return true;
     });
   }
@@ -246,6 +265,7 @@ export class RunStore {
         await connection.execute(`UPDATE agent_runs SET status='unknown',recovery_state='auto_resumed',replacement_run_id=NULL,lease_id=NULL,lease_until=NULL WHERE id=?`,[row.id]);
         await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','diagnostic:lease_expired')`,[row.id]);
         await connection.execute(`INSERT INTO agent_run_events (run_id,status,detail) VALUES (?,'unknown','Queue resumed automatically; the original task was not replayed.')`,[row.id]);
+        await connection.execute("INSERT INTO agent_run_traces (run_id,component,event,outcome,diagnostic_code) VALUES (?,'scheduler','run.outcome_unknown','failed','lease_expired')",[row.id]);
       }
       return rows.length;
     });
@@ -291,6 +311,29 @@ export class RunStore {
     if (!owned.length) return null;
     const [rows] = await this.pool.execute<RowDataPacket[]>('SELECT sequence,status,detail FROM agent_run_events WHERE run_id=? ORDER BY sequence',[runId]);
     return rows as Array<{ sequence:number; status:RunStatus; detail:string|null }>;
+  }
+  async trace(session: Session, runId: string): Promise<Array<RunTraceEvent & { sequence:number; at:string }> | null> {
+    if (!uuid.test(runId)) return null;
+    const [owned] = await this.pool.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND b.tenant_id=? AND b.owner_id=?`,[runId,session.tenantId,session.userId]);
+    if (!owned.length) return null;
+    const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT sequence,component,event,outcome,http_status AS httpStatus,diagnostic_code AS diagnosticCode,duration_ms AS durationMs,release_id AS releaseId,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS at FROM agent_run_traces WHERE run_id=? ORDER BY sequence DESC LIMIT 500`,[runId]);
+    return rows.reverse().flatMap(row=>{
+      const event=validateRunTraceEvent(row);
+      return event?[{...event,sequence:Number(row.sequence),at:String(row.at)}]:[];
+    });
+  }
+  /** Persists body-free operational metadata; trace failures must never fail a task. */
+  async recordTrace(runId:string,value:RunTraceEvent):Promise<void>{
+    if(!uuid.test(runId))return;
+    const event=validateRunTraceEvent(value);if(!event)return;
+    try{
+      await this.pool.execute<ResultSetHeader>(`INSERT INTO agent_run_traces (run_id,component,event,outcome,http_status,diagnostic_code,duration_ms,release_id) VALUES (?,?,?,?,?,?,?,?)`,[
+        runId,event.component,event.event,event.outcome,event.httpStatus??null,event.diagnosticCode??null,event.durationMs??null,event.releaseId??null,
+      ]);
+    }catch(error){
+      const code=error&&typeof error==='object'&&'code'in error&&typeof error.code==='string'?error.code:'unknown';
+      console.warn('Run trace write failed',{code});
+    }
   }
   async fileForDownload(session: Session,fileId:string):Promise<import('./file-store.ts').StoredWorkspaceFile|null>{
     const files=new WorkspaceFileStore(this.pool);

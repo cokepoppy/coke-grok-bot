@@ -13,6 +13,7 @@ import type { RoutineEditInput } from './routine-store.ts';
 import type { BotSkillBridge } from './bot-skill-bridge.ts';
 import type { BotSkillInput, BotSkillScope } from './bot-skill-store.ts';
 import { safeDiagnosticMetadata,safeWorkerTarget } from './safe-diagnostics.ts';
+import type { RunTraceEvent } from './run-trace.ts';
 
 /**
  * A run receives a short-lived capability; the upstream credential stays in
@@ -57,7 +58,7 @@ export class ModelGateway {
   private providerAvailable=false;
   private rateLimitGeneration=0;
   private upstreamRequestTail:Promise<void>=Promise.resolve();
-  constructor(private readonly apiKey: string, upstream: string, private readonly model: string, private readonly request: typeof fetch = fetch, _legacyApprovals?:ApprovalStore, private readonly computer?:ComputerBridge, private readonly memories?:BotMemoryBridge, private readonly handoffs?:BotHandoffStore, private readonly routines?:BotRoutineBridge, private readonly skills?:BotSkillBridge) {
+  constructor(private readonly apiKey: string, upstream: string, private readonly model: string, private readonly request: typeof fetch = fetch, _legacyApprovals?:ApprovalStore, private readonly computer?:ComputerBridge, private readonly memories?:BotMemoryBridge, private readonly handoffs?:BotHandoffStore, private readonly routines?:BotRoutineBridge, private readonly skills?:BotSkillBridge, private readonly trace?: (runId:string,event:RunTraceEvent)=>Promise<void>) {
     this.upstream = new URL(upstream);
     const deepSeekOfficial=this.upstream.origin==='https://api.deepseek.com'&&this.upstream.pathname==='/';
     if (this.upstream.protocol !== 'https:' || this.upstream.username || this.upstream.password || this.upstream.search || this.upstream.hash || (!deepSeekOfficial&&!this.upstream.pathname.endsWith('/compatible-mode/v1'))) throw new Error('Invalid model endpoint');
@@ -87,6 +88,11 @@ export class ModelGateway {
     if(!active)return undefined;
     if(active.until<=Date.now()){this.upstreamRateLimit=undefined;return undefined;}
     return Math.max(1,Math.ceil((active.until-Date.now())/1000));
+  }
+  private async recordTrace(grant:Grant,event:RunTraceEvent):Promise<void>{
+    const runId=grant.scope?.runId;
+    if(!runId||!this.trace)return;
+    try{await this.trace(runId,event)}catch{/* Trace persistence must not interrupt the run. */}
   }
   private async performUpstreamModelRequest(input:string,init:RequestInit):Promise<UpstreamModelResponse> {
     const generation=this.rateLimitGeneration;
@@ -270,16 +276,35 @@ export class ModelGateway {
       if (computerRoute) {
         const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
         if(!this.computer||!grant.scope?.owner||!grant.scope.botId){console.error('Model gateway computer request failed',{code:'COMPUTER_GATEWAY_SCOPE_UNAVAILABLE',status:404});return fail(404)}
+        const traceStartedAt=Date.now();
+        const traceEvent=req.method==='GET'&&req.url==='/v1/computer/control'?'computer.control'
+          :req.method==='GET'&&req.url==='/v1/computer/inspect'?'computer.inspect'
+          :req.method==='GET'&&req.url==='/v1/computer/screenshot'?'computer.screenshot'
+          :req.method==='POST'&&computerMatch?'computer.execute':req.method==='POST'?'computer.propose':'computer.request';
         const scope:RunScope={...grant.scope,owner:grant.scope.owner,botId:grant.scope.botId};
         const disconnected=new AbortController();res.once('close',()=>disconnected.abort());
         const signal=AbortSignal.any([grant.abort.signal,disconnected.signal,AbortSignal.timeout(30_000)]);
         try {
-          if(req.method==='GET'&&req.url==='/v1/computer/control')return reply(200,await this.computer.control(scope,signal));
-          if(req.method==='GET'&&req.url==='/v1/computer/inspect')return reply(200,await this.computer.inspect(scope,signal));
-          if(req.method==='GET'&&req.url==='/v1/computer/screenshot'){
-            const image=await this.computer.screenshot(scope,signal);res.writeHead(200,{'Content-Type':'image/png','Content-Length':image.length,'Cache-Control':'no-store'});return res.end(image);
+          if(req.method==='GET'&&req.url==='/v1/computer/control'){
+            const value=await this.computer.control(scope,signal);
+            await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'succeeded',httpStatus:200,durationMs:Date.now()-traceStartedAt});
+            return reply(200,value);
           }
-          if(req.method==='GET'&&computerMatch&&!computerMatch[2]){const status=await this.computer.status(scope,computerMatch[1],signal);return status?reply(200,{status}):fail(404)}
+          if(req.method==='GET'&&req.url==='/v1/computer/inspect'){
+            const value=await this.computer.inspect(scope,signal);
+            await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'succeeded',httpStatus:200,durationMs:Date.now()-traceStartedAt});
+            return reply(200,value);
+          }
+          if(req.method==='GET'&&req.url==='/v1/computer/screenshot'){
+            const image=await this.computer.screenshot(scope,signal);
+            await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'succeeded',httpStatus:200,durationMs:Date.now()-traceStartedAt});
+            res.writeHead(200,{'Content-Type':'image/png','Content-Length':image.length,'Cache-Control':'no-store'});return res.end(image);
+          }
+          if(req.method==='GET'&&computerMatch&&!computerMatch[2]){
+            const status=await this.computer.status(scope,computerMatch[1],signal);
+            await this.recordTrace(grant,{component:'computer-worker',event:'computer.status',outcome:status?'succeeded':'failed',httpStatus:status?200:404,durationMs:Date.now()-traceStartedAt,...(status?{}:{diagnosticCode:'COMPUTER_STATUS_NOT_FOUND'})});
+            return status?reply(200,{status}):fail(404);
+          }
           if(req.method!=='POST'||(computerMatch&&!computerMatch[2]))return fail(405);
           if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return fail(415);
           const chunks:Buffer[]=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>16000)return fail(413);chunks.push(chunk)}
@@ -287,17 +312,25 @@ export class ModelGateway {
           const action=body&&typeof body==='object'&&!Array.isArray(body)?(body as {action?:unknown}).action:undefined;
           if(!action||typeof action!=='object'||Array.isArray(action))return fail(400);
           if(!token||this.grants.get(token)!==grant||grant.expires<=Date.now())return fail(401);
-          if(!computerMatch)return reply(201,await this.computer.propose(scope,action,signal));
-          return reply(200,await this.computer.execute(scope,computerMatch[1],action,signal));
+          if(!computerMatch){
+            const value=await this.computer.propose(scope,action,signal);
+            await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'succeeded',httpStatus:201,durationMs:Date.now()-traceStartedAt});
+            return reply(201,value);
+          }
+          const value=await this.computer.execute(scope,computerMatch[1],action,signal);
+          await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'succeeded',httpStatus:200,durationMs:Date.now()-traceStartedAt});
+          return reply(200,value);
         } catch (error) {
           const diagnostic=safeDiagnosticMetadata(error);
           const workerTarget=safeWorkerTarget(error);
+          await this.recordTrace(grant,{component:'computer-worker',event:traceEvent,outcome:'failed',httpStatus:diagnostic.status??409,diagnosticCode:diagnostic.code,durationMs:Date.now()-traceStartedAt});
           console.error('Model gateway computer request failed',{...diagnostic,...(workerTarget?{workerTarget}:{})});
           return reply(409,{error:'computer_request_failed',diagnostic});
         }
       }
       if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) return fail(415);
       const chunks: Buffer[] = []; let size = 0;
+      let modelStartedAt:number|undefined;
       try {
         for await (const chunk of req) { size += chunk.length; if (size > 2 * 1024 * 1024) return fail(413); chunks.push(chunk); }
         let body: unknown;
@@ -314,6 +347,7 @@ export class ModelGateway {
         const disconnected = new AbortController();
         res.once('close', () => disconnected.abort());
         const upstreamBase=this.upstream.href.replace(/\/+$/,'');
+        modelStartedAt=Date.now();
         const result = await this.requestUpstreamModel(`${upstreamBase}/chat/completions`, {
           method: 'POST', redirect: 'error', headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json' },
           body: JSON.stringify(payload), signal: AbortSignal.any([grant.abort.signal, disconnected.signal, AbortSignal.timeout(120_000)]),
@@ -321,16 +355,22 @@ export class ModelGateway {
         if(result.retryAfterSeconds!==undefined){
           grant.modelRateLimit={retryAfterSeconds:result.retryAfterSeconds};
           console.info('Model provider response',{code:result.response?'MODEL_UPSTREAM_RATE_LIMITED':'MODEL_UPSTREAM_RATE_LIMIT_COOLDOWN',status:429,retryAfterSeconds:result.retryAfterSeconds});
+          await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:429,diagnosticCode:'MODEL_UPSTREAM_RATE_LIMITED',durationMs:Date.now()-modelStartedAt});
           await result.response?.body?.cancel().catch(()=>undefined);
           return replyRateLimited(res,result.retryAfterSeconds);
         }
         const upstream=result.response!;
         console.info('Model provider response',{code:upstream.ok&&upstream.body?'MODEL_UPSTREAM_OK':'MODEL_UPSTREAM_REJECTED',status:upstream.status});
-        if (!upstream.ok || !upstream.body) return fail(502);
+        if (!upstream.ok || !upstream.body) {
+          await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:upstream.status,diagnosticCode:'MODEL_UPSTREAM_REJECTED',durationMs:Date.now()-modelStartedAt});
+          return fail(502);
+        }
         res.writeHead(200, { 'Content-Type': payload.stream === true ? 'text/event-stream; charset=utf-8' : 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
         const redactor = new SecretRedactor(Buffer.from(this.apiKey));
         await pipeline(Readable.fromWeb(upstream.body as import('node:stream/web').ReadableStream<Uint8Array>), redactor, res);
+        await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'succeeded',httpStatus:upstream.status,durationMs:Date.now()-modelStartedAt});
       } catch {
+        if(modelStartedAt!==undefined)await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:502,diagnosticCode:'MODEL_GATEWAY_UPSTREAM_FAILURE',durationMs:Date.now()-modelStartedAt});
         if (!res.headersSent) fail(502);
         else res.destroy();
       }

@@ -15,6 +15,7 @@ import { explicitMemoryRequest } from './explicit-memory-request.ts';
 import { validateAgentExecutionAudit } from './execution-audit.ts';
 import type { BotSkillStore } from './bot-skill-store.ts';
 import { explicitSkillMutations } from './explicit-skill-request.ts';
+import type { RunTraceEvent } from './run-trace.ts';
 
 export const AGENT_TASK_TRANSPORT_TIMEOUT_MS=15*60_000;
 const agentTaskDispatcherOptions={
@@ -91,18 +92,24 @@ export interface DesktopConnections { connect(owner:RunOwner, signal:AbortSignal
 /** Dispatches once to a user's private desktop. Transport uncertainty is surfaced to the scheduler. */
 export class DesktopAgentExecutor implements RunExecutor {
   private readonly taskDispatcher=new Agent(agentTaskDispatcherOptions);
-  constructor(private readonly desktops:DesktopConnections, private readonly gateway:ModelGateway, private readonly gatewayUrl:string, private readonly model:string, private readonly request:typeof fetch = fetch, private readonly engine:'pi'|'dsh'='pi', private readonly memories?:BotMemoryStore, private readonly handoffs?:BotHandoffStore, private readonly routines?:RoutineStore, private readonly skills?:BotSkillStore) {
+  constructor(private readonly desktops:DesktopConnections, private readonly gateway:ModelGateway, private readonly gatewayUrl:string, private readonly model:string, private readonly request:typeof fetch = fetch, private readonly engine:'pi'|'dsh'='pi', private readonly memories?:BotMemoryStore, private readonly handoffs?:BotHandoffStore, private readonly routines?:RoutineStore, private readonly skills?:BotSkillStore, private readonly trace?: (runId:string,event:RunTraceEvent)=>Promise<void>) {
     const endpoint=new URL(gatewayUrl);
     if(endpoint.protocol!=='https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || endpoint.pathname!=='/v1' || !model || !['pi','dsh'].includes(engine)) throw new Error('Invalid Agent gateway');
   }
   async close():Promise<void>{await this.taskDispatcher.close()}
+  private async recordTrace(runId:string,event:RunTraceEvent):Promise<void>{
+    if(!this.trace)return;
+    try{await this.trace(runId,event)}catch{/* Trace persistence must not interrupt the run. */}
+  }
   async execute(screen:RunScreenScope,run:AgentRun,signal:AbortSignal,leaseId:string):Promise<ExecutionResult> {
     if(signal.aborted) throw new RunDiagnosticError('execution_aborted');
     if(run.botId!==screen.botId)throw new RunDiagnosticError('bot_memory_scope_invalid');
     const owner:RunOwner=screen;
     let desktop:DesktopConnection;
+    const connectStartedAt=Date.now();
     try { desktop=await this.desktops.connect(owner,signal); }
-    catch { throw new RunDiagnosticError(signal.aborted?'execution_aborted':'desktop_connect_failed'); }
+    catch { await this.recordTrace(run.id,{component:'control-plane',event:'desktop.connect',outcome:'failed',diagnosticCode:signal.aborted?'execution_aborted':'desktop_connect_failed',durationMs:Date.now()-connectStartedAt});throw new RunDiagnosticError(signal.aborted?'execution_aborted':'desktop_connect_failed'); }
+    await this.recordTrace(run.id,{component:'control-plane',event:'desktop.connect',outcome:'succeeded',httpStatus:200,durationMs:Date.now()-connectStartedAt});
     const endpoint=new URL(desktop.agentUrl);
     const ownerHash=createHash('sha256').update(`${owner.tenantId.toLowerCase()}:${owner.userId.toLowerCase()}`).digest('hex').slice(0,32);
     if(endpoint.protocol!=='http:' || ![`desktop.grok-user-${ownerHash}.svc.cluster.local`,`agent.grok-user-${ownerHash}.svc.cluster.local`].includes(endpoint.hostname) || endpoint.port!=='8083' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || endpoint.pathname!=='/' || !/^[A-Za-z0-9_-]{43}$/.test(desktop.agentToken)) throw new Error('Invalid desktop endpoint');
@@ -163,18 +170,23 @@ export class DesktopAgentExecutor implements RunExecutor {
         dispatcher:this.taskDispatcher,
       };
       let response:Response;
+      const dispatchStartedAt=Date.now();
       try {
         response=await this.request(new URL('/v1/tasks/run',endpoint),requestInit);
       } catch {
         if(signal.aborted)throw new RunDiagnosticError('execution_aborted');
         const modelDiagnostic=this.gateway.diagnosticCode(capability);
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',diagnosticCode:modelDiagnostic||'agent_transport_failed',durationMs:Date.now()-dispatchStartedAt});
         throw new RunDiagnosticError(modelDiagnostic||'agent_transport_failed');
       }
       if (!response.ok) {
         const rejection=await logAgentRejection(response,run.id);
         const diagnostic=this.gateway.diagnosticCode(capability)||(response.status===400?agentRejectionDiagnostic(rejection):agentHttpDiagnostic(response.status));
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:response.status,diagnosticCode:diagnostic,durationMs:Date.now()-dispatchStartedAt,...(response.headers.get('x-coke-grok-release-id')?{releaseId:response.headers.get('x-coke-grok-release-id')!}:{})});
         throw new RunDiagnosticError(diagnostic);
       }
+      const agentReleaseId=response.headers.get('x-coke-grok-release-id');
+      await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'succeeded',httpStatus:response.status,durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
       let value:unknown;
       try { value=await response.json(); }
       catch { throw new RunDiagnosticError('agent_response_invalid'); }
@@ -186,6 +198,7 @@ export class DesktopAgentExecutor implements RunExecutor {
       if (result.status==='waiting') throw new RunDiagnosticError(result.controlOwner==='unknown'?'computer_control_state_unknown':'agent_result_status_unconfirmed',executionAudit);
       if (!['done','failed','scheduled','delegating'].includes(String(result.status))) throw new RunDiagnosticError('agent_result_status_unconfirmed',executionAudit);
       if (typeof result.message!=='string' || !result.message.trim()) throw new RunDiagnosticError('agent_result_message_missing',executionAudit);
+      await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:result.status==='failed'?'failed':'succeeded',httpStatus:200,...(result.status==='failed'?{diagnosticCode:'agent_reported_failure'}:{}),...(agentReleaseId?{releaseId:agentReleaseId}:{})});
       let safe=result.message.split(capability).join('[redacted]').split(desktop.agentToken).join('[redacted]').slice(0,20000);
       if(explicitMemorySave==='saved') safe+=/\p{Script=Han}/u.test(run.prompt)?'\n\n已保存到此 Bot 的记忆中。':'\n\nSaved to this Bot’s memory.';
       else if(explicitMemorySave==='blocked') safe+=/\p{Script=Han}/u.test(run.prompt)?'\n\n这条记忆未保存；密码、密钥和联系方式应存放在 Vault 中。':'\n\nThis memory was not saved; keep passwords, keys, and contact details in the Vault.';
@@ -213,9 +226,9 @@ function formatBotSkills(skills:NonNullable<Awaited<ReturnType<BotSkillStore['li
 }
 
 export class PiExecutor extends DesktopAgentExecutor {
-  constructor(desktops:DesktopConnections,gateway:ModelGateway,gatewayUrl:string,model:string,request:typeof fetch=fetch,memories?:BotMemoryStore,handoffs?:BotHandoffStore,routines?:RoutineStore,skills?:BotSkillStore){super(desktops,gateway,gatewayUrl,model,request,'pi',memories,handoffs,routines,skills)}
+  constructor(desktops:DesktopConnections,gateway:ModelGateway,gatewayUrl:string,model:string,request:typeof fetch=fetch,memories?:BotMemoryStore,handoffs?:BotHandoffStore,routines?:RoutineStore,skills?:BotSkillStore,trace?:(runId:string,event:RunTraceEvent)=>Promise<void>){super(desktops,gateway,gatewayUrl,model,request,'pi',memories,handoffs,routines,skills,trace)}
 }
 
 export class DshExecutor extends DesktopAgentExecutor {
-  constructor(desktops:DesktopConnections,gateway:ModelGateway,gatewayUrl:string,model:string,request:typeof fetch=fetch,memories?:BotMemoryStore,handoffs?:BotHandoffStore,routines?:RoutineStore,skills?:BotSkillStore){super(desktops,gateway,gatewayUrl,model,request,'dsh',memories,handoffs,routines,skills)}
+  constructor(desktops:DesktopConnections,gateway:ModelGateway,gatewayUrl:string,model:string,request:typeof fetch=fetch,memories?:BotMemoryStore,handoffs?:BotHandoffStore,routines?:RoutineStore,skills?:BotSkillStore,trace?:(runId:string,event:RunTraceEvent)=>Promise<void>){super(desktops,gateway,gatewayUrl,model,request,'dsh',memories,handoffs,routines,skills,trace)}
 }

@@ -26,6 +26,7 @@
     "test:model-gateway": "node --import tsx --test tests/model-gateway.test.ts",
     "test:voice": "node --import tsx --test tests/voice-gateway.test.ts tests/voice-chat.test.ts",
     "test:run-store": "node --import tsx --test tests/run-store.test.ts",
+    "test:run-trace": "node --import tsx --test tests/run-trace.test.ts",
     "test:pi-k3d": "node --import tsx tests/pi-k3d-gateway.e2e.ts",
     "test:pi-failure-k3d": "node --import tsx tests/pi-failure-k3d.e2e.ts",
     "test:desktop-k3d": "node --import tsx tests/desktop-k3d.e2e.ts",
@@ -54,7 +55,9 @@
     "test:gmail-handoff-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts --gmail-handoff-only",
     "test:gmail-request-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts --gmail-handoff-only --single-gmail-handoff-run",
     "test:computer-ui-k3d": "node --import tsx tests/mediated-pi-k3d.e2e.ts --gmail-handoff-only --computer-ui-only",
-    "build:deployment": "VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build && VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true node scripts/mark-web-build.mjs && npm run build:server && npm run build:desktop-broker && npm run build:namespace-bootstrap"
+    "build:deployment": "VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true npm run build && VITE_BASE_PATH=/grok-bot/ VITE_REQUIRE_AUTH=true node scripts/mark-web-build.mjs && npm run build:server && npm run build:desktop-broker && npm run build:namespace-bootstrap",
+    "release:build-images": "node scripts/build-release-images.mjs",
+    "release:verify-k3d": "node scripts/verify-k3d-release.mjs"
   },
   "dependencies": {
     "google-auth-library": "11.1.0",

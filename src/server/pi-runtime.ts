@@ -51,6 +51,8 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  const gatewayUrl=`https://${gatewayHost}:3002/v1`;
  const provisioner=new DesktopBrokerClient(required(env,'COKE_GROK_BROKER_URL'),brokerCa,brokerToken);
  const runs=new RunStore(pool);await runs.migrate();
+ const releaseId=env.COKE_GROK_RELEASE_ID?.trim()||undefined;
+ const trace=(runId:string,event:import('./run-trace.ts').RunTraceEvent)=>runs.recordTrace(runId,{...event,releaseId:event.releaseId||releaseId});
  const routines=new RoutineStore(pool,signingKey);await routines.migrate();
  const skills=new BotSkillStore(pool);await skills.migrate();
  const memories=new BotMemoryStore(pool);await memories.migrate();
@@ -74,11 +76,11 @@ export async function startPiRuntime(pool:Pool,env:NodeJS.ProcessEnv=process.env
  const memoryBridge=new BotMemoryBridge(memories);
  const skillBridge=new BotSkillBridge(skills);
  const routineBridge=new BotRoutineBridge(routines);
- const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals,bridge,memoryBridge,handoffs,routineBridge,skillBridge);
+ const gateway=new ModelGateway(providerKey,required(env,'COKE_GROK_MODEL_BASE_URL'),required(env,'COKE_GROK_MODEL_ID'),fetch,approvals,bridge,memoryBridge,handoffs,routineBridge,skillBridge,trace);
  const voice=new VoiceGateway(providerKey,env.COKE_GROK_AUDIO_BASE_URL?.trim()||'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1');
  const executor=engine==='dsh'
-  ? new DshExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories,handoffs,routines,skills)
-  : new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories,handoffs,routines,skills);
+  ? new DshExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories,handoffs,routines,skills,trace)
+  : new PiExecutor(provisioner,gateway,gatewayUrl,required(env,'COKE_GROK_MODEL_ID'),fetch,memories,handoffs,routines,skills,trace);
  const scheduler=new RunScheduler(runs,executor,{concurrency:2,leaseSeconds:30,queueCreatedAfter});
  const server=gateway.createServer({key:tlsKey,cert});
  try{server.listen(3002,'0.0.0.0');await once(server,'listening')}catch(error){await executor.close();gateway.close();server.close();throw error}

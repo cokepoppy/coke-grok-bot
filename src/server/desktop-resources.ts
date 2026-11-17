@@ -81,6 +81,7 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
 export function splitDesktopResources(identity:DesktopIdentity,options:{image:string;agentImage?:string;controlNamespace:string;gatewayCA:string}&DesktopProxyOptions):Record<string,unknown>[] {
   const agentImage=options.agentImage ?? options.image;
   if(!isValidDesktopImageRef(agentImage))throw new Error('Invalid desktop configuration');
+  if(imageReleaseId(agentImage)!==imageReleaseId(options.image))throw new Error('Desktop and Agent images must share one release version');
   const resources=structuredClone(desktopResources(identity,{...options,image:options.image,guarded:true}));
   const ns=identity.namespace;
   const find=(kind:string,name:string)=>{const resource=resources.find(item=>item.kind===kind&&(item.metadata as {name?:string})?.name===name);if(!resource)throw new Error('Missing desktop resource');return resource as any};
@@ -108,4 +109,10 @@ export function splitDesktopResources(identity:DesktopIdentity,options:{image:st
     egress:[{to:[{namespaceSelector:{matchLabels:{'kubernetes.io/metadata.name':'kube-system'}}}],ports:[{protocol:'UDP',port:53},{protocol:'TCP',port:53}]},
       {to:[{namespaceSelector:{matchLabels:{'kubernetes.io/metadata.name':options.controlNamespace}},podSelector:{matchLabels:{app:'coke-grok-auth'}}}],ports:[{protocol:'TCP',port:3002}]}]}};
   return [...resources,agentDeployment,agentService,agentPolicy];
+}
+
+function imageReleaseId(image:string):string {
+  const separator=image.lastIndexOf(':');
+  if(separator<1)throw new Error('Desktop image must use a versioned tag');
+  return image.slice(separator+1);
 }

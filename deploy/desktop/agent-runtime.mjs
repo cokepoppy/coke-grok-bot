@@ -53,7 +53,7 @@ function parseAdapterConfig(raw) {
 
 function send(res, status, value) {
   const body = Buffer.from(JSON.stringify(value));
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': body.length, 'cache-control': 'no-store' });
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': body.length, 'cache-control': 'no-store', ...(process.env.COKE_GROK_RELEASE_ID ? { 'x-coke-grok-release-id': process.env.COKE_GROK_RELEASE_ID } : {}) });
   res.end(body);
 }
 

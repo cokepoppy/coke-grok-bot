@@ -57,11 +57,11 @@ test('provisioner refuses an unrelated namespace and honors cancellation',async(
  const abort=new AbortController();abort.abort();await assert.rejects(provisioner.connect(owner,abort.signal));assert.equal(kube.creates,0);
 });
 test('split provisioning waits for both Pods and returns the scoped Agent service',async()=>{
- const owner={tenantId:randomUUID(),userId:randomUUID()},key=randomBytes(32),identity=desktopIdentity(owner,key),kube=new FakeKube(),provisioner=new DesktopProvisioner(kube,key,{...options,agentImage:`coke-grok-desktop:sha-${'b'.repeat(40)}`,split:true});
+ const owner={tenantId:randomUUID(),userId:randomUUID()},key=randomBytes(32),identity=desktopIdentity(owner,key),kube=new FakeKube(),provisioner=new DesktopProvisioner(kube,key,{...options,agentImage:options.image,split:true});
  const result=await provisioner.connect(owner,new AbortController().signal);assert.equal(result.agentUrl.hostname,`agent.${identity.namespace}.svc.cluster.local`);
  assert.equal(kube.creates,11);assert.equal(kube.ready,2);await provisioner.connect(owner,new AbortController().signal);assert.equal(kube.creates,11);assert.equal(kube.ready,4);
- assert.match((kube.objects.get(kube.key('Deployment',identity.namespace,'desktop')) as any).spec.template.spec.containers[0].image,/a{40}$/);
- assert.match((kube.objects.get(kube.key('Deployment',identity.namespace,'agent')) as any).spec.template.spec.containers[0].image,/b{40}$/);
+ assert.equal((kube.objects.get(kube.key('Deployment',identity.namespace,'desktop')) as any).spec.template.spec.containers[0].image,options.image);
+ assert.equal((kube.objects.get(kube.key('Deployment',identity.namespace,'agent')) as any).spec.template.spec.containers[0].image,options.image);
 });
 test('provisioner delegates namespace creation and rejects a different owner',async()=>{
  const owner={tenantId:randomUUID(),userId:randomUUID()},key=randomBytes(32),identity=desktopIdentity(owner,key),kube=new FakeKube(),signal=new AbortController().signal;let called=0;
@@ -84,8 +84,8 @@ test('namespace bootstrap runs before the first owner-scoped Kubernetes read',as
 });
 test('existing owner namespaces adopt their current Agent and Desktop images into an immutable per-owner pin',async()=>{
  const owner={tenantId:randomUUID(),userId:randomUUID()},key=randomBytes(32),identity=desktopIdentity(owner,key),kube=new FakeKube();
- const desktopImage=`coke-grok-desktop:sha-${'a'.repeat(40)}`,agentImage='coke-grok-desktop:candidate-focus-screenshot-fix-20261107-r1';
- const legacy=splitDesktopResources(identity,{...options,image:desktopImage,agentImage:`coke-grok-desktop:sha-${'b'.repeat(40)}`});
+ const desktopImage=`coke-grok-desktop:sha-${'a'.repeat(40)}`,agentImage=desktopImage;
+ const legacy=splitDesktopResources(identity,{...options,image:desktopImage,agentImage});
  for(const resource of legacy){
   const meta=resource.metadata as {name:string};if(resource.kind==='ConfigMap'&&meta.name==='desktop-image-pin')continue;
   const actual=structuredClone(resource) as any;
@@ -105,7 +105,7 @@ test('existing owner namespaces adopt their current Agent and Desktop images int
 });
 test('legacy resource drift is rejected before creating an owner image pin',async()=>{
  const owner={tenantId:randomUUID(),userId:randomUUID()},key=randomBytes(32),identity=desktopIdentity(owner,key),kube=new FakeKube();
- const resources=splitDesktopResources(identity,{...options,agentImage:`coke-grok-desktop:sha-${'b'.repeat(40)}`});
+ const resources=splitDesktopResources(identity,{...options,agentImage:options.image});
  for(const resource of resources){const meta=resource.metadata as {name:string};if(resource.kind==='ConfigMap'&&meta.name==='desktop-image-pin')continue;await kube.create(resource)}
  const desktop=kube.objects.get(kube.key('Deployment',identity.namespace,'desktop')) as any;
  desktop.spec.template.spec.containers[0].securityContext.runAsUser=0;

@@ -455,6 +455,7 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
       const messageMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/messages$`));
       const runMatch = url.pathname.match(new RegExp(`^${botPath}/([0-9a-f-]{36})/runs$`));
       const runEventsMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/runs/([0-9a-f-]{36})/events$`));
+      const runTraceMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/runs/([0-9a-f-]{36})/trace$`, 'i'));
       const runRecoveryMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/runs/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})/recovery$`, 'i'));
       const approvalListMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/runs/([0-9a-f-]{36})/approvals$`));
       const approvalMatch = url.pathname.match(new RegExp(`^${origin.prefix}/api/approvals/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`, 'i'));
@@ -581,7 +582,7 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         req.resume();
         return reply(410,{error:'Per-action approvals are disabled. Use Computer takeover for sign-in or verification.'});
       }
-      if (runs && (runMatch || runEventsMatch || runRecoveryMatch)) {
+      if (runs && (runMatch || runEventsMatch || runTraceMatch || runRecoveryMatch)) {
         const reply = (status:number, value:unknown) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(value)); };
         const session = await auth.session(req);
         if (!session) return reply(401,{error:'Unauthenticated'});
@@ -602,6 +603,10 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
         }
         if (req.method === 'GET' && runEventsMatch) {
           const events=await runs.events(session,runEventsMatch[1]);
+          return events ? reply(200,{events}) : reply(404,{error:'Not found'});
+        }
+        if (req.method === 'GET' && runTraceMatch) {
+          const events=await runs.trace(session,runTraceMatch[1]);
           return events ? reply(200,{events}) : reply(404,{error:'Not found'});
         }
         if (req.method === 'GET' && runMatch) {

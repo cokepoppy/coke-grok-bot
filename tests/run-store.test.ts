@@ -46,6 +46,19 @@ test('runs are deduplicated and isolated; unknown outcomes resume queues without
     assert.equal(await runs.finish(claim.run.id,randomUUID(),'completed','forged'),false);
     const auditWithUnsafeExtras={engine:'pi',model:'deepseek-v4.1-flash',modelCompleted:true,calls:[{tool:'computer_browser',action:'navigate',outcome:'succeeded',url:'https://example.test/private?access_token=never-store'}],truncated:false,apiKey:'never-store'};
     assert.equal(await runs.finish(claim.run.id,claim.leaseId,'completed','done',[],auditWithUnsafeExtras),true);
+    await runs.recordTrace(claim.run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:400,diagnosticCode:'agent_adapter_failed',durationMs:42,releaseId:`sha-${'a'.repeat(40)}`,prompt:'must not persist'} as any);
+    const trace=await runs.trace(sa,claim.run.id);
+    assert.ok(trace);
+    assert.ok(trace.some(event=>event.event==='run.queued'));
+    assert.ok(trace.some(event=>event.event==='run.claimed'));
+    assert.ok(trace.some(event=>event.event==='run.persisted'));
+    assert.deepEqual(trace.find(event=>event.event==='agent.dispatch'),{
+      component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:400,
+      diagnosticCode:'agent_adapter_failed',durationMs:42,releaseId:`sha-${'a'.repeat(40)}`,
+      sequence:trace.find(event=>event.event==='agent.dispatch')?.sequence,
+      at:trace.find(event=>event.event==='agent.dispatch')?.at,
+    });
+    assert.equal(await runs.trace(sb,claim.run.id),null,'run trace must remain owner-scoped');
     const persistedAudit=(await runs.list(sa,claim.run.botId))?.find(run=>run.id===claim.run.id)?.executionAudit;
     assert.deepEqual(persistedAudit,{engine:'pi',model:'deepseek-v4.1-flash',modelCompleted:true,calls:[{tool:'computer_browser',action:'navigate',outcome:'succeeded'}],truncated:false});
     const [auditRows]=await pool.execute<mysql.RowDataPacket[]>('SELECT CAST(execution_audit AS CHAR) AS audit FROM agent_runs WHERE id=?',[claim.run.id]);

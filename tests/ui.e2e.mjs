@@ -349,7 +349,7 @@ try {
   assert.equal(await productShellPage.locator('.group-row .group-avatar > span').count(), 3, 'The group avatar should stack its three member Bots');
   assert.equal(await productShellPage.locator('.group-section-heading').isVisible(), false, 'The compact reference sidebar places the group directly after the Bot list');
   assert.equal(await productShellPage.locator('.bot-row.selected time').innerText(), '15:33');
-  assert.equal(await productShellPage.locator('.date-line').innerText(), '15:33', 'The active Bot conversation shows its activity time above the timeline');
+  assert.equal(await productShellPage.locator('.date-line').innerText(), '15:32', 'The first chat message keeps its own timestamp above the timeline');
   const completedActivityCard=productShellPage.getByRole('region',{name:'Computer activity · Done'});
   await completedActivityCard.waitFor();
   await productShellPage.getByText('Renamed to Sales Outbound', { exact: true }).waitFor();
@@ -393,13 +393,13 @@ try {
     return { welcome: box('.message-line.bot .message-bubble', 0), prompt: box('.message-line.user .message-bubble'), response: box('.message-line.bot .message-bubble', 1), computer: box('.computer-activity-card'), screen: box('.computer-preview-button') };
   });
   assert.ok(referenceMessageGeometry.welcome && Math.abs(referenceMessageGeometry.welcome.x - 110.5) <= 3 && Math.abs(referenceMessageGeometry.welcome.width - 531) <= 8, 'The welcome message should align to the official panel-open chat geometry');
-  assert.ok(referenceMessageGeometry.welcome && Math.abs(referenceMessageGeometry.welcome.y - 54) <= 2, `The welcome message should start at the official header baseline: ${JSON.stringify(referenceMessageGeometry)}`);
+  assert.ok(referenceMessageGeometry.welcome && Math.abs(referenceMessageGeometry.welcome.y - 95) <= 2, `The welcome message should follow its visible timestamp: ${JSON.stringify(referenceMessageGeometry)}`);
   assert.ok(referenceMessageGeometry.prompt && Math.abs(referenceMessageGeometry.prompt.x - 267.5) <= 4 && Math.abs(referenceMessageGeometry.prompt.width - 420) <= 5, 'The user prompt should match the official message width and right alignment');
-  assert.ok(referenceMessageGeometry.prompt && Math.abs(referenceMessageGeometry.prompt.y - 121.5) <= 3, `The first task should start at the official vertical position: ${JSON.stringify(referenceMessageGeometry.prompt)}`);
+  assert.ok(referenceMessageGeometry.prompt && Math.abs(referenceMessageGeometry.prompt.y - 161.5) <= 3, `The first task should follow the timestamped welcome message: ${JSON.stringify(referenceMessageGeometry.prompt)}`);
   assert.ok(referenceMessageGeometry.response && Math.abs(referenceMessageGeometry.response.x - 110.5) <= 3 && Math.abs(referenceMessageGeometry.response.width - 531) <= 8, 'The Agent response should match the official Bot bubble geometry');
-  assert.ok(referenceMessageGeometry.response && Math.abs(referenceMessageGeometry.response.y - 313.5) <= 2, 'The Agent response should match the official vertical position');
+  assert.ok(referenceMessageGeometry.response && Math.abs(referenceMessageGeometry.response.y - 355) <= 2, 'The Agent response should follow the timestamped user message');
   assert.ok(referenceMessageGeometry.computer && Math.abs(referenceMessageGeometry.computer.width - 420) <= 1, 'The Computer activity card should match the official card width');
-  assert.ok(referenceMessageGeometry.computer && Math.abs(referenceMessageGeometry.computer.y - 373.5) <= 2, 'The Computer activity card should follow the Agent response at the official position');
+  assert.ok(referenceMessageGeometry.computer && Math.abs(referenceMessageGeometry.computer.y - 414.75) <= 2, 'The Computer activity card should follow the Agent response');
   assert.ok(referenceMessageGeometry.screen && Math.abs(referenceMessageGeometry.screen.x - 735) <= 2 && Math.abs(referenceMessageGeometry.screen.y - 58.5) <= 2 && Math.abs(referenceMessageGeometry.screen.width - 231.5) <= 2, 'The live computer preview should align to the official right pane');
   await productShellPage.screenshot({ path: 'artifacts/ui/authenticated-product-computer-panel-reference-size-20261105.png' });
   demoRoutines.splice(0, demoRoutines.length);

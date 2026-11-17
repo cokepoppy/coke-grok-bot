@@ -1,4 +1,7 @@
 FROM node:24-bookworm-slim@sha256:2af38505da611a8d2729ed2b6235f04613a4d5cf8b9340d3ca7b0ac54d1462a5
+ARG COKE_GROK_RELEASE_ID=unversioned
+LABEL coke-grok-bot.io/release-id=${COKE_GROK_RELEASE_ID}
+ENV COKE_GROK_RELEASE_ID=${COKE_GROK_RELEASE_ID}
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --chown=node:node dist/server/desktop-broker.cjs /app/desktop-broker.cjs

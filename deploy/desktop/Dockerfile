@@ -1,5 +1,8 @@
 # Pinned Coke Dots Linux desktop image; no credentials or user data are copied.
 FROM coke-dots-linux-desktop:sha-c4caa5bb8dab2c9f731e4c2f1a71b25266469cfc
+ARG COKE_GROK_RELEASE_ID=unversioned
+LABEL coke-grok-bot.io/release-id=${COKE_GROK_RELEASE_ID}
+ENV COKE_GROK_RELEASE_ID=${COKE_GROK_RELEASE_ID}
 USER root
 RUN mkdir -p /opt/coke-grok/active-tab-extension
 COPY deploy/desktop/dsh-runtime/package.json deploy/desktop/dsh-runtime/package-lock.json /opt/coke-grok/dsh-runtime/
