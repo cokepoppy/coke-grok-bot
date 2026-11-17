@@ -5,6 +5,37 @@ import os from 'node:os';
 import path from 'node:path';
 import { runCloudKernel } from '../deploy/desktop/cloud-kernel-adapter.mjs';
 
+test('DeepSeek Harness does not expose the read-only HTTPS-only page helper', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'grok-dsh-no-public-page-helper-'));
+  const cwd = path.join(workspace, 'tasks', 'demo');
+  await mkdir(cwd, { recursive: true });
+  let options, patchContent;
+  class FakeDeepSeekHarness {
+    constructor(value) { options = value; }
+    async run() {
+      patchContent = await readFile(options.patches[0], 'utf8');
+      return { finalResponse: JSON.stringify({ status: 'done', message: 'Browser User is available.' }), sessionId: 'browser-session', events: [] };
+    }
+    async close() {}
+  }
+  try {
+    const result = await runCloudKernel({
+      engine: 'dsh',
+      modelConfig: { apiKey: 'test-only-key', baseUrl: 'https://models.example/v1', model: 'deepseek-v4.1-flash' },
+      computer: { openPublicPageUrl: 'https://bridge.example.test/open', openPublicPageToken: 'x'.repeat(43) },
+      cwd: path.relative(workspace, cwd),
+      workspace,
+      prompt: 'Open the requested page with Browser User.',
+      signal: new AbortController().signal,
+    }, { dshSdk: { DeepSeekHarness: FakeDeepSeekHarness } });
+    assert.equal(result.status, 'done');
+    assert.equal(options.env.COKE_DOTS_PUBLIC_PAGE_BRIDGE_URL, undefined);
+    assert.doesNotMatch(patchContent, /coke-dots-public-page|open_public_page|public HTTPS page/u);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test('DeepSeekHarness receives the supported SDK launch options', async () => {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'grok-dsh-sdk-options-'));
   const cwd = path.join(workspace, 'tasks', 'demo');

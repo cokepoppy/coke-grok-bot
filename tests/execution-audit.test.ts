@@ -23,12 +23,12 @@ test('execution audit keeps only the bounded engine, model and allowlisted tool 
   });
 });
 
-test('execution audit rejects malformed, oversized and non-allowlisted records', () => {
+test('execution audit rejects malformed and oversized records but preserves any action label', () => {
   assert.equal(validateAgentExecutionAudit('{not-json'), null);
-  assert.equal(validateAgentExecutionAudit({
+  assert.deepEqual(validateAgentExecutionAudit({
     engine: 'pi', model: 'deepseek-v4.1-flash', modelCompleted: true,
-    calls: [{ tool: 'computer_browser', action: 'run-shell', outcome: 'succeeded' }], truncated: false,
-  }), null);
+    calls: [{ tool: 'computer_browser', action: 'custom-action-name', outcome: 'succeeded' }], truncated: false,
+  })?.calls, [{ tool: 'computer_browser', action: 'custom-action-name', outcome: 'succeeded' }]);
   assert.equal(validateAgentExecutionAudit({
     engine: 'pi', model: 'deepseek-v4.1-flash', modelCompleted: true,
     calls: Array.from({ length: 65 }, () => ({ tool: 'computer_desktop', action: 'screenshot', outcome: 'succeeded' })),
@@ -36,5 +36,9 @@ test('execution audit rejects malformed, oversized and non-allowlisted records',
   }), null);
   assert.equal(validateAgentExecutionAudit({
     engine: 'pi', model: 'deepseek-v4.1-flash?token=secret', modelCompleted: true, calls: [], truncated: false,
+  }), null);
+  assert.equal(validateAgentExecutionAudit({
+    engine: 'pi', model: 'deepseek-v4.1-flash', modelCompleted: true,
+    calls: [{ tool: 'open_public_page', action: 'read', outcome: 'succeeded' }], truncated: false,
   }), null);
 });

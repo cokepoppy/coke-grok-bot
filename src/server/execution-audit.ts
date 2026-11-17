@@ -17,12 +17,8 @@ export interface AgentExecutionAudit {
 
 const toolNames = new Set([
   'computer_browser', 'computer_desktop', 'computer_files', 'computer_terminal',
-  'open_public_page', 'bot_memory', 'bot_handoff', 'bot_routines',
+  'bot_memory', 'bot_handoff', 'bot_routines',
 ]);
-const computerBrowserActions = new Set(['inspect', 'navigate', 'click', 'fill', 'select', 'check', 'uncheck', 'press', 'open_artifact', 'upload_file']);
-const computerDesktopActions = new Set(['screenshot', 'click', 'type', 'press']);
-const computerFilesActions = new Set(['list', 'read']);
-const computerTerminalActions = new Set(['run']);
 
 export function validateAgentExecutionAudit(value: unknown): AgentExecutionAudit | null {
   let input = value;
@@ -45,12 +41,6 @@ export function validateAgentExecutionAudit(value: unknown): AgentExecutionAudit
     let action: string | null = null;
     if (candidate.action !== null) {
       if (typeof candidate.action !== 'string') return null;
-      const allowed = candidate.tool === 'computer_browser' ? computerBrowserActions
-        : candidate.tool === 'computer_desktop' ? computerDesktopActions
-        : candidate.tool === 'computer_files' ? computerFilesActions
-        : candidate.tool === 'computer_terminal' ? computerTerminalActions
-        : null;
-      if (!allowed || !allowed.has(candidate.action)) return null;
       action = candidate.action;
     }
     safeCalls.push({ tool: candidate.tool, action, outcome: candidate.outcome });

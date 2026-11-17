@@ -3296,3 +3296,9 @@ Developer Bot 只读核对 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`
 本节记录源码与测试候选；公网部署及真实 Browser/Computer Use 验收仍需单独确认。特定 scheme 或按键的运行时支持由 Chromium、Playwright 和 X11 决定，不应与应用层白名单混淆。
 
 本轮 K3D 复用项目自有固定测试 namespace `grok-user-b6c851fd5b4fc610966aba5c03018772` 与原有单一 Worker Pod，没有创建新 namespace/容器。真实 Worker 用 `data:text/html,...` 导航并读回页面标题成功；测试 fixture 在 Browser User 通过 X11 收到 `F13`，Computer User 在两块 Bot 屏幕分别收到同一按键且没有串屏；共享登录浏览器、网页点击/文件上传、1440x900 屏幕、接管/归还和跨 Bot 隔离全通过。第一次 K3D 尝试发现 Browser Worker 参数虽接受任意键名，Playwright `locator.press('F13')` 仍在实际执行层报失败；改为聚焦目标控件后通过共享 X11 输入队列发送，复测通过。复测还发现固定 Pod 留存旧网页 fixture，导致新事件探针没有加载；测试现会只终止精确命名的项目测试 fixture 进程并重启，不动其他 Pod/容器。`npm run test:desktop-worker-k3d` 最终通过（不含模型调用）；随后 `npm run test:runtime` 214/214、`npm run build:deployment`、Dockerfile 检查和 `git diff --check` 通过。当前镜像只部署到这个合成测试 namespace，公网实例未更新；北交所公网 Browser/Computer Use 验收仍未完成。
+
+#### 2026-11-17 Browser User 全协议透传与任意按键
+
+本功能分支把浏览器/电脑动作 schema 改为开放参数对象，移除 Pi、DeepSeek Harness、ComputerBridge canonical action 与 Worker 执行前的动作名称/字段枚举。导航目标 scheme 直接交给 Chromium；有效的任意按键名和组合键透传到 Chromium 聚焦输入队列或 X11 `xdotool`，是否受支持由浏览器/桌面运行时决定。Pi/DSH 的只读 `open_public_page` 旧工具固定描述“public HTTPS”并使用 HTTP `fetch`，本分支停止向模型注册它，统一用完整的 Browser User，避免 Agent 选中另一条协议受限路径。
+
+保留的检查只负责结构化消息解析、租户/用户与 Bot/run lease 身份、屏幕控制权、登录凭据交接，以及 Agent/模型/集群内部服务地址配置；它们不筛选用户要访问的网页 scheme 或按键名称。公开协议并不保证 Chromium、扩展或 X11 对每个 scheme/按键都有实现支持。该功能分支 `npm run test:runtime` 216/216、`npm run build:deployment`、`docker buildx build --check -f deploy/desktop/Dockerfile deploy/desktop` 和 `git diff --check` 均通过。尚未部署公网，也未在 K3D/公网做该分支的 Worker 实际运行验收；北交所多 Bot 公网验收仍未完成。
