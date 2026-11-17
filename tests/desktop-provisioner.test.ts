@@ -62,6 +62,12 @@ test('split provisioning waits for both Pods and returns the scoped Agent servic
  assert.equal(kube.creates,11);assert.equal(kube.ready,2);await provisioner.connect(owner,new AbortController().signal);assert.equal(kube.creates,11);assert.equal(kube.ready,4);
  assert.equal((kube.objects.get(kube.key('Deployment',identity.namespace,'desktop')) as any).spec.template.spec.containers[0].image,options.image);
  assert.equal((kube.objects.get(kube.key('Deployment',identity.namespace,'agent')) as any).spec.template.spec.containers[0].image,options.image);
+ const releaseId=`sha-${'a'.repeat(40)}`;
+ for(const name of ['desktop','agent']){
+  const deployment=kube.objects.get(kube.key('Deployment',identity.namespace,name)) as any;
+  assert.equal(deployment.metadata.labels['coke-grok-bot.io/release-id'],releaseId);
+  assert.equal(deployment.spec.template.metadata.labels['coke-grok-bot.io/release-id'],releaseId);
+ }
 });
 test('provisioner delegates namespace creation and rejects a different owner',async()=>{
  const owner={tenantId:randomUUID(),userId:randomUUID()},key=randomBytes(32),identity=desktopIdentity(owner,key),kube=new FakeKube(),signal=new AbortController().signal;let called=0;

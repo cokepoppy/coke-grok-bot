@@ -42,8 +42,10 @@ for (const deployment of deployments.items ?? []) {
   if (!containers.length || Number(deployment.spec?.replicas ?? 1) === 0) continue;
   const place = `${deployment.metadata.namespace}/${deployment.metadata.name}`;
   for (const container of containers) validateImage(container.image, `${place}/${container.name}`);
+  const deploymentReleaseLabel = deployment.metadata?.labels?.['coke-grok-bot.io/release-id'];
   const releaseLabel = deployment.spec?.template?.metadata?.labels?.['coke-grok-bot.io/release-id'];
-  if (releaseLabel && releaseLabel !== expectedReleaseId) errors.push(`${place}: Pod template label is ${releaseLabel}, expected ${expectedReleaseId}`);
+  if (deploymentReleaseLabel !== expectedReleaseId) errors.push(`${place}: Deployment release label is ${deploymentReleaseLabel || 'missing'}, expected ${expectedReleaseId}`);
+  if (releaseLabel !== expectedReleaseId) errors.push(`${place}: Pod template release label is ${releaseLabel || 'missing'}, expected ${expectedReleaseId}`);
   if ((deployment.status?.readyReplicas ?? 0) < (deployment.spec?.replicas ?? 1)) errors.push(`${place}: not all desired replicas are Ready`);
 }
 
@@ -68,7 +70,7 @@ for (const pod of pods.items ?? []) {
     }
   }
   const label = pod.metadata?.labels?.['coke-grok-bot.io/release-id'];
-  if (label && label !== expectedReleaseId) errors.push(`${place}: Pod label is ${label}, expected ${expectedReleaseId}`);
+  if (label !== expectedReleaseId) errors.push(`${place}: Pod release label is ${label || 'missing'}, expected ${expectedReleaseId}`);
 }
 }
 

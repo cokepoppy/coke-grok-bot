@@ -32,7 +32,7 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
   if (!isValidDesktopImageRef(options.image) || !/^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/.test(options.controlNamespace) || !options.gatewayCA.includes('BEGIN CERTIFICATE') || options.gatewayCA.length > 16384) throw new Error('Invalid desktop configuration');
   const proxyServer=options.desktopProxyServer?.trim(),proxyHostIp=options.desktopProxyHostIp?.trim(),proxyConfigured=options.desktopProxyServer!==undefined||options.desktopProxyHostIp!==undefined;
   if(proxyConfigured&&(proxyServer!=='http://host.docker.internal:17891'||proxyHostIp!=='192.168.65.254'||isIP(proxyHostIp||'')!==4))throw new Error('Invalid desktop proxy configuration');
-  const ns = identity.namespace, labels = { 'app.kubernetes.io/managed-by':'coke-grok-bot', 'coke-grok-bot.io/owner-hash':identity.ownerHash };
+  const ns = identity.namespace, labels = { 'app.kubernetes.io/managed-by':'coke-grok-bot', 'coke-grok-bot.io/owner-hash':identity.ownerHash }, releaseLabels = { ...labels, 'coke-grok-bot.io/release-id':imageReleaseId(options.image) };
   const meta = (name:string) => ({name,namespace:ns,labels});
   const security = (uid:number, readOnlyRootFilesystem:boolean) => ({runAsNonRoot:true,runAsUser:uid,runAsGroup:1000,allowPrivilegeEscalation:false,readOnlyRootFilesystem,capabilities:{drop:['ALL']}});
   const secretEnv = (name:string,key:string) => ({name,valueFrom:{secretKeyRef:{name:'desktop-runtime',key}}});
@@ -54,7 +54,7 @@ export function desktopResources(identity: DesktopIdentity, options: { image: st
         {to:[{ipBlock:{cidr:'0.0.0.0/0',except:['10.0.0.0/8','172.16.0.0/12','192.168.0.0/16','169.254.0.0/16','127.0.0.0/8']}}]},
       ],
     } },
-    { apiVersion:'apps/v1',kind:'Deployment',metadata:meta('desktop'),spec:{replicas:1,strategy:{type:'Recreate'},selector:{matchLabels:{app:'grok-desktop'}},template:{metadata:{labels:{...labels,app:'grok-desktop'}},spec:{
+    { apiVersion:'apps/v1',kind:'Deployment',metadata:{...meta('desktop'),labels:releaseLabels},spec:{replicas:1,strategy:{type:'Recreate'},selector:{matchLabels:{app:'grok-desktop'}},template:{metadata:{labels:{...releaseLabels,app:'grok-desktop'}},spec:{
       automountServiceAccountToken:false,securityContext:{runAsNonRoot:true,fsGroup:1000,seccompProfile:{type:'RuntimeDefault'}},
       containers:[
         {name:'desktop',image:options.image,imagePullPolicy:'Never',
@@ -93,11 +93,11 @@ export function splitDesktopResources(identity:DesktopIdentity,options:{image:st
   agentContainer.env=agentContainer.env.filter((entry:{name:string})=>entry.name!=='LINUX_DESKTOP_WORKER_TOKEN');
   agentContainer.env.push({name:'COKE_GROK_MEDIATED_COMPUTER',value:'1'});
   pod.containers=[desktopContainer];pod.volumes=pod.volumes.filter((volume:{name:string})=>['workspace','shm','desktop-tmp','active-tab-bridge'].includes(volume.name));
-  const labels={'app.kubernetes.io/managed-by':'coke-grok-bot','coke-grok-bot.io/owner-hash':identity.ownerHash};
+  const labels={'app.kubernetes.io/managed-by':'coke-grok-bot','coke-grok-bot.io/owner-hash':identity.ownerHash},releaseLabels={...labels,'coke-grok-bot.io/release-id':imageReleaseId(agentImage)};
   const agentPod={automountServiceAccountToken:false,securityContext:{runAsNonRoot:true,fsGroup:1000,seccompProfile:{type:'RuntimeDefault'}},
     affinity:{podAffinity:{requiredDuringSchedulingIgnoredDuringExecution:[{labelSelector:{matchLabels:{app:'grok-desktop'}},topologyKey:'kubernetes.io/hostname'}]}},
     containers:[agentContainer],volumes:[{name:'workspace',persistentVolumeClaim:{claimName:'workspace'}},{name:'agent-tmp',emptyDir:{sizeLimit:'512Mi'}},{name:'model-ca',configMap:{name:'model-ca'}}]};
-  const agentDeployment={apiVersion:'apps/v1',kind:'Deployment',metadata:{name:'agent',namespace:ns,labels},spec:{replicas:1,strategy:{type:'Recreate'},selector:{matchLabels:{app:'grok-agent'}},template:{metadata:{labels:{...labels,app:'grok-agent'}},spec:agentPod}}};
+  const agentDeployment={apiVersion:'apps/v1',kind:'Deployment',metadata:{name:'agent',namespace:ns,labels:releaseLabels},spec:{replicas:1,strategy:{type:'Recreate'},selector:{matchLabels:{app:'grok-agent'}},template:{metadata:{labels:{...releaseLabels,app:'grok-agent'}},spec:agentPod}}};
   const desktopService=find('Service','desktop');desktopService.spec.ports=desktopService.spec.ports.filter((port:{name:string})=>port.name!=='agent');
   const agentService={apiVersion:'v1',kind:'Service',metadata:{name:'agent',namespace:ns,labels},spec:{type:'ClusterIP',selector:{app:'grok-agent'},ports:[{name:'agent',port:8083,targetPort:'agent'}]}};
   const desktopPolicy=find('NetworkPolicy','desktop-isolation');

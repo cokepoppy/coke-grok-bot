@@ -745,7 +745,7 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
   </section>;
 }
 
-function RunTraceButton({runId}:{runId:string}) {
+function RunTraceButton({runId,compact=false}:{runId:string;compact?:boolean}) {
   const [open,setOpen]=useState(false);
   const [state,setState]=useState<{status:'loading'|'ready'|'error';events:RunTraceEntry[]}>({status:'loading',events:[]});
   const load=async()=>{
@@ -762,8 +762,9 @@ function RunTraceButton({runId}:{runId:string}) {
   const componentLabels:Record<RunTraceEntry['component'],string>={'control-plane':'Auth / control plane',scheduler:'Task scheduler','agent-runtime':'Pi / DeepSeek Harness','model-gateway':'Model gateway','computer-worker':'Cloud computer worker',mysql:'MySQL'};
   const eventLabels:Record<string,string>={'run.queued':'Task queued','run.claimed':'Task claimed','desktop.connect':'Cloud computer connection','agent.dispatch':'Agent runtime request','agent.result':'Agent response','model.request':'Model request','computer.control':'Computer control check','computer.inspect':'Computer page inspection','computer.screenshot':'Computer screen read','computer.status':'Computer status check','computer.propose':'Computer action prepared','computer.execute':'Computer action executed','run.persisted':'Result saved','run.outcome_unknown':'Outcome marked unknown'};
   const outcomeLabels:Record<RunTraceEntry['outcome'],string>={started:'Started',succeeded:'Succeeded',failed:'Failed',info:'Info'};
+  const traceIcon=<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h3l2 4.5 2-4.5h5M2 12.5h3l2-4.5 2 4.5h5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"/></svg>;
   return <>
-    <button type="button" className="run-trace-open" onClick={()=>void load()}>View task call chain</button>
+    <button type="button" className={`run-trace-open${compact?' compact':''}`} aria-label={compact?'View task call chain':undefined} title="View task call chain" onClick={()=>void load()}>{compact?traceIcon:'View task call chain'}</button>
     {open&&<div className="run-trace-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setOpen(false)}}>
       <section className="run-trace-dialog" role="dialog" aria-modal="true" aria-labelledby={`run-trace-title-${runId}`}>
         <header><div><h2 id={`run-trace-title-${runId}`}>Task call chain</h2><p>Run {runId}</p></div><button type="button" aria-label="Close call chain" onClick={()=>setOpen(false)}>×</button></header>
@@ -1305,6 +1306,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
       {run.status==='completed'&&Boolean(run.result?.trim())&&!genericDone&&voiceAvailable&&remote&&active&&<div className="message-actions"><button type="button" className="message-speech-button" aria-label={speechMessageId===run.id?'Stop reading aloud':'Read aloud'} title={speechMessageId===run.id?'Stop reading aloud':'Read aloud'} onClick={()=>void speakMessageAloud(active.id,run.id,run.result||'')}><Icon name="sound"/></button></div>}
       <RunFileCards files={outputFiles} onPreview={setPreviewFile} onReuse={reuseRunFile}/>
       {showRetryNote&&<p className="run-recovery-note">A separate queued task was created; the original outcome remains in history.</p>}
+      {!run.computerUsed&&remote&&<div className="message-actions"><RunTraceButton runId={run.id} compact/></div>}
     </div></div>;
   }
   function renderGroupChatMessage(message:GroupMessage,index:number,messages:GroupMessage[],group:GroupChat):React.ReactNode {
@@ -1320,6 +1322,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
             <p>{message.text||groupRunFallback(message)}</p>
             <RunFileCards files={(message.files||[]).filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
             {message.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.runId||message.id,prompt:'',status:message.status||'queued',result:message.text,recoveryState:message.recoveryState||'none',replacementRunId:message.replacementRunId,files:message.files||[],computerUsed:true,diagnosticCode:message.diagnosticCode,executionAudit:message.executionAudit}} botId={message.botId} showScreen={message.status==='running'||message.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
+            {!message.computerUsed&&remote&&message.runId&&<div className="message-actions"><RunTraceButton runId={message.runId} compact/></div>}
             {message.status==='unknown'&&<><p className="run-recovery-note">The result could not be confirmed. The task was not replayed; this Bot’s queue can continue.</p>{!message.computerUsed&&runDiagnosticSummary(message.diagnosticCode)&&<p className="run-recovery-diagnostic">{runDiagnosticSummary(message.diagnosticCode)}</p>}</>}
             {message.status==='unknown'&&message.recoveryState==='retried'&&message.replacementRunId&&<p className="run-recovery-note">The original task outcome remains unknown. The separate retry is shown below.</p>}
             {message.replacementRun&&<section className="group-replacement-run" aria-label={`Separate retry for ${message.botName||'Bot'}`}>
@@ -1327,6 +1330,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
               <p>{message.replacementRun.result||replacementRunFallback(message.replacementRun.status)}</p>
               <RunFileCards files={message.replacementRun.files.filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
               {message.replacementRun.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.replacementRun.id,prompt:'',status:message.replacementRun.status,result:message.replacementRun.result,recoveryState:'none',replacementRunId:null,files:message.replacementRun.files,computerUsed:true,diagnosticCode:message.replacementRun.diagnosticCode,executionAudit:message.replacementRun.executionAudit}} botId={message.botId} showScreen={message.replacementRun.status==='running'||message.replacementRun.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
+              {!message.replacementRun.computerUsed&&remote&&<RunTraceButton runId={message.replacementRun.id} compact/>}
             </section>}
           </div>
         </div>}

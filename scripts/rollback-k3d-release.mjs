@@ -16,7 +16,8 @@ for(const pin of snapshot.desktopImagePins){
   if(pin.exists)run('kubectl',['--context',context,'-n',pin.namespace,'create','-f','-'],JSON.stringify({apiVersion:'v1',kind:'ConfigMap',metadata:{name:'desktop-image-pin',namespace:pin.namespace,labels:pin.labels},immutable:pin.immutable,data:pin.data}));
 }
 for(const deployment of snapshot.deployments){
-  const patch={spec:{template:{spec:{}}}};
+  const releaseLabels=deployment.releaseLabels||{deployment:null,pod:null};
+  const patch={metadata:{labels:{'coke-grok-bot.io/release-id':releaseLabels.deployment??null}},spec:{template:{metadata:{labels:{'coke-grok-bot.io/release-id':releaseLabels.pod??null}},spec:{}}}};
   if(deployment.containers?.length)patch.spec.template.spec.containers=deployment.containers;
   if(deployment.initContainers?.length)patch.spec.template.spec.initContainers=deployment.initContainers;
   if(!Object.keys(patch.spec.template.spec).length)continue;

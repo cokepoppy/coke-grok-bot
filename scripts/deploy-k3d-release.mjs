@@ -59,7 +59,7 @@ try{
   if(verify.stderr)process.stderr.write(verify.stderr);
   if(verify.status!==0)throw new Error('Same-release verification failed');
   assertPersistentState(snapshot);
-  const result={releaseId,context,deployedAt:new Date().toISOString(),status:'deployed',deploymentCount:snapshot.deployments.length,preservedMysqlPods:snapshot.mysqlPods.length,preservedPvcs:snapshot.persistentVolumeClaims.length};
+  const result={releaseId,context,deployedAt:new Date().toISOString(),status:'deployed',deploymentCount:snapshot.deployments.length,pods:collectPodVersions(),preservedMysqlPods:snapshot.mysqlPods.length,preservedPvcs:snapshot.persistentVolumeClaims.length};
   await writeFile(resolve(operationsDir,'deployment-result.json'),JSON.stringify(result,null,2)+'\n',{mode:0o600});
   console.log(`Deployed and verified ${releaseId} across all Grok Bot application Deployments. MySQL and PVC identities are unchanged.`);
 }catch(error){
@@ -98,7 +98,7 @@ async function captureSnapshot(){
     const containers=spec.containers||[],initContainers=spec.initContainers||[];
     const userDesktop=namespace.startsWith('grok-user-')&&[...containers,...initContainers].some(c=>imageRepository(c.image)==='coke-grok-desktop');
     if(namespace==='coke-grok-bot'&&coreNames.has(name)||userDesktop){
-      deployments.push({namespace,name,containers:containers.map(c=>({name:c.name,image:c.image})),initContainers:initContainers.map(c=>({name:c.name,image:c.image}))});
+      deployments.push({namespace,name,releaseLabels:{deployment:item.metadata.labels?.['coke-grok-bot.io/release-id']??null,pod:item.spec.template.metadata?.labels?.['coke-grok-bot.io/release-id']??null},containers:containers.map(c=>({name:c.name,image:c.image})),initContainers:initContainers.map(c=>({name:c.name,image:c.image}))});
     }
   }
   deployments.sort((a,b)=>Number(a.namespace==='coke-grok-bot')-Number(b.namespace==='coke-grok-bot')||a.namespace.localeCompare(b.namespace)||a.name.localeCompare(b.name));
@@ -130,10 +130,10 @@ function patchDeployment(deployment,version){
     const images=deployment[field].filter(item=>imageMap[imageRepository(item.image)]).map(item=>({name:item.name,image:imageMap[imageRepository(item.image)]}));
     (field==='containers'?regular:init).push(...images);
   }
-  patchDeploymentImageLists(deployment.namespace,deployment.name,regular,init);
+  patchDeploymentImageLists(deployment.namespace,deployment.name,regular,init,{deployment:version,pod:version});
 }
-function patchDeploymentImageLists(namespace,name,containers,initContainers){
-  const patch={spec:{template:{spec:{}}}};
+function patchDeploymentImageLists(namespace,name,containers,initContainers,releaseLabels={deployment:null,pod:null}){
+  const patch={metadata:{labels:{'coke-grok-bot.io/release-id':releaseLabels.deployment??null}},spec:{template:{metadata:{labels:{'coke-grok-bot.io/release-id':releaseLabels.pod??null}},spec:{}}}};
   if(containers.length)patch.spec.template.spec.containers=containers;
   if(initContainers.length)patch.spec.template.spec.initContainers=initContainers;
   if(!Object.keys(patch.spec.template.spec).length)throw new Error(`No versioned app containers found in ${namespace}/${name}`);
@@ -141,6 +141,15 @@ function patchDeploymentImageLists(namespace,name,containers,initContainers){
 }
 function mysqlIdentity(){
   return getJson('get','pods','-A').items.filter(p=>p.metadata.namespace==='coke-auth'&&p.metadata.name.startsWith('mysql')).map(p=>({namespace:p.metadata.namespace,name:p.metadata.name,uid:p.metadata.uid,images:(p.spec.containers||[]).map(c=>c.image)})).sort((a,b)=>a.name.localeCompare(b.name));
+}
+function collectPodVersions(){
+  const names=new Set(['coke-grok-auth','coke-grok-desktop-broker','coke-grok-namespace-bootstrap','coke-grok-desktop']);
+  return getJson('get','pods','-A').items.filter(p=>!p.metadata.deletionTimestamp&&!['Succeeded','Failed'].includes(p.status?.phase)).flatMap(p=>{
+    const containers=[...(p.spec.initContainers||[]),...(p.spec.containers||[])].filter(c=>names.has(imageRepository(c.image)));
+    if(!containers.length)return [];
+    const states=[...(p.status.initContainerStatuses||[]),...(p.status.containerStatuses||[])];
+    return [{namespace:p.metadata.namespace,name:p.metadata.name,phase:p.status.phase,releaseId:p.metadata.labels?.['coke-grok-bot.io/release-id']||null,containers:containers.map(c=>{const state=states.find(item=>item.name===c.name);return {name:c.name,image:c.image,imageId:state?.imageID||null,ready:state?.ready??null}})}];
+  }).sort((a,b)=>`${a.namespace}/${a.name}`.localeCompare(`${b.namespace}/${b.name}`));
 }
 function pvcIdentity(){
   return getJson('get','pvc','-A').items.filter(p=>p.metadata.namespace==='coke-auth'||p.metadata.namespace.startsWith('grok-user-')).map(p=>({namespace:p.metadata.namespace,name:p.metadata.name,uid:p.metadata.uid,phase:p.status?.phase})).sort((a,b)=>`${a.namespace}/${a.name}`.localeCompare(`${b.namespace}/${b.name}`));
@@ -154,6 +163,6 @@ function restoreSnapshot(snapshot){
     run('kubectl',['--context',context,'-n',pin.namespace,'delete','cm','desktop-image-pin','--ignore-not-found=true','--wait=true']);
     if(pin.exists)run('kubectl',['--context',context,'-n',pin.namespace,'create','-f','-'],JSON.stringify({apiVersion:'v1',kind:'ConfigMap',metadata:{name:'desktop-image-pin',namespace:pin.namespace,labels:pin.labels},immutable:pin.immutable,data:pin.data}));
   }
-  for(const deployment of snapshot.deployments)patchDeploymentImageLists(deployment.namespace,deployment.name,deployment.containers,deployment.initContainers);
+  for(const deployment of snapshot.deployments)patchDeploymentImageLists(deployment.namespace,deployment.name,deployment.containers,deployment.initContainers,deployment.releaseLabels||{deployment:null,pod:null});
   for(const deployment of snapshot.deployments)run('kubectl',['--context',context,'-n',deployment.namespace,'rollout','status',`deployment/${deployment.name}`,'--timeout=300s']);
 }

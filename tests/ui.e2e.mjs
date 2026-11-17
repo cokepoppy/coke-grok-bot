@@ -263,7 +263,7 @@ try {
       }
       return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ group: demoGroups[0], messages: demoGroupMessages }) });
     }
-    if (path === '/api/runs/live-computer-run/trace' && route.request().method() === 'GET') {
+    if (/^\/api\/runs\/(?:live-computer-run|outbound-run)\/trace$/.test(path) && route.request().method() === 'GET') {
       const releaseId = `sha-${'a'.repeat(40)}`;
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ events: [
         { sequence: 1, component: 'control-plane', event: 'run.queued', outcome: 'info', httpStatus: null, diagnosticCode: null, durationMs: null, releaseId, at: '2026-11-17T07:30:00.000Z' },
@@ -373,6 +373,12 @@ try {
   assert.equal(await traceDialog.getByText('private prompt', { exact: false }).count(), 0, 'The visible call chain must not expose prompts or request content');
   await traceDialog.getByRole('button', { name: 'Close call chain' }).click();
   await traceDialog.waitFor({ state: 'hidden' });
+  const plainAgentResult=productShellPage.locator('.message-line.bot').filter({hasText:"Checking what's connected."});
+  await plainAgentResult.getByRole('button',{name:'View task call chain'}).click();
+  await traceDialog.waitFor();
+  await traceDialog.getByText('Model gateway · Model request',{exact:true}).waitFor();
+  await traceDialog.getByRole('button',{name:'Close call chain'}).click();
+  await traceDialog.waitFor({state:'hidden'});
   const visibleTimelineOrder = await productShellPage.locator('.message-content > .message-line, .message-content > .system-event-line, .message-content > .computer-activity-line').evaluateAll(elements => elements.map(element => element.textContent || ''));
   const timelinePosition = (text) => visibleTimelineOrder.findIndex(item => item.includes(text));
   assert.ok(timelinePosition('Overnight pipeline generation and outbound.') < timelinePosition('Renamed to Sales Outbound') && timelinePosition('Renamed to Sales Outbound') < timelinePosition("Checking what's connected."), 'User tasks, persisted rename events, and Agent results should follow their event times');

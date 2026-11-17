@@ -545,6 +545,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 
 .run-trace-open { margin-top: 10px; min-height: 36px; padding: 7px 12px; border: 1px solid #dedbe7; border-radius: 10px; background: #fff; color: #51466f; font: inherit; font-size: 13px; cursor: pointer; }
 .run-trace-open:hover { background: #f8f6fb; border-color: #bcb3cf; }
+.run-trace-open.compact { display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; margin: 0; padding: 5px; border: 0; border-radius: 50%; background: transparent; color: #777; font-size: 0; }
+.run-trace-open.compact svg { display: block; width: 16px; height: 16px; }
+.run-trace-open.compact:hover { background: #ecebea; border-color: transparent; }
 .run-trace-backdrop { position: fixed; inset: 0; z-index: 1400; display: grid; place-items: center; padding: 22px; background: rgba(22, 20, 27, .42); }
 .run-trace-dialog { width: min(720px, 100%); max-height: min(82vh, 820px); overflow: auto; padding: 22px; border: 1px solid #e6e2eb; border-radius: 18px; background: #fff; color: #201d25; box-shadow: 0 24px 80px rgba(24, 20, 30, .24); }
 .run-trace-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
