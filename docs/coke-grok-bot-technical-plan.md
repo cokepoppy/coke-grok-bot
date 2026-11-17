@@ -60,7 +60,7 @@
 5. [官方 YouTube：Grok Bot 101](https://www.youtube.com/watch?v=8xXhE25vJZY)：优先研究创建 Bot、消息、电脑、Skill 的操作路径。
 6. [官方 YouTube：Grok Bot 201](https://www.youtube.com/watch?v=rOVomdnWhjQ)：优先研究多 Bot、Routine 和团队协作。
 
-**当前证据状态**：官方 V1 Grok Bot 101 的 0:00.000–56:40.633 已达到全片源帧覆盖：对原片 102,020 个 PTS 做逐点联集，缺帧为 0；17 个补档窗口的 2,520 帧像素哈希和 101 张联系图均经独立 FFmpeg 重解码复核。源 PTS 联集中另有 49 个旧 manifest 时间戳不与原视频 PTS 精确重合，不计入覆盖量。详细视觉观察和目录见 [研究证据台账](../research/README.md)。这证明视频帧取证完整，不等于同视口像素比对或真实产品端到端验收；官方 V2、第三方教程仍有待逐帧研究，V3 按用户此前指示停止。
+**当前证据状态**：官方 V1 Grok Bot 101 的 0:00.000–56:40.633 已达到全片源帧覆盖：对原片 102,020 个 PTS 做逐点联集，缺帧为 0；17 个补档窗口的 2,520 帧像素哈希和 101 张联系图均经独立 FFmpeg 重解码复核。源 PTS 联集中另有 49 个旧 manifest 时间戳不与原视频 PTS 精确重合，不计入覆盖量。官方 V2 Grok Bot 201 已连续逐帧审阅至 29:14.960（累计 43,875 帧），后续仍待审；第三方教程仍待逐帧研究，V3 按用户此前指示停止。详细视觉观察和目录见 [研究证据台账](../research/README.md)。视频帧取证完整不等于同视口像素比对或真实产品端到端验收。
 
 2026-11-09 补齐 V1 官方视频 20:30–21:07.967 的连续帧审阅：8 个窗口共 1,140 个源帧、46 张联系图，独立重解码校验源视频 SHA-256、帧 PTS / yuv420p 像素哈希与字节数、联系图哈希全部匹配。画面仍为 `Meet the team` 演讲页，无产品操作；本段只补充视频审阅证据，不代表产品交互验收。连续覆盖范围和逐窗观察见 `research/README.md`。
 
@@ -3322,3 +3322,9 @@ Developer Bot 只读核对 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`
 本功能分支把浏览器/电脑动作 schema 改为开放参数对象，移除 Pi、DeepSeek Harness、ComputerBridge canonical action 与 Worker 执行前的动作名称/字段枚举。导航目标 scheme 直接交给 Chromium；有效的任意按键名和组合键透传到 Chromium 聚焦输入队列或 X11 `xdotool`，是否受支持由浏览器/桌面运行时决定。Pi/DSH 的只读 `open_public_page` 旧工具固定描述“public HTTPS”并使用 HTTP `fetch`，本分支停止向模型注册它，统一用完整的 Browser User，避免 Agent 选中另一条协议受限路径。
 
 保留的检查只负责结构化消息解析、租户/用户与 Bot/run lease 身份、屏幕控制权、登录凭据交接，以及 Agent/模型/集群内部服务地址配置；它们不筛选用户要访问的网页 scheme 或按键名称。公开协议并不保证 Chromium、扩展或 X11 对每个 scheme/按键都有实现支持。该功能分支 `npm run test:runtime` 216/216、`npm run build:deployment`、`docker buildx build --check -f deploy/desktop/Dockerfile deploy/desktop` 和 `git diff --check` 均通过。尚未部署公网，也未在 K3D/公网做该分支的 Worker 实际运行验收；北交所多 Bot 公网验收仍未完成。
+
+#### 2026-11-18 官方 Grok Bot 201 V2 连续逐帧续审（29:10–29:14.960）
+
+继续核对官方视频 `research/videos/grok-201-rOVomdnWhjQ.mkv` 的 29:10.000–29:14.960。紧凑证据位于忽略目录 `research/frames/grok-201-2910-2915-compact-audit-20261118/`：125 个连续 1920×1080、25 fps 源帧的 PTS/`yuv420p` 像素 SHA-256 manifest，以及五张 5×5 联系图；未保留 125 张全分辨率帧。独立 FFmpeg 重解码确认 125/125 帧 PTS、像素字节数和像素哈希匹配，5/5 联系图 SHA-256 匹配；PTS 1,750,000–1,754,960 与前段 1,749,960 连续，源视频 SHA-256 仍为 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。此窗口紧凑证据约 1.4 MB。
+
+逐帧看到页面从购物袋主视觉向下滚动至 `stickers` 目录，橙色贴纸仍在目录中，紫色贴纸移入购物袋底部。详情页切换边界由相邻原尺寸源帧确认：29:13.280 / PTS 1,753,280 仍显示目录，29:13.320 / PTS 1,753,320 已显示橙色贴纸详情，标题为 `excited`，说明为 `bouncing at the edges.`；详情页还显示 `back to stickers` 和心形图标。只能据此确认视频展示了目录滚动、装饰动画与详情页面状态，不推断点选、收藏或购买行为，也不把网站演示当作本项目真实运行证据。V2 连续逐帧覆盖现至 29:14.960（43,875 帧），下一窗口从 29:15.000 开始；完整观察和文件清单见 `research/README.md`。
