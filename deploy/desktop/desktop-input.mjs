@@ -5,10 +5,11 @@ import { join } from 'node:path';
 
 const maxScreenshotBytes = 32 * 1024 * 1024;
 const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const desktopKeys = new Map([
+const desktopKeyAliases = new Map([
   ['Enter', 'Return'], ['Tab', 'Tab'], ['Escape', 'Escape'], ['Backspace', 'BackSpace'], ['Delete', 'Delete'],
   ['ArrowUp', 'Up'], ['ArrowDown', 'Down'], ['ArrowLeft', 'Left'], ['ArrowRight', 'Right'],
   ['PageUp', 'Page_Up'], ['PageDown', 'Page_Down'], ['Home', 'Home'], ['End', 'End'], ['Space', 'space'],
+  ['Control', 'ctrl'], ['Ctrl', 'ctrl'], ['Meta', 'super'], ['Super', 'super'], ['Alt', 'alt'], ['Shift', 'shift'],
 ]);
 
 export async function captureDesktopScreen(run, bounds) {
@@ -115,7 +116,7 @@ export function typeDesktop(spawnProcess, text, { timeoutMs = 10_000, killGraceM
 }
 
 export async function pressDesktopKey(run, key) {
-  const mapped = desktopKeys.get(key);
-  if (!mapped) throw new Error('Unsupported desktop key');
+  if (typeof key !== 'string' || key.length < 1) throw new Error('Desktop key is invalid');
+  const mapped = key.split('+').map(part => desktopKeyAliases.get(part) || part).join('+');
   await run('xdotool', ['key', '--clearmodifiers', mapped], { timeout: 5_000 });
 }

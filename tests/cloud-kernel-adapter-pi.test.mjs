@@ -65,11 +65,48 @@ test('Pi runs task-scoped terminal commands without per-command approvals or bui
   }
 });
 
-test('Pi fails closed instead of polling a legacy computer approval id',async()=>{
+test('Pi does not expose the legacy HTTPS-only page reader alongside Browser User', async () => {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), 'grok-pi-no-public-page-reader-'));
+  const cwd = path.join(workspace, 'tasks', 'browser');
+  await mkdir(cwd, { recursive: true });
+  let options;
+  const sdk = {
+    AuthStorage: { inMemory: () => ({ setRuntimeApiKey() {} }) },
+    ModelRegistry: { inMemory: () => ({ registerProvider() {}, find: () => ({ id: 'deepseek-v4.1-flash' }) }) },
+    SessionManager: { list: async () => [], create: () => ({ getSessionId: () => 'browser-session' }) },
+    createAgentSession: async value => {
+      options = value;
+      return { session: {
+        messages: [{ role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: '{"status":"done","message":"Browser User is available."}' }] }],
+        async prompt() {},
+        dispose() {},
+      } };
+    },
+  };
+  try {
+    const result = await runCloudKernel({
+      engine: 'pi',
+      modelConfig: { apiKey: 'test-only-key', baseUrl: 'https://models.example/v1', model: 'deepseek-v4.1-flash' },
+      computer: { openPublicPageUrl: 'https://bridge.example.test/open', openPublicPageToken: 'x'.repeat(43) },
+      workspace,
+      cwd: 'tasks/browser',
+      prompt: 'Open the requested page with Browser User.',
+      signal: new AbortController().signal,
+    }, { piSdk: sdk });
+    assert.equal(result.status, 'done');
+    assert.equal(options.tools.includes('open_public_page'), false);
+    assert.equal((options.customTools || []).some(tool => tool.name === 'open_public_page'), false);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test('Pi computer tools pass arbitrary actions, schemes, keys, and fields through without approval polling',async()=>{
  const workspace=await mkdtemp(path.join(os.tmpdir(),'grok-pi-computer-diagnostic-')),cwd=path.join(workspace,'tasks','diagnostic');await mkdir(cwd,{recursive:true});
  const oldFetch=globalThis.fetch,approvalId=randomUUID(),token='x'.repeat(43),requests=[];let options;
  globalThis.fetch=async(url,init={})=>{
-  const pathname=new URL(String(url)).pathname;requests.push({pathname,method:init.method||'GET'});
+  const pathname=new URL(String(url)).pathname;requests.push({pathname,method:init.method||'GET',body:init.body?JSON.parse(init.body):undefined});
+  if(pathname==='/v1/computer/control')return Response.json({owner:'agent'});
   if(pathname==='/v1/computer/actions'&&init.method==='POST')return Response.json({id:approvalId},{status:201});
   throw new Error('Unexpected mediated computer request');
  };
@@ -81,21 +118,25 @@ test('Pi fails closed instead of polling a legacy computer approval id',async()=
  try{
   await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:token},prompt:'Check the browser tool.',signal:new AbortController().signal},{piSdk:sdk});
   const browser=options.customTools.find(tool=>tool.name==='computer_browser');assert.ok(browser);
-  const variants=browser.parameters.anyOf||browser.parameters.oneOf;assert.ok(Array.isArray(variants));
-  const clickByRole=variants.find(schema=>schema.properties?.action?.const==='click'&&schema.properties?.by?.const==='role');
-  assert.deepEqual([...clickByRole.required].sort(),['action','by','role','target']);
-  const clickByHref=variants.find(schema=>schema.properties?.action?.const==='click'&&schema.properties?.by?.const==='href');
-  assert.deepEqual([...clickByHref.required].sort(),['action','by','target']);
-  assert.equal(clickByHref.properties.target.maxLength,2048);
-  assert.equal(variants.some(schema=>schema.properties?.action?.const==='fill'&&schema.properties?.by?.const==='href'),false);
-  const fillByRole=variants.find(schema=>schema.properties?.action?.const==='fill'&&schema.properties?.by?.const==='role');
-  assert.deepEqual([...fillByRole.required].sort(),['action','by','role','target','value']);
-  await assert.rejects(()=>browser.execute('call',{action:'navigate',url:'https://example.com/'},new AbortController().signal),/Worker did not confirm that the computer action ran/);
-  assert.deepEqual(requests,[{pathname:'/v1/computer/actions',method:'POST'}],'a legacy id must never be polled or executed');
+  const desktop=options.customTools.find(tool=>tool.name==='computer_desktop');assert.ok(desktop);
+  for(const tool of [browser,desktop]) {
+   assert.equal(tool.parameters.properties.action.type,'string');
+   assert.equal(tool.parameters.properties.action.enum,undefined);
+   assert.equal(tool.parameters.additionalProperties,true);
+  }
+  const key=`VendorKey+XF86AudioMute+${'CUSTOM'.repeat(1000)}`;
+  await assert.rejects(()=>browser.execute('browser-future',{action:'future_browser_action',url:'custom-scheme://app/window',extensionField:{retained:true},key},new AbortController().signal),/Worker did not confirm that the computer action ran/);
+  await assert.rejects(()=>desktop.execute('desktop-press',{action:'press',key,extensionField:'retained'},new AbortController().signal),/Worker did not confirm that the computer action ran/);
+  const actions=requests.filter(request=>request.pathname==='/v1/computer/actions');
+  assert.deepEqual(actions.map(request=>request.body.action),[
+   {kind:'browser',action:'future_browser_action',url:'custom-scheme://app/window',extensionField:{retained:true},key},
+   {kind:'desktop',action:'press',key,extensionField:'retained'},
+  ]);
+  assert.equal(requests.filter(request=>request.pathname==='/v1/computer/approvals').length,0,'legacy approval IDs must never be polled or executed');
  }finally{globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true})}
 });
 
-test('Pi explains invalid computer action parameters without adding an approval step',async()=>{
+test('Pi explains malformed worker action envelopes without adding an approval step',async()=>{
  const workspace=await mkdtemp(path.join(os.tmpdir(),'grok-pi-invalid-browser-action-')),cwd=path.join(workspace,'tasks','invalid');await mkdir(cwd,{recursive:true});
  const oldFetch=globalThis.fetch,token='x'.repeat(43);let options;
  globalThis.fetch=async(url,init={})=>{
@@ -113,8 +154,8 @@ test('Pi explains invalid computer action parameters without adding an approval 
   await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:token},prompt:'Inspect then click the requested visible link.',signal:new AbortController().signal},{piSdk:sdk});
   const browser=options.customTools.find(tool=>tool.name==='computer_browser');
   await assert.rejects(()=>browser.execute('invalid-click',{action:'click' },new AbortController().signal),error=>{
-   assert.match(error.message,/parameters were incomplete or invalid/i);
-   assert.match(error.message,/click\/check\/uncheck/);
+   assert.match(error.message,/worker rejected the computer action envelope/i);
+   assert.match(error.message,/Action names, URL schemes, key names, and extra fields are not allowlisted/i);
    assert.doesNotMatch(error.message,/approval/i);
    assert.doesNotMatch(error.message,/never-return-this/);
    return true;

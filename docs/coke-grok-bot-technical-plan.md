@@ -3286,3 +3286,19 @@ Developer Bot 只读核对 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`
 另一个 K3D Computer User 点击失败已确认来自 `deploy/desktop/desktop-input.mjs` 使用 `xdotool mousemove --sync`。本机 Worker 测试屏为 `11776 x 900`；失败后指针已在目标 `(304,409)`。容器里的 `xdotool mousemove --help` 明确说明 `--sync` 只在指针发生移动后退出；再次移动到原坐标不会产生 motion event，因此命令一直等到 5 秒超时，Worker 报 `Command failed: xdotool mousemove --sync ...`。去掉 `--sync`，仍在同一 xdotool 进程里依次发送 move 和 click；同坐标点击现在可直接完成。跨屏多步 Computer User 测试也改为依次执行，避免把不同屏的 takeover/click/type/return 序列交错。
 
 回归覆盖：`npm run test:runtime` 207/207；Computer action、Pi、DSH 定向测试 28/28；`tests/desktop-input.test.mjs` 11/11；`npm run build:deployment` 成功；ARM64 候选镜像在固定、项目自有的 K3D Worker 测试租户中通过链接解析/点击、同坐标 Computer User 输入、上传、双屏隔离和归还控制测试。第一次 K3D 运行还发现测试把 Worker 正确的接管状态 `409` 错写成 `400`，已改正；这不是产品运行错误。完整 SHA 候选尚待提交后生成；BSE Research namespace 尚未更新到该候选，因此**公网北交所页面点击和多 Bot 全链路仍未验收**。不可将 K3D 结果说成公网通过；下一步生成精确提交镜像，保存部署前 pin/PVC 状态，只更新对应 Auth/Agent/Desktop 所需范围，再用公网 Browser Use 新建只读任务点击官方“业务规则”链接并继续调研链路。
+
+#### 2026-11-17 移除 Browser User 与云电脑的协议和按键枚举限制
+
+复查 Browser User 和 Computer User 后确认，常规动作本来不再逐项审批，但运行时仍有分散限制：Computer Worker 的导航/链接路径以 HTTP(S) 筛掉其他 scheme；Computer User 的服务端键盘解析器只接受 14 个固定按键；Pi、DSH、Worker 与 X11 输入层又分别限制按键集合或长度。现将浏览器目标协议检查从动作路径移除，任务续接识别也接受通用 URI scheme；所有非空按键名称和组合键统一传递到 Chromium 或 `xdotool`，不设置按键名枚举或应用层长度上限。具体按键是否受支持由 Chromium、X11/`xdotool` 决定。
+
+带用户名/密码的 URL 作为登录凭据交接给用户，不当成协议权限拒绝；普通导航仍直接运行。认证用户、租户、活动任务租约及 Agent/User 控制权校验继续保留。模型和 Worker 之间的内部服务端点协议校验属于服务配置，不属于浏览器目标白名单，本次未动。
+
+本节记录源码与测试候选；公网部署及真实 Browser/Computer Use 验收仍需单独确认。特定 scheme 或按键的运行时支持由 Chromium、Playwright 和 X11 决定，不应与应用层白名单混淆。
+
+本轮 K3D 复用项目自有固定测试 namespace `grok-user-b6c851fd5b4fc610966aba5c03018772` 与原有单一 Worker Pod，没有创建新 namespace/容器。真实 Worker 用 `data:text/html,...` 导航并读回页面标题成功；测试 fixture 在 Browser User 通过 X11 收到 `F13`，Computer User 在两块 Bot 屏幕分别收到同一按键且没有串屏；共享登录浏览器、网页点击/文件上传、1440x900 屏幕、接管/归还和跨 Bot 隔离全通过。第一次 K3D 尝试发现 Browser Worker 参数虽接受任意键名，Playwright `locator.press('F13')` 仍在实际执行层报失败；改为聚焦目标控件后通过共享 X11 输入队列发送，复测通过。复测还发现固定 Pod 留存旧网页 fixture，导致新事件探针没有加载；测试现会只终止精确命名的项目测试 fixture 进程并重启，不动其他 Pod/容器。`npm run test:desktop-worker-k3d` 最终通过（不含模型调用）；随后 `npm run test:runtime` 214/214、`npm run build:deployment`、Dockerfile 检查和 `git diff --check` 通过。当前镜像只部署到这个合成测试 namespace，公网实例未更新；北交所公网 Browser/Computer Use 验收仍未完成。
+
+#### 2026-11-17 Browser User 全协议透传与任意按键
+
+本功能分支把浏览器/电脑动作 schema 改为开放参数对象，移除 Pi、DeepSeek Harness、ComputerBridge canonical action 与 Worker 执行前的动作名称/字段枚举。导航目标 scheme 直接交给 Chromium；有效的任意按键名和组合键透传到 Chromium 聚焦输入队列或 X11 `xdotool`，是否受支持由浏览器/桌面运行时决定。Pi/DSH 的只读 `open_public_page` 旧工具固定描述“public HTTPS”并使用 HTTP `fetch`，本分支停止向模型注册它，统一用完整的 Browser User，避免 Agent 选中另一条协议受限路径。
+
+保留的检查只负责结构化消息解析、租户/用户与 Bot/run lease 身份、屏幕控制权、登录凭据交接，以及 Agent/模型/集群内部服务地址配置；它们不筛选用户要访问的网页 scheme 或按键名称。公开协议并不保证 Chromium、扩展或 X11 对每个 scheme/按键都有实现支持。该功能分支 `npm run test:runtime` 216/216、`npm run build:deployment`、`docker buildx build --check -f deploy/desktop/Dockerfile deploy/desktop` 和 `git diff --check` 均通过。尚未部署公网，也未在 K3D/公网做该分支的 Worker 实际运行验收；北交所多 Bot 公网验收仍未完成。

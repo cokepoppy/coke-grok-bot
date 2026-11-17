@@ -57,7 +57,7 @@ test('DSH computer screenshot becomes a durable model image attachment', async (
   }
 });
 
-test('DSH explains malformed browser arguments as a tool-shape issue, never an approval', async () => {
+test('DSH forwards worker envelope errors without turning them into an approval', async () => {
   const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
   const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
   const oldFetch = globalThis.fetch;
@@ -72,8 +72,8 @@ test('DSH explains malformed browser arguments as a tool-shape issue, never an a
   try {
     const browser = mount().tools.get('computer_browser');
     await assert.rejects(browser.execute({ action: 'click', by: 'role', role: 'link', target: 'Business Rules' }, { signal: new AbortController().signal }), error => {
-      assert.match(error.message, /parameters were incomplete or invalid/i);
-      assert.match(error.message, /click\/check\/uncheck/);
+      assert.match(error.message, /worker rejected the computer action envelope/i);
+      assert.match(error.message, /allowlists are disabled/i);
       assert.doesNotMatch(error.message, /approval|do-not-forward/i);
       return true;
     });
@@ -114,7 +114,7 @@ test('DSH browser control clicks execute directly without approval polling', asy
   }
 });
 
-test('DSH passes an inspected resolved href through as a click locator only', async () => {
+test('DSH passes arbitrary link schemes and browser fields through unchanged', async () => {
   const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
   const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
   const oldFetch = globalThis.fetch;
@@ -130,11 +130,41 @@ test('DSH passes an inspected resolved href through as a click locator only', as
   };
   try {
     const browser = mount().tools.get('computer_browser');
-    await browser.execute({ action: 'click', by: 'href', target: 'https://www.bse.cn/business/overview.html' }, { signal: new AbortController().signal });
+    await browser.execute({ action: 'click', by: 'href', target: 'custom-link://app/window', extra: { trace: true } }, { signal: new AbortController().signal });
     assert.deepEqual(calls.find(call => call.path.endsWith('/computer/actions'))?.body, {
-      action: { kind: 'browser', action: 'click', by: 'href', target: 'https://www.bse.cn/business/overview.html' },
+      action: { kind: 'browser', action: 'click', by: 'href', target: 'custom-link://app/window', extra: { trace: true } },
     });
-    await assert.rejects(browser.execute({ action: 'fill', by: 'href', target: 'https://www.bse.cn/business/overview.html', value: 'x' }, { signal: new AbortController().signal }), /only supported for bounded link clicks/i);
+    assert.equal(browser.parameters.properties.action.enum, undefined);
+    assert.equal(browser.parameters.additionalProperties, true);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
+    if (oldToken === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN; else process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = oldToken;
+  }
+});
+
+test('DSH desktop accepts arbitrary key names and extra action fields', async () => {
+  const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
+  const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
+  const oldFetch = globalThis.fetch;
+  process.env.COKE_GROK_COMPUTER_BRIDGE_URL = 'https://gateway.example.test/v1';
+  process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = bridgeToken;
+  const calls = [], key = `VendorKey+XF86AudioMute+${'CUSTOM'.repeat(1000)}`;
+  globalThis.fetch = async (url, init = {}) => {
+    const path = new URL(String(url)).pathname;
+    calls.push({ path, body: init.body ? JSON.parse(init.body) : undefined });
+    if (path.endsWith('/computer/control')) return Response.json({ owner: 'agent' });
+    if (path.endsWith('/computer/actions')) return Response.json({ status: 'completed', result: { ready: true } }, { status: 201 });
+    throw new Error('Unexpected computer route');
+  };
+  try {
+    const desktop = mount().tools.get('computer_desktop');
+    await desktop.execute({ action: 'press', key, extensionField: { raw: ['kept'] } }, { signal: new AbortController().signal });
+    assert.deepEqual(calls.find(call => call.path.endsWith('/computer/actions'))?.body, {
+      action: { kind: 'desktop', action: 'press', key, extensionField: { raw: ['kept'] } },
+    });
+    assert.equal(desktop.parameters.properties.action.enum, undefined);
+    assert.equal(desktop.parameters.additionalProperties, true);
   } finally {
     globalThis.fetch = oldFetch;
     if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
@@ -163,7 +193,7 @@ test('DSH direct Gmail navigation consumes an immediate completion without creat
     assert.deepEqual(JSON.parse(value.text), destination);
     assert.equal(calls.filter(call => call.path.endsWith('/computer/actions')).length, 1);
     assert.equal(calls.length, 2, 'only check control and navigate; do not create, poll, or execute an approval');
-    assert.match(browser.description, /available for every live Bot task lease across sites and controls/i);
+    assert.match(browser.description, /available for every live Bot task lease across sites, URL schemes, keys, and controls/i);
     assert.match(browser.description, /Stop only when a real sign-in or human-verification challenge appears/i);
     assert.match(browser.description, /navigate, reload, open tabs, and use controls as the task requires/i);
     assert.match(browser.description, /choose Take control/i);
@@ -277,6 +307,42 @@ test('DSH Computer User can click Chrome and type in its address bar without app
     assert.equal(calls.length, 1, 'the live task lease checks ownership atomically with the direct computer action');
     assert.match(desktop.description, /Chrome tabs and the address bar are ordinary computer controls/i);
     assert.match(desktop.description, /Browser User and Computer User actions needed for the task run without per-step or per-site approval/i);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
+    if (oldToken === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN; else process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = oldToken;
+  }
+});
+
+test('DSH Browser User and Computer User pass arbitrary key names without a schema length cap', async () => {
+  const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
+  const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
+  const oldFetch = globalThis.fetch;
+  process.env.COKE_GROK_COMPUTER_BRIDGE_URL = 'https://gateway.example.test/v1';
+  process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = bridgeToken;
+  const actions = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const path = new URL(String(url)).pathname;
+    if (path.endsWith('/computer/control')) return Response.json({ owner: 'agent' });
+    if (path.endsWith('/computer/actions')) {
+      actions.push(JSON.parse(init.body).action);
+      return Response.json({ status: 'completed', result: { ready: true } }, { status: 201 });
+    }
+    throw new Error('Unexpected computer route');
+  };
+  try {
+    const { tools } = mount();
+    const desktop = tools.get('computer_desktop');
+    const browser = tools.get('computer_browser');
+    const key = `XF86_${'CUSTOM'.repeat(100)}`;
+    assert.equal(desktop.parameters.properties.action.enum, undefined);
+    assert.equal(browser.parameters.properties.action.enum, undefined);
+    assert.equal(desktop.parameters.additionalProperties, true);
+    assert.equal(browser.parameters.additionalProperties, true);
+    await desktop.execute({ action: 'press', key }, { signal: new AbortController().signal });
+    await browser.execute({ action: 'press', by: 'label', target: 'Search', key }, { signal: new AbortController().signal });
+    assert.equal(actions[0].key, key);
+    assert.equal(actions[1].key, key);
   } finally {
     globalThis.fetch = oldFetch;
     if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;

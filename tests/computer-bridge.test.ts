@@ -88,6 +88,27 @@ test('Browser User navigation recovers directly from Chromium’s connection-err
  assert.equal(navigations,1);assert.equal(approvalProposals,0);
 });
 
+test('computer bridge forwards arbitrary URL schemes and key combinations without action allowlists',async()=>{
+ const forwarded:unknown[]=[];
+ const worker={
+  control:async()=>({owner:'agent' as const}),
+  navigationState:async()=>({owner:'agent' as const,url:'chrome://newtab/'}),
+  navigateIfUnchanged:async(input:unknown)=>{forwarded.push(input);return {ready:true,url:'custom-scheme://app/page'}},
+  snapshot:async()=>({owner:'agent' as const,url:'chrome://newtab/',screenshotSha256:'a'.repeat(64)}),
+  inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),
+  performIfUnchanged:async(input:unknown)=>{forwarded.push(input);return {ready:true}},
+ };
+ let approvalProposals=0;
+ const approvals={propose:async()=>{approvalProposals++;return {id:randomUUID()}},consume:async()=>false,status:async()=>null};
+ const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>true},approvals,()=>worker),signal=new AbortController().signal;
+ const destination={kind:'browser',action:'navigate',url:'custom-scheme://app/page'};
+ assert.deepEqual(await bridge.propose(scope,destination,signal),{status:'completed',result:{ready:true,url:'custom-scheme://app/page'}});
+ const shortcut={kind:'desktop',action:'press',key:'Control+Shift+T'};
+ assert.deepEqual(await bridge.propose(scope,shortcut,signal),{status:'completed',result:{ready:true}});
+ assert.deepEqual(forwarded,[destination,shortcut]);
+ assert.equal(approvalProposals,0);
+});
+
 test('Browser User opens a task HTML artifact from Chromium error page without approval',async()=>{
  let opened=0,approvalProposals=0,marked=0;
  const worker={
@@ -211,7 +232,7 @@ test('sign-in handoff metadata never blocks ordinary controls or adds a site all
  assert.deepEqual(navigation,{status:'completed',result:{ready:true,url:'https://mail.google.com/'}});
  await assert.rejects(bridge.propose(scoped,{kind:'browser',action:'navigate',url:'https://login.example.test/'},signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_SIGNIN_HANDOFF_REQUIRED');
  await assert.rejects(bridge.propose(scoped,{kind:'browser',action:'click',by:'text',target:'Sign in'},signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_SIGNIN_HANDOFF_REQUIRED');
- await assert.rejects(bridge.execute(scoped,randomUUID(),{kind:'terminal',action:'run',command:'printf unsafe',directory:'task'},signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_WORKER_FORBIDDEN');
+ await assert.rejects(bridge.execute(scoped,randomUUID(),{kind:'terminal',action:'run',command:'printf unsafe',directory:'task'},signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_APPROVAL_REJECTED');
  assert.equal(approvalProposals,0);assert.equal(approvalConsumes,0);assert.equal(performed,3,'only the simulated authentication challenge stops Agent actions');
 });
 test('browser work resumes after the user returns control without a prompt-derived permission scope',async()=>{
@@ -235,7 +256,7 @@ test('browser work resumes after the user returns control without a prompt-deriv
  assert.deepEqual(await bridge.propose(scoped,{kind:'desktop',action:'click',x:200,y:200},signal),{status:'completed',result:{ready:true}});
  assert.equal(proposals,0);assert.equal(performed,9);assert.equal(marked,9);
 });
-test('legacy terminal approvals cannot create or execute owner approval cards',async()=>{
+test('task actions pass through without approval; legacy terminal approval endpoints stay disabled',async()=>{
  let actionText='',consumed=0,workerActions=0;
  const approvals:any={
   propose:async(_runId:string,_leaseId:string,action:string)=>{actionText=action;return {id:randomUUID(),action}},
@@ -244,12 +265,11 @@ test('legacy terminal approvals cannot create or execute owner approval cards',a
  };
  const worker={
   control:async()=>({owner:'agent' as const}),snapshot:async()=>({owner:'agent' as const,url:'https://example.test/',screenshotSha256:'a'.repeat(64)}),
-  snapshotWithImage:async()=>({state:{owner:'agent' as const,url:'https://example.test/',screenshotSha256:'a'.repeat(64)},image:Buffer.from('screenshot')}),
   inspect:async()=>({ready:true}),screenshot:async()=>Buffer.from('png'),performIfUnchanged:async()=>{workerActions++;return {ready:true}},
  };
  const bridge=new ComputerBridge({hasLiveLease:async()=>true,markComputerUsed:async()=>true},approvals,()=>worker),signal=new AbortController().signal;
  const input={kind:'terminal',action:'run',command:'printf approved',directory:'task'};
- await assert.rejects(bridge.propose(scope,input,signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_WORKER_FORBIDDEN');
- await assert.rejects(bridge.execute(scope,randomUUID(),input,signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_WORKER_FORBIDDEN');
- assert.equal(actionText,'');assert.equal(consumed,0);assert.equal(workerActions,0);
+ assert.deepEqual(await bridge.propose(scope,input,signal),{status:'completed',result:{ready:true}});
+ await assert.rejects(bridge.execute(scope,randomUUID(),input,signal),error=>error instanceof SafeDiagnosticError&&error.diagnosticCode==='COMPUTER_APPROVAL_REJECTED');
+ assert.equal(actionText,'');assert.equal(consumed,0);assert.equal(workerActions,1);
 });

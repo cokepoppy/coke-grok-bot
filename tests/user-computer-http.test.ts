@@ -13,12 +13,12 @@ test('computer API selects the authenticated user and protects actions with orig
  const a:Session={tenantId:randomUUID(),userId:randomUUID(),email:'a@example.test',name:'a',role:'owner'};
  const b:Session={...a,userId:randomUUID(),email:'b@example.test',name:'b'};
  const botA=randomUUID(),botA2=randomUUID(),botB=randomUUID();
- const owners=new Map<string,'agent'|'user'>();owners.set(`${a.userId}:${botA}`,'agent');owners.set(`${a.userId}:${botA2}`,'agent');owners.set(`${b.userId}:${botB}`,'agent');const calls:string[]=[];
+ const owners=new Map<string,'agent'|'user'>();owners.set(`${a.userId}:${botA}`,'agent');owners.set(`${a.userId}:${botA2}`,'agent');owners.set(`${b.userId}:${botB}`,'agent');const calls:string[]=[];let lastPressedKey='';
  const computer=new UserComputer((owner,botId)=>({
   async control(){return {owner:owners.get(`${owner.userId}:${botId}`) as 'agent'|'user'}},
   async userScreenshot(){if(botId===botA2)throw new SafeDiagnosticError('COMPUTER_WORKER_TRANSPORT_FAILED',504);return Buffer.from(owner.userId)},
   async setControl(value){owners.set(`${owner.userId}:${botId}`,value);return {owner:value}},
-  async userAction(action){if(owners.get(`${owner.userId}:${botId}`)!=='user')throw new Error('Not in control');calls.push(`${owner.userId}:${botId}:${action.action}`)},
+  async userAction(action){if(owners.get(`${owner.userId}:${botId}`)!=='user')throw new Error('Not in control');if(action.action==='press')lastPressedKey=action.key;calls.push(`${owner.userId}:${botId}:${action.action}`)},
  }));
  const auth={session:async(req:import('node:http').IncomingMessage)=>req.headers.cookie==='a'?a:req.headers.cookie==='b'?b:null} as unknown as GoogleAuthService;
  const ownedByA=new Set<string>([botA,botA2]);
@@ -40,7 +40,11 @@ test('computer API selects the authenticated user and protects actions with orig
   assert.equal((await post(botA,'/action','a',{action:'click',x:1440,y:1})).status,400);
   assert.equal((await post(botA,'/action','a',{action:'click',x:1,y:2,actor:'agent'})).status,400);
   assert.equal((await post(botA,'/action','a',{action:'click',x:1,y:2})).status,200);
-  assert.deepEqual(calls,[`${a.userId}:${botA}:click`]);assert.equal(owners.get(`${b.userId}:${botB}`),'agent');
+  assert.equal((await post(botA,'/action','a',{action:'press',key:'Control+Shift+T'})).status,200);
+  const longKey=`XF86_${'CUSTOM'.repeat(100)}`;
+  assert.equal((await post(botA,'/action','a',{action:'press',key:longKey})).status,200);
+  assert.equal(lastPressedKey,longKey,'the authenticated Computer User API should pass unlisted long key names to the worker');
+  assert.deepEqual(calls,[`${a.userId}:${botA}:click`,`${a.userId}:${botA}:press`,`${a.userId}:${botA}:press`]);assert.equal(owners.get(`${b.userId}:${botB}`),'agent');
   assert.equal((await post(botA,'/control','a',{owner:'agent'})).status,200);
   assert.equal((await post(botA,'/action','a',{action:'press',key:'Enter'})).status,503);
  }finally{await new Promise<void>(resolve=>server.close(()=>resolve()))}

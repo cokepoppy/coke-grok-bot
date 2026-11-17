@@ -108,11 +108,50 @@ test('a rejected screen claim is logged without details and retried on a later s
     await scheduler.tick();
     await waitFor(()=>events.some(event=>event.event==='grok_scheduler_claim_failed'));
     assert.equal(JSON.stringify(events).includes('sensitive database details'),false);
+    assert.equal(events.find(event=>event.event==='grok_scheduler_claim_failed').failureClass,'unknown');
     await scheduler.tick();
     await started.promise;
     await waitFor(()=>finished);
     assert.equal(claims,2);
   }finally{await scheduler.stop();}
+});
+
+test('a scheduler claim failure records only a safe database category',async()=>{
+  const tenantId=randomUUID(),userId=randomUUID(),botId=randomUUID(),events=[];
+  const store={
+    async queuedScreens(){return[{tenantId,userId,botId}]},
+    async claimNext(){throw Object.assign(new Error('private SQL and connection details'),{code:'ER_LOCK_DEADLOCK'})},
+    async renew(){return true},async finish(){return true},async markUnknown(){return true},
+  };
+  const scheduler=new RunScheduler(store,{execute:async()=>({status:'completed',result:'unused'})},{concurrency:1,leaseSeconds:60,onClaimEvent:event=>events.push(event)});
+  try{
+    await scheduler.tick();
+    await waitFor(()=>events.some(event=>event.event==='grok_scheduler_claim_failed'));
+    const event=events.find(item=>item.event==='grok_scheduler_claim_failed');
+    assert.equal(event.failureClass,'database_deadlock');
+    assert.equal(JSON.stringify(event).includes('private SQL'),false);
+  }finally{await scheduler.stop()}
+});
+
+test('a transient result-store deadlock retries persistence without replaying the Agent task',async()=>{
+  const tenantId=randomUUID(),userId=randomUUID(),botId=randomUUID(),runId=randomUUID(),events=[];
+  let claims=0,executions=0,finishes=0,saved=false;
+  const store={
+    async queuedScreens(){return saved?[]:[{tenantId,userId,botId}]},
+    async claimNext(){if(claims++)return null;return{run:{id:runId,botId,prompt:'send a message once',status:'running',files:[]},leaseId:randomUUID()}},
+    async renew(){return true;},
+    async finish(){if(++finishes===1)throw Object.assign(new Error('sensitive SQL details'),{code:'ER_LOCK_DEADLOCK'});saved=true;return true;},
+    async markUnknown(){assert.fail('successful result persistence should not mark the run unknown');},
+  };
+  const scheduler=new RunScheduler(store,{execute:async()=>{executions++;return{status:'completed',result:'sent'}}},{concurrency:1,leaseSeconds:60,onClaimEvent:event=>events.push(event)});
+  try{
+    await scheduler.tick();
+    await waitFor(()=>saved);
+    assert.equal(executions,1,'only persistence is retried; the task executor runs once');
+    assert.equal(finishes,2);
+    assert.ok(events.some(event=>event.event==='grok_scheduler_finish_retry'&&event.failureClass==='database_deadlock'));
+    assert.equal(JSON.stringify(events).includes('sensitive SQL'),false);
+  }finally{await scheduler.stop()}
 });
 
 test('scheduler passes a queue creation cutoff through selection and claim', async () => {

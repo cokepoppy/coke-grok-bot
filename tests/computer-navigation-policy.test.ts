@@ -12,6 +12,8 @@ test('a sign-in request that explicitly hands control to the user is marked for 
 
 test('browser task intent is recognized only to restore an unbroken task continuation',()=>{
  assert.equal(requestsBrowserTask('Use Browser User to open https://shop.example/products and compare the item details.'),true);
+ assert.equal(requestsBrowserTask('Open chrome://settings in the browser.'),true,'direct navigation recognizes Chromium internal URLs');
+ assert.equal(requestsBrowserTask('Open file:///tmp/demo/index.html in the browser.'),true,'direct navigation recognizes file URLs');
  assert.equal(requestsBrowserTask('请用云电脑里的浏览器打开公司报销网页，查找最新的差旅政策。'),true);
  assert.equal(requestsBrowserTask('请只通过此 Bot 持久云电脑的 Gmail 网页界面检查未读邮件并保存回复草稿，绝不发送。'),true);
  assert.equal(requestsBrowserTask('在 Gmail 搜索最近的未读邮件，并查看结果。'),true,'direct Gmail search intent must enable generic Browser User scope');
