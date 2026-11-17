@@ -427,7 +427,7 @@ function safePageUrl(value) {
 async function browserLocator(browserPage, input) {
   const target = typeof input.target === 'string' ? input.target.trim() : '';
   const by = String(input.by || '');
-  if (!target || target.length > (by === 'href' ? 2048 : 500)) throw new Error('A visible browser control target is required');
+  if (!target) throw new Error('A visible browser control target is required');
   if (by === 'href') {
     if (input.action !== 'click') throw new Error('Resolved href is only supported for link clicks');
     let expectedHref;
@@ -465,8 +465,7 @@ async function browserLocator(browserPage, input) {
   }
   if (by === 'role') {
     const role = String(input.role || '');
-    const roles = new Set(['alert', 'button', 'checkbox', 'combobox', 'dialog', 'heading', 'link', 'listbox', 'menuitem', 'option', 'radio', 'searchbox', 'slider', 'spinbutton', 'tab', 'textbox']);
-    if (!roles.has(role)) throw new Error('Unsupported accessible role');
+    if (!role) throw new Error('An accessible role is required');
     return { locator: browserPage.getByRole(role, { name: target, exact: true }) };
   }
   if (by === 'text') return { locator: browserPage.getByText(target, { exact: true }) };
@@ -527,7 +526,6 @@ async function agentBrowserAction(input, screenId) {
   if (action === 'navigate') {
     const url = new URL(String(input.url || ''));
     if (url.username || url.password) throw authenticationHandoffError('COMPUTER_SIGNIN_HANDOFF_REQUIRED');
-    if (url.href.length > 2048) throw new Error('Browser destination is too long');
     if (await screenOwner(screenId) !== 'agent') throw new Error('The user currently controls this computer');
     // Real sites can take longer than the short renderer health probe. Keep
     // the explicit 30s navigation timeout without latching the renderer as
@@ -686,8 +684,8 @@ function guardedComputerFor(screenId) {
     perform: async input => {
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid guarded action');
       const { kind, taskId, ...parameters } = input;
-      if (kind === 'browser' && /^[a-f0-9-]{36}$/i.test(String(taskId || '')) && ['navigate','open_artifact','upload_file','click','fill','select','check','uncheck','press'].includes(parameters.action)) return agentBrowserAction({ ...parameters, taskId }, screenId);
-      if (kind === 'desktop' && ['click','type','press'].includes(parameters.action)) return command({ ...parameters, actor:'agent' }, screenId);
+      if (kind === 'browser' && /^[a-f0-9-]{36}$/i.test(String(taskId || ''))) return agentBrowserAction({ ...parameters, taskId }, screenId);
+      if (kind === 'desktop') return command({ ...parameters, actor:'agent' }, screenId);
       throw new Error('Unsupported guarded action');
     },
   });
