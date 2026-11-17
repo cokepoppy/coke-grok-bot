@@ -19,7 +19,7 @@ export function apply(ctx) {
         x: { type: 'integer', minimum: 0, maximum: 1439 },
         y: { type: 'integer', minimum: 0, maximum: 899 },
         text: { type: 'string', maxLength: 2000 },
-        key: { type: 'string', minLength: 1, maxLength: 256 },
+        key: { type: 'string', minLength: 1 },
       },
       required: ['action'], additionalProperties: false,
     },
@@ -59,7 +59,7 @@ export function apply(ctx) {
         role: { type: 'string', maxLength: 40 },
         target: { type: 'string', maxLength: 2048 },
         value: { type: 'string', maxLength: 2000 },
-        key: { type: 'string', minLength: 1, maxLength: 256 },
+        key: { type: 'string', minLength: 1 },
       },
       required: ['action'], additionalProperties: false,
     },
@@ -213,7 +213,7 @@ function validateDesktopAction(args) {
   const keys = Object.keys(args).sort().join(',');
   if (args.action === 'click' && keys === 'action,x,y' && Number.isInteger(args.x) && Number.isInteger(args.y) && args.x >= 0 && args.x < 1440 && args.y >= 0 && args.y < 900) return;
   if (args.action === 'type' && keys === 'action,text' && typeof args.text === 'string' && args.text.length > 0 && args.text.length <= 2000) return;
-  if (args.action === 'press' && keys === 'action,key' && typeof args.key === 'string' && args.key.length > 0 && args.key.length <= 256) return;
+  if (args.action === 'press' && keys === 'action,key' && typeof args.key === 'string' && args.key.length > 0) return;
   throw new Error('Invalid desktop action');
 }
 
@@ -248,7 +248,7 @@ function validateBrowserAction(args) {
     if (Object.keys(args).sort().join(',') !== expected.sort().join(',')) throw new Error('Invalid browser action fields');
     if (args.by === 'role' && (typeof args.role !== 'string' || !args.role)) throw new Error('Invalid browser role');
     if (['fill','select'].includes(action) && typeof args.value !== 'string') throw new Error('Invalid browser value');
-    if (action === 'press' && (typeof args.key !== 'string' || !args.key || args.key.length > 256)) throw new Error('Invalid browser key');
+    if (action === 'press' && (typeof args.key !== 'string' || !args.key)) throw new Error('Invalid browser key');
     return;
   }
   throw new Error('Invalid browser action');

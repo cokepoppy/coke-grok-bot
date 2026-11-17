@@ -662,7 +662,7 @@ async function agentBrowserAction(input, screenId) {
       else if (action === 'uncheck') await locator.uncheck({ timeout: 10_000 });
       else {
         const key = String(input.key || '');
-        if (!key || key.length > 256 || /[\u0000-\u001f\u007f]/.test(key)) throw new Error('Browser key is invalid');
+        if (!key) throw new Error('Browser key is invalid');
         await desktopActionGate(() => withFocusedDesktopPage(browserPage, async () => {
           await locator.focus({ timeout: 10_000 });
           await pressDesktopKey(exec, key);

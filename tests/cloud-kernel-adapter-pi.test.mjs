@@ -82,6 +82,11 @@ test('Pi fails closed instead of polling a legacy computer approval id',async()=
   await runCloudKernel({engine:'pi',modelConfig:{apiKey:'test-only-key',baseUrl:'https://models.example/v1',model:'deepseek-v4.1-flash'},workspace,cwd:path.relative(workspace,cwd),taskId:randomUUID(),computer:{mode:'mediated',gatewayUrl:'https://gateway.example.test/v1',gatewayToken:token},prompt:'Check the browser tool.',signal:new AbortController().signal},{piSdk:sdk});
   const browser=options.customTools.find(tool=>tool.name==='computer_browser');assert.ok(browser);
   const variants=browser.parameters.anyOf||browser.parameters.oneOf;assert.ok(Array.isArray(variants));
+  const browserPress=variants.find(schema=>schema.properties?.action?.const==='press');
+  assert.ok(browserPress);
+  assert.equal(browserPress.properties.key.maxLength,undefined,'Pi Browser User must not expose a key-name length cap');
+  const desktop=options.customTools.find(tool=>tool.name==='computer_desktop');assert.ok(desktop);
+  assert.equal(desktop.parameters.properties.key.maxLength,undefined,'Pi Computer User must not expose a key-name length cap');
   const clickByRole=variants.find(schema=>schema.properties?.action?.const==='click'&&schema.properties?.by?.const==='role');
   assert.deepEqual([...clickByRole.required].sort(),['action','by','role','target']);
   const clickByHref=variants.find(schema=>schema.properties?.action?.const==='click'&&schema.properties?.by?.const==='href');

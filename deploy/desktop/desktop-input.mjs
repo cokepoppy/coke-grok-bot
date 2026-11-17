@@ -116,7 +116,7 @@ export function typeDesktop(spawnProcess, text, { timeoutMs = 10_000, killGraceM
 }
 
 export async function pressDesktopKey(run, key) {
-  if (typeof key !== 'string' || key.length < 1 || key.length > 256 || /[\u0000-\u001f\u007f]/.test(key)) throw new Error('Desktop key is invalid');
+  if (typeof key !== 'string' || key.length < 1) throw new Error('Desktop key is invalid');
   const mapped = key.split('+').map(part => desktopKeyAliases.get(part) || part).join('+');
   await run('xdotool', ['key', '--clearmodifiers', mapped], { timeout: 5_000 });
 }

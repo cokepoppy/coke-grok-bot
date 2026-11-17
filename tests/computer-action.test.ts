@@ -71,6 +71,13 @@ test('computer action snapshots accept browser internal and other URL schemes',(
   assert.equal(action.page,url.split(/[?#]/,1)[0]);
  }
 });
+test('browser and desktop keyboard actions preserve arbitrary long key names',()=>{
+ const key=`XF86_${'CUSTOM'.repeat(900)}`;
+ const browser=JSON.parse(canonicalComputerAction({kind:'browser',action:'press',by:'label',target:'Search',key},snapshot));
+ const desktop=JSON.parse(canonicalComputerAction({kind:'desktop',action:'press',key},snapshot));
+ assert.equal(browser.arguments.key,key);
+ assert.equal(desktop.arguments.key,key);
+});
 test('terminal approvals bind the exact command and selected computer directory',()=>{
  const action={kind:'terminal',action:'run',command:'printf "done" > result.txt',directory:'shared'};
  const first=canonicalComputerAction(action,snapshot),decoded=JSON.parse(first);

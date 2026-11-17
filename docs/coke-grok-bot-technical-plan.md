@@ -3289,7 +3289,7 @@ Developer Bot 只读核对 `main` 为 `07d9e73a317c3f8a4d17befe32f73c49c65e78eb`
 
 #### 2026-11-17 移除 Browser User 与云电脑的协议和按键枚举限制
 
-复查 Browser User 和 Computer User 后确认，常规动作本来不再逐项审批，但运行时仍有分散限制：Computer Worker 的导航/链接路径以 HTTP(S) 筛掉其他 scheme；Computer User 的服务端键盘解析器只接受 14 个固定按键；Pi、DSH、Worker 与 X11 输入层又分别限制按键集合或长度。现将浏览器目标协议检查从动作路径移除，任务续接识别也接受通用 URI scheme；所有非空按键名称和组合键统一传递到 Chromium 或 `xdotool`，不再做固定枚举，长度上限统一为 256 字符。
+复查 Browser User 和 Computer User 后确认，常规动作本来不再逐项审批，但运行时仍有分散限制：Computer Worker 的导航/链接路径以 HTTP(S) 筛掉其他 scheme；Computer User 的服务端键盘解析器只接受 14 个固定按键；Pi、DSH、Worker 与 X11 输入层又分别限制按键集合或长度。现将浏览器目标协议检查从动作路径移除，任务续接识别也接受通用 URI scheme；所有非空按键名称和组合键统一传递到 Chromium 或 `xdotool`，不设置按键名枚举或应用层长度上限。具体按键是否受支持由 Chromium、X11/`xdotool` 决定。
 
 带用户名/密码的 URL 作为登录凭据交接给用户，不当成协议权限拒绝；普通导航仍直接运行。认证用户、租户、活动任务租约及 Agent/User 控制权校验继续保留。模型和 Worker 之间的内部服务端点协议校验属于服务配置，不属于浏览器目标白名单，本次未动。
 

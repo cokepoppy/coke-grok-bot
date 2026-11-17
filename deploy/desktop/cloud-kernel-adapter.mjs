@@ -297,7 +297,7 @@ function computerDesktopTool(computerInput) {
     parameters: Type.Object({
       action: Type.Union(['screenshot','click','type','press'].map(value => Type.Literal(value))),
       x: Type.Optional(Type.Number({minimum:0,maximum:1439})), y: Type.Optional(Type.Number({minimum:0,maximum:899})),
-      text: Type.Optional(Type.String({maxLength:2000})), key: Type.Optional(Type.String({maxLength:256})),
+      text: Type.Optional(Type.String({maxLength:2000})), key: Type.Optional(Type.String({minLength:1})),
     }, { additionalProperties:false }),
     async execute(_id, params, signal) {
       if (signal?.aborted) throw signal.reason || new Error('Task was stopped');
@@ -345,7 +345,7 @@ function computerBrowserTool(computerInput, taskId) {
     ...locatorActions('select', { value: Type.String({ minLength: 1, maxLength: 256 }) }),
     ...locatorActions('check'),
     ...locatorActions('uncheck'),
-    ...locatorActions('press', { key: Type.String({ minLength: 1, maxLength: 256 }) }),
+    ...locatorActions('press', { key: Type.String({ minLength: 1 }) }),
     Type.Object({ action: Type.Literal('open_artifact'), path: Type.String({ minLength: 1, maxLength: 500 }), artifactTaskId: Type.Optional(Type.String({ pattern: screenIdPattern.source })) }, strict),
     Type.Object({ action: Type.Literal('upload_file'), path: Type.String({ minLength: 1, maxLength: 500 }), artifactTaskId: Type.Optional(Type.String({ pattern: screenIdPattern.source })), by: Type.Union([Type.Literal('css'), Type.Literal('label')]), target }, strict),
   ]);

@@ -63,6 +63,6 @@ export function parseUserAction(value:unknown):UserComputerAction {
  const input=value as Record<string,unknown>,keys=Object.keys(input).sort().join(',');
  if(input.action==='click' && keys==='action,x,y' && Number.isInteger(input.x) && Number.isInteger(input.y) && (input.x as number)>=0 && (input.x as number)<1440 && (input.y as number)>=0 && (input.y as number)<900)return {action:'click',x:input.x as number,y:input.y as number};
  if(input.action==='type' && keys==='action,text' && typeof input.text==='string' && input.text.length>0 && input.text.length<=2000 && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(input.text))return {action:'type',text:input.text};
- if(input.action==='press' && keys==='action,key' && typeof input.key==='string' && input.key.length>0 && input.key.length<=256 && !/[\u0000-\u001f\u007f]/.test(input.key))return {action:'press',key:input.key};
+ if(input.action==='press' && keys==='action,key' && typeof input.key==='string' && input.key.length>0)return {action:'press',key:input.key};
  throw new Error('Invalid computer action');
 }

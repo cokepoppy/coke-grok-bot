@@ -99,12 +99,16 @@ test('desktop key mapping accepts arbitrary key names and modifier combinations'
   await pressDesktopKey(run, 'A');
   assert.deepEqual(calls.map(call => call[1]), [
     ['key', '--clearmodifiers', 'Return'], ['key', '--clearmodifiers', 'Down'],
-    ['key', '--clearmodifiers', 'ctrl+l'], ['key', '--clearmodifiers', 'ctrl+shift+t'],
-    ['key', '--clearmodifiers', 'super+l'], ['key', '--clearmodifiers', 'F12'], ['key', '--clearmodifiers', 'A'],
+    ['key', '--clearmodifiers', 'ctrl+L'], ['key', '--clearmodifiers', 'ctrl+shift+T'],
+    ['key', '--clearmodifiers', 'super+L'], ['key', '--clearmodifiers', 'F12'], ['key', '--clearmodifiers', 'A'],
   ]);
   await pressDesktopKey(run, ';');
   assert.deepEqual(calls.at(-1)[1], ['key', '--clearmodifiers', ';']);
-  await assert.rejects(pressDesktopKey(run, 'Control+\u0000L'), /key is invalid/);
+  await pressDesktopKey(run, 'XF86AudioMute');
+  assert.deepEqual(calls.at(-1)[1], ['key', '--clearmodifiers', 'XF86AudioMute']);
+  const longKeyName = `CUSTOM_${'x'.repeat(600)}`;
+  await pressDesktopKey(run, longKeyName);
+  assert.deepEqual(calls.at(-1)[1], ['key', '--clearmodifiers', longKeyName]);
 });
 
 test('desktop X11 actions serialize focus plus input while allowing async completion', async () => {

@@ -43,7 +43,7 @@ export function canonicalComputerAction(input:unknown,snapshot:ComputerSnapshot)
    }else args.target=text(value.target,500);
    if(by==='role'){allowed.push('role');args.role=text(value.role,40)}
    if(action==='fill'||action==='select'){allowed.push('value');if(typeof value.value!=='string'||value.value.length>2000||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value.value))throw new Error('Invalid value');args.value=value.value}
-   if(action==='press'){allowed.push('key');args.key=text(value.key,256)}
+   if(action==='press'){allowed.push('key');if(typeof value.key!=='string'||!value.key)throw new Error('Invalid computer key');args.key=value.key}
   }
  }else if(kind==='terminal'){
   allowed.push('command','directory');
@@ -55,11 +55,14 @@ export function canonicalComputerAction(input:unknown,snapshot:ComputerSnapshot)
  }else if(action==='type'){
   allowed.push('text');if(typeof value.text!=='string'||value.text.length>2000||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value.text))throw new Error('Invalid text');args.text=value.text;
  }else{
-  allowed.push('key');args.key=text(value.key,256);
+  allowed.push('key');if(typeof value.key!=='string'||!value.key)throw new Error('Invalid computer key');args.key=value.key;
  }
  if(Object.keys(value).some(key=>!allowed.includes(key)))throw new Error('Unexpected computer action field');
  if(snapshot.guardFingerprint!==undefined&&!/^[a-f0-9]{64}$/.test(snapshot.guardFingerprint))throw new Error('Invalid computer state fingerprint');
  const current=location(snapshot.url);
  const result:ApprovedComputerAction={kind,action:action as BrowserAction|DesktopAction|TerminalAction,arguments:args,...current,screenshotSha256:snapshot.screenshotSha256,...(snapshot.guardFingerprint?{guardFingerprint:snapshot.guardFingerprint}:{})};
- const serialized=JSON.stringify(result);if(serialized.length>4000)throw new Error('Computer action too large');return serialized;
+ const serialized=JSON.stringify(result);
+ const isKeyboardAction=(kind==='browser'||kind==='desktop')&&action==='press';
+ if(!isKeyboardAction&&serialized.length>4000)throw new Error('Computer action too large');
+ return serialized;
 }

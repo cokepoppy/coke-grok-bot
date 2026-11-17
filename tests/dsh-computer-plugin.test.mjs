@@ -284,6 +284,40 @@ test('DSH Computer User can click Chrome and type in its address bar without app
   }
 });
 
+test('DSH Browser User and Computer User pass arbitrary key names without a schema length cap', async () => {
+  const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
+  const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
+  const oldFetch = globalThis.fetch;
+  process.env.COKE_GROK_COMPUTER_BRIDGE_URL = 'https://gateway.example.test/v1';
+  process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = bridgeToken;
+  const actions = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const path = new URL(String(url)).pathname;
+    if (path.endsWith('/computer/control')) return Response.json({ owner: 'agent' });
+    if (path.endsWith('/computer/actions')) {
+      actions.push(JSON.parse(init.body).action);
+      return Response.json({ status: 'completed', result: { ready: true } }, { status: 201 });
+    }
+    throw new Error('Unexpected computer route');
+  };
+  try {
+    const { tools } = mount();
+    const desktop = tools.get('computer_desktop');
+    const browser = tools.get('computer_browser');
+    const key = `XF86_${'CUSTOM'.repeat(100)}`;
+    assert.equal(desktop.parameters.properties.key.maxLength, undefined);
+    assert.equal(browser.parameters.properties.key.maxLength, undefined);
+    await desktop.execute({ action: 'press', key }, { signal: new AbortController().signal });
+    await browser.execute({ action: 'press', by: 'label', target: 'Search', key }, { signal: new AbortController().signal });
+    assert.equal(actions[0].key, key);
+    assert.equal(actions[1].key, key);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldUrl === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_URL; else process.env.COKE_GROK_COMPUTER_BRIDGE_URL = oldUrl;
+    if (oldToken === undefined) delete process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN; else process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN = oldToken;
+  }
+});
+
 test('DSH computer plugin refuses actions when the user owns the screen and rejects an invalid gateway', async () => {
   const oldUrl = process.env.COKE_GROK_COMPUTER_BRIDGE_URL;
   const oldToken = process.env.COKE_GROK_COMPUTER_BRIDGE_TOKEN;
