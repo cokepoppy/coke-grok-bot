@@ -3516,3 +3516,7 @@ V2 连续逐帧覆盖推进至 30:14.960（累计 45,375 帧），下一窗口�
 部署后从公网域名获取 JavaScript（`index-Ds242xfz.js`，425,047 字节，SHA-256 `26e5474821b542505b012d19b4f7ae1b80a6aebe8172a21e31833649403823df`）和 CSS（`index-CbR2XGZH.css`，99,137 字节，SHA-256 `48802f9dc393a985f7cd5032fbaec792051b2725e2d4349328fb8915e15e00c3`），均与本地构建匹配。Computer Use 重启后，`getState()` 已能列出 Chrome 与公网 Grok Bot 标签；但绑定现有 Chrome 标签仍约 30 秒超时并重置内核。故公网点击验收仍未完成，不能将枚举恢复或静态资源哈希视作网页交互成功。没有改用截图、CDP、Playwright 或其他方式冒充公网 Computer Use。
 
 本地候选包位于 `releases/candidate-grok-run-trace-version-a510af2-2026-11-18/`，包含源码与 dist 归档、部署配置/构建/部署/验证/回退脚本、镜像 refs/IDs、回退快照、操作记录、静态资源哈希及 `SHA256SUMS`。源码归档明确排除 `research/` 和 `releases/`；约 913 MB 的 OCI 层不重复归档，继续使用 Mac Docker/K3D 本地镜像缓存。候选尚未合并 `main`、未创建正式 checkpoint tag；公网 Computer Use 点击验收通过后再完成后续发布决策。
+
+#### 2026-11-18 17:24 CST Computer Use availability recheck
+
+After restarting ChatGPT, `cua.getState()` again listed the Chrome extension and the public `https://codex.cokeagent.com/grok-bot/` tab, but reported `Native apps: The Mac is locked and automatic unlock could not unlock it`. This confirms tab discovery only; it does not confirm that the existing tab can bind or receive real clicks. No tab binding or page action was attempted while the Mac was locked, and no screenshot, CDP, Playwright, HTTP, or Pod check was used as a substitute. Public click acceptance remains incomplete pending a manual Mac unlock. Independently, the K3D verifier passed for release `sha-a510af23b7933e8f0e310406c5975b03b78127ff`; that deployment check is not public UI acceptance.
