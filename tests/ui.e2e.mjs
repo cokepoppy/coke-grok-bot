@@ -6,6 +6,9 @@ import { chromium } from 'playwright-core';
 
 const progress = message => { if (process.env.E2E_PROGRESS === '1') console.log(`[ui-e2e] ${message}`); };
 
+const captureUiScreenshot = async (target, options) => {
+  if (process.env.COKE_GROK_CAPTURE_UI_ARTIFACTS === '1') await target.screenshot(options);
+};
 const server = createServer();
 await new Promise((resolve, reject) => server.listen(0, '127.0.0.1', resolve).once('error', reject));
 const port = server.address().port;
@@ -48,7 +51,7 @@ try {
   assert.equal(await page.locator('.create-shapes button').count(), 13);
   assert.equal(await page.locator('.create-colors button').count(), 11);
   await mkdir('artifacts/ui', { recursive: true });
-  await page.getByRole('dialog', { name: 'Create New Bot' }).screenshot({ path: 'artifacts/ui/create-bot.png' });
+  await captureUiScreenshot(page.getByRole('dialog', { name: 'Create New Bot' }), { path: 'artifacts/ui/create-bot.png' });
   await page.getByLabel('Name your Bot').fill('New Bot');
   await page.getByRole('button', { name: 'Create shape heart' }).click();
   await page.getByRole('button', { name: 'Create color #1e86fc' }).click();
@@ -59,7 +62,7 @@ try {
   const botMenu = page.getByRole('menu', { name: 'Bot actions' });
   assert.equal(await botMenu.getByRole('menuitem', { name: 'Pin' }).isEnabled(), true);
   await mkdir('artifacts/ui', { recursive: true });
-  await botMenu.screenshot({ path: 'artifacts/ui/sidebar-bot-menu.png' });
+  await captureUiScreenshot(botMenu, { path: 'artifacts/ui/sidebar-bot-menu.png' });
   await botMenu.getByRole('menuitem', { name: 'Rename Bot' }).click();
   await page.getByLabel('Rename Bot').fill('Other Local');
   await page.getByLabel('Rename Bot').press('Enter');
@@ -102,7 +105,7 @@ try {
   await page.getByRole('button', { name: 'Shape square' }).click();
   await page.getByRole('button', { name: 'Color #959595' }).click();
   await mkdir('artifacts/ui', { recursive: true });
-  await page.locator('.avatar-dialog').screenshot({ path: 'artifacts/ui/avatar-picker.png' });
+  await captureUiScreenshot(page.locator('.avatar-dialog'), { path: 'artifacts/ui/avatar-picker.png' });
   await page.getByRole('button', { name: 'Shape triangle' }).click();
   await page.getByRole('button', { name: 'Color #1cc3b0' }).click();
   await page.getByRole('button', { name: 'Color #1cc3b0' }).press('Escape');
@@ -365,11 +368,16 @@ try {
   await completedActivityCard.getByRole('button', { name: 'View task call chain' }).click();
   const traceDialog = productShellPage.getByRole('dialog', { name: 'Task call chain' });
   await traceDialog.waitFor();
+  const traceEvents = traceDialog.locator('.run-trace-list');
   await traceDialog.locator('.run-trace-release').getByText(`Release sha-${'a'.repeat(40)}`, { exact: true }).waitFor();
-  await traceDialog.getByText('Auth / control plane · Task queued', { exact: true }).waitFor();
-  await traceDialog.getByText('Pi / DeepSeek Harness · Agent runtime request', { exact: true }).waitFor();
-  await traceDialog.getByText('Model gateway · Model request', { exact: true }).waitFor();
-  await traceDialog.getByText('Failed · HTTP 502 · 421 ms', { exact: true }).waitFor();
+  await traceEvents.getByText('Auth / control plane · Task queued', { exact: false }).waitFor();
+  await traceEvents.getByText('Pi / DeepSeek Harness · Agent runtime request', { exact: false }).waitFor();
+  await traceEvents.getByText('Model gateway · Model request', { exact: false }).waitFor();
+  const modelFailureTraceEvent = traceEvents.locator('.run-trace-event.failed').filter({ hasText: 'model_upstream_unavailable' });
+  await modelFailureTraceEvent.waitFor();
+  const modelFailureTraceText = await modelFailureTraceEvent.innerText();
+  assert.match(modelFailureTraceText, /Failed\s*·\s*Model gateway HTTP 502\s*·\s*421 ms/);
+  assert.doesNotMatch(modelFailureTraceText, /undefined|NaN/);
   await traceDialog.getByText('model_upstream_unavailable', { exact: true }).waitFor();
   await traceDialog.getByText('Stage: Run browser navigation', { exact: true }).waitFor();
   await traceDialog.getByText('Transport: ECONNRESET', { exact: true }).waitFor();
@@ -379,14 +387,16 @@ try {
   const plainAgentResult=productShellPage.locator('.message-line.bot').filter({hasText:"Checking what's connected."});
   await plainAgentResult.getByRole('button',{name:'View task call chain'}).click();
   await traceDialog.waitFor();
-  await traceDialog.getByText('Model gateway · Model request',{exact:true}).waitFor();
+  await traceEvents.getByText('Model gateway · Model request',{exact:false}).waitFor();
   await traceDialog.getByRole('button',{name:'Close call chain'}).click();
   await traceDialog.waitFor({state:'hidden'});
   const visibleTimelineOrder = await productShellPage.locator('.message-content > .message-line, .message-content > .system-event-line, .message-content > .computer-activity-line').evaluateAll(elements => elements.map(element => element.textContent || ''));
   const timelinePosition = (text) => visibleTimelineOrder.findIndex(item => item.includes(text));
   assert.ok(timelinePosition('Overnight pipeline generation and outbound.') < timelinePosition('Renamed to Sales Outbound') && timelinePosition('Renamed to Sales Outbound') < timelinePosition("Checking what's connected."), 'User tasks, persisted rename events, and Agent results should follow their event times');
-  assert.equal(await completedActivityCard.locator('.computer-activity-prompt').innerText(), 'Sign in to Salesforce so I can see the accounts you own.');
-  assert.equal(await productShellPage.locator('.message-line.user .message-bubble').count(), 1, 'Computer work should appear in its activity card without a duplicate user bubble');
+  const computerTaskPrompt = 'Sign in to Salesforce so I can see the accounts you own.';
+  assert.equal(await productShellPage.locator('.message-line.user .message-bubble').filter({ hasText: computerTaskPrompt }).count(), 1, 'A computer task prompt should appear as a user message');
+  assert.equal(await completedActivityCard.locator('.computer-activity-prompt').count(), 0, 'The Computer activity card should not duplicate the user prompt');
+  assert.equal(await productShellPage.locator('.message-line.user .message-bubble').count(), 2, 'Both ordinary and computer task prompts should appear in the user side of the conversation');
   assert.equal(await productShellPage.locator('.message-line.bot .message-bubble').filter({hasText: /^Done\.$/}).count(), 0, 'The activity status should carry a generic Done result without a duplicate reply bubble');
   const activityCardBounds = await productShellPage.locator('.computer-activity-card').boundingBox();
   assert.ok(activityCardBounds && activityCardBounds.width <= 421, 'Computer activity should match the reference card width');
@@ -404,7 +414,7 @@ try {
   assert.ok(mainBox && defaultConversationBox && defaultConversationBox.width >= mainBox.width * 0.94, 'The default two-column layout should give nearly all main-column width to chat');
   assert.ok(await productShellPage.evaluate(() => document.documentElement.scrollWidth === window.innerWidth), 'Product shell should not create horizontal page whitespace');
   await mkdir('artifacts/ui', { recursive: true });
-  await productShellPage.screenshot({ path: 'artifacts/ui/authenticated-product-window-reference-size-20261102.png' });
+  await captureUiScreenshot(productShellPage, { path: 'artifacts/ui/authenticated-product-window-reference-size-20261102.png' });
   await computerPanelToggle.click();
   await computerPanel.waitFor({ state: 'visible' });
   const referenceRailWidth = await productShellPage.locator('.sidebar').evaluate(element => element.getBoundingClientRect().width);
@@ -419,7 +429,7 @@ try {
   await productShellPage.locator('.message-scroll').evaluate(element=>{element.scrollTop=0;element.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,bubbles:true}))});
   const referenceMessageGeometry = await productShellPage.evaluate(() => {
     const box = (selector, index = 0) => { const rect = document.querySelectorAll(selector)[index]?.getBoundingClientRect(); return rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height }; };
-    return { welcome: box('.message-line.bot .message-bubble', 0), prompt: box('.message-line.user .message-bubble'), response: box('.message-line.bot .message-bubble', 1), computer: box('.computer-activity-card'), screen: box('.computer-preview-button') };
+    return { welcome: box('.message-line.bot .message-bubble', 0), prompt: box('.message-line.user .message-bubble', 0), computerPrompt: box('.message-line.user .message-bubble', 1), response: box('.message-line.bot .message-bubble', 1), computer: box('.computer-activity-card'), screen: box('.computer-preview-button') };
   });
   assert.ok(referenceMessageGeometry.welcome && Math.abs(referenceMessageGeometry.welcome.x - 110.5) <= 3 && Math.abs(referenceMessageGeometry.welcome.width - 531) <= 8, 'The welcome message should align to the official panel-open chat geometry');
   assert.ok(referenceMessageGeometry.welcome && Math.abs(referenceMessageGeometry.welcome.y - 95) <= 2, `The welcome message should follow its visible timestamp: ${JSON.stringify(referenceMessageGeometry)}`);
@@ -428,9 +438,9 @@ try {
   assert.ok(referenceMessageGeometry.response && Math.abs(referenceMessageGeometry.response.x - 110.5) <= 3 && Math.abs(referenceMessageGeometry.response.width - 531) <= 8, 'The Agent response should match the official Bot bubble geometry');
   assert.ok(referenceMessageGeometry.response && Math.abs(referenceMessageGeometry.response.y - 355) <= 2, 'The Agent response should follow the timestamped user message');
   assert.ok(referenceMessageGeometry.computer && Math.abs(referenceMessageGeometry.computer.width - 420) <= 1, 'The Computer activity card should match the official card width');
-  assert.ok(referenceMessageGeometry.computer && Math.abs(referenceMessageGeometry.computer.y - 414.75) <= 2, 'The Computer activity card should follow the Agent response');
+  assert.ok(referenceMessageGeometry.computerPrompt && referenceMessageGeometry.computer && referenceMessageGeometry.computer.y > referenceMessageGeometry.computerPrompt.y + referenceMessageGeometry.computerPrompt.height && referenceMessageGeometry.computer.y - referenceMessageGeometry.computerPrompt.y - referenceMessageGeometry.computerPrompt.height < 32, `The Computer activity card should follow its user task bubble in the timeline: ${JSON.stringify(referenceMessageGeometry)}`);
   assert.ok(referenceMessageGeometry.screen && Math.abs(referenceMessageGeometry.screen.x - 735) <= 2 && Math.abs(referenceMessageGeometry.screen.y - 58.5) <= 2 && Math.abs(referenceMessageGeometry.screen.width - 231.5) <= 2, 'The live computer preview should align to the official right pane');
-  await productShellPage.screenshot({ path: 'artifacts/ui/authenticated-product-computer-panel-reference-size-20261105.png' });
+  await captureUiScreenshot(productShellPage, { path: 'artifacts/ui/authenticated-product-computer-panel-reference-size-20261105.png' });
   demoRoutines.splice(0, demoRoutines.length);
   await productShellPage.getByRole('button', { name: 'Hide computer' }).click();
   await computerPanel.waitFor({ state: 'hidden' });
@@ -514,7 +524,7 @@ try {
   await computerScreenDialog.getByRole('img', { name: 'Current computer screen' }).waitFor();
   await productShellPage.waitForFunction(() => { const image = document.querySelector('.computer-large-screen img'); return Boolean(image && image.complete && image.naturalWidth === 464 && image.naturalHeight === 290); });
   await mkdir('artifacts/ui', { recursive: true });
-  await computerScreenDialog.screenshot({ path: 'artifacts/ui/authenticated-product-computer-fullscreen-20261105.png' });
+  await captureUiScreenshot(computerScreenDialog, { path: 'artifacts/ui/authenticated-product-computer-fullscreen-20261105.png' });
   await computerScreenDialog.getByRole('button', { name: 'Enter computer full screen' }).click();
   const fullscreenEntered = await productShellPage.waitForFunction(() => document.fullscreenElement === document.querySelector('.computer-screen-dialog'), { timeout: 1500 }).then(() => true).catch(() => false);
   if (fullscreenEntered) {
@@ -530,7 +540,7 @@ try {
   assert.equal(await productShellPage.getByLabel('Title (optional)', { exact: true }).inputValue(), 'Sales');
   await productShellPage.getByRole('button', { name: 'Back to computer' }).click();
   assert.equal(await openScreen.isVisible(), true, 'Settings should return to the live Computer panel');
-  await productShellPage.screenshot({ path: 'artifacts/ui/authenticated-product-computer-panel-20261102.png' });
+  await captureUiScreenshot(productShellPage, { path: 'artifacts/ui/authenticated-product-computer-panel-20261102.png' });
   await productShellPage.getByRole('button', { name: 'Close computer' }).click();
   await computerPanel.waitFor({ state: 'hidden' });
   const sidebarResize = productShellPage.getByRole('separator', { name: 'Resize sidebar' });
@@ -543,7 +553,7 @@ try {
   assert.equal(await productShellPage.locator('.bot-row-content:visible').count(), 0, 'The compact rail should show Bot icons without list text');
   assert.equal(await productShellPage.getByRole('button', { name: 'New chat' }).count(), 1, 'The compact rail keeps one reachable new-chat action');
   await mkdir('artifacts/ui', { recursive: true });
-  await productShellPage.screenshot({ path: 'artifacts/ui/authenticated-product-sidebar-rail-20261102.png' });
+  await captureUiScreenshot(productShellPage, { path: 'artifacts/ui/authenticated-product-sidebar-rail-20261102.png' });
   const railHandleBox = await sidebarResize.boundingBox();
   assert.ok(railHandleBox);
   const dragStartX = railHandleBox.x + railHandleBox.width / 2;
@@ -765,16 +775,16 @@ try {
     for (const [key, value] of Object.entries(expected)) assert.ok(Math.abs(actual[key] - value) <= 1, `${selector}.${key}: ${actual[key]} versus ${value}`);
   }
   await mkdir('artifacts/ui', { recursive: true });
-  await reference.screenshot({ path: 'artifacts/ui/reference-101-actual.png' });
+  await captureUiScreenshot(reference, { path: 'artifacts/ui/reference-101-actual.png' });
   await reference.getByRole('button', { name: 'New Bot', exact: true }).first().click();
   await reference.getByLabel('Bot name').waitFor();
-  await reference.screenshot({ path: 'artifacts/ui/reference-101-details.png' });
+  await captureUiScreenshot(reference, { path: 'artifacts/ui/reference-101-details.png' });
   await reference.getByRole('button', { name: 'New Bot', exact: true }).first().click();
   await reference.getByRole('button', { name: 'New chat' }).click();
   await reference.mouse.move(610, 103);
   assert.equal(await reference.locator('.new-chat-menu .menu-option').count(), 11);
   assert.equal(await reference.getByLabel('Message Bot').isDisabled(), true);
-  await reference.screenshot({ path: 'artifacts/ui/reference-101-new-chat.png' });
+  await captureUiScreenshot(reference, { path: 'artifacts/ui/reference-101-new-chat.png' });
   const recipient = reference.getByLabel('Start a chat with');
   assert.equal(await recipient.evaluate(element => element === document.activeElement), true);
   await recipient.fill('missing recipient');
@@ -808,7 +818,7 @@ try {
   assert.deepEqual(clockOffsets, [181, 301, 481, 241, 361]);
   assert.deepEqual(await websiteDemo.locator('.site-demo-agent-row time').allTextContents(), ['Yesterday', '16:35', '13:34', '11:34', '8:34', '12:34', '10:34']);
   await mkdir('artifacts/ui', { recursive: true });
-  await demoWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-window.png', scale: 'device' });
+  await captureUiScreenshot(demoWindow, { path: 'artifacts/ui/grok-bot-website-demo-window.png', scale: 'device' });
   assert.equal(await websiteDemo.locator('.site-demo-waveform').count(), 0, 'the official completed conversation has no floating waveform control');
   assert.equal(await websiteDemo.getByRole('button', { name: 'Voice message' }).count(), 1, 'the composer should use the single official voice-message button');
   assert.equal(await websiteDemo.getByRole('button', { name: 'Start voice chat' }).count(), 0);
@@ -826,7 +836,7 @@ try {
   assert.equal(await settingsPanel.getByRole('textbox', { name: 'Title (optional)' }).inputValue(), 'Sales');
   assert.equal(await settingsPanel.getByRole('switch', { name: 'Notifications' }).getAttribute('aria-checked'), 'true');
   assert.equal(await settingsPanel.locator('.site-demo-profile-avatar .site-demo-avatar > g').getAttribute('transform'), null, 'the settings avatar eyes should stay upright');
-  await settingsPanel.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-settings.png', scale: 'device' });
+  await captureUiScreenshot(settingsPanel, { path: 'artifacts/ui/grok-bot-website-demo-settings.png', scale: 'device' });
   await settingsPanel.getByRole('textbox', { name: 'Name' }).fill('Outbound Research');
   await settingsPanel.getByRole('textbox', { name: 'Title (optional)' }).fill('Growth');
   await settingsPanel.getByRole('textbox', { name: 'Description' }).fill('Research accounts and prepare drafts.');
@@ -838,12 +848,12 @@ try {
   await settingsPanel.getByRole('switch', { name: 'Notifications' }).click();
   await settingsPanel.getByRole('button', { name: 'Back to computer' }).click();
   assert.equal(await websiteDemo.getByText('Sales Outbound’s screen', { exact: true }).count(), 1);
-  await demoWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-computer.png', scale: 'device' });
+  await captureUiScreenshot(demoWindow, { path: 'artifacts/ui/grok-bot-website-demo-computer.png', scale: 'device' });
   await websiteDemo.getByRole('button', { name: 'Open screen' }).first().click();
   const screenDialog = websiteDemo.getByRole('dialog', { name: 'Sales Outbound computer screen' });
   await screenDialog.waitFor();
   assert.equal(await screenDialog.getByText('36 drafts queued', { exact: true }).count(), 1);
-  await websiteDemo.locator('.site-demo-screen-overlay').screenshot({ path: 'artifacts/ui/grok-bot-website-demo-screen.png', scale: 'device' });
+  await captureUiScreenshot(websiteDemo.locator('.site-demo-screen-overlay'), { path: 'artifacts/ui/grok-bot-website-demo-screen.png', scale: 'device' });
   await websiteDemo.getByRole('button', { name: 'Hide Drafts queue' }).click();
   assert.equal(await screenDialog.locator('.site-demo-window-front').count(), 0);
   await websiteDemo.getByRole('button', { name: 'Hide CRM portal' }).click();
@@ -862,7 +872,7 @@ try {
   assert.equal(await websiteDemo.getByRole('button', { name: 'Thumbs up reaction' }).count(), 1);
   await websiteDemo.getByText(/Created routine/).waitFor();
   assert.equal(await websiteDemo.getByText('Done.', { exact: true }).count(), 1);
-  await demoConversation.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-later-conversation.png', scale: 'device' });
+  await captureUiScreenshot(demoConversation, { path: 'artifacts/ui/grok-bot-website-demo-later-conversation.png', scale: 'device' });
 
   await websiteDemo.getByRole('button', { name: 'Hide computer' }).click();
   await websiteDemo.waitForTimeout(320);
@@ -876,14 +886,14 @@ try {
   const pickerBounds = await agentPicker.boundingBox();
   const demoBounds = await demoWindow.boundingBox();
   assert.ok(pickerBounds && demoBounds && pickerBounds.width > demoBounds.width * .65, 'the agent chooser should span most of the conversation pane');
-  await demoWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-agent-picker.png', scale: 'device' });
+  await captureUiScreenshot(demoWindow, { path: 'artifacts/ui/grok-bot-website-demo-agent-picker.png', scale: 'device' });
   await agentPicker.getByRole('button', { name: 'Create new agent' }).click();
   await websiteDemo.getByRole('textbox', { name: 'Message New agent' }).waitFor();
   assert.equal(await websiteDemo.locator('.site-demo-empty-chat').count(), 0, 'a created Bot opens a blank conversation without an invented empty-state message');
   assert.equal(await websiteDemo.locator('.site-demo-chat-name .site-demo-avatar circle').getAttribute('fill'), '#111110');
   assert.equal(await websiteDemo.locator('.site-demo-agent-row').first().getAttribute('aria-label'), 'New agent', 'a newly created agent should be inserted at the top of the list');
   assert.match(await websiteDemo.locator('.site-demo-agent-row').first().locator('time').innerText(), /^\d{2}:\d{2}$/);
-  await websiteDemo.locator('.grok-demo-window').screenshot({ path: 'artifacts/ui/grok-bot-website-demo-new-agent.png', scale: 'device' });
+  await captureUiScreenshot(websiteDemo.locator('.grok-demo-window'), { path: 'artifacts/ui/grok-bot-website-demo-new-agent.png', scale: 'device' });
   await websiteDemo.getByRole('button', { name: /Sales Outbound, Done\./ }).click();
   assert.equal(await websiteDemo.locator('.site-demo-agent-row[aria-label="New agent"]').count(), 1);
   await websiteDemo.locator('.site-demo-agent-row[aria-label="New agent"]').click();
@@ -900,7 +910,7 @@ try {
   const chiefApprovalMessage = await websiteDemo.locator('.site-demo-chief-approval-wrap .site-demo-approval-message').boundingBox();
   assert.ok(chiefShortMessage && chiefShortMessage.width < 300, 'short Chief replies should size to their text instead of stretching to the task-message width');
   assert.ok(chiefApprovalMessage && chiefApprovalMessage.width < 150, 'the short book-it approval should remain a compact user bubble');
-  await demoWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-chief-conversation.png', scale: 'device' });
+  await captureUiScreenshot(demoWindow, { path: 'artifacts/ui/grok-bot-website-demo-chief-conversation.png', scale: 'device' });
   await websiteDemo.locator('.site-demo-agent-row[aria-label="New agent"]').click();
   await websiteDemo.getByRole('button', { name: "Open New agent's computer" }).click();
   assert.equal(await websiteDemo.getByRole('complementary', { name: 'Computer and routines' }).count(), 1);
@@ -927,14 +937,14 @@ try {
       assert.equal(await animatedDemo.locator('.site-demo-computer-card .site-demo-open-screen').count(), 1);
       assert.equal(await animatedDemo.locator('.site-demo-computer-card .site-demo-agent-pointer').count(), 1);
       assert.equal(await animatedDemo.locator('.site-demo-title-mark circle').getAttribute('fill'), '#895af2');
-      await animatedWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-autoplay-working.png' });
+      await captureUiScreenshot(animatedWindow, { path: 'artifacts/ui/grok-bot-website-demo-autoplay-working.png' });
     }
     if (phase === 'action-needed') {
       assert.equal(await animatedDemo.locator('.site-demo-status').innerText(), 'Action needed');
       assert.equal(await animatedDemo.locator('.site-demo-salesforce-login').count(), 1);
       assert.equal(await animatedDemo.getByRole('button', { name: 'Take over' }).count(), 1);
       assert.equal(await animatedDemo.getByRole('button', { name: 'I’m done' }).count(), 1);
-      await animatedWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-autoplay-action-needed.png' });
+      await captureUiScreenshot(animatedWindow, { path: 'artifacts/ui/grok-bot-website-demo-autoplay-action-needed.png' });
     }
     if (phase === 'takeover') {
       const takeoverDialog = animatedDemo.getByRole('dialog', { name: 'Salesforce computer takeover' });
@@ -943,20 +953,20 @@ try {
       assert.equal(await takeoverDialog.getByRole('button', { name: 'I’m done, continue' }).count(), 1);
       assert.equal(await takeoverDialog.getByRole('toolbar', { name: 'Applications' }).getByRole('button', { name: 'Safari' }).count(), 1);
       assert.equal(await takeoverDialog.locator('.site-demo-human-pointer').count(), 1);
-      await animatedWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-autoplay-takeover.png' });
+      await captureUiScreenshot(animatedWindow, { path: 'artifacts/ui/grok-bot-website-demo-autoplay-takeover.png' });
     }
     if (phase === 'computer') {
       assert.equal(await animatedDemo.locator('.site-demo-status').innerText(), 'Done');
       assert.equal(await animatedDemo.locator('.site-demo-computer-card .site-demo-agent-pointer').count(), 0);
       assert.equal(await animatedDemo.locator('.site-demo-title-mark circle').getAttribute('fill'), '#f19d39');
-      await animatedWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-autoplay-computer.png' });
+      await captureUiScreenshot(animatedWindow, { path: 'artifacts/ui/grok-bot-website-demo-autoplay-computer.png' });
     }
     if (phase === 'results') {
       await animatedDemo.waitForTimeout(280);
       assert.equal(await animatedDemo.getByLabel('Task results').getByText('52 accounts', { exact: false }).count(), 1);
       assert.equal(await animatedDemo.getByLabel('Task results').getByText('3 lookalike segments pulled', { exact: false }).count(), 1);
       assert.equal(await animatedDemo.getByLabel('Task results').getByText('4 profiles skipped · recently contacted', { exact: false }).count(), 1);
-      await animatedWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-autoplay-results.png' });
+      await captureUiScreenshot(animatedWindow, { path: 'artifacts/ui/grok-bot-website-demo-autoplay-results.png' });
     }
     if (phase === 'collaboration') {
       assert.equal(await animatedDemo.getByText(/Messages from/).count(), 1);
@@ -978,7 +988,7 @@ try {
   assert.ok(voiceButtonBounds && composerBounds && voiceButtonBounds.x >= composerBounds.x && voiceButtonBounds.x + voiceButtonBounds.width <= composerBounds.x + composerBounds.width, 'the microphone control should remain inside the composer');
   await animatedDemo.waitForTimeout(300);
   await mkdir('artifacts/ui', { recursive: true });
-  await animatedWindow.screenshot({ path: 'artifacts/ui/grok-bot-website-demo-autoplay-done.png' });
+  await captureUiScreenshot(animatedWindow, { path: 'artifacts/ui/grok-bot-website-demo-autoplay-done.png' });
   await animatedDemoContext.close();
 
   progress('autoplay website demo passed');
