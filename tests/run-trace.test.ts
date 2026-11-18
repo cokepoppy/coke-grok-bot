@@ -17,14 +17,14 @@ test('computer action trace names expose only a fixed action type',()=>{
 test('run traces retain only bounded operational metadata',()=>{
  const event=validateRunTraceEvent({
   component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:400,
-  diagnosticCode:'agent_adapter_failed',durationMs:37,releaseId:`sha-${'a'.repeat(40)}`,
-  stage:'action-execute',operation:'execute',transportCode:'ECONNRESET',
+  upstreamHttpStatus:400,diagnosticCode:'agent_adapter_failed',reasonCode:'model_request_rejected',durationMs:37,releaseId:`sha-${'a'.repeat(40)}`,
+  stage:'model-request',operation:'agent-adapter',transportCode:'ECONNRESET',
   prompt:'private user prompt',pageUrl:'https://mail.google.com/private',apiKey:'must not persist',
  });
  assert.deepEqual(event,{
   component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:400,
-  diagnosticCode:'agent_adapter_failed',durationMs:37,releaseId:`sha-${'a'.repeat(40)}`,
-  stage:'action-execute',operation:'execute',transportCode:'ECONNRESET',
+  upstreamHttpStatus:400,diagnosticCode:'agent_adapter_failed',reasonCode:'model_request_rejected',durationMs:37,releaseId:`sha-${'a'.repeat(40)}`,
+  stage:'model-request',operation:'agent-adapter',transportCode:'ECONNRESET',
  });
  assert.equal(JSON.stringify(event).includes('private'),false);
  assert.equal(JSON.stringify(event).includes('apiKey'),false);
@@ -40,4 +40,6 @@ test('run traces reject malformed component, status, diagnostic, timing, and rel
  assert.equal(validateRunTraceEvent({...base,stage:'private URL https://example.test'}),null);
  assert.equal(validateRunTraceEvent({...base,operation:'private operation'}),null);
  assert.equal(validateRunTraceEvent({...base,transportCode:'private error text'}),null);
+ assert.equal(validateRunTraceEvent({...base,upstreamHttpStatus:400}),null);
+ assert.equal(validateRunTraceEvent({...base,component:'agent-runtime',reasonCode:'private error text'}),null);
 });

@@ -30,6 +30,8 @@ const mimeByExtension = new Map(Object.entries({
 }));
 const allowedEngines = new Set(String(process.env.DOTS_DESKTOP_AGENT_ADAPTERS || '').split(',').map(value => value.trim()).filter(value => ['pi', 'dsh'].includes(value)));
 const configured = parseAdapterConfig(process.env.DOTS_AGENT_KERNELS_JSON || '{}');
+const agentFailureStages = new Set(['agent-setup','agent-execution','model-request','model-response','tool-execution','result-validation']);
+const agentFailureReasons = new Set(['runtime_setup_failed','runtime_error','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
 const maxParallelTasks = Number(process.env.COKE_GROK_AGENT_PARALLELISM || 2);
 if (!Number.isSafeInteger(maxParallelTasks) || maxParallelTasks < 1 || maxParallelTasks > 2) throw new Error('COKE_GROK_AGENT_PARALLELISM must be 1 or 2');
 const active = new Map();
@@ -430,18 +432,28 @@ function redactSecret(value, secret) {
   return value;
 }
 
-function sanitizeAdapterDiagnostic(value, secrets = []) {
-  let diagnostic = String(value || '');
-  for (const secret of secrets) {
-    if (typeof secret === 'string' && secret.length >= 4) diagnostic = diagnostic.split(secret).join('[redacted]');
+function agentFailureMetadata(stderr) {
+  for (const line of String(stderr||'').split(/\r?\n/).reverse()) {
+    if(line.length>1024)continue;
+    try {
+      const event=JSON.parse(line);
+      if(event?.event==='coke_grok_agent_failure'
+        &&agentFailureStages.has(event.stage)
+        &&agentFailureReasons.has(event.reasonCode))return {stage:event.stage,reasonCode:event.reasonCode,upstreamHttpStatus:Number.isInteger(event.upstreamHttpStatus)&&event.upstreamHttpStatus>=100&&event.upstreamHttpStatus<=599?event.upstreamHttpStatus:null};
+    } catch { /* Adapter diagnostics are not persisted. */ }
   }
-  diagnostic = diagnostic
-    .replace(/\b(?:sk|ark)-[A-Za-z0-9_-]{8,}\b/g, '[redacted-api-key]')
-    .replace(/(authorization\s*:\s*bearer\s+)\S+/ig, '$1[redacted]')
-    .replace(/((?:api[_-]?key|token|secret|password)\s*["']?\s*[:=]\s*["']?)[^"'\s,;}]+/ig, '$1[redacted]')
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ')
-    .trim();
-  return diagnostic.slice(-1_200);
+  return {stage:'agent-execution',reasonCode:'runtime_error'};
+}
+
+class AgentAdapterFailure extends Error {
+  constructor(exitCode,metadata) {
+    super(`Agent adapter exited with code ${exitCode}`);
+    this.name='AgentAdapterFailure';
+    this.exitCode=Number.isInteger(exitCode)&&exitCode>0&&exitCode<=255?exitCode:1;
+    this.stage=metadata.stage;
+    this.reasonCode=metadata.reasonCode;
+    this.upstreamHttpStatus=metadata.upstreamHttpStatus;
+  }
 }
 
 function runKernel(input, requestSignal) {
@@ -588,18 +600,7 @@ async function executeKernel(input, requestSignal, slot) {
     if (slot.interruptedByUser) return { taskId, status: 'waiting', pausedForControl: true, controlOwner: 'user', message: '电脑切换为用户控制模式，任务已暂停。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
     if (slot.controlStateUnknown) return { taskId, status: 'waiting', pausedForControl: true, controlOwner: 'unknown', message: '无法确认云电脑的控制权，任务已暂停。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
     if (code !== 0) {
-      const diagnostic = sanitizeAdapterDiagnostic(stderr, [
-        modelConfig.apiKey,
-        process.env.DOTS_AGENT_RUNTIME_TOKEN,
-        process.env.LINUX_DESKTOP_WORKER_TOKEN,
-        input.computer?.workerToken,
-        input.computer?.openPublicPageToken,
-        dingtalkDocumentsBridge?.token,
-        dingtalkCalendarBridge?.token,
-        dingtalkMinutesBridge?.token,
-        dingtalkSecretaryBridge?.token,
-      ]);
-      throw new Error(`Agent adapter exited with code ${code}${diagnostic ? `: ${diagnostic}` : ''}`);
+      throw new AgentAdapterFailure(code,agentFailureMetadata(stderr));
     }
     let result;
     try {
@@ -684,8 +685,9 @@ http.createServer(async (req, res) => {
       }
       catch (error) {
         return send(res, 400, {
-          error: error instanceof Error ? error.message.slice(0, 500) : 'Agent task failed',
+          error: error instanceof AgentAdapterFailure ? error.message : error instanceof Error ? error.message.slice(0, 500) : 'Agent task failed',
           ...(error instanceof TaskAttachmentError ? { code: error.code } : {}),
+          ...(error instanceof AgentAdapterFailure ? { code:'agent_adapter_failed',reasonCode:error.reasonCode,stage:error.stage,exitCode:error.exitCode,...(error.upstreamHttpStatus?{upstreamHttpStatus:error.upstreamHttpStatus}:{}) } : {}),
         });
       }
     }

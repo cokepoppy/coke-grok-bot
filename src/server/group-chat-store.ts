@@ -13,12 +13,12 @@ export class GroupRequestConflict extends Error {}
 export interface GroupMember {id:string;name:string;label:string;color:string;shape:BotShape;position:number}
 export interface StoredGroup {id:string;name:string;members:GroupMember[];preview:string;lastActivityAt:string|null}
 export interface StoredGroupReplacementRun {
- id:string;status:'queued'|'running'|'completed'|'failed'|'unknown';result:string|null;computerUsed:boolean;updatedAt:string|null;diagnosticCode:RunDiagnosticCode|null;executionAudit:AgentExecutionAudit|null;files:RunFile[];
+ id:string;status:'queued'|'running'|'completed'|'failed'|'unknown';result:string|null;computerUsed:boolean;updatedAt:string|null;diagnosticCode:RunDiagnosticCode|null;failureComponent:string|null;failureReasonCode:string|null;failureStage:string|null;failureHttpStatus:number|null;failureUpstreamHttpStatus:number|null;executionAudit:AgentExecutionAudit|null;files:RunFile[];
 }
 export interface StoredGroupMessage {
  id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;createdAt:string;targetBotIds:string[];
  runId:string|null;status:'queued'|'running'|'completed'|'failed'|'unknown'|null;
- recoveryState:RecoveryState|null;replacementRunId:string|null;computerUsed:boolean;updatedAt:string|null;diagnosticCode:RunDiagnosticCode|null;executionAudit:AgentExecutionAudit|null;
+ recoveryState:RecoveryState|null;replacementRunId:string|null;computerUsed:boolean;updatedAt:string|null;diagnosticCode:RunDiagnosticCode|null;failureComponent:string|null;failureReasonCode:string|null;failureStage:string|null;failureHttpStatus:number|null;failureUpstreamHttpStatus:number|null;executionAudit:AgentExecutionAudit|null;
  files:RunFile[];replacementRun:StoredGroupReplacementRun|null;
 }
 export interface GroupChatView {group:StoredGroup;messages:StoredGroupMessage[]}
@@ -183,9 +183,19 @@ export class GroupChatStore {
     m.message_text AS messageText,DATE_FORMAT(m.created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt,m.run_id AS runId,r.status,r.result,r.recovery_state AS recoveryState,r.replacement_run_id AS replacementRunId,
     r.computer_used AS computerUsed,r.execution_audit AS executionAudit,DATE_FORMAT(r.updated_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS updatedAt,
     (SELECT SUBSTRING(e.detail,12) FROM agent_run_events e WHERE e.run_id=r.id AND e.status='unknown' AND e.detail LIKE 'diagnostic:%' ORDER BY e.sequence DESC LIMIT 1) AS diagnosticCode,
+    (SELECT t.component FROM agent_run_traces t WHERE t.run_id=r.id AND t.outcome='failed' AND (t.http_status IS NOT NULL OR t.reason_code IS NOT NULL) ORDER BY t.sequence DESC LIMIT 1) AS failureComponent,
+    (SELECT t.reason_code FROM agent_run_traces t WHERE t.run_id=r.id AND t.reason_code IS NOT NULL ORDER BY t.sequence DESC LIMIT 1) AS failureReasonCode,
+    (SELECT t.worker_stage FROM agent_run_traces t WHERE t.run_id=r.id AND (t.worker_stage IS NOT NULL OR t.reason_code IS NOT NULL) ORDER BY t.sequence DESC LIMIT 1) AS failureStage,
+    (SELECT t.http_status FROM agent_run_traces t WHERE t.run_id=r.id AND t.outcome='failed' AND t.http_status IS NOT NULL ORDER BY t.sequence DESC LIMIT 1) AS failureHttpStatus,
+    (SELECT t.upstream_http_status FROM agent_run_traces t WHERE t.run_id=r.id AND t.upstream_http_status IS NOT NULL ORDER BY t.sequence DESC LIMIT 1) AS failureUpstreamHttpStatus,
     rr.status AS replacementStatus,rr.result AS replacementResult,rr.computer_used AS replacementComputerUsed,rr.execution_audit AS replacementExecutionAudit,
     DATE_FORMAT(rr.updated_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS replacementUpdatedAt,
-    (SELECT SUBSTRING(e.detail,12) FROM agent_run_events e WHERE e.run_id=rr.id AND e.status='unknown' AND e.detail LIKE 'diagnostic:%' ORDER BY e.sequence DESC LIMIT 1) AS replacementDiagnosticCode
+    (SELECT SUBSTRING(e.detail,12) FROM agent_run_events e WHERE e.run_id=rr.id AND e.status='unknown' AND e.detail LIKE 'diagnostic:%' ORDER BY e.sequence DESC LIMIT 1) AS replacementDiagnosticCode,
+    (SELECT t.component FROM agent_run_traces t WHERE t.run_id=rr.id AND t.outcome='failed' AND (t.http_status IS NOT NULL OR t.reason_code IS NOT NULL) ORDER BY t.sequence DESC LIMIT 1) AS replacementFailureComponent,
+    (SELECT t.reason_code FROM agent_run_traces t WHERE t.run_id=rr.id AND t.reason_code IS NOT NULL ORDER BY t.sequence DESC LIMIT 1) AS replacementFailureReasonCode,
+    (SELECT t.worker_stage FROM agent_run_traces t WHERE t.run_id=rr.id AND (t.worker_stage IS NOT NULL OR t.reason_code IS NOT NULL) ORDER BY t.sequence DESC LIMIT 1) AS replacementFailureStage,
+    (SELECT t.http_status FROM agent_run_traces t WHERE t.run_id=rr.id AND t.outcome='failed' AND t.http_status IS NOT NULL ORDER BY t.sequence DESC LIMIT 1) AS replacementFailureHttpStatus,
+    (SELECT t.upstream_http_status FROM agent_run_traces t WHERE t.run_id=rr.id AND t.upstream_http_status IS NOT NULL ORDER BY t.sequence DESC LIMIT 1) AS replacementFailureUpstreamHttpStatus
    FROM bot_group_messages m JOIN bot_group_chats g ON g.id=m.group_id LEFT JOIN bots b ON b.id=m.sender_bot_id
    LEFT JOIN agent_runs r ON r.id=m.run_id LEFT JOIN agent_runs rr ON rr.id=r.replacement_run_id AND rr.bot_id=r.bot_id
    WHERE m.group_id=? AND g.tenant_id=? AND g.owner_id=? ORDER BY m.sequence`,[groupId,session.tenantId,session.userId]);
@@ -220,12 +230,14 @@ export class GroupChatStore {
    id:String(row.id),turnId:String(row.turnId),role:String(row.senderType) as 'user'|'bot',botId:row.botId==null?null:String(row.botId),botName:row.botName==null?null:String(row.botName),createdAt:String(row.createdAt),
    text:row.runId==null?(row.messageText==null?null:String(row.messageText)):row.result==null?null:String(row.result),targetBotIds:recipientsByTurn.get(String(row.turnId))||[],runId:row.runId==null?null:String(row.runId),
    status:row.status==null?null:String(row.status) as StoredGroupMessage['status'],recoveryState:row.recoveryState==null?null:String(row.recoveryState) as StoredGroupMessage['recoveryState'],
-   replacementRunId:row.replacementRunId==null?null:String(row.replacementRunId),computerUsed:Boolean(row.computerUsed),updatedAt:row.updatedAt==null?null:String(row.updatedAt),diagnosticCode:isRunDiagnosticCode(row.diagnosticCode)?row.diagnosticCode:null,executionAudit:validateAgentExecutionAudit(row.executionAudit),
+   replacementRunId:row.replacementRunId==null?null:String(row.replacementRunId),computerUsed:Boolean(row.computerUsed),updatedAt:row.updatedAt==null?null:String(row.updatedAt),diagnosticCode:isRunDiagnosticCode(row.diagnosticCode)?row.diagnosticCode:null,
+   failureComponent:typeof row.failureComponent==='string'?row.failureComponent:null,failureReasonCode:typeof row.failureReasonCode==='string'?row.failureReasonCode:null,failureStage:typeof row.failureStage==='string'?row.failureStage:null,failureHttpStatus:row.failureHttpStatus==null?null:Number.isInteger(Number(row.failureHttpStatus))?Number(row.failureHttpStatus):null,failureUpstreamHttpStatus:row.failureUpstreamHttpStatus==null?null:Number.isInteger(Number(row.failureUpstreamHttpStatus))?Number(row.failureUpstreamHttpStatus):null,executionAudit:validateAgentExecutionAudit(row.executionAudit),
    files:row.runId==null?filesByMessage.get(String(row.id))||[]:filesByRun.get(String(row.runId))||[],
    replacementRun:row.replacementRunId==null||row.replacementStatus==null?null:{
     id:String(row.replacementRunId),status:String(row.replacementStatus) as StoredGroupReplacementRun['status'],result:row.replacementResult==null?null:String(row.replacementResult),
     computerUsed:Boolean(row.replacementComputerUsed),updatedAt:row.replacementUpdatedAt==null?null:String(row.replacementUpdatedAt),executionAudit:validateAgentExecutionAudit(row.replacementExecutionAudit),
-    diagnosticCode:isRunDiagnosticCode(row.replacementDiagnosticCode)?row.replacementDiagnosticCode:null,files:filesByRun.get(String(row.replacementRunId))||[]
+    diagnosticCode:isRunDiagnosticCode(row.replacementDiagnosticCode)?row.replacementDiagnosticCode:null,failureComponent:typeof row.replacementFailureComponent==='string'?row.replacementFailureComponent:null,failureReasonCode:typeof row.replacementFailureReasonCode==='string'?row.replacementFailureReasonCode:null,
+    failureStage:typeof row.replacementFailureStage==='string'?row.replacementFailureStage:null,failureHttpStatus:row.replacementFailureHttpStatus==null?null:Number.isInteger(Number(row.replacementFailureHttpStatus))?Number(row.replacementFailureHttpStatus):null,failureUpstreamHttpStatus:row.replacementFailureUpstreamHttpStatus==null?null:Number.isInteger(Number(row.replacementFailureUpstreamHttpStatus))?Number(row.replacementFailureUpstreamHttpStatus):null,files:filesByRun.get(String(row.replacementRunId))||[]
    }
   }));
   return{group,messages};

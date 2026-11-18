@@ -33,6 +33,8 @@ const agentAttachmentReasonCodes=new Set([
   'task_attachment_size_limit_exceeded','task_attachment_image_limit_exceeded','task_attachment_source_unavailable',
   'task_attachment_checksum_mismatch','task_attachment_destination_invalid','task_attachment_copy_failed','task_attachment_copy_verification_failed',
 ]);
+const agentRuntimeFailureReasonCodes=new Set(['runtime_setup_failed','runtime_error','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
+const agentRuntimeFailureStages=new Set(['agent-setup','agent-execution','model-request','model-response','tool-execution','result-validation']);
 
 /** Convert Agent error text into fixed, non-sensitive operational metadata. */
 export function classifyAgentRejection(value:unknown):AgentRejectionClass {
@@ -68,22 +70,28 @@ function agentRejectionDiagnostic(code:AgentRejectionClass):RunDiagnosticCode {
   }
 }
 
-async function logAgentRejection(response:Response,taskId:string):Promise<AgentRejectionClass> {
-  let error:unknown,reasonCode:string|undefined;
+async function logAgentRejection(response:Response,taskId:string):Promise<{code:AgentRejectionClass;reasonCode?:string;stage?:string;exitCode?:number;upstreamHttpStatus?:number}> {
+  let error:unknown,reasonCode:string|undefined,stage:string|undefined,exitCode:number|undefined,upstreamHttpStatus:number|undefined;
   const declared=Number(response.headers.get('content-length'));
   if(Number.isSafeInteger(declared)&&declared>=0&&declared<=4096) {
     try {
       const body:unknown=await response.clone().json();
       if(body&&typeof body==='object'&&!Array.isArray(body)) {
-        const record=body as {error?:unknown;code?:unknown};
+        const record=body as {error?:unknown;code?:unknown;reasonCode?:unknown;stage?:unknown;exitCode?:unknown;upstreamHttpStatus?:unknown};
         error=record.error;
         if(typeof record.code==='string'&&agentAttachmentReasonCodes.has(record.code))reasonCode=record.code;
+        if(record.code==='agent_adapter_failed'){
+          if(typeof record.reasonCode==='string'&&agentRuntimeFailureReasonCodes.has(record.reasonCode))reasonCode=record.reasonCode;
+          if(typeof record.stage==='string'&&agentRuntimeFailureStages.has(record.stage))stage=record.stage;
+          if(Number.isInteger(record.exitCode)&&Number(record.exitCode)>0&&Number(record.exitCode)<=255)exitCode=Number(record.exitCode);
+          if(Number.isInteger(record.upstreamHttpStatus)&&Number(record.upstreamHttpStatus)>=100&&Number(record.upstreamHttpStatus)<=599)upstreamHttpStatus=Number(record.upstreamHttpStatus);
+        }
       }
     } catch { /* Keep only the status and a fixed fallback code. */ }
   }
   const code=classifyAgentRejection(error);
-  console.warn('Agent task endpoint rejected request',{taskId,status:response.status,code,...(reasonCode?{reasonCode}:{})});
-  return code;
+  console.warn('Agent task endpoint rejected request',{taskId,status:response.status,code,...(reasonCode?{reasonCode}:{}),...(stage?{stage}:{}),...(exitCode?{exitCode}:{}),...(upstreamHttpStatus?{upstreamHttpStatus}:{})});
+  return {code,...(reasonCode?{reasonCode}:{}),...(stage?{stage}:{}),...(exitCode?{exitCode}:{}),...(upstreamHttpStatus?{upstreamHttpStatus}:{})};
 }
 
 export interface DesktopConnection { agentUrl: URL; agentToken: string }
@@ -183,8 +191,8 @@ export class DesktopAgentExecutor implements RunExecutor {
       }
       if (!response.ok) {
         const rejection=await logAgentRejection(response,run.id);
-        const diagnostic=this.gateway.diagnosticCode(capability)||(response.status===400?agentRejectionDiagnostic(rejection):agentHttpDiagnostic(response.status));
-        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:response.status,diagnosticCode:diagnostic,durationMs:Date.now()-dispatchStartedAt,...(response.headers.get('x-coke-grok-release-id')?{releaseId:response.headers.get('x-coke-grok-release-id')!}:{})});
+        const diagnostic=this.gateway.diagnosticCode(capability)||(response.status===400?agentRejectionDiagnostic(rejection.code):agentHttpDiagnostic(response.status));
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:response.status,...(rejection.upstreamHttpStatus?{upstreamHttpStatus:rejection.upstreamHttpStatus}:{}),diagnosticCode:diagnostic,...(rejection.reasonCode?{reasonCode:rejection.reasonCode}:{}),...(rejection.stage?{stage:rejection.stage}:{}),...(rejection.exitCode?{operation:'agent-adapter'}:{}),durationMs:Date.now()-dispatchStartedAt,...(response.headers.get('x-coke-grok-release-id')?{releaseId:response.headers.get('x-coke-grok-release-id')!}:{})});
         throw new RunDiagnosticError(diagnostic);
       }
       const agentReleaseId=response.headers.get('x-coke-grok-release-id');

@@ -15,13 +15,13 @@ type RunFile = { id: string; name: string; mimeType: string; size: number; sha25
 type BotLibraryCategory = 'All'|'Pages'|'Media'|'Links'|'Files'|'Apps'|'Pinned';
 type BotLibraryItem = RunFile & {kind:'output';createdAt:string;pinned:boolean};
 type ExecutionAudit = {engine:'pi'|'dsh';model:string;modelCompleted:boolean;calls:{tool:string;action:string|null;outcome:'succeeded'|'failed'|'unconfirmed'}[];truncated:boolean};
-type RunTraceEntry = {sequence:number;component:'control-plane'|'scheduler'|'agent-runtime'|'model-gateway'|'computer-worker'|'mysql';event:string;outcome:'started'|'succeeded'|'failed'|'info';httpStatus:number|null;diagnosticCode:string|null;durationMs:number|null;releaseId:string|null;stage:string|null;operation:string|null;transportCode:string|null;at:string};
-type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged' | 'auto_resumed'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; executionAudit?:ExecutionAudit|null; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: string | null };
+type RunTraceEntry = {sequence:number;component:'control-plane'|'scheduler'|'agent-runtime'|'model-gateway'|'computer-worker'|'mysql';event:string;outcome:'started'|'succeeded'|'failed'|'info';httpStatus:number|null;upstreamHttpStatus:number|null;diagnosticCode:string|null;reasonCode:string|null;durationMs:number|null;releaseId:string|null;stage:string|null;operation:string|null;transportCode:string|null;at:string};
+type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged' | 'auto_resumed'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; executionAudit?:ExecutionAudit|null; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: string | null; failureComponent?:string|null; failureReasonCode?:string|null; failureStage?:string|null;failureHttpStatus?:number|null;failureUpstreamHttpStatus?:number|null };
 type GroupMember = Pick<Bot,'id'|'name'|'label'|'color'|'shape'> & { position: number };
 type BotMentionCandidate = {kind:'bot';id:string;bot:GroupMember|Bot}|{kind:'everyone';id:'everyone'};
 type GroupChat = { id: string; name: string; members: GroupMember[]; preview: string; lastActivityAt: string | null };
-type GroupReplacementRun = { id:string; status:AgentRun['status']; result:string|null; computerUsed:boolean; executionAudit?:ExecutionAudit|null; updatedAt:string|null; diagnosticCode?:string|null; files:RunFile[] };
-type GroupMessage = { id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;createdAt:string;runId:string|null;status:AgentRun['status']|null;recoveryState:AgentRun['recoveryState']|null;replacementRunId:string|null;replacementRun:GroupReplacementRun|null;computerUsed:boolean;executionAudit?:ExecutionAudit|null;updatedAt:string|null;diagnosticCode?:string|null;targetBotIds?:string[];files?:RunFile[] };
+type GroupReplacementRun = { id:string; status:AgentRun['status']; result:string|null; computerUsed:boolean; executionAudit?:ExecutionAudit|null; updatedAt:string|null; diagnosticCode?:string|null; failureComponent?:string|null;failureReasonCode?:string|null;failureStage?:string|null;failureHttpStatus?:number|null;failureUpstreamHttpStatus?:number|null;files:RunFile[] };
+type GroupMessage = { id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;createdAt:string;runId:string|null;status:AgentRun['status']|null;recoveryState:AgentRun['recoveryState']|null;replacementRunId:string|null;replacementRun:GroupReplacementRun|null;computerUsed:boolean;executionAudit?:ExecutionAudit|null;updatedAt:string|null;diagnosticCode?:string|null;failureComponent?:string|null;failureReasonCode?:string|null;failureStage?:string|null;failureHttpStatus?:number|null;failureUpstreamHttpStatus?:number|null;targetBotIds?:string[];files?:RunFile[] };
 type GroupChatView = { group: GroupChat; messages: GroupMessage[] };
 type Routine = { id:string; name:string; instruction:string; schedule:{kind:'weekly';weekday:number;hour:number;minute:number}|{kind:'interval';minutes:number}|{kind:'webhook'}; timezone:string; paused:boolean; when:string; nextRunAt:string|null; runs:{id:string;status:string;scheduledFor:string;result:string|null}[] };
 type RoutineWebhook = {endpointPath:string;key:string;authorizationHeader:string};
@@ -184,6 +184,7 @@ function formatBotTime(value?: string | null): string {
 function runPreview(run: AgentRun): string {
   if (run.status === 'running') return 'Working…';
   if (run.status === 'queued') return 'Queued';
+  if (run.status === 'unknown' && runFailureHeadline(run)) return runFailureHeadline(run)!;
   if (run.status === 'unknown') return 'Outcome unknown';
   return (run.result || (run.status === 'completed' ? 'Done.' : 'Failed')).replace(/\s+/g, ' ').trim().slice(0, 180);
 }
@@ -220,6 +221,7 @@ function buildBotTimeline(messages:Message[],runs:AgentRun[],latestSubmittedItem
 }
 
 function groupRunStatusLabel(message: GroupMessage): string {
+  if (message.status === 'unknown' && runFailureHeadline(message)) return message.failureComponent==='agent-runtime'?'Agent error':'Failed · result unconfirmed';
   if (message.status === 'unknown' && message.recoveryState === 'auto_resumed') return 'Outcome unknown · not retried';
   if (message.status === 'unknown' && message.recoveryState === 'acknowledged') return 'Reviewed · outcome unknown';
   if (message.status === 'unknown' && message.recoveryState === 'retried') {
@@ -255,6 +257,41 @@ function replacementRunFallback(status:AgentRun['status']):string {
   return ({queued:'Waiting for this Bot’s computer…',running:'Working on this Bot’s computer…',completed:'The retry completed without a saved response.',failed:'The retry failed without a saved response.',unknown:'The retry outcome could not be confirmed.'})[status];
 }
 
+const agentFailureReasonLabels:Record<string,string>={
+  runtime_setup_failed:'The Agent could not initialize the task runtime.',
+  runtime_error:'The Agent runtime exited unexpectedly.',
+  model_request_failed:'The model request failed inside the Agent runtime.',
+  model_request_rejected:'The model provider rejected the request as invalid.',
+  model_endpoint_not_found:'The configured model endpoint or model was not found.',
+  model_rate_limited:'The model provider rate-limited the request.',
+  model_auth_rejected:'The model provider rejected authentication.',
+  model_provider_unavailable:'The model provider returned a server error.',
+  model_response_missing:'The model did not return an assistant response.',
+  tool_execution_failed:'An Agent tool failed during execution.',
+  result_missing:'The Agent did not return a structured task result.',
+  result_invalid:'The Agent returned an invalid structured task result.',
+  agent_output_limit:'The Agent response reached its output limit before returning a result.',
+};
+const agentFailureStageLabels:Record<string,string>={'agent-setup':'Agent setup','agent-execution':'Agent execution','model-request':'Model request','model-response':'Model response','tool-execution':'Tool execution','result-validation':'Result validation'};
+const failureComponentLabels:Record<string,string>={'agent-runtime':'Agent runtime request','model-gateway':'Model provider request','computer-worker':'Cloud computer operation','scheduler':'Task scheduler','control-plane':'Control plane','mysql':'Database'};
+function runFailureHeadline(run:Pick<AgentRun,'diagnosticCode'|'failureComponent'|'failureHttpStatus'|'failureReasonCode'|'failureUpstreamHttpStatus'>):string|null {
+  if(!run.diagnosticCode&&!run.failureReasonCode)return null;
+  const component=run.failureComponent?failureComponentLabels[run.failureComponent]||'Task operation':run.diagnosticCode==='agent_adapter_failed'?'Agent runtime request':'Task operation';
+  const status=run.failureHttpStatus?` · HTTP ${run.failureHttpStatus}${run.failureUpstreamHttpStatus?` · upstream HTTP ${run.failureUpstreamHttpStatus}`:''}`:'';
+  if(run.failureReasonCode)return `${component} failed${status}`;
+  if(run.diagnosticCode==='agent_adapter_failed')return `Agent runtime request failed${status}`;
+  if(run.failureComponent)return `${component} failed${status}`;
+  return runDiagnosticSummary(run.diagnosticCode);
+}
+function runFailureDescription(run:Pick<AgentRun,'diagnosticCode'|'failureReasonCode'|'failureStage'|'failureUpstreamHttpStatus'>):string|null {
+  if(run.failureReasonCode){
+    const stage=run.failureStage?agentFailureStageLabels[run.failureStage]||run.failureStage:null;
+    return `${stage?`${stage}: `:''}${agentFailureReasonLabels[run.failureReasonCode]||'The Agent runtime returned a classified failure.'}${run.failureUpstreamHttpStatus?` Upstream HTTP ${run.failureUpstreamHttpStatus}.`:''}`;
+  }
+  if(run.diagnosticCode==='agent_adapter_failed')return 'The Agent adapter exited before returning a task result. This earlier run did not preserve the adapter’s internal failure category.';
+  return runDiagnosticSummary(run.diagnosticCode);
+}
+
 const runDiagnosticSummaries:Record<string,string>={
   executor_error:'The Agent stopped before it could confirm a result.',
   desktop_connect_failed:'The Bot could not connect to its computer.',
@@ -279,7 +316,7 @@ const runDiagnosticSummaries:Record<string,string>={
   agent_http_429:'The Agent service rate-limited the request.',
   agent_http_5xx:'The Agent service failed while processing the request.',
   agent_http_other:'The Agent service returned an unexpected error.',
-  agent_adapter_failed:'The Agent runtime failed while executing this task.',
+  agent_adapter_failed:'The Agent adapter exited before returning a task result.',
   agent_adapter_output_invalid:'The Agent returned a result it could not verify.',
   bot_bridge_invalid:'A required Bot capability could not be initialized.',
   computer_control_unavailable:'The computer control channel was unavailable.',
@@ -704,8 +741,9 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
   const imageOwnerKey=useRef('');
   const cardElement=useRef<HTMLElement|null>(null);
   const [cardVisible,setCardVisible]=useState(false);
-  const status=run.status==='running'?'Working':run.status==='queued'?'Queued':run.status==='completed'?'Done':run.status==='failed'?'Failed':'Not confirmed';
-  const diagnostic=run.status==='unknown'?runDiagnosticSummary(run.diagnosticCode):null;
+  const failureHeadline=(run.status==='unknown'||run.status==='failed')?runFailureHeadline(run):null;
+  const status=failureHeadline?'Agent error':run.status==='running'?'Working':run.status==='queued'?'Queued':run.status==='completed'?'Done':run.status==='failed'?'Failed':'Not confirmed';
+  const diagnostic=(run.status==='unknown'||run.status==='failed')?runFailureDescription(run):null;
   useEffect(()=>{
     const element=cardElement.current;
     if(!element||typeof IntersectionObserver==='undefined'){setCardVisible(true);return}
@@ -734,10 +772,10 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
   useEffect(()=>()=>{if(imageUrl.current)URL.revokeObjectURL(imageUrl.current);imageUrl.current='';imageOwnerKey.current=''},[]);
   const toolLabel=(tool:string)=>tool==='computer_browser'?'Browser User':tool==='computer_desktop'?'Computer User':tool==='computer_files'?'Computer files':tool==='computer_terminal'?'Computer terminal':tool==='open_public_page'?'Public page':tool==='bot_handoff'?'Bot handoff':tool==='bot_memory'?'Bot memory':tool==='bot_routines'?'Bot routines':tool;
   return <section ref={cardElement} className="computer-activity-card" aria-label={`Computer activity · ${status}`}>
-    <header><strong>Computer</strong><span className={`computer-activity-status ${run.status}`}><i />{status}</span></header>
+    <header><strong>Computer</strong><span className={`computer-activity-status ${failureHeadline?'failed':run.status}`}><i />{status}</span></header>
     {run.prompt.trim()&&<p className="computer-activity-prompt">{run.prompt}</p>}
     {children}
-    {diagnostic&&<p className="run-recovery-diagnostic">{diagnostic}</p>}
+    {failureHeadline&&<div className="computer-activity-failure"><strong>{failureHeadline}</strong>{diagnostic&&<span>{diagnostic}</span>}</div>}
     {showScreen&&image?<button type="button" className="computer-activity-screen" onClick={onOpenComputer} aria-label="Open this Bot's computer"><img src={image} alt="Current cloud computer screen" /></button>:<button type="button" className="computer-activity-open" onClick={onOpenComputer}>{unavailable?'Open computer to inspect the screen':'View computer screen'}</button>}
     {screenStale&&image&&<p className="computer-screen-stale" role="status">Screen update delayed · showing the last received screen.</p>}
     {run.executionAudit&&<details className="computer-activity-audit"><summary>Execution details</summary><div className="computer-activity-audit-body"><span>{run.executionAudit.engine==='dsh'?'DeepSeek Harness':'Pi'} · {run.executionAudit.model} · {run.executionAudit.modelCompleted?'response received':'response not confirmed'}</span>{run.executionAudit.calls.map((call,index)=><span key={`${call.tool}-${call.action||''}-${index}`}>{toolLabel(call.tool)}{call.action?` · ${call.action}`:''} · {call.outcome}</span>)}{run.executionAudit.truncated&&<span>Additional tool calls omitted</span>}</div></details>}
@@ -761,7 +799,11 @@ function RunTraceButton({runId,compact=false}:{runId:string;compact?:boolean}) {
   const releaseIds=[...new Set(state.events.map(event=>event.releaseId).filter((value):value is string=>Boolean(value)))];
   const componentLabels:Record<RunTraceEntry['component'],string>={'control-plane':'Auth / control plane',scheduler:'Task scheduler','agent-runtime':'Pi / DeepSeek Harness','model-gateway':'Model gateway','computer-worker':'Cloud computer worker',mysql:'MySQL'};
   const eventLabels:Record<string,string>={'run.queued':'Task queued','run.claimed':'Task claimed','desktop.connect':'Cloud computer connection','agent.dispatch':'Agent runtime request','agent.result':'Agent response','model.request':'Model request','computer.control':'Computer control check','computer.inspect':'Computer page inspection','computer.screenshot':'Computer screen read','computer.status':'Computer status check','computer.propose':'Computer action prepared','computer.execute':'Computer action executed','run.persisted':'Result saved','run.outcome_unknown':'Outcome marked unknown'};
-  const diagnosticLabels:Record<string,string>={COMPUTER_BROWSER_ACTION_FAILED:'Unclassified browser action failure',COMPUTER_BROWSER_ACTION_TIMEOUT:'Browser action timed out; outcome needs inspection',COMPUTER_BROWSER_NAVIGATION_ABORTED:'Navigation was interrupted',COMPUTER_BROWSER_NAVIGATION_NETWORK_FAILED:'Chromium could not load the destination',COMPUTER_BROWSER_NAVIGATION_FAILED:'Navigation failed before completion',COMPUTER_BROWSER_CONTROL_ACTION_FAILED:'Browser control action failed',COMPUTER_BROWSER_CONTEXT_CLOSED:'Browser page or context closed during the action',COMPUTER_BROWSER_PAGE_INSPECTION_FAILED:'Page inspection failed',COMPUTER_BROWSER_ARTIFACT_OPEN_FAILED:'Task artifact could not be opened',COMPUTER_BROWSER_TARGET_NOT_FOUND:'No visible control matched',COMPUTER_BROWSER_TARGET_AMBIGUOUS:'More than one visible control matched',COMPUTER_STATE_CHANGED:'Page or computer owner changed during the action',COMPUTER_OWNER_USER:'The owner currently controls the computer',COMPUTER_RENDERER_UNRESPONSIVE:'Chromium did not respond'};
+  const diagnosticLabels:Record<string,string>={
+    MODEL_UPSTREAM_REJECTED:'The model provider returned an HTTP error.',MODEL_GATEWAY_UPSTREAM_FAILURE:'The model gateway could not complete its provider request.',MODEL_UPSTREAM_RATE_LIMITED:'The model provider rate-limited the request.',MODEL_GATEWAY_CALL_LIMIT:'The task reached its model call limit.',
+    agent_adapter_failed:'The Agent adapter exited before returning a task result.',agent_adapter_output_invalid:'The Agent returned a result that failed validation.',agent_transport_failed:'The connection to the Agent runtime failed.',
+    run_persist_failed:'The task result could not be saved to the database.',lease_expired:'The task lease expired before completion was recorded.',lease_lost:'The task lease was lost before completion was recorded.',
+    COMPUTER_BROWSER_ACTION_FAILED:'Unclassified browser action failure',COMPUTER_BROWSER_ACTION_TIMEOUT:'Browser action timed out; outcome needs inspection',COMPUTER_BROWSER_NAVIGATION_ABORTED:'Navigation was interrupted',COMPUTER_BROWSER_NAVIGATION_NETWORK_FAILED:'Chromium could not load the destination',COMPUTER_BROWSER_NAVIGATION_FAILED:'Navigation failed before completion',COMPUTER_BROWSER_CONTROL_ACTION_FAILED:'Browser control action failed',COMPUTER_BROWSER_CONTEXT_CLOSED:'Browser page or context closed during the action',COMPUTER_BROWSER_PAGE_INSPECTION_FAILED:'Page inspection failed',COMPUTER_BROWSER_ARTIFACT_OPEN_FAILED:'Task artifact could not be opened',COMPUTER_BROWSER_TARGET_NOT_FOUND:'No visible control matched',COMPUTER_BROWSER_TARGET_AMBIGUOUS:'More than one visible control matched',COMPUTER_STATE_CHANGED:'Page or computer owner changed during the action',COMPUTER_OWNER_USER:'The owner currently controls the computer',COMPUTER_RENDERER_UNRESPONSIVE:'Chromium did not respond'};
   const actionLabels:Record<string,string>={inspect:'page inspection',navigate:'navigation',open_artifact:'artifact open',upload_file:'file upload',click:'click',fill:'text entry',select:'selection',check:'checkbox check',uncheck:'checkbox clear',press:'key press',open:'desktop open',type:'desktop text entry',unknown:'unknown action'};
   const traceEventLabel=(event:string)=>{
     const match=event.match(/^computer\.(propose|execute)\.(browser|desktop)\.([a-z_-]+)$/);
@@ -771,7 +813,7 @@ function RunTraceButton({runId,compact=false}:{runId:string;compact?:boolean}) {
     return `${channel} ${action} ${match[1]==='propose'?'prepared':'executed'}`;
   };
   const outcomeLabels:Record<RunTraceEntry['outcome'],string>={started:'In progress',succeeded:'Succeeded',failed:'Failed',info:'Info'};
-  const stageLabels:Record<string,string>={route:'Worker route', 'screen-scope':'Resolve Bot screen','screen-owner':'Check computer owner','action-body':'Validate action request','action-navigate':'Run browser navigation','action-execute':'Run browser or desktop action'};
+  const stageLabels:Record<string,string>={route:'Worker route', 'screen-scope':'Resolve Bot screen','screen-owner':'Check computer owner','action-body':'Validate action request','action-navigate':'Run browser navigation','action-execute':'Run browser or desktop action',...agentFailureStageLabels};
   const traceIcon=<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h3l2 4.5 2-4.5h5M2 12.5h3l2-4.5 2 4.5h5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"/></svg>;
   return <>
     <button type="button" className={`run-trace-open${compact?' compact':''}`} aria-label={compact?'View task call chain':undefined} title="View task call chain" onClick={()=>void load()}>{compact?traceIcon:'View task call chain'}</button>
@@ -785,9 +827,10 @@ function RunTraceButton({runId,compact=false}:{runId:string;compact?:boolean}) {
         {state.status==='ready'&&state.events.length>0&&<ol className="run-trace-list">{state.events.map(event=><li key={event.sequence} className={`run-trace-event ${event.outcome}`}>
           <time dateTime={event.at}>{new Date(event.at).toLocaleString()}</time>
           <strong>{componentLabels[event.component]} · {traceEventLabel(event.event)}</strong>
-          <span>{outcomeLabels[event.outcome]}{event.httpStatus?` · HTTP ${event.httpStatus}`:''}{event.durationMs!==null?` · ${event.durationMs} ms`:''}</span>
+          <span>{outcomeLabels[event.outcome]}{event.httpStatus?` · HTTP ${event.httpStatus}`:''}{event.upstreamHttpStatus?` · upstream HTTP ${event.upstreamHttpStatus}`:''}{event.durationMs!==null?` · ${event.durationMs} ms`:''}</span>
           {event.diagnosticCode&&<div className="run-trace-diagnostic"><span>{diagnosticLabels[event.diagnosticCode]||'A backend diagnostic was recorded'}</span><code>{event.diagnosticCode}</code></div>}
-          {(event.stage||event.operation||event.transportCode)&&<div className="run-trace-metadata">{event.stage&&<span>Stage: {stageLabels[event.stage]||event.stage}</span>}{event.operation&&<span>Worker operation: {event.operation}</span>}{event.transportCode&&<span>Transport: <code>{event.transportCode}</code></span>}</div>}
+          {event.reasonCode&&<div className="run-trace-diagnostic"><span>{agentFailureReasonLabels[event.reasonCode]||'Agent runtime failure category'}</span><code>{event.reasonCode}</code></div>}
+          {(event.stage||event.operation||event.transportCode)&&<div className="run-trace-metadata">{event.stage&&<span>Stage: {stageLabels[event.stage]||event.stage}</span>}{event.operation&&<span>{event.component==='agent-runtime'?'Agent':'Worker'} operation: {event.operation}</span>}{event.transportCode&&<span>Transport: <code>{event.transportCode}</code></span>}</div>}
           {event.releaseId&&<small>Release {event.releaseId}</small>}
         </li>)}</ol>}
         <p className="run-trace-footnote">Contains sanitized operational events only. Prompts, page contents, request bodies, and credentials are not included.</p>
@@ -1308,12 +1351,15 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     const inputFiles=(run.files||[]).filter(file=>file.kind==='input'),outputFiles=(run.files||[]).filter(file=>file.kind==='output');
     const genericDone=Boolean(run.computerUsed&&/^(done|done\.)$/i.test(run.result?.trim()||''));
     const showRetryNote=run.status==='unknown'&&run.recoveryState==='retried'&&Boolean(run.replacementRunId);
+    const failureHeadline=(run.status==='unknown'||run.status==='failed')?runFailureHeadline(run):null;
+    const failureDescription=(run.status==='unknown'||run.status==='failed')?runFailureDescription(run):null;
     if(entry.kind==='run-prompt')return <div key={entry.key} className="message-line user"><div className="message-bubble">{run.prompt}<RunFileCards files={inputFiles} onPreview={setPreviewFile}/></div></div>;
     if(entry.kind==='computer')return <div key={entry.key} className="computer-activity-line"><ComputerActivityCard run={run} botId={active.id} showScreen={run.id===latestComputerRunId} onOpenComputer={()=>openProductPanel('Computer')}><RunFileCards files={inputFiles} onPreview={setPreviewFile}/></ComputerActivityCard></div>;
     return <div key={entry.key} className={`message-line bot${run.computerUsed?' computer-followup':''}`}><div className="message-bubble">
-      {(run.status==='unknown'||(!run.computerUsed&&run.status!=='completed'))&&<span className="run-status">{run.status==='unknown'&&run.recoveryState==='auto_resumed'?'Outcome unknown · not retried':run.status==='unknown'&&run.recoveryState==='acknowledged'?'Outcome unknown · queue resumed':run.status==='unknown'&&run.recoveryState==='retried'?'Outcome unknown · explicit retry recorded':({queued:'Queued · waiting for your computer',running:'Working on your computer',failed:'Failed',unknown:'Outcome unknown'} as const)[run.status]}</span>}
+      {(run.status==='unknown'||(!run.computerUsed&&run.status!=='completed'))&&<span className={`run-status${failureHeadline?' run-status-error':''}`}>{failureHeadline|| (run.status==='unknown'&&run.recoveryState==='auto_resumed'?'Outcome unknown · not retried':run.status==='unknown'&&run.recoveryState==='acknowledged'?'Outcome unknown · queue resumed':run.status==='unknown'&&run.recoveryState==='retried'?'Outcome unknown · explicit retry recorded':({queued:'Queued · waiting for your computer',running:'Working on your computer',failed:'Failed',unknown:'Outcome unknown'} as const)[run.status])}</span>}
       {run.result&&!genericDone&&<p>{run.result}</p>}
-      {run.status==='unknown'&&<><p className="run-recovery-note">The result could not be confirmed. The task was not replayed; the queue can continue.</p>{!run.computerUsed&&runDiagnosticSummary(run.diagnosticCode)&&<p className="run-recovery-diagnostic">{runDiagnosticSummary(run.diagnosticCode)}</p>}</>}
+      {run.status==='unknown'&&<><p className="run-recovery-note">The task result remains unconfirmed. It was not replayed; inspect the computer before deciding whether to retry.</p>{!run.computerUsed&&failureDescription&&<p className="run-recovery-diagnostic">{failureDescription}</p>}</>}
+      {run.status==='failed'&&!run.computerUsed&&failureDescription&&<p className="run-recovery-diagnostic">{failureDescription}</p>}
       {run.status==='completed'&&Boolean(run.result?.trim())&&!genericDone&&voiceAvailable&&remote&&active&&<div className="message-actions"><button type="button" className="message-speech-button" aria-label={speechMessageId===run.id?'Stop reading aloud':'Read aloud'} title={speechMessageId===run.id?'Stop reading aloud':'Read aloud'} onClick={()=>void speakMessageAloud(active.id,run.id,run.result||'')}><Icon name="sound"/></button></div>}
       <RunFileCards files={outputFiles} onPreview={setPreviewFile} onReuse={reuseRunFile}/>
       {showRetryNote&&<p className="run-recovery-note">A separate queued task was created; the original outcome remains in history.</p>}
@@ -1330,17 +1376,17 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
           <Avatar bot={group.members.find(member=>member.id===message.botId)||group.members[0]} size={27}/>
           <div className="message-bubble">
             <header className="group-message-heading"><strong>{message.botName||'Bot'}</strong><span className={`group-run-status ${message.status||'queued'}`} title={groupRunStatusLabel(message)}>{groupRunStatusLabel(message)}</span></header>
-            <p>{message.text||groupRunFallback(message)}</p>
+            <p>{message.text||(message.status==='unknown'&&runFailureHeadline(message)?`${runFailureHeadline(message)}. ${runFailureDescription(message)||''}`:groupRunFallback(message))}</p>
             <RunFileCards files={(message.files||[]).filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
-            {message.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.runId||message.id,prompt:'',status:message.status||'queued',result:message.text,recoveryState:message.recoveryState||'none',replacementRunId:message.replacementRunId,files:message.files||[],computerUsed:true,diagnosticCode:message.diagnosticCode,executionAudit:message.executionAudit}} botId={message.botId} showScreen={message.status==='running'||message.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
+            {message.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.runId||message.id,prompt:'',status:message.status||'queued',result:message.text,recoveryState:message.recoveryState||'none',replacementRunId:message.replacementRunId,files:message.files||[],computerUsed:true,diagnosticCode:message.diagnosticCode,failureComponent:message.failureComponent,failureReasonCode:message.failureReasonCode,failureStage:message.failureStage,failureHttpStatus:message.failureHttpStatus,failureUpstreamHttpStatus:message.failureUpstreamHttpStatus,executionAudit:message.executionAudit}} botId={message.botId} showScreen={message.status==='running'||message.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
             {!message.computerUsed&&remote&&message.runId&&<div className="message-actions"><RunTraceButton runId={message.runId} compact/></div>}
-            {message.status==='unknown'&&<><p className="run-recovery-note">The result could not be confirmed. The task was not replayed; this Bot’s queue can continue.</p>{!message.computerUsed&&runDiagnosticSummary(message.diagnosticCode)&&<p className="run-recovery-diagnostic">{runDiagnosticSummary(message.diagnosticCode)}</p>}</>}
+            {message.status==='unknown'&&<><p className="run-recovery-note">The task result remains unconfirmed. It was not replayed; inspect the computer before deciding whether to retry.</p>{!message.computerUsed&&runFailureDescription(message)&&<p className="run-recovery-diagnostic">{runFailureDescription(message)}</p>}</>}
             {message.status==='unknown'&&message.recoveryState==='retried'&&message.replacementRunId&&<p className="run-recovery-note">The original task outcome remains unknown. The separate retry is shown below.</p>}
             {message.replacementRun&&<section className="group-replacement-run" aria-label={`Separate retry for ${message.botName||'Bot'}`}>
               <header><strong>Separate retry</strong><span className={`group-run-status ${message.replacementRun.status}`}>{replacementRunLabel(message.replacementRun.status)}</span></header>
               <p>{message.replacementRun.result||replacementRunFallback(message.replacementRun.status)}</p>
               <RunFileCards files={message.replacementRun.files.filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
-              {message.replacementRun.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.replacementRun.id,prompt:'',status:message.replacementRun.status,result:message.replacementRun.result,recoveryState:'none',replacementRunId:null,files:message.replacementRun.files,computerUsed:true,diagnosticCode:message.replacementRun.diagnosticCode,executionAudit:message.replacementRun.executionAudit}} botId={message.botId} showScreen={message.replacementRun.status==='running'||message.replacementRun.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
+              {message.replacementRun.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.replacementRun.id,prompt:'',status:message.replacementRun.status,result:message.replacementRun.result,recoveryState:'none',replacementRunId:null,files:message.replacementRun.files,computerUsed:true,diagnosticCode:message.replacementRun.diagnosticCode,failureComponent:message.replacementRun.failureComponent,failureReasonCode:message.replacementRun.failureReasonCode,failureStage:message.replacementRun.failureStage,failureHttpStatus:message.replacementRun.failureHttpStatus,failureUpstreamHttpStatus:message.replacementRun.failureUpstreamHttpStatus,executionAudit:message.replacementRun.executionAudit}} botId={message.botId} showScreen={message.replacementRun.status==='running'||message.replacementRun.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
               {!message.replacementRun.computerUsed&&remote&&<RunTraceButton runId={message.replacementRun.id} compact/>}
             </section>}
           </div>
