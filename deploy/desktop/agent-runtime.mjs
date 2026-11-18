@@ -32,6 +32,9 @@ const allowedEngines = new Set(String(process.env.DOTS_DESKTOP_AGENT_ADAPTERS ||
 const configured = parseAdapterConfig(process.env.DOTS_AGENT_KERNELS_JSON || '{}');
 const agentFailureStages = new Set(['agent-setup','agent-execution','model-request','model-response','tool-execution','result-validation']);
 const agentFailureReasons = new Set(['runtime_setup_failed','runtime_error','agent_timeout','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
+const agentFailureDiagnostics = new Set(['AGENT_RUNTIME_ABORT_ERROR','AGENT_RUNTIME_API_ERROR','AGENT_RUNTIME_FETCH_ERROR','AGENT_RUNTIME_NETWORK_ERROR','AGENT_RUNTIME_RANGE_ERROR','AGENT_RUNTIME_REFERENCE_ERROR','AGENT_RUNTIME_SYNTAX_ERROR','AGENT_RUNTIME_TIMEOUT_ERROR','AGENT_RUNTIME_TYPE_ERROR','AGENT_RUNTIME_UNCLASSIFIED_ERROR']);
+const agentProviderErrorKinds = new Set(['request_invalid','authentication_rejected','model_not_found','context_limit','rate_limited','quota_exhausted','permission_denied','provider_server_error','provider_unavailable','content_filtered','unknown']);
+const agentProviderErrorCodes = new Set(['invalid_request_error','invalid_api_key','model_not_found','context_length_exceeded','rate_limit_exceeded','insufficient_quota','permission_denied','unsupported_parameter','unsupported_value','missing_required_parameter','invalid_type','unknown_parameter','request_too_large','content_filter']);
 const agentTransportCodes = new Set(['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']);
 const agentExitSignals = new Set(['SIGABRT','SIGBUS','SIGFPE','SIGHUP','SIGILL','SIGINT','SIGKILL','SIGPIPE','SIGQUIT','SIGSEGV','SIGTERM','SIGTRAP']);
 const adapterSpawnErrorCodes = new Set(['EACCES','ENOENT','EMFILE','ENFILE','ENOMEM','ENOEXEC']);
@@ -453,7 +456,7 @@ function agentFailureMetadata(stderr) {
       const event=JSON.parse(line);
       if(event?.event==='coke_grok_agent_failure'
         &&agentFailureStages.has(event.stage)
-        &&agentFailureReasons.has(event.reasonCode))return {stage:event.stage,reasonCode:event.reasonCode,upstreamHttpStatus:Number.isInteger(event.upstreamHttpStatus)&&event.upstreamHttpStatus>=100&&event.upstreamHttpStatus<=599?event.upstreamHttpStatus:null,transportCode:agentTransportCodes.has(event.transportCode)?event.transportCode:null};
+        &&agentFailureReasons.has(event.reasonCode))return {stage:event.stage,reasonCode:event.reasonCode,diagnosticCode:agentFailureDiagnostics.has(event.diagnosticCode)?event.diagnosticCode:null,upstreamHttpStatus:Number.isInteger(event.upstreamHttpStatus)&&event.upstreamHttpStatus>=100&&event.upstreamHttpStatus<=599?event.upstreamHttpStatus:null,upstreamErrorKind:agentProviderErrorKinds.has(event.upstreamErrorKind)?event.upstreamErrorKind:null,upstreamErrorCode:agentProviderErrorCodes.has(event.upstreamErrorCode)?event.upstreamErrorCode:null,transportCode:agentTransportCodes.has(event.transportCode)?event.transportCode:null};
     } catch { /* Adapter diagnostics are not persisted. */ }
   }
   return {stage:'agent-execution',reasonCode:'runtime_error',transportCode:null};
@@ -467,7 +470,10 @@ class AgentAdapterFailure extends Error {
     this.exitSignal=agentExitSignals.has(metadata.exitSignal)?metadata.exitSignal:null;
     this.stage=metadata.stage;
     this.reasonCode=metadata.reasonCode;
+    this.diagnosticCode=agentFailureDiagnostics.has(metadata.diagnosticCode)?metadata.diagnosticCode:null;
     this.upstreamHttpStatus=metadata.upstreamHttpStatus;
+    this.upstreamErrorKind=agentProviderErrorKinds.has(metadata.upstreamErrorKind)?metadata.upstreamErrorKind:null;
+    this.upstreamErrorCode=agentProviderErrorCodes.has(metadata.upstreamErrorCode)?metadata.upstreamErrorCode:null;
     this.transportCode=metadata.transportCode;
   }
 }
@@ -639,7 +645,7 @@ async function executeKernel(input, requestSignal, slot) {
     }
     const code=closed?.code??null,exitSignal=agentExitSignals.has(closed?.signal)?closed.signal:null;
     const adapterFailure=code===0?null:agentFailureMetadata(stderr);
-    recordRuntimeTrace(slot,'agent.adapter.exit',code===0&&!exitSignal?'succeeded':'failed',{stage:timedOut?'agent-execution':code===0?'adapter-exit':adapterFailure?.stage||'agent-execution',...(Number.isInteger(code)&&code>0&&code<=255?{adapterExitCode:code}:{}),...(exitSignal?{adapterExitSignal:exitSignal}:{}),...(timedOut?{diagnosticCode:'AGENT_ADAPTER_TIMEOUT',reasonCode:'agent_timeout'}:code===0?{}:{diagnosticCode:exitSignal?'AGENT_ADAPTER_SIGNAL_EXIT':'AGENT_ADAPTER_NONZERO_EXIT',...(adapterFailure?.reasonCode?{reasonCode:adapterFailure.reasonCode}:{}),...(adapterFailure?.upstreamHttpStatus?{upstreamHttpStatus:adapterFailure.upstreamHttpStatus}:{}),...(adapterFailure?.transportCode?{transportCode:adapterFailure.transportCode}:{})}),durationMs:Date.now()-spawnStartedAt});
+    recordRuntimeTrace(slot,'agent.adapter.exit',code===0&&!exitSignal?'succeeded':'failed',{stage:timedOut?'agent-execution':code===0?'adapter-exit':adapterFailure?.stage||'agent-execution',...(Number.isInteger(code)&&code>0&&code<=255?{adapterExitCode:code}:{}),...(exitSignal?{adapterExitSignal:exitSignal}:{}),...(timedOut?{diagnosticCode:'AGENT_ADAPTER_TIMEOUT',reasonCode:'agent_timeout'}:code===0?{}:{diagnosticCode:adapterFailure?.diagnosticCode||(exitSignal?'AGENT_ADAPTER_SIGNAL_EXIT':'AGENT_ADAPTER_NONZERO_EXIT'),...(adapterFailure?.reasonCode?{reasonCode:adapterFailure.reasonCode}:{}),...(adapterFailure?.upstreamHttpStatus?{upstreamHttpStatus:adapterFailure.upstreamHttpStatus}:{}),...(adapterFailure?.upstreamErrorKind?{upstreamErrorKind:adapterFailure.upstreamErrorKind}:{}),...(adapterFailure?.upstreamErrorCode?{upstreamErrorCode:adapterFailure.upstreamErrorCode}:{}),...(adapterFailure?.transportCode?{transportCode:adapterFailure.transportCode}:{})}),durationMs:Date.now()-spawnStartedAt});
     if (requestSignal?.aborted) throw new Error('Agent task was cancelled');
     if (slot.interruptedByUser) return { taskId, status: 'waiting', pausedForControl: true, controlOwner: 'user', message: '电脑切换为用户控制模式，任务已暂停。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
     if (slot.controlStateUnknown) return { taskId, status: 'waiting', pausedForControl: true, controlOwner: 'unknown', message: '无法确认云电脑的控制权，任务已暂停。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
@@ -737,7 +743,7 @@ http.createServer(async (req, res) => {
           error: error instanceof AgentAdapterFailure ? error.message : error instanceof Error ? error.message.slice(0, 500) : 'Agent task failed',
           ...(Array.isArray(error?.runtimeTrace)?{runtimeTrace:error.runtimeTrace}:{}),
           ...(error instanceof TaskAttachmentError ? { code: error.code } : {}),
-          ...(error instanceof AgentAdapterFailure ? { code:'agent_adapter_failed',reasonCode:error.reasonCode,stage:error.stage,...(error.exitCode?{exitCode:error.exitCode}:{}),...(error.exitSignal?{exitSignal:error.exitSignal}:{}),...(error.upstreamHttpStatus?{upstreamHttpStatus:error.upstreamHttpStatus}:{}),...(error.transportCode?{transportCode:error.transportCode}:{}) } : {}),
+          ...(error instanceof AgentAdapterFailure ? { code:'agent_adapter_failed',reasonCode:error.reasonCode,stage:error.stage,...(error.diagnosticCode?{diagnosticCode:error.diagnosticCode}:{}),...(error.exitCode?{exitCode:error.exitCode}:{}),...(error.exitSignal?{exitSignal:error.exitSignal}:{}),...(error.upstreamHttpStatus?{upstreamHttpStatus:error.upstreamHttpStatus}:{}),...(error.upstreamErrorKind?{upstreamErrorKind:error.upstreamErrorKind}:{}),...(error.upstreamErrorCode?{upstreamErrorCode:error.upstreamErrorCode}:{}),...(error.transportCode?{transportCode:error.transportCode}:{}) } : {}),
         });
       }
     }

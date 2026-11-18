@@ -274,12 +274,24 @@ const agentFailureReasonLabels:Record<string,string>={
   result_invalid:'The Agent returned an invalid structured task result.',
   agent_output_limit:'The Agent response reached its output limit before returning a result.',
 };
+const agentRuntimeDiagnosticLabels:Record<string,string>={
+  AGENT_RUNTIME_ABORT_ERROR:'Agent runtime aborted before returning a result.',
+  AGENT_RUNTIME_API_ERROR:'Agent runtime received an API error.',
+  AGENT_RUNTIME_FETCH_ERROR:'Agent runtime could not complete a network fetch.',
+  AGENT_RUNTIME_NETWORK_ERROR:'Agent runtime encountered a network error.',
+  AGENT_RUNTIME_RANGE_ERROR:'Agent runtime encountered an invalid range or size.',
+  AGENT_RUNTIME_REFERENCE_ERROR:'Agent runtime referenced a missing value.',
+  AGENT_RUNTIME_SYNTAX_ERROR:'Agent runtime encountered invalid syntax.',
+  AGENT_RUNTIME_TIMEOUT_ERROR:'Agent runtime timed out.',
+  AGENT_RUNTIME_TYPE_ERROR:'Agent runtime encountered a type error.',
+  AGENT_RUNTIME_UNCLASSIFIED_ERROR:'Agent runtime stopped with an unclassified error.',
+};
 const agentFailureStageLabels:Record<string,string>={'agent-setup':'Agent setup','agent-execution':'Agent execution','model-request':'Model request','model-response':'Model response','tool-execution':'Tool execution','result-validation':'Result validation'};
 const failureStageLabels:Record<string,string>={...agentFailureStageLabels,'request-validation':'Validate model gateway request','request-auth':'Check model gateway capability','provider-request':'Send request to model provider','provider-response':'Receive model provider response','response-stream':'Transfer model response','scheduler-execution':'Run scheduler outcome handling','lease-renewal':'Renew task lease','result-persistence':'Save task result','trace-persistence':'Persist run diagnostics','trace-read':'Read run diagnostics','queue-wait':'Wait for Agent runtime capacity','computer-control':'Check computer control state','adapter-start':'Start Agent adapter process','adapter-exit':'Observe Agent adapter exit',route:'Worker route','screen-scope':'Resolve Bot screen','screen-owner':'Check computer owner','action-body':'Validate action request','action-navigate':'Run browser navigation','action-execute':'Run browser or desktop action'};
 const providerErrorKindLabels:Record<string,string>={request_invalid:'Provider classified the request as invalid',authentication_rejected:'Provider rejected authentication',model_not_found:'Provider could not find the configured model',context_limit:'Provider context or token limit was exceeded',rate_limited:'Provider rate limit was reached',quota_exhausted:'Provider quota or billing limit was reached',permission_denied:'Provider denied this request',provider_server_error:'Provider returned a server error',provider_unavailable:'Provider service was unavailable',content_filtered:'Provider content filter rejected the request',unknown:'Provider error category was not recognized'};
 const providerErrorCodeLabels:Record<string,string>={invalid_request_error:'Provider marked the request invalid',invalid_api_key:'Provider rejected the API key',model_not_found:'Provider could not find the model',context_length_exceeded:'Provider context limit was exceeded',rate_limit_exceeded:'Provider rate limit was reached',insufficient_quota:'Provider quota was exhausted',permission_denied:'Provider denied the request',unsupported_parameter:'Provider rejected an unsupported parameter',unsupported_value:'Provider rejected an unsupported value',missing_required_parameter:'Provider reported a missing required parameter',invalid_type:'Provider rejected a parameter type',unknown_parameter:'Provider reported an unknown parameter',request_too_large:'Provider request was too large',content_filter:'Provider content filter rejected the request'};
 const failureComponentLabels:Record<string,string>={'agent-runtime':'Pi / DeepSeek Harness','model-gateway':'Model gateway','computer-worker':'Cloud computer operation','scheduler':'Task scheduler','control-plane':'Control plane','mysql':'Database'};
-function runFailureHeadline(run:Pick<AgentRun,'diagnosticCode'|'failureTraceDiagnosticCode'|'failureComponent'|'failureHttpStatus'|'failureReasonCode'|'failureUpstreamHttpStatus'|'failureUpstreamErrorKind'|'failureUpstreamErrorCode'|'failureAdapterExitCode'|'failureAdapterExitSignal'|'failureDatabaseCode'>):string|null {
+function runFailureHeadline(run:Pick<AgentRun,'diagnosticCode'|'failureTraceDiagnosticCode'|'failureComponent'|'failureHttpStatus'|'failureReasonCode'|'failureUpstreamHttpStatus'|'failureUpstreamErrorKind'|'failureUpstreamErrorCode'|'failureAdapterExitCode'|'failureAdapterExitSignal'|'failureTransportCode'|'failureDatabaseCode'>):string|null {
   const diagnosticCode=run.failureTraceDiagnosticCode||run.diagnosticCode;
   if(!diagnosticCode&&!run.failureReasonCode&&!run.failureComponent)return null;
   if(run.failureComponent==='model-gateway'){
@@ -291,10 +303,12 @@ function runFailureHeadline(run:Pick<AgentRun,'diagnosticCode'|'failureTraceDiag
     return `Model gateway request failed${run.failureHttpStatus?` · gateway HTTP ${run.failureHttpStatus}`:''}${upstreamStatus?` · provider HTTP ${upstreamStatus}`:''}`;
   }
   if(run.failureComponent==='agent-runtime'){
+    const diagnosis=diagnosticCode?agentRuntimeDiagnosticLabels[diagnosticCode]||runDiagnosticSummary(diagnosticCode):null;
     const reason=run.failureReasonCode?agentFailureReasonLabels[run.failureReasonCode]:null;
-    const diagnosis=diagnosticCode?runDiagnosticSummary(diagnosticCode):null;
-    const lead=reason||diagnosis||'Agent runtime request failed';
-    return `${lead}${run.failureHttpStatus?` · Agent HTTP ${run.failureHttpStatus}`:''}${run.failureUpstreamHttpStatus?` · model endpoint HTTP ${run.failureUpstreamHttpStatus}`:''}${diagnosticCode?` · ${diagnosticCode}`:''}${run.failureAdapterExitCode?` · adapter exit ${run.failureAdapterExitCode}`:''}${run.failureAdapterExitSignal?` · signal ${run.failureAdapterExitSignal}`:''}${run.failureDatabaseCode?` · database ${run.failureDatabaseCode}`:''}`;
+    const lead=run.failureReasonCode==='runtime_error'&&diagnosis?diagnosis:reason||diagnosis||'Agent runtime request failed';
+    const providerKind=run.failureUpstreamErrorKind?providerErrorKindLabels[run.failureUpstreamErrorKind]:null;
+    const providerCode=run.failureUpstreamErrorCode?providerErrorCodeLabels[run.failureUpstreamErrorCode]||run.failureUpstreamErrorCode:null;
+    return `${lead}${run.failureHttpStatus?` · Agent HTTP ${run.failureHttpStatus}`:''}${run.failureUpstreamHttpStatus?` · model endpoint HTTP ${run.failureUpstreamHttpStatus}`:''}${providerKind?` · ${providerKind}`:''}${providerCode?` · ${providerCode}`:''}${diagnosticCode?` · ${diagnosticCode}`:''}${run.failureAdapterExitCode?` · adapter exit ${run.failureAdapterExitCode}`:''}${run.failureAdapterExitSignal?` · signal ${run.failureAdapterExitSignal}`:''}${run.failureTransportCode?` · transport ${run.failureTransportCode}`:''}${run.failureDatabaseCode?` · database ${run.failureDatabaseCode}`:''}`;
   }
   if(run.failureComponent==='scheduler'){
     if(diagnosticCode==='RUN_RESULT_PERSIST_FAILED'||diagnosticCode==='result_persist_failed')return `Task result could not be saved${run.failureDatabaseCode?` · database ${run.failureDatabaseCode}`:''}`;
@@ -328,9 +342,10 @@ function runFailureDescription(run:Pick<AgentRun,'diagnosticCode'|'failureTraceD
     return [stage,reason||runDiagnosticSummary(diagnosticCode)||'Model gateway request failed',providerCode,providerKind,statuses,codes?`[${codes}]`:null,run.failureTransportCode?`transport ${run.failureTransportCode}`:null].filter(Boolean).join(' · ');
   }
   if(run.failureComponent==='agent-runtime'){
+    const diagnosis=diagnosticCode?agentRuntimeDiagnosticLabels[diagnosticCode]||runDiagnosticSummary(diagnosticCode):null;
     const reason=run.failureReasonCode?agentFailureReasonLabels[run.failureReasonCode]:null;
-    const diagnosis=diagnosticCode?runDiagnosticSummary(diagnosticCode):null;
-    return [stage,reason||diagnosis||'Agent runtime request failed',statuses,providerCode,providerKind,codes?`[${codes}]`:null,run.failureAdapterExitCode!==null&&run.failureAdapterExitCode!==undefined?`adapter exit ${run.failureAdapterExitCode}`:null,run.failureAdapterExitSignal?`signal ${run.failureAdapterExitSignal}`:null,run.failureDatabaseCode?`database ${run.failureDatabaseCode}`:null,run.failureTransportCode?`transport ${run.failureTransportCode}`:null].filter(Boolean).join(' · ');
+    const lead=run.failureReasonCode==='runtime_error'&&diagnosis?diagnosis:reason||diagnosis||'Agent runtime request failed';
+    return [stage,lead,statuses,providerCode,providerKind,codes?`[${codes}]`:null,run.failureAdapterExitCode!==null&&run.failureAdapterExitCode!==undefined?`adapter exit ${run.failureAdapterExitCode}`:null,run.failureAdapterExitSignal?`signal ${run.failureAdapterExitSignal}`:null,run.failureDatabaseCode?`database ${run.failureDatabaseCode}`:null,run.failureTransportCode?`transport ${run.failureTransportCode}`:null].filter(Boolean).join(' · ');
   }
   if(run.failureComponent==='scheduler'){
     const reason=run.failureReasonCode? schedulerFailureReasonLabels[run.failureReasonCode]:null;
@@ -375,6 +390,16 @@ const runDiagnosticSummaries:Record<string,string>={
   agent_http_other:'The Agent service returned an unexpected error.',
   agent_adapter_failed:'The Agent adapter exited before returning a task result.',
   agent_adapter_output_invalid:'The Agent returned a result it could not verify.',
+  AGENT_RUNTIME_ABORT_ERROR:'Agent runtime aborted before returning a result.',
+  AGENT_RUNTIME_API_ERROR:'Agent runtime received an API error.',
+  AGENT_RUNTIME_FETCH_ERROR:'Agent runtime could not complete a network fetch.',
+  AGENT_RUNTIME_NETWORK_ERROR:'Agent runtime encountered a network error.',
+  AGENT_RUNTIME_RANGE_ERROR:'Agent runtime encountered an invalid range or size.',
+  AGENT_RUNTIME_REFERENCE_ERROR:'Agent runtime referenced a missing value.',
+  AGENT_RUNTIME_SYNTAX_ERROR:'Agent runtime encountered invalid syntax.',
+  AGENT_RUNTIME_TIMEOUT_ERROR:'Agent runtime timed out.',
+  AGENT_RUNTIME_TYPE_ERROR:'Agent runtime encountered a type error.',
+  AGENT_RUNTIME_UNCLASSIFIED_ERROR:'Agent runtime stopped with an unclassified error.',
   AGENT_ADAPTER_SPAWN_FAILED:'The Agent adapter executable could not be started.',
   AGENT_ADAPTER_NONZERO_EXIT:'The Agent adapter exited with a nonzero code.',
   AGENT_ADAPTER_SIGNAL_EXIT:'The operating system stopped the Agent adapter process.',
@@ -893,7 +918,7 @@ function RunTraceButton({runId,compact=false}:{runId:string;compact?:boolean}) {
   const unfinishedEvents=state.events.filter(event=>event.outcome==='started'&&!state.events.some(later=>later.sequence>event.sequence&&later.component===event.component&&later.event===event.event&&later.attemptNumber===event.attemptNumber&&(later.outcome==='succeeded'||later.outcome==='failed')));
   const lastUnfinished=unfinishedEvents.at(-1);
   const primaryFailureTitle=primaryFailure?`${componentLabels[primaryFailure.component]} · ${eventLabels[primaryFailure.event]||traceEventLabel(primaryFailure.event)}`:null;
-  const primaryFailureDetails=primaryFailure?[primaryFailure.stage?`Stage: ${stageLabels[primaryFailure.stage]||primaryFailure.stage}`:null,primaryFailure.httpStatus?`${httpStatusLabel(primaryFailure.component)} ${primaryFailure.httpStatus}`:null,primaryFailure.upstreamHttpStatus?`${upstreamHttpStatusLabel(primaryFailure.component)} ${primaryFailure.upstreamHttpStatus}`:null,primaryFailure.upstreamErrorCode?providerErrorCodeLabels[primaryFailure.upstreamErrorCode]||`Provider error code ${primaryFailure.upstreamErrorCode}`:null,primaryFailure.diagnosticCode?diagnosticLabels[primaryFailure.diagnosticCode]||primaryFailure.diagnosticCode:null,primaryFailure.reasonCode?reasonLabels[primaryFailure.reasonCode]||agentFailureReasonLabels[primaryFailure.reasonCode]||primaryFailure.reasonCode:null,primaryFailure.adapterExitCode!==null?`Adapter exit ${primaryFailure.adapterExitCode}`:null,primaryFailure.adapterExitSignal?`Signal ${primaryFailure.adapterExitSignal}`:null,primaryFailure.databaseCode?`MySQL ${primaryFailure.databaseCode}`:null,primaryFailure.transportCode?`Transport ${primaryFailure.transportCode}`:null].filter(Boolean).join(' · '):null;
+  const primaryFailureDetails=primaryFailure?[primaryFailure.stage?`Stage: ${stageLabels[primaryFailure.stage]||primaryFailure.stage}`:null,primaryFailure.httpStatus?`${httpStatusLabel(primaryFailure.component)} ${primaryFailure.httpStatus}`:null,primaryFailure.upstreamHttpStatus?`${upstreamHttpStatusLabel(primaryFailure.component)} ${primaryFailure.upstreamHttpStatus}`:null,primaryFailure.upstreamErrorKind?upstreamErrorLabels[primaryFailure.upstreamErrorKind]||`Provider error category ${primaryFailure.upstreamErrorKind}`:null,primaryFailure.upstreamErrorCode?providerErrorCodeLabels[primaryFailure.upstreamErrorCode]||`Provider error code ${primaryFailure.upstreamErrorCode}`:null,primaryFailure.diagnosticCode?diagnosticLabels[primaryFailure.diagnosticCode]||agentRuntimeDiagnosticLabels[primaryFailure.diagnosticCode]||primaryFailure.diagnosticCode:null,primaryFailure.reasonCode?reasonLabels[primaryFailure.reasonCode]||agentFailureReasonLabels[primaryFailure.reasonCode]||primaryFailure.reasonCode:null,primaryFailure.adapterExitCode!==null?`Adapter exit ${primaryFailure.adapterExitCode}`:null,primaryFailure.adapterExitSignal?`Signal ${primaryFailure.adapterExitSignal}`:null,primaryFailure.databaseCode?`MySQL ${primaryFailure.databaseCode}`:null,primaryFailure.transportCode?`Transport ${primaryFailure.transportCode}`:null].filter(Boolean).join(' · '):null;
   const unfinishedDetails=lastUnfinished?[`${componentLabels[lastUnfinished.component]} · ${eventLabels[lastUnfinished.event]||traceEventLabel(lastUnfinished.event)}`,lastUnfinished.stage?`Stage: ${stageLabels[lastUnfinished.stage]||lastUnfinished.stage}`:null,lastUnfinished.operation?`Operation: ${lastUnfinished.operation}`:null,['agent-runtime','model-gateway','computer-worker','control-plane'].includes(lastUnfinished.component)?`${httpStatusLabel(lastUnfinished.component)} response was not recorded`:'No completion record was saved'].filter(Boolean).join(' · '):null;
   const traceIcon=<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h3l2 4.5 2-4.5h5M2 12.5h3l2-4.5 2 4.5h5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"/></svg>;
   return <>
@@ -913,7 +938,7 @@ function RunTraceButton({runId,compact=false}:{runId:string;compact?:boolean}) {
           <time dateTime={event.at}>{new Date(event.at).toLocaleString()}</time>
           <strong>#{event.sequence} · {componentLabels[event.component]} · {traceEventLabel(event.event)}</strong>
           <span>{outcomeLabels[event.outcome]}{event.attemptNumber!==null?` · call ${event.attemptNumber}`:''}{event.httpStatus?` · ${httpStatusLabel(event.component)} ${event.httpStatus}`:''}{event.upstreamHttpStatus?` · ${upstreamHttpStatusLabel(event.component)} ${event.upstreamHttpStatus}`:''}{event.durationMs!==null?` · ${event.durationMs} ms`:''}{event.retryAfterSeconds!==null?` · retry after ${event.retryAfterSeconds}s`:''}</span>
-          {event.diagnosticCode&&<div className="run-trace-diagnostic"><span>{diagnosticLabels[event.diagnosticCode]||'A backend diagnostic was recorded'}</span><code>{event.diagnosticCode}</code></div>}
+          {event.diagnosticCode&&<div className="run-trace-diagnostic"><span>{diagnosticLabels[event.diagnosticCode]||agentRuntimeDiagnosticLabels[event.diagnosticCode]||'A backend diagnostic was recorded'}</span><code>{event.diagnosticCode}</code></div>}
           {event.reasonCode&&<div className="run-trace-diagnostic"><span>{reasonLabels[event.reasonCode]||agentFailureReasonLabels[event.reasonCode]||'Recorded failure category'}</span><code>{event.reasonCode}</code></div>}
           {event.upstreamErrorKind&&<div className="run-trace-diagnostic"><span>{upstreamErrorLabels[event.upstreamErrorKind]||'Provider error category'}</span><code>{event.upstreamErrorKind}</code></div>}
           {event.upstreamErrorCode&&<div className="run-trace-diagnostic"><span>{providerErrorCodeLabels[event.upstreamErrorCode]||'Provider error code'}</span><code>{event.upstreamErrorCode}</code></div>}

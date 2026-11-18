@@ -9,7 +9,7 @@ import type { RoutineStore } from './routine-store.ts';
 import { continuedBrowserTaskRequest } from './computer-navigation-policy.ts';
 import { Agent } from 'undici';
 import { createHash } from 'node:crypto';
-import { agentHttpDiagnostic, RunDiagnosticError } from './run-diagnostics.ts';
+import { agentHttpDiagnostic, isRunDiagnosticCode, RunDiagnosticError } from './run-diagnostics.ts';
 import type { RunDiagnosticCode } from './run-diagnostics.ts';
 import { explicitMemoryRequest } from './explicit-memory-request.ts';
 import { validateAgentExecutionAudit } from './execution-audit.ts';
@@ -34,6 +34,9 @@ const agentAttachmentReasonCodes=new Set([
   'task_attachment_checksum_mismatch','task_attachment_destination_invalid','task_attachment_copy_failed','task_attachment_copy_verification_failed',
 ]);
 const agentRuntimeFailureReasonCodes=new Set(['runtime_setup_failed','runtime_error','agent_timeout','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
+const agentRuntimeFailureDiagnostics=new Set<RunDiagnosticCode>(['AGENT_RUNTIME_ABORT_ERROR','AGENT_RUNTIME_API_ERROR','AGENT_RUNTIME_FETCH_ERROR','AGENT_RUNTIME_NETWORK_ERROR','AGENT_RUNTIME_RANGE_ERROR','AGENT_RUNTIME_REFERENCE_ERROR','AGENT_RUNTIME_SYNTAX_ERROR','AGENT_RUNTIME_TIMEOUT_ERROR','AGENT_RUNTIME_TYPE_ERROR','AGENT_RUNTIME_UNCLASSIFIED_ERROR']);
+const agentRuntimeUpstreamErrorKinds=new Set(['request_invalid','authentication_rejected','model_not_found','context_limit','rate_limited','quota_exhausted','permission_denied','provider_server_error','provider_unavailable','content_filtered','unknown']);
+const agentRuntimeUpstreamErrorCodes=new Set(['invalid_request_error','invalid_api_key','model_not_found','context_length_exceeded','rate_limit_exceeded','insufficient_quota','permission_denied','unsupported_parameter','unsupported_value','missing_required_parameter','invalid_type','unknown_parameter','request_too_large','content_filter']);
 const agentRuntimeFailureStages=new Set(['agent-setup','agent-execution','model-request','model-response','tool-execution','result-validation']);
 const agentRuntimeTransportCodes=new Set(['EACCES','ECONNRESET','ECONNREFUSED','EMFILE','ENETUNREACH','ENFILE','ENOENT','ENOEXEC','ENOMEM','ETIMEDOUT','EHOSTUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']);
 const agentRuntimeExitSignals=new Set(['SIGABRT','SIGBUS','SIGFPE','SIGHUP','SIGILL','SIGINT','SIGKILL','SIGPIPE','SIGQUIT','SIGSEGV','SIGTERM','SIGTRAP']);
@@ -114,8 +117,8 @@ async function safeAgentErrorBody(response:Response):Promise<Record<string,unkno
   }catch{return null}
 }
 
-async function logAgentRejection(response:Response,taskId:string):Promise<{code:AgentRejectionClass;reasonCode?:string;stage?:string;exitCode?:number;exitSignal?:string;upstreamHttpStatus?:number;transportCode?:string;runtimeTrace:RunTraceEvent[]}> {
-  let error:unknown,reasonCode:string|undefined,stage:string|undefined,exitCode:number|undefined,exitSignal:string|undefined,upstreamHttpStatus:number|undefined,transportCode:string|undefined,runtimeTrace:RunTraceEvent[]=[];
+async function logAgentRejection(response:Response,taskId:string):Promise<{code:AgentRejectionClass;reasonCode?:string;stage?:string;diagnosticCode?:RunDiagnosticCode;exitCode?:number;exitSignal?:string;upstreamHttpStatus?:number;upstreamErrorKind?:string;upstreamErrorCode?:string;transportCode?:string;runtimeTrace:RunTraceEvent[]}> {
+  let error:unknown,reasonCode:string|undefined,stage:string|undefined,diagnosticCode:RunDiagnosticCode|undefined,exitCode:number|undefined,exitSignal:string|undefined,upstreamHttpStatus:number|undefined,upstreamErrorKind:string|undefined,upstreamErrorCode:string|undefined,transportCode:string|undefined,runtimeTrace:RunTraceEvent[]=[];
   const record=await safeAgentErrorBody(response);
   if(record){
     error=record.error;
@@ -124,15 +127,18 @@ async function logAgentRejection(response:Response,taskId:string):Promise<{code:
     if(record.code==='agent_adapter_failed'){
       if(typeof record.reasonCode==='string'&&agentRuntimeFailureReasonCodes.has(record.reasonCode))reasonCode=record.reasonCode;
       if(typeof record.stage==='string'&&agentRuntimeFailureStages.has(record.stage))stage=record.stage;
+      if(isRunDiagnosticCode(record.diagnosticCode)&&agentRuntimeFailureDiagnostics.has(record.diagnosticCode))diagnosticCode=record.diagnosticCode;
       if(Number.isInteger(record.exitCode)&&Number(record.exitCode)>0&&Number(record.exitCode)<=255)exitCode=Number(record.exitCode);
       if(typeof record.exitSignal==='string'&&agentRuntimeExitSignals.has(record.exitSignal))exitSignal=record.exitSignal;
       if(Number.isInteger(record.upstreamHttpStatus)&&Number(record.upstreamHttpStatus)>=100&&Number(record.upstreamHttpStatus)<=599)upstreamHttpStatus=Number(record.upstreamHttpStatus);
+      if(typeof record.upstreamErrorKind==='string'&&agentRuntimeUpstreamErrorKinds.has(record.upstreamErrorKind))upstreamErrorKind=record.upstreamErrorKind;
+      if(typeof record.upstreamErrorCode==='string'&&agentRuntimeUpstreamErrorCodes.has(record.upstreamErrorCode))upstreamErrorCode=record.upstreamErrorCode;
       if(typeof record.transportCode==='string'&&agentRuntimeTransportCodes.has(record.transportCode))transportCode=record.transportCode;
     }
   }
   const code=record?.code==='agent_adapter_failed'?'agent_adapter_failed':classifyAgentRejection(error);
-  console.warn('Agent task endpoint rejected request',{taskId,status:response.status,code,...(reasonCode?{reasonCode}:{}),...(stage?{stage}:{}),...(exitCode?{exitCode}:{}),...(exitSignal?{exitSignal}:{}),...(upstreamHttpStatus?{upstreamHttpStatus}:{}),...(transportCode?{transportCode}:{})});
-  return {code,...(reasonCode?{reasonCode}:{}),...(stage?{stage}:{}),...(exitCode?{exitCode}:{}),...(exitSignal?{exitSignal}:{}),...(upstreamHttpStatus?{upstreamHttpStatus}:{}),...(transportCode?{transportCode}:{}),runtimeTrace};
+  console.warn('Agent task endpoint rejected request',{taskId,status:response.status,code,...(reasonCode?{reasonCode}:{}),...(stage?{stage}:{}),...(diagnosticCode?{diagnosticCode}:{}),...(exitCode?{exitCode}:{}),...(exitSignal?{exitSignal}:{}),...(upstreamHttpStatus?{upstreamHttpStatus}:{}),...(upstreamErrorKind?{upstreamErrorKind}:{}),...(upstreamErrorCode?{upstreamErrorCode}:{}),...(transportCode?{transportCode}:{})});
+  return {code,...(reasonCode?{reasonCode}:{}),...(stage?{stage}:{}),...(diagnosticCode?{diagnosticCode}:{}),...(exitCode?{exitCode}:{}),...(exitSignal?{exitSignal}:{}),...(upstreamHttpStatus?{upstreamHttpStatus}:{}),...(upstreamErrorKind?{upstreamErrorKind}:{}),...(upstreamErrorCode?{upstreamErrorCode}:{}),...(transportCode?{transportCode}:{}),runtimeTrace};
 }
 
 export interface DesktopConnection { agentUrl: URL; agentToken: string }
@@ -233,9 +239,9 @@ export class DesktopAgentExecutor implements RunExecutor {
       }
       if (!response.ok) {
         const rejection=await logAgentRejection(response,run.id);
-        const diagnostic=this.gateway.diagnosticCode(capability)||(response.status===400?agentRejectionDiagnostic(rejection.code):agentHttpDiagnostic(response.status));
+        const diagnostic=this.gateway.diagnosticCode(capability)||rejection.diagnosticCode||(response.status===400?agentRejectionDiagnostic(rejection.code):agentHttpDiagnostic(response.status));
         for(const event of rejection.runtimeTrace)await this.recordTrace(run.id,event);
-        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:response.status,...(rejection.upstreamHttpStatus?{upstreamHttpStatus:rejection.upstreamHttpStatus}:{}),...(rejection.exitCode?{adapterExitCode:rejection.exitCode}:{}),...(rejection.exitSignal?{adapterExitSignal:rejection.exitSignal}:{}),diagnosticCode:diagnostic,...(rejection.reasonCode?{reasonCode:rejection.reasonCode}:{}),...(rejection.stage?{stage:rejection.stage}:{}),operation:'agent-adapter',...(rejection.transportCode?{transportCode:rejection.transportCode}:{}),durationMs:Date.now()-dispatchStartedAt,...(response.headers.get('x-coke-grok-release-id')?{releaseId:response.headers.get('x-coke-grok-release-id')!}:{})});
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:response.status,...(rejection.upstreamHttpStatus?{upstreamHttpStatus:rejection.upstreamHttpStatus}:{}),...(rejection.upstreamErrorKind?{upstreamErrorKind:rejection.upstreamErrorKind}:{}),...(rejection.upstreamErrorCode?{upstreamErrorCode:rejection.upstreamErrorCode}:{}),...(rejection.exitCode?{adapterExitCode:rejection.exitCode}:{}),...(rejection.exitSignal?{adapterExitSignal:rejection.exitSignal}:{}),diagnosticCode:diagnostic,...(rejection.reasonCode?{reasonCode:rejection.reasonCode}:{}),...(rejection.stage?{stage:rejection.stage}:{}),operation:'agent-adapter',...(rejection.transportCode?{transportCode:rejection.transportCode}:{}),durationMs:Date.now()-dispatchStartedAt,...(response.headers.get('x-coke-grok-release-id')?{releaseId:response.headers.get('x-coke-grok-release-id')!}:{})});
         throw new RunDiagnosticError(diagnostic);
       }
       const agentReleaseId=response.headers.get('x-coke-grok-release-id');

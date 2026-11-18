@@ -10,14 +10,41 @@ const screenIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f
 const agentFailureStages = new Set(['agent-setup','agent-execution','model-request','model-response','tool-execution','result-validation']);
 const agentFailureReasons = new Set(['runtime_setup_failed','runtime_error','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
 const agentTransportCodes = new Set(['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']);
+const agentRuntimeErrorClasses = new Map([['AbortError','ABORT_ERROR'],['APIError','API_ERROR'],['FetchError','FETCH_ERROR'],['NetworkError','NETWORK_ERROR'],['RangeError','RANGE_ERROR'],['ReferenceError','REFERENCE_ERROR'],['SyntaxError','SYNTAX_ERROR'],['TimeoutError','TIMEOUT_ERROR'],['TypeError','TYPE_ERROR']]);
+const providerErrorCodes = new Set(['invalid_request_error','invalid_api_key','model_not_found','context_length_exceeded','rate_limit_exceeded','insufficient_quota','permission_denied','unsupported_parameter','unsupported_value','missing_required_parameter','invalid_type','unknown_parameter','request_too_large','content_filter']);
+const providerErrorKinds = new Set(['request_invalid','authentication_rejected','model_not_found','context_limit','rate_limited','quota_exhausted','permission_denied','provider_server_error','provider_unavailable','content_filtered','unknown']);
+
+function agentRuntimeErrorClass(error) {
+  const name=error&&typeof error==='object'&&typeof error.name==='string'?error.name:'';
+  return `AGENT_RUNTIME_${agentRuntimeErrorClasses.get(name)||'UNCLASSIFIED_ERROR'}`;
+}
+function safeProviderErrorDetails(error,status=null) {
+  const row=error&&typeof error==='object'?error:{};
+  const nested=row.error&&typeof row.error==='object'?row.error:{};
+  const rawCode=[row.code,nested.code,row.type,nested.type].find(value=>typeof value==='string'&&providerErrorCodes.has(value.toLowerCase()));
+  const code=typeof rawCode==='string'?rawCode.toLowerCase():null;
+  const kindByCode={invalid_request_error:'request_invalid',invalid_api_key:'authentication_rejected',model_not_found:'model_not_found',context_length_exceeded:'context_limit',rate_limit_exceeded:'rate_limited',insufficient_quota:'quota_exhausted',permission_denied:'permission_denied',unsupported_parameter:'request_invalid',unsupported_value:'request_invalid',missing_required_parameter:'request_invalid',invalid_type:'request_invalid',unknown_parameter:'request_invalid',request_too_large:'request_invalid',content_filter:'content_filtered'};
+  const statusNumber=Number(status??row.status??row.statusCode??row.response?.status);
+  const fallback=statusNumber===401||statusNumber===403?'authentication_rejected':statusNumber===429?'rate_limited':statusNumber>=500&&statusNumber<=599?'provider_unavailable':statusNumber>=400&&statusNumber<=499?'request_invalid':null;
+  const kind=kindByCode[code]||fallback;
+  return { ...(kind&&providerErrorKinds.has(kind)?{upstreamErrorKind:kind}:{}), ...(code?{upstreamErrorCode:code}:{}) };
+}
+function modelTurnErrorDetails(events) {
+  const errors=(Array.isArray(events)?events:[]).filter(event=>event?.type==='turn/end').map(event=>event?.data?.reason?.error).filter(Boolean);
+  const error=errors.at(-1);
+  return error?safeProviderErrorDetails(error,modelTurnHttpStatus(events)):{};
+}
 class CloudKernelFailure extends Error {
-  constructor(message, stage, reasonCode, upstreamHttpStatus = null, transportCode = null) {
+  constructor(message, stage, reasonCode, upstreamHttpStatus = null, transportCode = null, diagnosticCode = null, upstreamErrorKind = null, upstreamErrorCode = null) {
     super(message);
     this.name = 'CloudKernelFailure';
     this.diagnosticStage = agentFailureStages.has(stage) ? stage : 'agent-execution';
     this.reasonCode = agentFailureReasons.has(reasonCode) ? reasonCode : 'runtime_error';
     this.upstreamHttpStatus=Number.isInteger(upstreamHttpStatus)&&upstreamHttpStatus>=100&&upstreamHttpStatus<=599?upstreamHttpStatus:null;
     this.transportCode=agentTransportCodes.has(transportCode)?transportCode:null;
+    this.diagnosticCode=typeof diagnosticCode==='string'&&/^AGENT_RUNTIME_[A-Z_]{1,48}$/.test(diagnosticCode)?diagnosticCode:null;
+    this.upstreamErrorKind=providerErrorKinds.has(upstreamErrorKind)?upstreamErrorKind:null;
+    this.upstreamErrorCode=providerErrorCodes.has(upstreamErrorCode)?upstreamErrorCode:null;
   }
 }
 function modelTurnFailure(events) {
@@ -73,8 +100,8 @@ export async function runCloudKernel(input, dependencies = {}) {
     cwd = await validateTaskDirectory(input?.cwd, input?.workspace);
     prompt = typeof input?.prompt === 'string' ? input.prompt.trim() : '';
     if (!prompt || prompt.length > 20_000) throw new Error('Task prompt must contain 1–20000 characters');
-  } catch {
-    throw new CloudKernelFailure('Agent runtime setup failed.','agent-setup','runtime_setup_failed');
+  } catch (error) {
+    throw new CloudKernelFailure('Agent runtime setup failed.','agent-setup','runtime_setup_failed',null,modelRequestTransportCode(error),agentRuntimeErrorClass(error));
   }
   try {
     if (engine === 'pi') return await runPi(input, cwd, model, dependencies.piSdk);
@@ -82,7 +109,10 @@ export async function runCloudKernel(input, dependencies = {}) {
     throw new CloudKernelFailure('Unsupported Agent runtime kernel.','agent-setup','runtime_setup_failed');
   } catch (error) {
     if(error instanceof CloudKernelFailure)throw error;
-    throw new CloudKernelFailure('Agent runtime exited before returning a task result.','agent-execution','runtime_error');
+    const status=Number(error?.status??error?.statusCode??error?.response?.status);
+    const transportCode=modelRequestTransportCode(error);
+    const provider=safeProviderErrorDetails(error,status);
+    throw new CloudKernelFailure('Agent runtime exited before returning a task result.','agent-execution','runtime_error',status,transportCode,agentRuntimeErrorClass(error),provider.upstreamErrorKind,provider.upstreamErrorCode);
   }
 }
 
@@ -186,7 +216,9 @@ async function runPi(input, cwd, config, injectedSdk) {
       if(input.signal?.aborted)throw new CloudKernelFailure('Pi task was interrupted.','agent-execution','runtime_error');
       const executionAudit=createPiExecutionAudit(session.messages,config);
       if(executionAudit.calls.some(call=>call.outcome==='failed'))throw new CloudKernelFailure('A Pi tool call failed during execution.','tool-execution','tool_execution_failed');
-      throw new CloudKernelFailure('Pi could not complete its model request.','model-request',modelRequestFailure(error),Number(error?.status??error?.statusCode??error?.response?.status),modelRequestTransportCode(error));
+      const status=Number(error?.status??error?.statusCode??error?.response?.status);
+      const provider=safeProviderErrorDetails(error,status);
+      throw new CloudKernelFailure('Pi could not complete its model request.','model-request',modelRequestFailure(error),status,modelRequestTransportCode(error),agentRuntimeErrorClass(error),provider.upstreamErrorKind,provider.upstreamErrorCode);
     }
     const assistant = [...session.messages].reverse().find(row => row?.role === 'assistant');
     if (assistant?.stopReason === 'error') throw new CloudKernelFailure('Pi model request ended with an error.','model-request','model_request_failed');
@@ -805,12 +837,18 @@ async function runDsh(input, cwd, config, injectedSdk) {
     } catch (error) {
       if (isDshSessionCollision(error)) result = await harness.run(scopedPrompt, { sessionId: undefined });
       else if(input.signal?.aborted)throw new CloudKernelFailure('DeepSeek Harness task was interrupted.','agent-execution','runtime_error');
-      else throw new CloudKernelFailure('DeepSeek Harness could not complete its model request.','model-request',modelRequestFailure(error),Number(error?.status??error?.statusCode??error?.response?.status),modelRequestTransportCode(error));
+      else {
+        const status=Number(error?.status??error?.statusCode??error?.response?.status);
+        const provider=safeProviderErrorDetails(error,status);
+        throw new CloudKernelFailure('DeepSeek Harness could not complete its model request.','model-request',modelRequestFailure(error),status,modelRequestTransportCode(error),agentRuntimeErrorClass(error),provider.upstreamErrorKind,provider.upstreamErrorCode);
+      }
     }
     if (typeof result.finalResponse !== 'string' || !result.finalResponse.trim()) {
       const audit=createDshExecutionAudit(result.events,config);
       if(audit.calls.some(call=>call.outcome==='failed'))throw new CloudKernelFailure('A DeepSeek Harness tool call failed during execution.','tool-execution','tool_execution_failed');
-      throw new CloudKernelFailure('DeepSeek Harness returned no assistant text.','model-response',modelTurnFailure(result.events),modelTurnHttpStatus(result.events),modelTurnTransportCode(result.events));
+      const status=modelTurnHttpStatus(result.events);
+      const provider=modelTurnErrorDetails(result.events);
+      throw new CloudKernelFailure('DeepSeek Harness returned no assistant text.','model-response',modelTurnFailure(result.events),status,modelTurnTransportCode(result.events),null,provider.upstreamErrorKind,provider.upstreamErrorCode);
     }
     const queuedHandoffs = queuedDshHandoffTargets(result.events);
     const executionAudit = createDshExecutionAudit(result.events, config);
@@ -1459,7 +1497,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(im
     const reasonCode=error instanceof CloudKernelFailure&&agentFailureReasons.has(error.reasonCode)?error.reasonCode:'runtime_error';
     const upstreamHttpStatus=error instanceof CloudKernelFailure?error.upstreamHttpStatus:null;
     const transportCode=error instanceof CloudKernelFailure?error.transportCode:null;
-    process.stderr.write(`${JSON.stringify({event:'coke_grok_agent_failure',stage,reasonCode,...(upstreamHttpStatus?{upstreamHttpStatus}:{}),...(transportCode?{transportCode}:{})})}\n`);
+    const diagnosticCode=error instanceof CloudKernelFailure?error.diagnosticCode:agentRuntimeErrorClass(error);
+    const upstreamErrorKind=error instanceof CloudKernelFailure?error.upstreamErrorKind:null;
+    const upstreamErrorCode=error instanceof CloudKernelFailure?error.upstreamErrorCode:null;
+    process.stderr.write(`${JSON.stringify({event:'coke_grok_agent_failure',stage,reasonCode,...(diagnosticCode?{diagnosticCode}:{}),...(upstreamHttpStatus?{upstreamHttpStatus}:{}),...(upstreamErrorKind?{upstreamErrorKind}:{}),...(upstreamErrorCode?{upstreamErrorCode}:{}),...(transportCode?{transportCode}:{})})}\n`);
     process.stderr.write(`${error instanceof CloudKernelFailure?error.message:'Agent runtime failed.'}\n`);
     process.exitCode = controller.signal.aborted ? 143 : 1;
   }
