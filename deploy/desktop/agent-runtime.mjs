@@ -32,6 +32,7 @@ const allowedEngines = new Set(String(process.env.DOTS_DESKTOP_AGENT_ADAPTERS ||
 const configured = parseAdapterConfig(process.env.DOTS_AGENT_KERNELS_JSON || '{}');
 const agentFailureStages = new Set(['agent-setup','agent-execution','model-request','model-response','tool-execution','result-validation']);
 const agentFailureReasons = new Set(['runtime_setup_failed','runtime_error','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
+const agentTransportCodes = new Set(['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']);
 const maxParallelTasks = Number(process.env.COKE_GROK_AGENT_PARALLELISM || 2);
 if (!Number.isSafeInteger(maxParallelTasks) || maxParallelTasks < 1 || maxParallelTasks > 2) throw new Error('COKE_GROK_AGENT_PARALLELISM must be 1 or 2');
 const active = new Map();
@@ -439,10 +440,10 @@ function agentFailureMetadata(stderr) {
       const event=JSON.parse(line);
       if(event?.event==='coke_grok_agent_failure'
         &&agentFailureStages.has(event.stage)
-        &&agentFailureReasons.has(event.reasonCode))return {stage:event.stage,reasonCode:event.reasonCode,upstreamHttpStatus:Number.isInteger(event.upstreamHttpStatus)&&event.upstreamHttpStatus>=100&&event.upstreamHttpStatus<=599?event.upstreamHttpStatus:null};
+        &&agentFailureReasons.has(event.reasonCode))return {stage:event.stage,reasonCode:event.reasonCode,upstreamHttpStatus:Number.isInteger(event.upstreamHttpStatus)&&event.upstreamHttpStatus>=100&&event.upstreamHttpStatus<=599?event.upstreamHttpStatus:null,transportCode:agentTransportCodes.has(event.transportCode)?event.transportCode:null};
     } catch { /* Adapter diagnostics are not persisted. */ }
   }
-  return {stage:'agent-execution',reasonCode:'runtime_error'};
+  return {stage:'agent-execution',reasonCode:'runtime_error',transportCode:null};
 }
 
 class AgentAdapterFailure extends Error {
@@ -453,6 +454,7 @@ class AgentAdapterFailure extends Error {
     this.stage=metadata.stage;
     this.reasonCode=metadata.reasonCode;
     this.upstreamHttpStatus=metadata.upstreamHttpStatus;
+    this.transportCode=metadata.transportCode;
   }
 }
 
@@ -687,7 +689,7 @@ http.createServer(async (req, res) => {
         return send(res, 400, {
           error: error instanceof AgentAdapterFailure ? error.message : error instanceof Error ? error.message.slice(0, 500) : 'Agent task failed',
           ...(error instanceof TaskAttachmentError ? { code: error.code } : {}),
-          ...(error instanceof AgentAdapterFailure ? { code:'agent_adapter_failed',reasonCode:error.reasonCode,stage:error.stage,exitCode:error.exitCode,...(error.upstreamHttpStatus?{upstreamHttpStatus:error.upstreamHttpStatus}:{}) } : {}),
+          ...(error instanceof AgentAdapterFailure ? { code:'agent_adapter_failed',reasonCode:error.reasonCode,stage:error.stage,exitCode:error.exitCode,...(error.upstreamHttpStatus?{upstreamHttpStatus:error.upstreamHttpStatus}:{}),...(error.transportCode?{transportCode:error.transportCode}:{}) } : {}),
         });
       }
     }

@@ -25,6 +25,7 @@ const workerStages = new Set(['route','screen-scope','screen-owner','action-body
 const agentStages = new Set(['agent-setup','agent-execution','model-request','model-response','tool-execution','result-validation']);
 const workerOperations = new Set(['viewport','snapshot','snapshot-image','navigation-state','control','navigate','inspect','screenshot','user-screenshot','set-control','user-action','execute']);
 const agentOperations = new Set(['agent-adapter']);
+const agentTransportCodes = new Set(['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']);
 const agentFailureReasons = new Set(['runtime_setup_failed','runtime_error','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
 const workerTransportCodes = new Set(['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET','UNKNOWN']);
 
@@ -64,7 +65,7 @@ export function validateRunTraceEvent(value: unknown): RunTraceEvent | null {
   if (reasonCode !== null && (row.component!=='agent-runtime' || typeof reasonCode !== 'string' || !agentFailureReasons.has(reasonCode))) return null;
   if (stage !== null && (typeof stage !== 'string' || !(workerStages.has(stage)||row.component==='agent-runtime'&&agentStages.has(stage)))) return null;
   if (operation !== null && (typeof operation !== 'string' || !(workerOperations.has(operation)||row.component==='agent-runtime'&&agentOperations.has(operation)))) return null;
-  if (transportCode !== null && (typeof transportCode !== 'string' || !workerTransportCodes.has(transportCode))) return null;
+  if (transportCode !== null && (typeof transportCode !== 'string' || !(row.component==='computer-worker'&&workerTransportCodes.has(transportCode)||row.component==='agent-runtime'&&agentTransportCodes.has(transportCode)))) return null;
   return {
     component: row.component as RunTraceComponent,
     event: row.event,

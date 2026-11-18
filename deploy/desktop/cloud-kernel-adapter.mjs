@@ -9,13 +9,15 @@ const decisionStatuses = new Set(['done', 'failed', 'waiting', 'scheduled', 'del
 const screenIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const agentFailureStages = new Set(['agent-setup','agent-execution','model-request','model-response','tool-execution','result-validation']);
 const agentFailureReasons = new Set(['runtime_setup_failed','runtime_error','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
+const agentTransportCodes = new Set(['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']);
 class CloudKernelFailure extends Error {
-  constructor(message, stage, reasonCode, upstreamHttpStatus = null) {
+  constructor(message, stage, reasonCode, upstreamHttpStatus = null, transportCode = null) {
     super(message);
     this.name = 'CloudKernelFailure';
     this.diagnosticStage = agentFailureStages.has(stage) ? stage : 'agent-execution';
     this.reasonCode = agentFailureReasons.has(reasonCode) ? reasonCode : 'runtime_error';
     this.upstreamHttpStatus=Number.isInteger(upstreamHttpStatus)&&upstreamHttpStatus>=100&&upstreamHttpStatus<=599?upstreamHttpStatus:null;
+    this.transportCode=agentTransportCodes.has(transportCode)?transportCode:null;
   }
 }
 function modelTurnFailure(events) {
@@ -36,6 +38,17 @@ function modelTurnHttpStatus(events) {
     const status=Number(error.status??error.statusCode??error.code);
     if(Number.isInteger(status)&&status>=100&&status<=599)return status;
   }
+  return null;
+}
+function modelTurnTransportCode(events) {
+  const errors=(Array.isArray(events)?events:[]).filter(event=>event?.type==='turn/end').map(event=>event?.data?.reason?.error).filter(Boolean);
+  for(const error of errors){
+    for(const value of [error.code,error.cause?.code])if(typeof value==='string'&&agentTransportCodes.has(value.toUpperCase()))return value.toUpperCase();
+  }
+  return null;
+}
+function modelRequestTransportCode(error) {
+  for(const value of [error?.code,error?.cause?.code,error?.cause?.cause?.code])if(typeof value==='string'&&agentTransportCodes.has(value.toUpperCase()))return value.toUpperCase();
   return null;
 }
 function modelRequestFailure(error) {
@@ -173,7 +186,7 @@ async function runPi(input, cwd, config, injectedSdk) {
       if(input.signal?.aborted)throw new CloudKernelFailure('Pi task was interrupted.','agent-execution','runtime_error');
       const executionAudit=createPiExecutionAudit(session.messages,config);
       if(executionAudit.calls.some(call=>call.outcome==='failed'))throw new CloudKernelFailure('A Pi tool call failed during execution.','tool-execution','tool_execution_failed');
-      throw new CloudKernelFailure('Pi could not complete its model request.','model-request',modelRequestFailure(error),Number(error?.status??error?.statusCode??error?.response?.status));
+      throw new CloudKernelFailure('Pi could not complete its model request.','model-request',modelRequestFailure(error),Number(error?.status??error?.statusCode??error?.response?.status),modelRequestTransportCode(error));
     }
     const assistant = [...session.messages].reverse().find(row => row?.role === 'assistant');
     if (assistant?.stopReason === 'error') throw new CloudKernelFailure('Pi model request ended with an error.','model-request','model_request_failed');
@@ -792,12 +805,12 @@ async function runDsh(input, cwd, config, injectedSdk) {
     } catch (error) {
       if (isDshSessionCollision(error)) result = await harness.run(scopedPrompt, { sessionId: undefined });
       else if(input.signal?.aborted)throw new CloudKernelFailure('DeepSeek Harness task was interrupted.','agent-execution','runtime_error');
-      else throw new CloudKernelFailure('DeepSeek Harness could not complete its model request.','model-request',modelRequestFailure(error),Number(error?.status??error?.statusCode??error?.response?.status));
+      else throw new CloudKernelFailure('DeepSeek Harness could not complete its model request.','model-request',modelRequestFailure(error),Number(error?.status??error?.statusCode??error?.response?.status),modelRequestTransportCode(error));
     }
     if (typeof result.finalResponse !== 'string' || !result.finalResponse.trim()) {
       const audit=createDshExecutionAudit(result.events,config);
       if(audit.calls.some(call=>call.outcome==='failed'))throw new CloudKernelFailure('A DeepSeek Harness tool call failed during execution.','tool-execution','tool_execution_failed');
-      throw new CloudKernelFailure('DeepSeek Harness returned no assistant text.','model-response',modelTurnFailure(result.events),modelTurnHttpStatus(result.events));
+      throw new CloudKernelFailure('DeepSeek Harness returned no assistant text.','model-response',modelTurnFailure(result.events),modelTurnHttpStatus(result.events),modelTurnTransportCode(result.events));
     }
     const queuedHandoffs = queuedDshHandoffTargets(result.events);
     const executionAudit = createDshExecutionAudit(result.events, config);
@@ -1445,7 +1458,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(im
     const stage=error instanceof CloudKernelFailure&&agentFailureStages.has(error.diagnosticStage)?error.diagnosticStage:'agent-execution';
     const reasonCode=error instanceof CloudKernelFailure&&agentFailureReasons.has(error.reasonCode)?error.reasonCode:'runtime_error';
     const upstreamHttpStatus=error instanceof CloudKernelFailure?error.upstreamHttpStatus:null;
-    process.stderr.write(`${JSON.stringify({event:'coke_grok_agent_failure',stage,reasonCode,...(upstreamHttpStatus?{upstreamHttpStatus}:{})})}\n`);
+    const transportCode=error instanceof CloudKernelFailure?error.transportCode:null;
+    process.stderr.write(`${JSON.stringify({event:'coke_grok_agent_failure',stage,reasonCode,...(upstreamHttpStatus?{upstreamHttpStatus}:{}),...(transportCode?{transportCode}:{})})}\n`);
     process.stderr.write(`${error instanceof CloudKernelFailure?error.message:'Agent runtime failed.'}\n`);
     process.exitCode = controller.signal.aborted ? 143 : 1;
   }
