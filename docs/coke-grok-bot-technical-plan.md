@@ -3528,3 +3528,11 @@ After restarting ChatGPT, `cua.getState()` again listed the Chrome extension and
 #### 2026-11-18 官方 Grok Bot 201 V2 连续逐帧续审（31:40.000–31:44.960）
 
 逐帧审阅 125 个连续源帧和五张联系图；独立紧凑重解码确认 125/125 帧的 PTS、`yuv420p` 像素哈希/字节数及 5/5 联系图哈希均匹配。31:40.920→31:40.960 从 `sam` 群聊切到深色媒体查看器并开始播放贴纸商店演示。视频内的白底 hero 有 “Tiny bots. Big feelings.”、`Shop the stickers`、`Get the whole gang` 与 Cart 0；多色贴纸在标题周围移动并遮挡文字。31:43.640→31:43.680 的相邻原尺寸帧显示视口开始下移并首次露出 “Shop the bots”，随后出现三列商品卡片。两处全尺寸边界帧经第二次独立提取校验；所有界面和动画都属于嵌入视频画面，不能据此宣称项目站点实时可用或商品控件已验收。右侧灰色 Computer 占位也不是云电脑在线证据。证据、逐帧观察及排除项见[研究证据台账](../research/README.md)和忽略目录 `research/frames/grok-201-3140-3145-compact-audit-20261118/`、`grok-201-3140-88-to-3141-08-state-boundary-20261118/`、`grok-201-3143-64-to-3143-72-state-boundary-20261118/`。V2 连续覆盖累计 47,625 帧，下一窗口从 31:45.000（PTS 1,905,000）开始。
+
+#### 2026-11-18 官方 Grok Bot 201 V2 连续逐帧续审（31:45.000–31:49.960）
+
+审阅 125 个连续源帧及五张联系图；独立重解码确认全部 PTS、`yuv420p` 像素哈希/字节数及五张联系图 SHA-256 匹配。31:45.000–31:45.160 的嵌入视频显示 `Shop the bots`、All/Singles/Groups 筛选和 Hello Blob、Cloud Nap、Whoa Wedge 商品卡；31:45.160→31:45.200 视口由商品区切回 hero。随后彩色贴纸移动、眨眼并遮挡 “Tiny bots. Big feelings.” 标题，控件显示 `Put the bots back`。两张相邻原尺寸边界帧经独立二次抽取核验。以上都是聊天媒体中播放的演示内容，不能证明项目站点实时可用或已验证拖拽、复位、加购等功能。联系图/manifest 和边界证据见[研究证据台账](../research/README.md)及忽略目录 `research/frames/grok-201-3145-3150-compact-audit-20261118/`、`grok-201-3145-16-to-3145-24-state-boundary-20261118/`。V2 连续覆盖累计 47,750 帧，下一窗口从 31:50.000（PTS 1,910,000）开始。
+
+#### 2026-11-18 17:58 CST Computer Use availability recheck
+
+After another check, `cua.getState()` listed the same Chrome extension and public Grok Bot tab, but again reported that the Mac was locked and automatic unlock failed. This is tab discovery only; no live page action was possible. No Chrome tab binding, screenshot, CDP, Playwright, HTTP, or Pod check was used as a substitute. Public Computer Use acceptance remains incomplete until the Mac is manually unlocked and a visible semantic action succeeds.
