@@ -98,7 +98,7 @@ async function captureSnapshot(){
     const containers=spec.containers||[],initContainers=spec.initContainers||[];
     const userDesktop=namespace.startsWith('grok-user-')&&[...containers,...initContainers].some(c=>imageRepository(c.image)==='coke-grok-desktop');
     if(namespace==='coke-grok-bot'&&coreNames.has(name)||userDesktop){
-      deployments.push({namespace,name,releaseLabels:{deployment:item.metadata.labels?.['coke-grok-bot.io/release-id']??null,pod:item.spec.template.metadata?.labels?.['coke-grok-bot.io/release-id']??null},containers:containers.map(c=>({name:c.name,image:c.image})),initContainers:initContainers.map(c=>({name:c.name,image:c.image}))});
+      deployments.push({namespace,name,releaseLabels:{deployment:item.metadata.labels?.['coke-grok-bot.io/release-id']??null,pod:item.spec.template.metadata?.labels?.['coke-grok-bot.io/release-id']??null},containers:containers.map(c=>({name:c.name,image:c.image,...(c.resources?{resources:c.resources}:{})})),initContainers:initContainers.map(c=>({name:c.name,image:c.image,...(c.resources?{resources:c.resources}:{})}))});
     }
   }
   deployments.sort((a,b)=>Number(a.namespace==='coke-grok-bot')-Number(b.namespace==='coke-grok-bot')||a.namespace.localeCompare(b.namespace)||a.name.localeCompare(b.name));
@@ -127,7 +127,11 @@ function patchDeployment(deployment,version){
   const imageMap={'coke-grok-auth':`coke-grok-auth:${version}`,'coke-grok-desktop-broker':`coke-grok-desktop-broker:${version}`,'coke-grok-namespace-bootstrap':`coke-grok-namespace-bootstrap:${version}`,'coke-grok-desktop':`coke-grok-desktop:${version}`};
   const regular=[],init=[];
   for(const field of ['containers','initContainers']){
-    const images=deployment[field].filter(item=>imageMap[imageRepository(item.image)]).map(item=>({name:item.name,image:imageMap[imageRepository(item.image)]}));
+    const images=deployment[field].filter(item=>imageMap[imageRepository(item.image)]).map(item=>{
+      const next={name:item.name,image:imageMap[imageRepository(item.image)],...(item.resources?{resources:item.resources}:{})};
+      if(field==='containers'&&deployment.namespace==='coke-grok-bot'&&deployment.name==='coke-grok-auth'&&item.name==='auth')next.resources={requests:{cpu:'50m',memory:'128Mi'},limits:{cpu:'1',memory:'512Mi'}};
+      return next;
+    });
     (field==='containers'?regular:init).push(...images);
   }
   patchDeploymentImageLists(deployment.namespace,deployment.name,regular,init,{deployment:version,pod:version});
