@@ -51,3 +51,10 @@ test('run traces reject malformed component, status, diagnostic, timing, and rel
  assert.equal(validateRunTraceEvent({...base,component:'agent-runtime',adapterExitCode:256}),null);
  assert.equal(validateRunTraceEvent({...base,adapterExitCode:1}),null);
 });
+
+test('computer-control retries retain attempt number, status, transport code, and terminal reason',()=>{
+ const base={component:'agent-runtime',event:'agent.computer.control',stage:'computer-control',outcome:'info',attemptNumber:2,diagnosticCode:'COMPUTER_CONTROL_CHECK_RETRY',httpStatus:503,transportCode:'ECONNREFUSED'};
+ const event=validateRunTraceEvent({...base,reasonCode:'computer_control_unavailable'});
+ assert.equal(event?.attemptNumber,2);assert.equal(event?.httpStatus,503);assert.equal(event?.transportCode,'ECONNREFUSED');assert.equal(event?.reasonCode,'computer_control_unavailable');
+ assert.equal(validateRunTraceEvent({...base,event:'agent.adapter.exit',attemptNumber:2}),null,'attempt numbers are limited to control poll events for this runtime component');
+});

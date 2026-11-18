@@ -31,7 +31,7 @@ const mimeByExtension = new Map(Object.entries({
 const allowedEngines = new Set(String(process.env.DOTS_DESKTOP_AGENT_ADAPTERS || '').split(',').map(value => value.trim()).filter(value => ['pi', 'dsh'].includes(value)));
 const configured = parseAdapterConfig(process.env.DOTS_AGENT_KERNELS_JSON || '{}');
 const agentFailureStages = new Set(['agent-setup','agent-execution','model-request','model-response','tool-execution','result-validation']);
-const agentFailureReasons = new Set(['runtime_setup_failed','runtime_error','agent_timeout','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
+const agentFailureReasons = new Set(['runtime_setup_failed','runtime_error','agent_timeout','computer_control_unavailable','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
 const agentFailureDiagnostics = new Set(['AGENT_RUNTIME_ABORT_ERROR','AGENT_RUNTIME_API_ERROR','AGENT_RUNTIME_FETCH_ERROR','AGENT_RUNTIME_NETWORK_ERROR','AGENT_RUNTIME_RANGE_ERROR','AGENT_RUNTIME_REFERENCE_ERROR','AGENT_RUNTIME_SYNTAX_ERROR','AGENT_RUNTIME_TIMEOUT_ERROR','AGENT_RUNTIME_TYPE_ERROR','AGENT_RUNTIME_UNCLASSIFIED_ERROR']);
 const agentProviderErrorKinds = new Set(['request_invalid','authentication_rejected','model_not_found','context_limit','rate_limited','quota_exhausted','permission_denied','provider_server_error','provider_unavailable','content_filtered','unknown']);
 const agentProviderErrorCodes = new Set(['invalid_request_error','invalid_api_key','model_not_found','context_length_exceeded','rate_limit_exceeded','insufficient_quota','permission_denied','unsupported_parameter','unsupported_value','missing_required_parameter','invalid_type','unknown_parameter','request_too_large','content_filter']);
@@ -77,8 +77,22 @@ async function controlOwner(modelConfig, screenId) {
   const target = mediated ? `${modelConfig.baseUrl}/computer/control` : `http://127.0.0.1:${workerPort}/v1/control`;
   const credential = mediated ? modelConfig.apiKey : process.env.LINUX_DESKTOP_WORKER_TOKEN;
   const response = await fetch(target, { headers: { authorization: `Bearer ${credential}`,...(!mediated?{'x-coke-grok-screen-id':screenId}:{}) }, signal: AbortSignal.timeout(3000), redirect:'error' });
-  if (!response.ok) throw new Error('desktop control state is unavailable');
+  if (!response.ok) {
+    const error = new Error('desktop control state is unavailable');
+    Object.defineProperty(error, 'httpStatus', { value: response.status });
+    throw error;
+  }
   return (await response.json()).owner;
+}
+
+function safeControlFailure(error) {
+  const httpStatus = Number(error?.httpStatus);
+  const rawTransportCode = String(error?.cause?.code || error?.code || '').toUpperCase();
+  return {
+    diagnosticCode: 'COMPUTER_CONTROL_CHECK_FAILED',
+    ...(Number.isInteger(httpStatus) && httpStatus >= 100 && httpStatus <= 599 ? { httpStatus } : {}),
+    ...(agentTransportCodes.has(rawTransportCode) ? { transportCode: rawTransportCode } : {}),
+  };
 }
 
 function logControlObservation(taskId, screenId, owner, phase) {
@@ -89,7 +103,10 @@ function logControlObservation(taskId, screenId, owner, phase) {
 
 function recordRuntimeTrace(slot, event, outcome, metadata = {}) {
   if (!agentTraceEvents.has(event) || !['started','succeeded','failed','info'].includes(outcome)) return;
-  if (slot.runtimeTrace.length < 24) slot.runtimeTrace.push({ event, outcome, ...metadata });
+  if (slot.runtimeTrace.length >= 24) return;
+  const record = { event, outcome, ...metadata };
+  slot.runtimeTrace.push(record);
+  return record;
 }
 
 function safeAdapterSpawnCode(error) {
@@ -504,7 +521,7 @@ function drainQueue() {
     const entry=queue.splice(index,1)[0];
     entry.requestSignal?.removeEventListener('abort',entry.onAbort);
     if(entry.requestSignal?.aborted){entry.reject(new Error('Agent task was cancelled'));continue;}
-    const slot = { botId:entry.botId, taskId: String(entry.input.taskId || ''), child: null, abort: null, interruptedByUser: false, runtimeTrace: [] };
+    const slot = { botId:entry.botId, taskId: String(entry.input.taskId || ''), child: null, abort: null, interruptedByUser: false, controlStateUnknown: false, controlFailureCount: 0, controlUnavailableSince: 0, controlFailure: null, runtimeTrace: [] };
     active.set(entry.botId,slot);
     void executeQueued(entry,slot);
   }
@@ -550,17 +567,17 @@ async function executeKernel(input, requestSignal, slot) {
   const controlStartedAt=Date.now();
   let initialOwner;
   try { initialOwner = await controlOwner(modelConfig,screenId); }
-  catch {
-    recordRuntimeTrace(slot,'agent.computer.control','failed',{stage:'computer-control',diagnosticCode:'COMPUTER_CONTROL_CHECK_FAILED',durationMs:Date.now()-controlStartedAt});
-    const error=new Error('desktop control state is unavailable');
-    Object.defineProperty(error,'runtimeTrace',{value:slot.runtimeTrace,enumerable:false,configurable:true});
-    throw error;
+  catch (controlError) {
+    recordRuntimeTrace(slot,'agent.computer.control','failed',{stage:'computer-control',...safeControlFailure(controlError),durationMs:Date.now()-controlStartedAt});
+    const unavailableError=new Error('desktop control state is unavailable');
+    Object.defineProperty(unavailableError,'runtimeTrace',{value:slot.runtimeTrace,enumerable:false,configurable:true});
+    throw unavailableError;
   }
   recordRuntimeTrace(slot,'agent.computer.control',initialOwner==='agent'?'succeeded':'info',{stage:'computer-control',...(initialOwner==='user'?{diagnosticCode:'COMPUTER_OWNER_USER'}:initialOwner==='agent'?{}:{diagnosticCode:'COMPUTER_OWNER_UNKNOWN'}),durationMs:Date.now()-controlStartedAt});
   if (initialOwner !== 'agent') {
     logControlObservation(taskId, screenId, initialOwner, 'run_start');
     const owner = initialOwner === 'user' ? 'user' : 'unknown';
-    return { taskId, status: 'waiting', pausedForControl: owner === 'user', controlOwner: owner, message: owner === 'user' ? '电脑处于用户控制模式，任务已暂停。' : '无法确认云电脑的控制权，任务已暂停。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
+    return { taskId, status: 'waiting', pausedForControl: owner === 'user', controlOwner: owner, ...(owner === 'unknown' ? { controlReason: 'unknown' } : {}), message: owner === 'user' ? '电脑处于用户控制模式，任务已暂停。' : '无法确认云电脑的控制权，任务已暂停。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
   }
 
   const cwd = await safeTaskWorkspace(input.cwd, taskId);
@@ -609,28 +626,66 @@ async function executeKernel(input, requestSignal, slot) {
     ...(dingtalkMinutesBridge ? { dingtalkMinutesBridge } : {}),
     ...(dingtalkSecretaryBridge ? { dingtalkSecretaryBridge } : {}),
   }));
-  let timedOut=false;
+  let timedOut=false, controlPollTimer=null, controlPollStopped=false;
   child.once('spawn',()=>recordRuntimeTrace(slot,'agent.adapter.start','succeeded',{stage:'adapter-start',durationMs:Date.now()-spawnStartedAt}));
   child.once('error',error=>{
     const transportCode=safeAdapterSpawnCode(error);
     recordRuntimeTrace(slot,'agent.adapter.start','failed',{stage:'adapter-start',diagnosticCode:'AGENT_ADAPTER_SPAWN_FAILED',reasonCode:'runtime_setup_failed',...(transportCode?{transportCode}:{}),durationMs:Date.now()-spawnStartedAt});
   });
-  const timer = setTimeout(() => { timedOut=true; child.kill('SIGTERM'); }, 14 * 60_000);
-  const controlPoll = setInterval(() => { void controlOwner(modelConfig,screenId).then(owner => {
-    if (owner === 'user' && !slot.interruptedByUser) {
-      logControlObservation(taskId, screenId, owner, 'running');
-      pauseActive(botId);
-    } else if (owner !== 'agent' && owner !== 'user' && !slot.controlStateUnknown) {
-      slot.controlStateUnknown = true;
-      logControlObservation(taskId, screenId, owner, 'running');
-      child.kill('SIGTERM');
+  const timer = setTimeout(() => { timedOut=true; abort.abort(); }, 14 * 60_000);
+  const resetControlFailure = () => {
+    if (!slot.controlFailureCount) return;
+    const recoveredForMs = Math.max(0, Date.now() - slot.controlUnavailableSince);
+    recordRuntimeTrace(slot,'agent.computer.control','succeeded',{stage:'computer-control',diagnosticCode:'COMPUTER_CONTROL_RECOVERED',attemptNumber:slot.controlFailureCount,durationMs:recoveredForMs});
+    slot.controlFailureCount = 0;
+    slot.controlUnavailableSince = 0;
+    slot.controlFailure = null;
+    slot.controlTraceEvent = null;
+  };
+  const noteControlFailure = (error) => {
+    const now=Date.now();
+    const failure=safeControlFailure(error);
+    if (!slot.controlFailureCount) {
+      slot.controlUnavailableSince=now;
     }
-  }).catch(() => {
-    if (slot.controlStateUnknown) return;
-    slot.controlStateUnknown = true;
-    logControlObservation(taskId, screenId, 'unavailable', 'running');
-    child.kill('SIGTERM');
-  }); }, 1500);
+    slot.controlFailureCount+=1;
+    slot.controlFailure=failure;
+    const unavailableForMs=Math.max(0,now-slot.controlUnavailableSince);
+    const exhausted=slot.controlFailureCount >= 5 || unavailableForMs >= 8000;
+    recordRuntimeTrace(slot,'agent.computer.control',exhausted?'failed':'info',{stage:'computer-control',...failure,...(exhausted?{reasonCode:'computer_control_unavailable',diagnosticCode:'COMPUTER_CONTROL_CHECK_FAILED'}:{diagnosticCode:'COMPUTER_CONTROL_CHECK_RETRY'}),attemptNumber:slot.controlFailureCount,durationMs:unavailableForMs});
+    if (!exhausted) return;
+    slot.controlStateUnknown=true;
+    logControlObservation(taskId,screenId,'unavailable','running');
+    controlPollStopped=true;
+    abort.abort();
+  };
+  const pollControl = async () => {
+    if (controlPollStopped || slot.interruptedByUser || slot.controlStateUnknown || requestSignal?.aborted) return;
+    const checkStartedAt=Date.now();
+    try {
+      const owner=await controlOwner(modelConfig,screenId);
+      if (owner==='user') {
+        logControlObservation(taskId,screenId,owner,'running');
+        controlPollStopped=true;
+        pauseActive(botId);
+        return;
+      }
+      if (owner!=='agent') {
+        const error=new Error('desktop control owner is unknown');
+        Object.defineProperty(error,'code',{value:'COMPUTER_OWNER_UNKNOWN'});
+        noteControlFailure(error);
+      } else resetControlFailure();
+    } catch (error) {
+      noteControlFailure(error);
+    } finally {
+      if (!controlPollStopped && !slot.interruptedByUser && !slot.controlStateUnknown && !requestSignal?.aborted) {
+        controlPollTimer=setTimeout(pollControl,1500);
+      }
+      const elapsed=Date.now()-checkStartedAt;
+      if (elapsed>3000) process.stderr.write(`${JSON.stringify({event:'coke_grok_computer_control_probe_slow',at:new Date().toISOString(),taskId,screenKey:createHash('sha256').update(screenId.toLowerCase()).digest('hex').slice(0,16),durationMs:elapsed})}\n`);
+    }
+  };
+  controlPollTimer=setTimeout(pollControl,1500);
   const onRequestAbort = () => abort.abort();
   requestSignal?.addEventListener('abort', onRequestAbort, { once: true });
   abort.signal.addEventListener('abort', () => { child.kill('SIGTERM'); setTimeout(() => child.kill('SIGKILL'), 2000).unref(); }, { once: true });
@@ -645,10 +700,12 @@ async function executeKernel(input, requestSignal, slot) {
     }
     const code=closed?.code??null,exitSignal=agentExitSignals.has(closed?.signal)?closed.signal:null;
     const adapterFailure=code===0?null:agentFailureMetadata(stderr);
-    recordRuntimeTrace(slot,'agent.adapter.exit',code===0&&!exitSignal?'succeeded':'failed',{stage:timedOut?'agent-execution':code===0?'adapter-exit':adapterFailure?.stage||'agent-execution',...(Number.isInteger(code)&&code>0&&code<=255?{adapterExitCode:code}:{}),...(exitSignal?{adapterExitSignal:exitSignal}:{}),...(timedOut?{diagnosticCode:'AGENT_ADAPTER_TIMEOUT',reasonCode:'agent_timeout'}:code===0?{}:{diagnosticCode:adapterFailure?.diagnosticCode||(exitSignal?'AGENT_ADAPTER_SIGNAL_EXIT':'AGENT_ADAPTER_NONZERO_EXIT'),...(adapterFailure?.reasonCode?{reasonCode:adapterFailure.reasonCode}:{}),...(adapterFailure?.upstreamHttpStatus?{upstreamHttpStatus:adapterFailure.upstreamHttpStatus}:{}),...(adapterFailure?.upstreamErrorKind?{upstreamErrorKind:adapterFailure.upstreamErrorKind}:{}),...(adapterFailure?.upstreamErrorCode?{upstreamErrorCode:adapterFailure.upstreamErrorCode}:{}),...(adapterFailure?.transportCode?{transportCode:adapterFailure.transportCode}:{})}),durationMs:Date.now()-spawnStartedAt});
+    const intentionalControlPause=slot.interruptedByUser||slot.controlStateUnknown;
+    const exitOutcome=code===0&&!exitSignal?'succeeded':intentionalControlPause?'info':'failed';
+    recordRuntimeTrace(slot,'agent.adapter.exit',exitOutcome,{stage:slot.controlStateUnknown?'computer-control':timedOut?'agent-execution':code===0?'adapter-exit':adapterFailure?.stage||'agent-execution',...(Number.isInteger(code)&&code>0&&code<=255?{adapterExitCode:code}:{}),...(exitSignal?{adapterExitSignal:exitSignal}:{}),...(slot.controlStateUnknown?{diagnosticCode:'COMPUTER_CONTROL_CHECK_FAILED',reasonCode:'computer_control_unavailable',...(slot.controlFailure?.httpStatus?{httpStatus:slot.controlFailure.httpStatus}:{}),...(slot.controlFailure?.transportCode?{transportCode:slot.controlFailure.transportCode}:{})}:slot.interruptedByUser?{diagnosticCode:'COMPUTER_OWNER_USER'}:timedOut?{diagnosticCode:'AGENT_ADAPTER_TIMEOUT',reasonCode:'agent_timeout'}:code===0?{}:{diagnosticCode:adapterFailure?.diagnosticCode||(exitSignal?'AGENT_ADAPTER_SIGNAL_EXIT':'AGENT_ADAPTER_NONZERO_EXIT'),...(adapterFailure?.reasonCode?{reasonCode:adapterFailure.reasonCode}:{}),...(adapterFailure?.upstreamHttpStatus?{upstreamHttpStatus:adapterFailure.upstreamHttpStatus}:{}),...(adapterFailure?.upstreamErrorKind?{upstreamErrorKind:adapterFailure.upstreamErrorKind}:{}),...(adapterFailure?.upstreamErrorCode?{upstreamErrorCode:adapterFailure.upstreamErrorCode}:{}),...(adapterFailure?.transportCode?{transportCode:adapterFailure.transportCode}:{})}),durationMs:Date.now()-spawnStartedAt});
     if (requestSignal?.aborted) throw new Error('Agent task was cancelled');
     if (slot.interruptedByUser) return { taskId, status: 'waiting', pausedForControl: true, controlOwner: 'user', message: '电脑切换为用户控制模式，任务已暂停。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
-    if (slot.controlStateUnknown) return { taskId, status: 'waiting', pausedForControl: true, controlOwner: 'unknown', message: '无法确认云电脑的控制权，任务已暂停。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
+    if (slot.controlStateUnknown) return { taskId, status: 'waiting', pausedForControl: true, controlOwner: 'unknown', controlReason: 'unavailable', message: '云电脑控制状态连续不可用，任务已暂停且未重放。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
     if(timedOut)throw new AgentAdapterFailure(code,{stage:'agent-execution',reasonCode:'agent_timeout',transportCode:null,exitSignal});
     if (code !== 0) {
       throw new AgentAdapterFailure(code,{
@@ -668,7 +725,7 @@ async function executeKernel(input, requestSignal, slot) {
     recordRuntimeTrace(slot,'agent.result.parse','succeeded',{stage:'result-validation'});
     return { taskId, ...result, engine, message: result.message.slice(0, 20_000), sessionId: typeof result.sessionId === 'string' ? result.sessionId : null };
   } finally {
-    clearTimeout(timer); clearInterval(controlPoll);
+    clearTimeout(timer); clearTimeout(controlPollTimer); controlPollStopped=true;
     requestSignal?.removeEventListener('abort', onRequestAbort);
     if (incidentCredentialSocket) await chmod(incidentCredentialSocket, 0).catch(() => undefined);
     slot.child = null; slot.abort = null;

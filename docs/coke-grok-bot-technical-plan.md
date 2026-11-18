@@ -3581,3 +3581,11 @@ After the ChatGPT restart, `cua.getState()` listed the Chrome extension and the 
 用户 Kaka 的已存脱敏追踪显示：模型调用收到了供应商 HTTP 503、`provider_unavailable`，经 Model Gateway 映射为 HTTP 502；同一 run 另有独立 Worker HTTP 500、屏幕读取 503 `COMPUTER_ACTIVE_TAB_UNRESOLVED`、导航 409 `UND_ERR_SOCKET`、控制 409 `ECONNREFUSED`，最后 Agent adapter 在 369310 ms 后以 SIGTERM 退出。记录不能识别 SIGTERM 发送者，也不能证明是用户接管；这些不是一个可确定的共同根因。
 
 同时修正了单 Bot 与群聊/重试历史 SQL：旧查询逐字段挑选失败 trace，可能将 provider 503 与另一条 Worker/Agent 错误拼在同一张卡片；现统一从一个主失败 trace 行读取摘要字段。`npm run build` 通过；`tests/run-store.test.ts` 3/3、`tests/group-chat-store.test.ts` 1/1 通过。第一次测试连接拒绝是固定专用测试 MySQL `127.0.0.1:13317` 处于停止态；启动已有 `coke-grok-test-mysql-cf95778` 后通过，未创建新容器、未访问业务 MySQL。该 SQL 修复仅在工作区，尚未提交/部署；光标候选已部署但未完成视觉验收。
+
+#### 2026-11-18 23:37 CST Kaka 云电脑控制轮询故障复查
+
+回看 Kaka 历史 run `cd5d7a9a-60b1-4c15-989b-9e5983b430d8` 的已存调用链：屏幕控制读取有 `ECONNREFUSED`，模型供应商另有 HTTP 503（Gateway 将其记录为 502 / `provider_request_failed`），之后 Adapter 以 `SIGTERM` 退出并标记 `computer_control_state_unknown`。这是两条独立故障；旧 trace 没有 SIGTERM 发送者/因果 ID，所以不能证明该 SIGTERM 一定由这一条 Worker 失败触发，也不能推断用户接管。旧运行时源码确实存在一个会放大瞬断的路径：`setInterval(1500)` 周期短于 `controlOwner()` 的 3000 ms 请求超时，探测可重叠；任意一次控制读取异常或未知 owner 都立即给 Adapter 发 SIGTERM。
+
+当前唯一候选分支将该检查改为单次完成后再等待 1500 ms 的串行轮询；短暂失败逐次保留脱敏状态码/传输码并继续任务，只有连续至少 5 次失败或不可用持续至少 8 秒才停止任务，显式标记 `computer_control_unavailable` 且不重放；仅实际观察到 `owner=user` 才即时转入接管暂停。运行日志和聊天错误映射会显示探测尝试、HTTP/传输状态与恢复结果。新增 transient recovery、持续 503、用户接管三项 Agent Runtime 回归，并覆盖 trace schema 和 Pi 错误映射。`npm run test:runtime` 223/223 通过；最终改动后的 32 项 Agent Runtime/Pi/trace 定向用例通过；`npm run build`、`node --check deploy/desktop/agent-runtime.mjs` 和 `git diff --check` 通过。
+
+这仍只是源码候选，没有部署验收。K3D 控制面与当前两个用户 namespace 的应用镜像都仍是 `sha-4e551610a20d3901e2b585fad2f1e163c961eaa3`。磁盘尚有 41 GiB；但只读 `docker system df` 查询超过 15 秒无响应，已中断该查询，没有重启 Docker、清理镜像或改变集群。由于 release 镜像需要 Docker 构建与导入，本候选未进入镜像构建或 K3D rollout；必须恢复 Docker 查询/构建能力后，先生成可回退的固定版本包，再发布并确认所有 Pod 同版。供应商 HTTP 503 仍是独立上游可用性问题，本轮未声称已修复或重放 Kaka 任务。

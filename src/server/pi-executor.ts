@@ -33,7 +33,7 @@ const agentAttachmentReasonCodes=new Set([
   'task_attachment_size_limit_exceeded','task_attachment_image_limit_exceeded','task_attachment_source_unavailable',
   'task_attachment_checksum_mismatch','task_attachment_destination_invalid','task_attachment_copy_failed','task_attachment_copy_verification_failed',
 ]);
-const agentRuntimeFailureReasonCodes=new Set(['runtime_setup_failed','runtime_error','agent_timeout','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
+const agentRuntimeFailureReasonCodes=new Set(['runtime_setup_failed','runtime_error','agent_timeout','computer_control_unavailable','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
 const agentRuntimeFailureDiagnostics=new Set<RunDiagnosticCode>(['AGENT_RUNTIME_ABORT_ERROR','AGENT_RUNTIME_API_ERROR','AGENT_RUNTIME_FETCH_ERROR','AGENT_RUNTIME_NETWORK_ERROR','AGENT_RUNTIME_RANGE_ERROR','AGENT_RUNTIME_REFERENCE_ERROR','AGENT_RUNTIME_SYNTAX_ERROR','AGENT_RUNTIME_TIMEOUT_ERROR','AGENT_RUNTIME_TYPE_ERROR','AGENT_RUNTIME_UNCLASSIFIED_ERROR']);
 const agentRuntimeUpstreamErrorKinds=new Set(['request_invalid','authentication_rejected','model_not_found','context_limit','rate_limited','quota_exhausted','permission_denied','provider_server_error','provider_unavailable','content_filtered','unknown']);
 const agentRuntimeUpstreamErrorCodes=new Set(['invalid_request_error','invalid_api_key','model_not_found','context_length_exceeded','rate_limit_exceeded','insufficient_quota','permission_denied','unsupported_parameter','unsupported_value','missing_required_parameter','invalid_type','unknown_parameter','request_too_large','content_filter']);
@@ -257,18 +257,18 @@ export class DesktopAgentExecutor implements RunExecutor {
         await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:'failed',httpStatus:response.status,diagnosticCode:'agent_response_invalid',reasonCode:'result_invalid',stage:'result-validation',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
         throw new RunDiagnosticError('agent_response_invalid');
       }
-      const result=value as {status?:unknown;message?:unknown;pausedForControl?:unknown;controlOwner?:unknown;files?:unknown;executionAudit?:unknown;runtimeTrace?:unknown};
+      const result=value as {status?:unknown;message?:unknown;pausedForControl?:unknown;controlOwner?:unknown;controlReason?:unknown;files?:unknown;executionAudit?:unknown;runtimeTrace?:unknown};
       for(const event of parseAgentRuntimeTrace(result.runtimeTrace))await this.recordTrace(run.id,event);
       await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'succeeded',httpStatus:response.status,stage:'agent-setup',operation:'agent-adapter',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
       const executionAudit=validateAgentExecutionAudit(result.executionAudit);
       // A pause may have interrupted an operation after a side effect. Reconciliation is required.
       if (result.pausedForControl===true) {
-        const code=result.controlOwner==='user'?'agent_paused_for_control':'computer_control_state_unknown';
+        const code=result.controlOwner==='user'?'agent_paused_for_control':result.controlReason==='unavailable'?'computer_control_unavailable':'computer_control_state_unknown';
         await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:'info',httpStatus:response.status,diagnosticCode:code,stage:'result-validation',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
         throw new RunDiagnosticError(code,executionAudit);
       }
       if (result.status==='waiting') {
-        const code=result.controlOwner==='unknown'?'computer_control_state_unknown':'agent_result_status_unconfirmed';
+        const code=result.controlOwner==='unknown'?(result.controlReason==='unavailable'?'computer_control_unavailable':'computer_control_state_unknown'):'agent_result_status_unconfirmed';
         await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:'info',httpStatus:response.status,diagnosticCode:code,stage:'result-validation',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
         throw new RunDiagnosticError(code,executionAudit);
       }

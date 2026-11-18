@@ -417,7 +417,7 @@ const runDiagnosticSummaries:Record<string,string>={
   AGENT_ADAPTER_OUTPUT_INVALID:'The Agent adapter output was not valid task-result JSON.',
   COMPUTER_CONTROL_CHECK_FAILED:'The Agent could not read the cloud computer control state.',
   bot_bridge_invalid:'A required Bot capability could not be initialized.',
-  computer_control_unavailable:'The computer control channel was unavailable.',
+  computer_control_unavailable:'Cloud computer control stayed unavailable after retries; the task was paused without replay.',
   group_context_invalid:'The group task context could not be loaded.',
   kernel_unavailable:'The Agent runtime kernel was unavailable.',
   model_config_invalid:'The model configuration could not be applied.',
