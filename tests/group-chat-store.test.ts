@@ -213,6 +213,10 @@ test('group chats persist six Bot memberships, authorized input files, isolated 
   assert.equal((await groups.get(aliceSession,group.id))?.messages.find(message=>message.runId===runIds[0])?.diagnosticCode,'agent_paused_for_control');
   const retried=await runs.resolveUnknown(aliceSession,runIds[0],'retry');assert.ok(retried?.run);
   await pool.execute("UPDATE agent_runs SET status='failed',result='Separate retry failed after computer approval expired.',computer_used=TRUE WHERE id=?",[retried.run.id]);
+  await runs.recordTrace(runIds[0],{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:502,upstreamHttpStatus:503,upstreamErrorKind:'provider_unavailable',diagnosticCode:'MODEL_GATEWAY_UPSTREAM_FAILURE',reasonCode:'provider_request_failed',stage:'provider-response',operation:'chat-completions',attemptNumber:76,durationMs:666});
+  await runs.recordTrace(runIds[0],{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:500,diagnosticCode:'agent_adapter_failed',reasonCode:'agent_transport_failed',stage:'agent-setup',operation:'agent-adapter',adapterExitSignal:'SIGTERM',transportCode:'ECONNREFUSED',durationMs:369310});
+  await runs.recordTrace(retried.run.id,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:502,upstreamHttpStatus:503,upstreamErrorKind:'provider_unavailable',diagnosticCode:'MODEL_GATEWAY_UPSTREAM_FAILURE',reasonCode:'provider_request_failed',stage:'provider-response',operation:'chat-completions',attemptNumber:78,durationMs:666});
+  await runs.recordTrace(retried.run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:500,diagnosticCode:'agent_adapter_failed',reasonCode:'agent_transport_failed',stage:'agent-setup',operation:'agent-adapter',adapterExitSignal:'SIGTERM',transportCode:'ECONNREFUSED',durationMs:369310});
   const retryFileId=randomUUID(),retryBytes=Buffer.from('retry artifact'),retryHash=createHash('sha256').update(retryBytes).digest('hex'),retryKey=`tasks/${retried.run.id}/artifacts/retry.txt`;
   await pool.execute('INSERT INTO bot_files (id,bot_id,display_name,mime_type,size,sha256,storage_key) VALUES (?,?,?,?,?,?,?)',[retryFileId,members[0].id,'retry.txt','text/plain',retryBytes.length,retryHash,retryKey]);
   await pool.execute("INSERT INTO agent_run_files (run_id,file_id,kind) VALUES (?,?,'output')",[retried.run.id,retryFileId]);
@@ -220,7 +224,17 @@ test('group chats persist six Bot memberships, authorized input files, isolated 
   assert.equal(originalAfterRetry?.status,'unknown');assert.equal(originalAfterRetry?.recoveryState,'retried');
   assert.equal(originalAfterRetry?.replacementRun?.id,retried.run.id);assert.equal(originalAfterRetry?.replacementRun?.status,'failed');
   assert.equal(originalAfterRetry?.replacementRun?.result,'Separate retry failed after computer approval expired.');
+  assert.equal(originalAfterRetry?.failureTraceDiagnosticCode,'MODEL_GATEWAY_UPSTREAM_FAILURE');
+  assert.equal(originalAfterRetry?.failureComponent,'model-gateway');
+  assert.equal(originalAfterRetry?.failureUpstreamHttpStatus,503);
+  assert.equal(originalAfterRetry?.failureAdapterExitSignal,null);
+  assert.equal(originalAfterRetry?.failureTransportCode,null);
   assert.equal(originalAfterRetry?.replacementRun?.computerUsed,true);
+  assert.equal(originalAfterRetry?.replacementRun?.failureTraceDiagnosticCode,'MODEL_GATEWAY_UPSTREAM_FAILURE');
+  assert.equal(originalAfterRetry?.replacementRun?.failureComponent,'model-gateway');
+  assert.equal(originalAfterRetry?.replacementRun?.failureUpstreamHttpStatus,503);
+  assert.equal(originalAfterRetry?.replacementRun?.failureAdapterExitSignal,null);
+  assert.equal(originalAfterRetry?.replacementRun?.failureTransportCode,null);
   assert.deepEqual(originalAfterRetry?.replacementRun?.files.map(file=>({name:file.name,kind:file.kind})),[{name:'offsite-notes.txt',kind:'input'},{name:'retry.txt',kind:'output'}]);
   const [retryContextRows]=await pool.execute<mysql.RowDataPacket[]>('SELECT runtime_context AS runtimeContext FROM agent_runs WHERE id=?',[retried.run.id]);
   const [originalContextRows]=await pool.execute<mysql.RowDataPacket[]>('SELECT runtime_context AS runtimeContext FROM agent_runs WHERE id=?',[runIds[0]]);

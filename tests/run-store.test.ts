@@ -47,6 +47,8 @@ test('runs are deduplicated and isolated; unknown outcomes resume queues without
     const auditWithUnsafeExtras={engine:'pi',model:'deepseek-v4.1-flash',modelCompleted:true,calls:[{tool:'computer_browser',action:'navigate',outcome:'succeeded',url:'https://example.test/private?access_token=never-store'}],truncated:false,apiKey:'never-store'};
     assert.equal(await runs.finish(claim.run.id,claim.leaseId,'completed','done',[],auditWithUnsafeExtras),true);
     await runs.recordTrace(claim.run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:400,diagnosticCode:'agent_adapter_failed',durationMs:42,releaseId:`sha-${'a'.repeat(40)}`,prompt:'must not persist'} as any);
+    await runs.recordTrace(claim.run.id,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:502,upstreamHttpStatus:503,upstreamErrorKind:'provider_unavailable',diagnosticCode:'MODEL_GATEWAY_UPSTREAM_FAILURE',reasonCode:'provider_request_failed',stage:'provider-response',operation:'chat-completions',attemptNumber:76,durationMs:666});
+    await runs.recordTrace(claim.run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:500,diagnosticCode:'agent_adapter_failed',reasonCode:'agent_transport_failed',stage:'agent-setup',operation:'agent-adapter',adapterExitSignal:'SIGTERM',transportCode:'ECONNREFUSED',durationMs:369310});
     const trace=await runs.trace(sa,claim.run.id);
     assert.ok(trace);
     assert.ok(trace.some(event=>event.event==='run.queued'));
@@ -55,7 +57,7 @@ test('runs are deduplicated and isolated; unknown outcomes resume queues without
     assert.deepEqual(trace.find(event=>event.event==='agent.dispatch'),{
       component:'agent-runtime',event:'agent.dispatch',outcome:'failed',attemptNumber:null,httpStatus:400,
       upstreamHttpStatus:null,upstreamErrorKind:null,upstreamErrorCode:null,retryAfterSeconds:null,
-      adapterExitCode:null,adapterExitSignal:null,databaseCode:null,relatedComponent:null,relatedEvent:null,
+      requestBytes:null,requestLimitBytes:null,adapterExitCode:null,adapterExitSignal:null,databaseCode:null,relatedComponent:null,relatedEvent:null,
       diagnosticCode:'agent_adapter_failed',durationMs:42,releaseId:`sha-${'a'.repeat(40)}`,
       reasonCode:null,stage:null,operation:null,transportCode:null,
       sequence:trace.find(event=>event.event==='agent.dispatch')?.sequence,
@@ -65,6 +67,16 @@ test('runs are deduplicated and isolated; unknown outcomes resume queues without
     assert.equal(await runs.trace(sb,claim.run.id),null,'run trace must remain owner-scoped');
     const persistedAudit=(await runs.list(sa,claim.run.botId))?.find(run=>run.id===claim.run.id)?.executionAudit;
     assert.deepEqual(persistedAudit,{engine:'pi',model:'deepseek-v4.1-flash',modelCompleted:true,calls:[{tool:'computer_browser',action:'navigate',outcome:'succeeded'}],truncated:false});
+    const diagnosticSummary=(await runs.list(sa,claim.run.botId))?.find(run=>run.id===claim.run.id);
+    assert.equal(diagnosticSummary?.failureTraceDiagnosticCode,'MODEL_GATEWAY_UPSTREAM_FAILURE');
+    assert.equal(diagnosticSummary?.failureComponent,'model-gateway');
+    assert.equal(diagnosticSummary?.failureHttpStatus,502);
+    assert.equal(diagnosticSummary?.failureUpstreamHttpStatus,503);
+    assert.equal(diagnosticSummary?.failureReasonCode,'provider_request_failed');
+    assert.equal(diagnosticSummary?.failureStage,'provider-response');
+    assert.equal(diagnosticSummary?.failureDurationMs,666);
+    assert.equal(diagnosticSummary?.failureAdapterExitSignal,null,'card summary must not merge a later adapter exit into the provider failure');
+    assert.equal(diagnosticSummary?.failureTransportCode,null,'card summary must not merge transport details from another event');
     const [auditRows]=await pool.execute<mysql.RowDataPacket[]>('SELECT CAST(execution_audit AS CHAR) AS audit FROM agent_runs WHERE id=?',[claim.run.id]);
     assert.equal(String(auditRows[0].audit).includes('access_token'),false);
     assert.equal(String(auditRows[0].audit).includes('https://'),false);

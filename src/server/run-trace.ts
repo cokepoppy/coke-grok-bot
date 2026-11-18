@@ -29,6 +29,13 @@ export interface RunTraceEvent {
 
 const components = new Set<RunTraceComponent>(['control-plane','scheduler','agent-runtime','model-gateway','computer-worker','mysql']);
 const outcomes = new Set<RunTraceOutcome>(['started','succeeded','failed','info']);
+const primaryFailureTraceOrder = "CASE t.component WHEN 'computer-worker' THEN 0 WHEN 'model-gateway' THEN 0 WHEN 'agent-runtime' THEN 1 WHEN 'control-plane' THEN 2 WHEN 'scheduler' THEN 3 WHEN 'mysql' THEN 4 ELSE 5 END,CASE WHEN t.event IN ('agent.dispatch','agent.result','agent.adapter.exit') THEN 1 ELSE 0 END";
+type PrimaryFailureTraceRunIdExpression = 'agent_runs.id' | 'r.id' | 'rr.id';
+
+/** SQL selector shared by run and group histories so every summary field comes from one failed trace row. */
+export function primaryFailureTraceSequenceSql(runIdExpression: PrimaryFailureTraceRunIdExpression): string {
+  return "(SELECT t.sequence FROM agent_run_traces t WHERE t.run_id=" + runIdExpression + " AND t.outcome='failed' ORDER BY " + primaryFailureTraceOrder + ",t.sequence DESC LIMIT 1)";
+}
 const browserTraceActions = new Set(['inspect','navigate','open_artifact','upload_file','click','fill','select','check','uncheck','press']);
 const desktopTraceActions = new Set(['open','navigate','open-artifact','click','type','press']);
 const workerStages = new Set(['route','screen-scope','screen-owner','action-body','action-navigate','action-execute']);

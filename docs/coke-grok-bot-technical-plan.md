@@ -3573,3 +3573,11 @@ After the ChatGPT restart, `cua.getState()` listed the Chrome extension and the 
 #### 2026-11-18 noVNC 光标缩放修复候选
 
 公网桌面 viewer 对每个 Bot 的 X11 framebuffer 做裁切，并调用 noVNC `display.autoscale()` 做本地缩放；安装的 noVNC 1.6.0 在支持 CSS cursor URI 的 Chrome 上直接设置远端光标图像，光标图像不会随缩放后的 canvas 同步变换。noVNC 上游 PR #2077（截至本记录仍 open、未合并）明确修复硬件光标在本地缩放/裁切下的尺寸和坐标错位。Coke Grok 候选将该 PR 的 `core/util/cursor.js` 变更按固定 commit `f870d809b90c0ff5e719fbedfba42f4ce3816062` 随桌面镜像覆盖；保留 MPL-2.0 文件头，不隐藏或替换远端光标形状。该机制与白竖线现象高度相关，但在部署后用受支持的 Computer Use 直接复核前，仍只能称为修复候选，不能宣称根因已证实或问题已解决；构建和 Pod Ready 不代替光标视觉验收。此次工作不重放 Gmail、北交所或已验收的其他端到端任务。
+
+#### 2026-11-18 21:30 CST 卡片配色、光标候选与 Kaka 失败摘要
+
+公网 Chrome DOM 复核已部署产品气泡色：用户消息 `#111110`、Bot 浅灰 `#f4f4f3`。当前本地 K3D 的 7 个应用 Pod 与 noVNC cursor.js 哈希先前已核对为同一 `sha-999a59fb6a653d0bfbef25cd773f32c1ba8529a8`；这只证明同版部署，不能证明白竖线消失。当前产品只显示静态电脑预览，全屏入口报告不可用；随后一次 Computer Use 接管调用超时，遵守用户要求未截图、未重复调用。因此白线结果仍未完成视觉验收。
+
+用户 Kaka 的已存脱敏追踪显示：模型调用收到了供应商 HTTP 503、`provider_unavailable`，经 Model Gateway 映射为 HTTP 502；同一 run 另有独立 Worker HTTP 500、屏幕读取 503 `COMPUTER_ACTIVE_TAB_UNRESOLVED`、导航 409 `UND_ERR_SOCKET`、控制 409 `ECONNREFUSED`，最后 Agent adapter 在 369310 ms 后以 SIGTERM 退出。记录不能识别 SIGTERM 发送者，也不能证明是用户接管；这些不是一个可确定的共同根因。
+
+同时修正了单 Bot 与群聊/重试历史 SQL：旧查询逐字段挑选失败 trace，可能将 provider 503 与另一条 Worker/Agent 错误拼在同一张卡片；现统一从一个主失败 trace 行读取摘要字段。`npm run build` 通过；`tests/run-store.test.ts` 3/3、`tests/group-chat-store.test.ts` 1/1 通过。第一次测试连接拒绝是固定专用测试 MySQL `127.0.0.1:13317` 处于停止态；启动已有 `coke-grok-test-mysql-cf95778` 后通过，未创建新容器、未访问业务 MySQL。该 SQL 修复仅在工作区，尚未提交/部署；光标候选已部署但未完成视觉验收。
