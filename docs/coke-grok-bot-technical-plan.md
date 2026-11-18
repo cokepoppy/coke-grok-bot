@@ -3506,3 +3506,13 @@ V2 连续逐帧覆盖推进至 30:14.960（累计 45,375 帧），下一窗口�
 公网 `/grok-bot/` 返回的 JS（425,046 字节，SHA-256 `33f1c6dfd637081efca80bce0cabd136832933c7d8a5873aafde040840065f09`）与本地构建一致；CSS（99,137 字节，SHA-256 `48802f9dc393a985f7cd5032fbaec792051b2725e2d4349328fb8915e15e00c3`）也一致。这只证明静态资源部署一致，不是交互验收。重启 ChatGPT 后，Computer Use 的 `cua.getState()` 仍约 30 秒超时并重置会话内核，故未进行公网真实点击/视觉验收；没有用截图、坐标、CDP 或 Playwright 替代。候选已推送到当前功能分支，尚未合并 `main`、未打正式 checkpoint tag；待 Computer Use 恢复后完成公网 UI 验收再决定合并。
 
 候选发布记录与回退快照位于 `releases/candidate-grok-chat-flow-user-bubbles-b7c57ef-2026-11-18/`。目录含该源码提交归档、构建制品、部署清单与脚本、镜像锁定、部署结果、校验和回退命令；大约 913 MB 的 Desktop OCI 镜像层没有再复制一份，仍保存在本机 Docker/K3D 镜像缓存中，因此该目录目前是本机候选恢复包，不是独立可移植的镜像归档。
+
+#### 2026-11-18 缺失调用链字段显示修复与部署候选
+
+2026-11-18，真实 trace API 的可选字段缺失时，聊天调用链曾把 `undefined` 当作非空值，显示 `call undefined`、`retry after undefineds`、`NaN B` 和空的 adapter 退出字段。修复在前端统一对 `null` 与 `undefined` 做缺值判断；调用链只呈现实际记录到的字段。UI 用例加入缺字段不输出 `undefined`/`NaN` 的断言。测试原先的电脑卡绝对 Y 坐标也改成校验其紧跟对应用户任务消息，避免恢复用户气泡后仍按旧时间线高度误报失败。UI E2E 的图片写盘现在由 `COKE_GROK_CAPTURE_UI_ARTIFACTS=1` 显式启用；本次回归运行没有新建截图文件。
+
+提交 `a510af23b7933e8f0e310406c5975b03b78127ff`（`fix trace rendering for missing optional fields`）已推送到当前唯一功能分支。`npm run build`、`npm run release:build-images`、`release:verify-k3d` 以及 `COKE_GROK_CAPTURE_UI_ARTIFACTS=0 E2E_PROGRESS=1 npm run test:ui` 通过。2026-11-18 16:54 CST 将版本 `sha-a510af23b7933e8f0e310406c5975b03b78127ff` 部署至 `k3d-tp1121-sandbox-dev`；7 个应用 Deployment 和 7 个活动应用 Pod 均为该 release ID，全部 Ready。MySQL Pod 1 个和 3 个 PVC 身份未改变。
+
+部署后从公网域名获取 JavaScript（`index-Ds242xfz.js`，425,047 字节，SHA-256 `26e5474821b542505b012d19b4f7ae1b80a6aebe8172a21e31833649403823df`）和 CSS（`index-CbR2XGZH.css`，99,137 字节，SHA-256 `48802f9dc393a985f7cd5032fbaec792051b2725e2d4349328fb8915e15e00c3`），均与本地构建匹配。Computer Use 重启后，`getState()` 已能列出 Chrome 与公网 Grok Bot 标签；但绑定现有 Chrome 标签仍约 30 秒超时并重置内核。故公网点击验收仍未完成，不能将枚举恢复或静态资源哈希视作网页交互成功。没有改用截图、CDP、Playwright 或其他方式冒充公网 Computer Use。
+
+本地候选包位于 `releases/candidate-grok-run-trace-version-a510af2-2026-11-18/`，包含源码与 dist 归档、部署配置/构建/部署/验证/回退脚本、镜像 refs/IDs、回退快照、操作记录、静态资源哈希及 `SHA256SUMS`。源码归档明确排除 `research/` 和 `releases/`；约 913 MB 的 OCI 层不重复归档，继续使用 Mac Docker/K3D 本地镜像缓存。候选尚未合并 `main`、未创建正式 checkpoint tag；公网 Computer Use 点击验收通过后再完成后续发布决策。
