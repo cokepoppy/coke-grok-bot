@@ -31,8 +31,11 @@ const mimeByExtension = new Map(Object.entries({
 const allowedEngines = new Set(String(process.env.DOTS_DESKTOP_AGENT_ADAPTERS || '').split(',').map(value => value.trim()).filter(value => ['pi', 'dsh'].includes(value)));
 const configured = parseAdapterConfig(process.env.DOTS_AGENT_KERNELS_JSON || '{}');
 const agentFailureStages = new Set(['agent-setup','agent-execution','model-request','model-response','tool-execution','result-validation']);
-const agentFailureReasons = new Set(['runtime_setup_failed','runtime_error','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
+const agentFailureReasons = new Set(['runtime_setup_failed','runtime_error','agent_timeout','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
 const agentTransportCodes = new Set(['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']);
+const agentExitSignals = new Set(['SIGABRT','SIGBUS','SIGFPE','SIGHUP','SIGILL','SIGINT','SIGKILL','SIGPIPE','SIGQUIT','SIGSEGV','SIGTERM','SIGTRAP']);
+const adapterSpawnErrorCodes = new Set(['EACCES','ENOENT','EMFILE','ENFILE','ENOMEM','ENOEXEC']);
+const agentTraceEvents = new Set(['agent.queue','agent.computer.control','agent.adapter.start','agent.adapter.exit','agent.result.parse']);
 const maxParallelTasks = Number(process.env.COKE_GROK_AGENT_PARALLELISM || 2);
 if (!Number.isSafeInteger(maxParallelTasks) || maxParallelTasks < 1 || maxParallelTasks > 2) throw new Error('COKE_GROK_AGENT_PARALLELISM must be 1 or 2');
 const active = new Map();
@@ -79,6 +82,16 @@ function logControlObservation(taskId, screenId, owner, phase) {
   const screenKey = createHash('sha256').update(screenId.toLowerCase()).digest('hex').slice(0, 16);
   const observedOwner = owner === 'agent' || owner === 'user' ? owner : 'unknown';
   process.stderr.write(`${JSON.stringify({ event: 'coke_grok_computer_control_observed', at: new Date().toISOString(), taskId, screenKey, phase, owner: observedOwner })}\n`);
+}
+
+function recordRuntimeTrace(slot, event, outcome, metadata = {}) {
+  if (!agentTraceEvents.has(event) || !['started','succeeded','failed','info'].includes(outcome)) return;
+  if (slot.runtimeTrace.length < 24) slot.runtimeTrace.push({ event, outcome, ...metadata });
+}
+
+function safeAdapterSpawnCode(error) {
+  const code = error && typeof error === 'object' && typeof error.code === 'string' ? error.code.toUpperCase() : '';
+  return adapterSpawnErrorCodes.has(code) ? code : null;
 }
 
 async function safeTaskWorkspace(value, taskId) {
@@ -448,9 +461,10 @@ function agentFailureMetadata(stderr) {
 
 class AgentAdapterFailure extends Error {
   constructor(exitCode,metadata) {
-    super(`Agent adapter exited with code ${exitCode}`);
+    super(metadata.exitSignal ? `Agent adapter stopped with signal ${metadata.exitSignal}` : metadata.reasonCode==='runtime_setup_failed'?'Agent adapter could not be started':`Agent adapter exited with code ${exitCode}`);
     this.name='AgentAdapterFailure';
-    this.exitCode=Number.isInteger(exitCode)&&exitCode>0&&exitCode<=255?exitCode:1;
+    this.exitCode=Number.isInteger(exitCode)&&exitCode>0&&exitCode<=255?exitCode:null;
+    this.exitSignal=agentExitSignals.has(metadata.exitSignal)?metadata.exitSignal:null;
     this.stage=metadata.stage;
     this.reasonCode=metadata.reasonCode;
     this.upstreamHttpStatus=metadata.upstreamHttpStatus;
@@ -464,7 +478,7 @@ function runKernel(input, requestSignal) {
     const botId=String(input.botId||''),screenId=String(input.screenId||botId);
     if(!fileIdPattern.test(botId)||screenId!==botId)return reject(new Error('A matching Bot screen id is required'));
     if(queue.length>=100)return reject(new Error('Agent task queue is full'));
-    const entry = { input, botId, requestSignal, resolve, reject, onAbort: null };
+    const entry = { input, botId, requestSignal, resolve, reject, onAbort: null, queuedAt: Date.now() };
     entry.onAbort = () => {
       const index = queue.indexOf(entry);
       if (index < 0) return;
@@ -484,15 +498,19 @@ function drainQueue() {
     const entry=queue.splice(index,1)[0];
     entry.requestSignal?.removeEventListener('abort',entry.onAbort);
     if(entry.requestSignal?.aborted){entry.reject(new Error('Agent task was cancelled'));continue;}
-    const slot = { botId:entry.botId, taskId: String(entry.input.taskId || ''), child: null, abort: null, interruptedByUser: false };
+    const slot = { botId:entry.botId, taskId: String(entry.input.taskId || ''), child: null, abort: null, interruptedByUser: false, runtimeTrace: [] };
     active.set(entry.botId,slot);
     void executeQueued(entry,slot);
   }
 }
 
 async function executeQueued(entry,slot) {
-  try { entry.resolve(await executeKernel(entry.input, entry.requestSignal, slot)); }
-  catch (error) { entry.reject(error); }
+  recordRuntimeTrace(slot,'agent.queue','succeeded',{stage:'queue-wait',durationMs:Math.max(0,Date.now()-entry.queuedAt)});
+  try { entry.resolve({...await executeKernel(entry.input, entry.requestSignal, slot),runtimeTrace:slot.runtimeTrace}); }
+  catch (error) {
+    if(error&&typeof error==='object')Object.defineProperty(error,'runtimeTrace',{value:slot.runtimeTrace,enumerable:false,configurable:true});
+    entry.reject(error);
+  }
   finally {
     entry.requestSignal?.removeEventListener('abort',entry.onAbort);
     if(active.get(entry.botId)===slot)active.delete(entry.botId);
@@ -523,7 +541,16 @@ async function executeKernel(input, requestSignal, slot) {
   const dingtalkCalendarBridge = validateDingTalkCalendarBridge(input.dingtalkCalendarBridge);
   const dingtalkMinutesBridge = validateDingTalkMinutesBridge(input.dingtalkMinutesBridge);
   const dingtalkSecretaryBridge = validateDingTalkSecretaryBridge(input.dingtalkSecretaryBridge);
-  const initialOwner = await controlOwner(modelConfig,screenId);
+  const controlStartedAt=Date.now();
+  let initialOwner;
+  try { initialOwner = await controlOwner(modelConfig,screenId); }
+  catch {
+    recordRuntimeTrace(slot,'agent.computer.control','failed',{stage:'computer-control',diagnosticCode:'COMPUTER_CONTROL_CHECK_FAILED',durationMs:Date.now()-controlStartedAt});
+    const error=new Error('desktop control state is unavailable');
+    Object.defineProperty(error,'runtimeTrace',{value:slot.runtimeTrace,enumerable:false,configurable:true});
+    throw error;
+  }
+  recordRuntimeTrace(slot,'agent.computer.control',initialOwner==='agent'?'succeeded':'info',{stage:'computer-control',...(initialOwner==='user'?{diagnosticCode:'COMPUTER_OWNER_USER'}:initialOwner==='agent'?{}:{diagnosticCode:'COMPUTER_OWNER_UNKNOWN'}),durationMs:Date.now()-controlStartedAt});
   if (initialOwner !== 'agent') {
     logControlObservation(taskId, screenId, initialOwner, 'run_start');
     const owner = initialOwner === 'user' ? 'user' : 'unknown';
@@ -546,6 +573,8 @@ async function executeKernel(input, requestSignal, slot) {
   } else if (process.env.DOTS_INCIDENT_GITHUB_CREDENTIAL_SOCKET) {
     await chmod(process.env.DOTS_INCIDENT_GITHUB_CREDENTIAL_SOCKET, 0).catch(() => undefined);
   }
+  const spawnStartedAt=Date.now();
+  recordRuntimeTrace(slot,'agent.adapter.start','started',{stage:'adapter-start'});
   const child = spawn(adapter.command, adapter.args, { cwd, shell: false, stdio: ['pipe', 'pipe', 'pipe'], env: childEnv });
   const abort = new AbortController();
   slot.child = child;
@@ -574,7 +603,13 @@ async function executeKernel(input, requestSignal, slot) {
     ...(dingtalkMinutesBridge ? { dingtalkMinutesBridge } : {}),
     ...(dingtalkSecretaryBridge ? { dingtalkSecretaryBridge } : {}),
   }));
-  const timer = setTimeout(() => child.kill('SIGTERM'), 14 * 60_000);
+  let timedOut=false;
+  child.once('spawn',()=>recordRuntimeTrace(slot,'agent.adapter.start','succeeded',{stage:'adapter-start',durationMs:Date.now()-spawnStartedAt}));
+  child.once('error',error=>{
+    const transportCode=safeAdapterSpawnCode(error);
+    recordRuntimeTrace(slot,'agent.adapter.start','failed',{stage:'adapter-start',diagnosticCode:'AGENT_ADAPTER_SPAWN_FAILED',reasonCode:'runtime_setup_failed',...(transportCode?{transportCode}:{}),durationMs:Date.now()-spawnStartedAt});
+  });
+  const timer = setTimeout(() => { timedOut=true; child.kill('SIGTERM'); }, 14 * 60_000);
   const controlPoll = setInterval(() => { void controlOwner(modelConfig,screenId).then(owner => {
     if (owner === 'user' && !slot.interruptedByUser) {
       logControlObservation(taskId, screenId, owner, 'running');
@@ -594,15 +629,26 @@ async function executeKernel(input, requestSignal, slot) {
   requestSignal?.addEventListener('abort', onRequestAbort, { once: true });
   abort.signal.addEventListener('abort', () => { child.kill('SIGTERM'); setTimeout(() => child.kill('SIGKILL'), 2000).unref(); }, { once: true });
   try {
-    const code = await new Promise((resolve, reject) => {
+    let closed;
+    try{closed=await new Promise((resolve, reject) => {
       child.once('error', reject);
-      child.once('close', value => resolve(value ?? 1));
-    });
+      child.once('close', (code, signal) => resolve({code,signal}));
+    });}catch(error){
+      const transportCode=safeAdapterSpawnCode(error);
+      throw new AgentAdapterFailure(null,{stage:'agent-setup',reasonCode:transportCode?'runtime_setup_failed':'runtime_error',transportCode,exitSignal:null});
+    }
+    const code=closed?.code??null,exitSignal=agentExitSignals.has(closed?.signal)?closed.signal:null;
+    const adapterFailure=code===0?null:agentFailureMetadata(stderr);
+    recordRuntimeTrace(slot,'agent.adapter.exit',code===0&&!exitSignal?'succeeded':'failed',{stage:timedOut?'agent-execution':code===0?'adapter-exit':adapterFailure?.stage||'agent-execution',...(Number.isInteger(code)&&code>0&&code<=255?{adapterExitCode:code}:{}),...(exitSignal?{adapterExitSignal:exitSignal}:{}),...(timedOut?{diagnosticCode:'AGENT_ADAPTER_TIMEOUT',reasonCode:'agent_timeout'}:code===0?{}:{diagnosticCode:exitSignal?'AGENT_ADAPTER_SIGNAL_EXIT':'AGENT_ADAPTER_NONZERO_EXIT',...(adapterFailure?.reasonCode?{reasonCode:adapterFailure.reasonCode}:{}),...(adapterFailure?.upstreamHttpStatus?{upstreamHttpStatus:adapterFailure.upstreamHttpStatus}:{}),...(adapterFailure?.transportCode?{transportCode:adapterFailure.transportCode}:{})}),durationMs:Date.now()-spawnStartedAt});
     if (requestSignal?.aborted) throw new Error('Agent task was cancelled');
     if (slot.interruptedByUser) return { taskId, status: 'waiting', pausedForControl: true, controlOwner: 'user', message: '电脑切换为用户控制模式，任务已暂停。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
     if (slot.controlStateUnknown) return { taskId, status: 'waiting', pausedForControl: true, controlOwner: 'unknown', message: '无法确认云电脑的控制权，任务已暂停。', engine, sessionId: typeof input.sessionId === 'string' ? input.sessionId : null };
+    if(timedOut)throw new AgentAdapterFailure(code,{stage:'agent-execution',reasonCode:'agent_timeout',transportCode:null,exitSignal});
     if (code !== 0) {
-      throw new AgentAdapterFailure(code,agentFailureMetadata(stderr));
+      throw new AgentAdapterFailure(code,{
+        ...adapterFailure,
+        ...(exitSignal?{exitSignal}:{}),
+      });
     }
     let result;
     try {
@@ -611,8 +657,9 @@ async function executeKernel(input, requestSignal, slot) {
       if (dingtalkCalendarBridge) result = redactSecret(result, dingtalkCalendarBridge.token);
       if (dingtalkMinutesBridge) result = redactSecret(result, dingtalkMinutesBridge.token);
       if (dingtalkSecretaryBridge) result = redactSecret(result, dingtalkSecretaryBridge.token);
-    } catch { throw new Error('Agent adapter must return a JSON decision'); }
-    if (!['done', 'failed', 'waiting', 'scheduled', 'delegating'].includes(result.status) || typeof result.message !== 'string' || !result.message.trim()) throw new Error('Agent adapter returned an invalid decision');
+    } catch { recordRuntimeTrace(slot,'agent.result.parse','failed',{stage:'result-validation',diagnosticCode:'AGENT_ADAPTER_OUTPUT_INVALID'});throw new Error('Agent adapter must return a JSON decision'); }
+    if (!['done', 'failed', 'waiting', 'scheduled', 'delegating'].includes(result.status) || typeof result.message !== 'string' || !result.message.trim()) {recordRuntimeTrace(slot,'agent.result.parse','failed',{stage:'result-validation',diagnosticCode:'AGENT_ADAPTER_OUTPUT_INVALID'});throw new Error('Agent adapter returned an invalid decision');}
+    recordRuntimeTrace(slot,'agent.result.parse','succeeded',{stage:'result-validation'});
     return { taskId, ...result, engine, message: result.message.slice(0, 20_000), sessionId: typeof result.sessionId === 'string' ? result.sessionId : null };
   } finally {
     clearTimeout(timer); clearInterval(controlPoll);
@@ -688,8 +735,9 @@ http.createServer(async (req, res) => {
       catch (error) {
         return send(res, 400, {
           error: error instanceof AgentAdapterFailure ? error.message : error instanceof Error ? error.message.slice(0, 500) : 'Agent task failed',
+          ...(Array.isArray(error?.runtimeTrace)?{runtimeTrace:error.runtimeTrace}:{}),
           ...(error instanceof TaskAttachmentError ? { code: error.code } : {}),
-          ...(error instanceof AgentAdapterFailure ? { code:'agent_adapter_failed',reasonCode:error.reasonCode,stage:error.stage,exitCode:error.exitCode,...(error.upstreamHttpStatus?{upstreamHttpStatus:error.upstreamHttpStatus}:{}),...(error.transportCode?{transportCode:error.transportCode}:{}) } : {}),
+          ...(error instanceof AgentAdapterFailure ? { code:'agent_adapter_failed',reasonCode:error.reasonCode,stage:error.stage,...(error.exitCode?{exitCode:error.exitCode}:{}),...(error.exitSignal?{exitSignal:error.exitSignal}:{}),...(error.upstreamHttpStatus?{upstreamHttpStatus:error.upstreamHttpStatus}:{}),...(error.transportCode?{transportCode:error.transportCode}:{}) } : {}),
         });
       }
     }
@@ -700,5 +748,5 @@ http.createServer(async (req, res) => {
       return send(res,200,{stopped:stopActive(botId)});
     }
     return send(res, 404, { error: 'not found' });
-  } catch (error) { return send(res, 400, { error: error instanceof Error ? error.message.slice(0, 300) : 'request failed' }); }
+  } catch (error) { return send(res, 400, { error: error instanceof Error ? error.message.slice(0, 300) : 'request failed',...(Array.isArray(error?.runtimeTrace)?{runtimeTrace:error.runtimeTrace}:{}) }); }
 }).listen(port, '0.0.0.0', () => process.stdout.write(`Dots Agent runtime listening on ${port}\n`));

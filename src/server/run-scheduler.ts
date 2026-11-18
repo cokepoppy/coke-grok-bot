@@ -33,6 +33,10 @@ function classifyClaimFailure(error: unknown): NonNullable<SchedulerClaimEvent['
   if (['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EPIPE','PROTOCOL_CONNECTION_LOST','PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR'].includes(code)) return 'database_connection';
   return 'unknown';
 }
+function databaseErrorCode(error:unknown):string|undefined{
+  const value=error&&typeof error==='object'&&'code'in error&&typeof error.code==='string'?error.code.toUpperCase():'';
+  return /^[A-Z0-9_]{1,64}$/.test(value)?value:undefined;
+}
 
 const pause = (ms:number) => new Promise<void>(resolve=>setTimeout(resolve,ms));
 
@@ -127,9 +131,9 @@ export class RunScheduler {
         if(abort.signal.aborted)return;
         if(!renewed){leaseLost=true;await this.recordTrace(claim.run.id,{component:'scheduler',event:'run.lease_lost',outcome:'failed',diagnosticCode:'lease_lost',reasonCode:'lease_lost',stage:'lease-renewal',durationMs:Date.now()-executionStartedAt});abort.abort();return;}
         lastLeaseConfirmationAt=Date.now();
-      } catch {
+      } catch(error) {
         const remainingMs=leaseMs-(Date.now()-lastLeaseConfirmationAt);
-        if(remainingMs<=leaseSafetyMs){leaseLost=true;await this.recordTrace(claim.run.id,{component:'scheduler',event:'run.lease_lost',outcome:'failed',diagnosticCode:'lease_lost',reasonCode:'database_error',stage:'lease-renewal',durationMs:Date.now()-executionStartedAt});abort.abort();return;}
+        if(remainingMs<=leaseSafetyMs){leaseLost=true;await this.recordTrace(claim.run.id,{component:'scheduler',event:'run.lease_lost',outcome:'failed',diagnosticCode:'lease_lost',reasonCode:'database_error',...(databaseErrorCode(error)?{databaseCode:databaseErrorCode(error)}:{}),stage:'lease-renewal',durationMs:Date.now()-executionStartedAt});abort.abort();return;}
         retryTimer=setTimeout(()=>{retryTimer=undefined;void renewLease();},Math.min(1000,Math.max(100,remainingMs-leaseSafetyMs)));
         retryTimer.unref();
       } finally {
@@ -154,7 +158,7 @@ export class RunScheduler {
       } catch(error) {
         const failureClass=classifyClaimFailure(error);
         const reasonCode=failureClass==='database_deadlock'?'database_deadlock':failureClass==='database_lock_timeout'?'database_lock_timeout':failureClass==='database_connection'?'database_connection':'database_error';
-        await this.recordTrace(claim.run.id,{component:'scheduler',event:'run.persist',outcome:'failed',diagnosticCode:'RUN_RESULT_PERSIST_FAILED',reasonCode,stage:'result-persistence',durationMs:Date.now()-persistStartedAt});
+        await this.recordTrace(claim.run.id,{component:'scheduler',event:'run.persist',outcome:'failed',diagnosticCode:'RUN_RESULT_PERSIST_FAILED',reasonCode,...(databaseErrorCode(error)?{databaseCode:databaseErrorCode(error)}:{}),stage:'result-persistence',durationMs:Date.now()-persistStartedAt});
         this.reportClaimEvent({event:'grok_scheduler_finish_failed',elapsedMs:Date.now()-persistStartedAt,at:new Date().toISOString(),failureClass:classifyClaimFailure(error)});
         await this.markUnknownAfterPersistFailure(claim.run.id,claim.leaseId,outcome.executionAudit);
         return;
@@ -188,7 +192,7 @@ export class RunScheduler {
       catch(error){
         const failureClass=classifyClaimFailure(error);
         const reasonCode=failureClass==='database_deadlock'?'database_deadlock':failureClass==='database_lock_timeout'?'database_lock_timeout':failureClass==='database_connection'?'database_connection':'database_error';
-        await this.recordTrace(runId,{component:'scheduler',event:'run.persist.attempt',outcome:'failed',attemptNumber:attempt+1,diagnosticCode:'RUN_RESULT_PERSIST_FAILED',reasonCode,stage:'result-persistence',durationMs:Date.now()-attemptStartedAt});
+        await this.recordTrace(runId,{component:'scheduler',event:'run.persist.attempt',outcome:'failed',attemptNumber:attempt+1,diagnosticCode:'RUN_RESULT_PERSIST_FAILED',reasonCode,...(databaseErrorCode(error)?{databaseCode:databaseErrorCode(error)}:{}),stage:'result-persistence',durationMs:Date.now()-attemptStartedAt});
         if(attempt>=2||!mayRetry()||classifyClaimFailure(error)==='unknown')throw error;
         this.reportClaimEvent({event:'grok_scheduler_finish_retry',elapsedMs:Date.now()-startedAt,at:new Date().toISOString(),failureClass:classifyClaimFailure(error)});
         await pause(attempt===0?100:250);

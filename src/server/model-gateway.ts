@@ -22,9 +22,11 @@ import { computerActionTraceEvent,type RunTraceEvent } from './run-trace.ts';
 type CapabilityScope={runId:string;leaseId:string;botId?:string;owner?:RunOwner;skillMutations?:{create:boolean;update:boolean;delete:boolean}};
 type Grant = { expires: number; remaining: number; modelCallLimitReached:boolean; modelCallsUsed:number; memoryRemaining:number; handoffRemaining:number; routineRemaining:number; skillRemaining:number; abort: AbortController; timer: NodeJS.Timeout; scope?:CapabilityScope; modelRateLimit?:{retryAfterSeconds?:number} };
 type UpstreamModelResponse = {response?:Response;retryAfterSeconds?:number};
+type UpstreamErrorDetails = {kind:UpstreamErrorKind;code?:string};
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const modelTransportCodes=new Set(['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']);
 type UpstreamErrorKind='request_invalid'|'authentication_rejected'|'model_not_found'|'context_limit'|'rate_limited'|'quota_exhausted'|'permission_denied'|'provider_server_error'|'provider_unavailable'|'content_filtered'|'unknown';
+const upstreamErrorCodes=new Set(['invalid_request_error','invalid_api_key','model_not_found','context_length_exceeded','rate_limit_exceeded','insufficient_quota','permission_denied','unsupported_parameter','unsupported_value','missing_required_parameter','invalid_type','unknown_parameter','request_too_large','content_filter']);
 
 function modelTransportCode(error:unknown):string|null {
   if(!error||typeof error!=='object')return null;
@@ -47,8 +49,8 @@ function providerErrorKind(status:number,code:string,type:string):UpstreamErrorK
   return 'unknown';
 }
 
-async function readProviderErrorKind(response:Response):Promise<UpstreamErrorKind> {
-  let code='',type='';
+async function readProviderErrorDetails(response:Response):Promise<UpstreamErrorDetails> {
+  let code='',type='',safeCode:string|undefined;
   try {
     const reader=response.clone().body?.getReader();
     if(reader){
@@ -66,13 +68,17 @@ async function readProviderErrorKind(response:Response):Promise<UpstreamErrorKin
         const error=body?.error;
         if(error&&typeof error==='object'&&!Array.isArray(error)){
           const value=error as {code?:unknown;type?:unknown};
-          if(typeof value.code==='string'&&/^[A-Za-z0-9_.-]{1,64}$/.test(value.code))code=value.code;
+          if(typeof value.code==='string'&&/^[A-Za-z0-9_.-]{1,64}$/.test(value.code)){
+            code=value.code;
+            const normalized=value.code.toLowerCase().replaceAll('-','_');
+            if(upstreamErrorCodes.has(normalized))safeCode=normalized;
+          }
           if(typeof value.type==='string'&&/^[A-Za-z0-9_.-]{1,64}$/.test(value.type))type=value.type;
         }
       }
     }
   } catch { /* Provider response text is intentionally never retained. */ }
-  return providerErrorKind(response.status,code,type);
+  return {kind:providerErrorKind(response.status,code,type),...(safeCode?{code:safeCode}:{})};
 }
 function retryAfterSeconds(value:string|null,now=Date.now()):number|undefined {
   const input=value?.trim();if(!input)return undefined;
@@ -437,9 +443,9 @@ export class ModelGateway {
         modelStage='provider-response';
         console.info('Model provider response',{code:upstream.ok&&upstream.body?'MODEL_UPSTREAM_OK':'MODEL_UPSTREAM_REJECTED',status:upstream.status});
         if (!upstream.ok || !upstream.body) {
-          const errorKind=await readProviderErrorKind(upstream);
+          const errorDetails=await readProviderErrorDetails(upstream);
           const missingBody=upstream.ok&&!upstream.body;
-          await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:502,upstreamHttpStatus:upstream.status,upstreamErrorKind:errorKind,diagnosticCode:missingBody?'MODEL_UPSTREAM_MISSING_BODY':'MODEL_UPSTREAM_REJECTED',reasonCode:missingBody?'provider_response_missing_body':'provider_http_rejected',stage:'provider-response',operation:'chat-completions',attemptNumber:modelCallNumber,durationMs:Date.now()-modelStartedAt});
+          await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:502,upstreamHttpStatus:upstream.status,upstreamErrorKind:errorDetails.kind,...(errorDetails.code?{upstreamErrorCode:errorDetails.code}:{}),diagnosticCode:missingBody?'MODEL_UPSTREAM_MISSING_BODY':'MODEL_UPSTREAM_REJECTED',reasonCode:missingBody?'provider_response_missing_body':'provider_http_rejected',stage:'provider-response',operation:'chat-completions',attemptNumber:modelCallNumber,durationMs:Date.now()-modelStartedAt});
           await upstream.body?.cancel().catch(()=>undefined);
           return fail(502);
         }

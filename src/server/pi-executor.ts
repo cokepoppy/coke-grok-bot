@@ -15,7 +15,7 @@ import { explicitMemoryRequest } from './explicit-memory-request.ts';
 import { validateAgentExecutionAudit } from './execution-audit.ts';
 import type { BotSkillStore } from './bot-skill-store.ts';
 import { explicitSkillMutations } from './explicit-skill-request.ts';
-import type { RunTraceEvent } from './run-trace.ts';
+import { validateRunTraceEvent,type RunTraceEvent } from './run-trace.ts';
 
 export const AGENT_TASK_TRANSPORT_TIMEOUT_MS=15*60_000;
 const agentTaskDispatcherOptions={
@@ -33,9 +33,11 @@ const agentAttachmentReasonCodes=new Set([
   'task_attachment_size_limit_exceeded','task_attachment_image_limit_exceeded','task_attachment_source_unavailable',
   'task_attachment_checksum_mismatch','task_attachment_destination_invalid','task_attachment_copy_failed','task_attachment_copy_verification_failed',
 ]);
-const agentRuntimeFailureReasonCodes=new Set(['runtime_setup_failed','runtime_error','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
+const agentRuntimeFailureReasonCodes=new Set(['runtime_setup_failed','runtime_error','agent_timeout','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
 const agentRuntimeFailureStages=new Set(['agent-setup','agent-execution','model-request','model-response','tool-execution','result-validation']);
-const agentRuntimeTransportCodes=new Set(['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']);
+const agentRuntimeTransportCodes=new Set(['EACCES','ECONNRESET','ECONNREFUSED','EMFILE','ENETUNREACH','ENFILE','ENOENT','ENOEXEC','ENOMEM','ETIMEDOUT','EHOSTUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']);
+const agentRuntimeExitSignals=new Set(['SIGABRT','SIGBUS','SIGFPE','SIGHUP','SIGILL','SIGINT','SIGKILL','SIGPIPE','SIGQUIT','SIGSEGV','SIGTERM','SIGTRAP']);
+const agentRuntimeTraceEvents=new Set(['agent.queue','agent.computer.control','agent.adapter.start','agent.adapter.exit','agent.result.parse']);
 
 function agentRuntimeTransportCode(error:unknown):string|undefined {
   if(!error||typeof error!=='object')return undefined;
@@ -56,7 +58,7 @@ export function classifyAgentRejection(value:unknown):AgentRejectionClass {
   if(message.includes('task attachment'))return 'task_attachments_invalid';
   if(message.includes('task working directory')||message.includes('task directory'))return 'task_workspace_invalid';
   if(message.includes('agent kernel'))return 'kernel_unavailable';
-  if(message.includes('agent adapter exited with code'))return 'agent_adapter_failed';
+  if(message.includes('agent adapter exited with code')||message.includes('agent adapter stopped with signal'))return 'agent_adapter_failed';
   if(message.includes('agent adapter must return')||message.includes('agent adapter returned'))return 'agent_adapter_output_invalid';
   if(message.includes('agent task was cancelled'))return 'task_cancelled';
   return 'unknown_agent_rejection';
@@ -78,29 +80,59 @@ function agentRejectionDiagnostic(code:AgentRejectionClass):RunDiagnosticCode {
   }
 }
 
-async function logAgentRejection(response:Response,taskId:string):Promise<{code:AgentRejectionClass;reasonCode?:string;stage?:string;exitCode?:number;upstreamHttpStatus?:number;transportCode?:string}> {
-  let error:unknown,reasonCode:string|undefined,stage:string|undefined,exitCode:number|undefined,upstreamHttpStatus:number|undefined,transportCode:string|undefined;
-  const declared=Number(response.headers.get('content-length'));
-  if(Number.isSafeInteger(declared)&&declared>=0&&declared<=4096) {
-    try {
-      const body:unknown=await response.clone().json();
-      if(body&&typeof body==='object'&&!Array.isArray(body)) {
-        const record=body as {error?:unknown;code?:unknown;reasonCode?:unknown;stage?:unknown;exitCode?:unknown;upstreamHttpStatus?:unknown;transportCode?:unknown};
-        error=record.error;
-        if(typeof record.code==='string'&&agentAttachmentReasonCodes.has(record.code))reasonCode=record.code;
-        if(record.code==='agent_adapter_failed'){
-          if(typeof record.reasonCode==='string'&&agentRuntimeFailureReasonCodes.has(record.reasonCode))reasonCode=record.reasonCode;
-          if(typeof record.stage==='string'&&agentRuntimeFailureStages.has(record.stage))stage=record.stage;
-          if(Number.isInteger(record.exitCode)&&Number(record.exitCode)>0&&Number(record.exitCode)<=255)exitCode=Number(record.exitCode);
-          if(Number.isInteger(record.upstreamHttpStatus)&&Number(record.upstreamHttpStatus)>=100&&Number(record.upstreamHttpStatus)<=599)upstreamHttpStatus=Number(record.upstreamHttpStatus);
-          if(typeof record.transportCode==='string'&&agentRuntimeTransportCodes.has(record.transportCode))transportCode=record.transportCode;
-        }
-      }
-    } catch { /* Keep only the status and a fixed fallback code. */ }
+function parseAgentRuntimeTrace(value:unknown):RunTraceEvent[]{
+  if(!Array.isArray(value))return [];
+  const result:RunTraceEvent[]=[];
+  for(const item of value.slice(0,24)){
+    if(!item||typeof item!=='object'||Array.isArray(item))continue;
+    const raw=item as Record<string,unknown>;
+    if(typeof raw.event!=='string'||!agentRuntimeTraceEvents.has(raw.event))continue;
+    const event=validateRunTraceEvent({...raw,component:'agent-runtime',operation:'agent-adapter'});
+    if(event)result.push(event);
   }
-  const code=classifyAgentRejection(error);
-  console.warn('Agent task endpoint rejected request',{taskId,status:response.status,code,...(reasonCode?{reasonCode}:{}),...(stage?{stage}:{}),...(exitCode?{exitCode}:{}),...(upstreamHttpStatus?{upstreamHttpStatus}:{}),...(transportCode?{transportCode}:{})});
-  return {code,...(reasonCode?{reasonCode}:{}),...(stage?{stage}:{}),...(exitCode?{exitCode}:{}),...(upstreamHttpStatus?{upstreamHttpStatus}:{}),...(transportCode?{transportCode}:{})};
+  return result;
+}
+
+async function safeAgentErrorBody(response:Response):Promise<Record<string,unknown>|null>{
+  const declared=Number(response.headers.get('content-length'));
+  if(Number.isSafeInteger(declared)&&declared>4096)return null;
+  const reader=response.clone().body?.getReader();
+  if(!reader)return null;
+  const chunks:Uint8Array[]=[];let size=0;
+  try{
+    while(true){
+      const part=await reader.read();if(part.done)break;
+      size+=part.value.byteLength;
+      if(size>4096){await reader.cancel();return null;}
+      chunks.push(part.value);
+    }
+  }catch{return null}
+  finally{reader.releaseLock()}
+  try{
+    const value:unknown=JSON.parse(Buffer.concat(chunks.map(chunk=>Buffer.from(chunk))).toString('utf8'));
+    return value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:null;
+  }catch{return null}
+}
+
+async function logAgentRejection(response:Response,taskId:string):Promise<{code:AgentRejectionClass;reasonCode?:string;stage?:string;exitCode?:number;exitSignal?:string;upstreamHttpStatus?:number;transportCode?:string;runtimeTrace:RunTraceEvent[]}> {
+  let error:unknown,reasonCode:string|undefined,stage:string|undefined,exitCode:number|undefined,exitSignal:string|undefined,upstreamHttpStatus:number|undefined,transportCode:string|undefined,runtimeTrace:RunTraceEvent[]=[];
+  const record=await safeAgentErrorBody(response);
+  if(record){
+    error=record.error;
+    runtimeTrace=parseAgentRuntimeTrace(record.runtimeTrace);
+    if(typeof record.code==='string'&&agentAttachmentReasonCodes.has(record.code))reasonCode=record.code;
+    if(record.code==='agent_adapter_failed'){
+      if(typeof record.reasonCode==='string'&&agentRuntimeFailureReasonCodes.has(record.reasonCode))reasonCode=record.reasonCode;
+      if(typeof record.stage==='string'&&agentRuntimeFailureStages.has(record.stage))stage=record.stage;
+      if(Number.isInteger(record.exitCode)&&Number(record.exitCode)>0&&Number(record.exitCode)<=255)exitCode=Number(record.exitCode);
+      if(typeof record.exitSignal==='string'&&agentRuntimeExitSignals.has(record.exitSignal))exitSignal=record.exitSignal;
+      if(Number.isInteger(record.upstreamHttpStatus)&&Number(record.upstreamHttpStatus)>=100&&Number(record.upstreamHttpStatus)<=599)upstreamHttpStatus=Number(record.upstreamHttpStatus);
+      if(typeof record.transportCode==='string'&&agentRuntimeTransportCodes.has(record.transportCode))transportCode=record.transportCode;
+    }
+  }
+  const code=record?.code==='agent_adapter_failed'?'agent_adapter_failed':classifyAgentRejection(error);
+  console.warn('Agent task endpoint rejected request',{taskId,status:response.status,code,...(reasonCode?{reasonCode}:{}),...(stage?{stage}:{}),...(exitCode?{exitCode}:{}),...(exitSignal?{exitSignal}:{}),...(upstreamHttpStatus?{upstreamHttpStatus}:{}),...(transportCode?{transportCode}:{})});
+  return {code,...(reasonCode?{reasonCode}:{}),...(stage?{stage}:{}),...(exitCode?{exitCode}:{}),...(exitSignal?{exitSignal}:{}),...(upstreamHttpStatus?{upstreamHttpStatus}:{}),...(transportCode?{transportCode}:{}),runtimeTrace};
 }
 
 export interface DesktopConnection { agentUrl: URL; agentToken: string }
@@ -202,22 +234,26 @@ export class DesktopAgentExecutor implements RunExecutor {
       if (!response.ok) {
         const rejection=await logAgentRejection(response,run.id);
         const diagnostic=this.gateway.diagnosticCode(capability)||(response.status===400?agentRejectionDiagnostic(rejection.code):agentHttpDiagnostic(response.status));
-        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:response.status,...(rejection.upstreamHttpStatus?{upstreamHttpStatus:rejection.upstreamHttpStatus}:{}),...(rejection.exitCode?{adapterExitCode:rejection.exitCode}:{}),diagnosticCode:diagnostic,...(rejection.reasonCode?{reasonCode:rejection.reasonCode}:{}),...(rejection.stage?{stage:rejection.stage}:{}),operation:'agent-adapter',...(rejection.transportCode?{transportCode:rejection.transportCode}:{}),durationMs:Date.now()-dispatchStartedAt,...(response.headers.get('x-coke-grok-release-id')?{releaseId:response.headers.get('x-coke-grok-release-id')!}:{})});
+        for(const event of rejection.runtimeTrace)await this.recordTrace(run.id,event);
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:response.status,...(rejection.upstreamHttpStatus?{upstreamHttpStatus:rejection.upstreamHttpStatus}:{}),...(rejection.exitCode?{adapterExitCode:rejection.exitCode}:{}),...(rejection.exitSignal?{adapterExitSignal:rejection.exitSignal}:{}),diagnosticCode:diagnostic,...(rejection.reasonCode?{reasonCode:rejection.reasonCode}:{}),...(rejection.stage?{stage:rejection.stage}:{}),operation:'agent-adapter',...(rejection.transportCode?{transportCode:rejection.transportCode}:{}),durationMs:Date.now()-dispatchStartedAt,...(response.headers.get('x-coke-grok-release-id')?{releaseId:response.headers.get('x-coke-grok-release-id')!}:{})});
         throw new RunDiagnosticError(diagnostic);
       }
       const agentReleaseId=response.headers.get('x-coke-grok-release-id');
-      await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'succeeded',httpStatus:response.status,stage:'agent-setup',operation:'agent-adapter',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
       let value:unknown;
       try { value=await response.json(); }
       catch {
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'succeeded',httpStatus:response.status,stage:'agent-setup',operation:'agent-adapter',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
         await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:'failed',httpStatus:response.status,diagnosticCode:'agent_response_invalid',reasonCode:'result_invalid',stage:'result-validation',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
         throw new RunDiagnosticError('agent_response_invalid');
       }
       if (!value || typeof value!=='object' || Array.isArray(value)) {
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'succeeded',httpStatus:response.status,stage:'agent-setup',operation:'agent-adapter',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
         await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:'failed',httpStatus:response.status,diagnosticCode:'agent_response_invalid',reasonCode:'result_invalid',stage:'result-validation',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
         throw new RunDiagnosticError('agent_response_invalid');
       }
-      const result=value as {status?:unknown;message?:unknown;pausedForControl?:unknown;controlOwner?:unknown;files?:unknown;executionAudit?:unknown};
+      const result=value as {status?:unknown;message?:unknown;pausedForControl?:unknown;controlOwner?:unknown;files?:unknown;executionAudit?:unknown;runtimeTrace?:unknown};
+      for(const event of parseAgentRuntimeTrace(result.runtimeTrace))await this.recordTrace(run.id,event);
+      await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'succeeded',httpStatus:response.status,stage:'agent-setup',operation:'agent-adapter',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
       const executionAudit=validateAgentExecutionAudit(result.executionAudit);
       // A pause may have interrupted an operation after a side effect. Reconciliation is required.
       if (result.pausedForControl===true) {

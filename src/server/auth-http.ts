@@ -48,6 +48,10 @@ function rejectUpgrade(socket:Duplex,status:number):void{
 function replyJson(res:ServerResponse,status:number,value:unknown):void{
  res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));
 }
+function safeMysqlErrorCode(error:unknown):string{
+ const raw=error&&typeof error==='object'&&'code'in error&&typeof error.code==='string'?error.code.toUpperCase():'';
+ return /^[A-Z0-9_]{1,64}$/.test(raw)?raw:'UNKNOWN';
+}
 async function readJsonBody(req:IncomingMessage,maxBytes:number):Promise<{ok:true;value:unknown}|{ok:false;status:400|413|415}>{
  if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type']||''))return {ok:false,status:415};
  const chunks:Buffer[]=[];let size=0;
@@ -606,8 +610,10 @@ export function createAuthServer(auth: GoogleAuthService, publicOrigin: string, 
           return events ? reply(200,{events}) : reply(404,{error:'Not found'});
         }
         if (req.method === 'GET' && runTraceMatch) {
-          const events=await runs.trace(session,runTraceMatch[1]);
-          return events ? reply(200,{events}) : reply(404,{error:'Not found'});
+          try{
+            const result=await runs.traceResult(session,runTraceMatch[1]);
+            return result ? reply(200,{events:result.events,storage:result.storage}) : reply(404,{error:'Not found'});
+          }catch(error){return reply(503,{error:'RUN_TRACE_READ_FAILED',databaseCode:safeMysqlErrorCode(error)})}
         }
         if (req.method === 'GET' && runMatch) {
           let list=await runs.list(session,runMatch[1]);
