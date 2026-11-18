@@ -3479,3 +3479,5 @@ V2 连续逐帧覆盖推进至 30:14.960（累计 45,375 帧），下一窗口�
 任务出现已记录的失败原因时，聊天 Computer 卡片直接显示主失败组件、阶段、HTTP 状态和安全诊断码，不再只显示笼统的 `Outcome unknown`；底层 run 仍保留 `unknown` 状态以避免把“结果未确认”误报为已确定失败，也避免自动重放可能产生副作用的操作。调用链列出时间、步骤、HTTP/上游 HTTP、耗时、release ID、adapter 退出码/信号、MySQL/传输码、上游错误类别和安全原因码；Pi/DeepSeek Harness 会把可识别的运行时异常类别及 allowlist 内的 provider 错误字段沿 Agent 响应传回同一条 trace。提示词、页面内容、原始 stderr、请求/响应正文和凭据不进入 trace。
 
 `agent.dispatch` 的 `HTTP 400` 表示聊天服务收到 Agent runtime 的拒绝响应；它本身不能证明是 Nginx 故障。只有上游确实记录并传回 provider HTTP/错误类别时，界面才显示该信息；无法安全分类的异常显示 `AGENT_RUNTIME_UNCLASSIFIED_ERROR`，不能伪称已找到根因。该修复目前位于 `codex/grok-frontend-failure-details-20261118` 功能分支；对应版本仍需构建并通过已登录公网 UI 验收后，才能视作已上线。
+
+2026-11-18 公网只读淘宝任务的调用链进一步定位到 `Model Gateway` 的请求校验：HTTP 413、`request_body_too_large`，发生在 `request-validation`，没有 provider upstream 状态，因此请求未转发到模型 API，也没有证据指向 Nginx。原因是应用内部 2 MiB 请求缓冲阈值；当时 Auth Pod 内存上限为 256 MiB。另有两次 Desktop `COMPUTER_STATE_CHANGED` HTTP 409，后续任务继续执行，这不是最终退出原因。候选调整把 Gateway 的请求上限提高到 32 MiB、Auth Pod 内存上限提高到 512 MiB，记录拒绝时已读取字节数及上限，并让聊天卡片/调用链优先显示 Model Gateway 根因；Pi 外层退出码仍作为附加信息。构建成功；Model Gateway 9/9、Run Trace 3/3、Runtime 220/220 通过。测试 MySQL 13317 未运行，未启动额外容器；MySQL 集成测试尚未执行。此候选尚未部署，不能算公网已修复。

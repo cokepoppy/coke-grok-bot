@@ -5,6 +5,20 @@ import { ModelGateway } from '../src/server/model-gateway.ts';
 
 const fakeKey = 'fake-sensitive-key-for-test';
 const model = 'deepseek-v4.1-flash';
+test('accepts a model request larger than the former 2 MiB limit', async()=>{
+ const content='x'.repeat(2*1024*1024+64);let forwardedLength=0;
+ const gateway=new ModelGateway(fakeKey,'https://example.test/compatible-mode/v1',model,async(_input,init)=>{
+  const payload=JSON.parse(String(init?.body)) as {messages:Array<{content:string}>};forwardedLength=payload.messages[0]?.content.length||0;
+  return new Response('{"choices":[]}');
+ });
+ const server=gateway.createServer();server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();if(!address||typeof address==='string')throw new Error('No test port');
+ const token=gateway.issue({ttlMs:10_000,calls:1});
+ try{
+  const response=await fetch(`http://127.0.0.1:${address.port}/v1/chat/completions`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({model,messages:[{role:'user',content}]})});
+  assert.equal(response.status,200);assert.equal(forwardedLength,content.length);await response.arrayBuffer();
+ }finally{gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}
+});
+
 test('DeepSeek official root endpoint routes OpenAI Chat Completions without adding an extra slash', async()=>{
  let target='';
  const gateway=new ModelGateway(fakeKey,'https://api.deepseek.com','deepseek-flash',async input=>{

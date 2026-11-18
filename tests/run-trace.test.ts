@@ -23,7 +23,7 @@ test('run traces retain only bounded operational metadata',()=>{
  });
  assert.deepEqual(event,{
   component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:400,
-  attemptNumber:null,upstreamHttpStatus:400,upstreamErrorKind:null,upstreamErrorCode:null,retryAfterSeconds:null,
+  attemptNumber:null,upstreamHttpStatus:400,upstreamErrorKind:null,upstreamErrorCode:null,retryAfterSeconds:null,requestBytes:null,requestLimitBytes:null,
   adapterExitCode:1,adapterExitSignal:'SIGTERM',databaseCode:null,relatedComponent:null,relatedEvent:null,
   diagnosticCode:'agent_adapter_failed',reasonCode:'model_request_rejected',durationMs:37,releaseId:`sha-${'a'.repeat(40)}`,
   stage:'model-request',operation:'agent-adapter',transportCode:'ECONNRESET',
@@ -44,6 +44,9 @@ test('run traces reject malformed component, status, diagnostic, timing, and rel
  assert.equal(validateRunTraceEvent({...base,transportCode:'private error text'}),null);
  assert.equal(validateRunTraceEvent({...base,upstreamHttpStatus:400})?.upstreamHttpStatus,400);
  assert.equal(validateRunTraceEvent({...base,component:'computer-worker',upstreamHttpStatus:400}),null);
+  assert.deepEqual(validateRunTraceEvent({...base,httpStatus:413,diagnosticCode:'MODEL_GATEWAY_REQUEST_REJECTED',reasonCode:'request_body_too_large',stage:'request-validation',operation:'chat-completions',requestBytes:2_097_153,requestLimitBytes:2_097_152})?.requestBytes,2_097_153);
+  assert.equal(validateRunTraceEvent({...base,requestBytes:2_097_153}),null);
+  assert.equal(validateRunTraceEvent({...base,requestBytes:2_097_152,requestLimitBytes:2_097_152}),null);
  assert.equal(validateRunTraceEvent({...base,component:'agent-runtime',reasonCode:'private error text'}),null);
  assert.equal(validateRunTraceEvent({...base,component:'agent-runtime',adapterExitCode:256}),null);
  assert.equal(validateRunTraceEvent({...base,adapterExitCode:1}),null);

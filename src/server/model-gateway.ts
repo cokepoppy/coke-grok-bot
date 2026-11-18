@@ -109,6 +109,7 @@ function validRoutineEditInput(value:unknown):value is RoutineEditInput {
 }
 export class ModelGateway {
   static readonly maxModelCallsPerRun=200;
+  static readonly maxModelRequestBytes=32*1024*1024;
   private readonly grants = new Map<string, Grant>();
   private readonly upstream: URL;
   private upstreamRateLimit?:{until:number;retryAfterSeconds:number};
@@ -207,8 +208,8 @@ export class ModelGateway {
       }
       if (!grant || grant.expires <= Date.now() || (memoryRoute && grant.memoryRemaining <= 0) || (handoffRoute && req.method==='POST' && grant.handoffRemaining <= 0) || (routineRoute && grant.routineRemaining <= 0) || (skillRoute && grant.skillRemaining <= 0)) { if (token && grant) this.revoke(token); return fail(401); }
       const modelCallNumber=Math.min(200,grant.modelCallsUsed+1);
-      const rejectModelRequest=async(status:number,reasonCode:string,stage:'request-validation'|'request-auth'='request-validation',diagnosticCode='MODEL_GATEWAY_REQUEST_REJECTED')=>{
-        await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:status,diagnosticCode,reasonCode,stage,operation:'chat-completions',attemptNumber:modelCallNumber,durationMs:Date.now()-modelRequestReceivedAt});
+      const rejectModelRequest=async(status:number,reasonCode:string,stage:'request-validation'|'request-auth'='request-validation',diagnosticCode='MODEL_GATEWAY_REQUEST_REJECTED',size?:{requestBytes:number;requestLimitBytes:number})=>{
+        await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:status,diagnosticCode,reasonCode,stage,operation:'chat-completions',attemptNumber:modelCallNumber,durationMs:Date.now()-modelRequestReceivedAt,...(size||{})});
         return fail(status);
       };
       if(modelRoute&&grant.modelRateLimit){
@@ -408,7 +409,7 @@ export class ModelGateway {
       const chunks: Buffer[] = []; let size = 0;
       let modelStartedAt:number|undefined,modelUpstreamStatus:number|null=null,modelStage:'provider-request'|'provider-response'|'response-stream'='provider-request';
       try {
-        for await (const chunk of req) { size += chunk.length; if (size > 2 * 1024 * 1024) return modelRoute?await rejectModelRequest(413,'request_body_too_large'):fail(413); chunks.push(chunk); }
+        for await (const chunk of req) { size += chunk.length; if (size > ModelGateway.maxModelRequestBytes) return modelRoute?await rejectModelRequest(413,'request_body_too_large','request-validation','MODEL_GATEWAY_REQUEST_REJECTED',{requestBytes:size,requestLimitBytes:ModelGateway.maxModelRequestBytes}):fail(413); chunks.push(chunk); }
         let body: unknown;
         try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return modelRoute?await rejectModelRequest(400,'request_json_invalid'):fail(400); }
         if (!body || typeof body !== 'object' || Array.isArray(body)) return modelRoute?await rejectModelRequest(400,'request_shape_invalid'):fail(400);

@@ -11,6 +11,8 @@ export interface RunTraceEvent {
   upstreamErrorKind?: string | null;
   upstreamErrorCode?: string | null;
   retryAfterSeconds?: number | null;
+  requestBytes?: number | null;
+  requestLimitBytes?: number | null;
   adapterExitCode?: number | null;
   adapterExitSignal?: string | null;
   databaseCode?: string | null;
@@ -68,6 +70,8 @@ export function validateRunTraceEvent(value: unknown): RunTraceEvent | null {
   const upstreamErrorKind = row.upstreamErrorKind === undefined || row.upstreamErrorKind === null ? null : row.upstreamErrorKind;
   const upstreamErrorCode = row.upstreamErrorCode === undefined || row.upstreamErrorCode === null ? null : row.upstreamErrorCode;
   const retryAfterSeconds = row.retryAfterSeconds === undefined || row.retryAfterSeconds === null ? null : row.retryAfterSeconds;
+  const requestBytes = row.requestBytes === undefined || row.requestBytes === null ? null : row.requestBytes;
+  const requestLimitBytes = row.requestLimitBytes === undefined || row.requestLimitBytes === null ? null : row.requestLimitBytes;
   const adapterExitCode = row.adapterExitCode === undefined || row.adapterExitCode === null ? null : row.adapterExitCode;
   const adapterExitSignal = row.adapterExitSignal === undefined || row.adapterExitSignal === null ? null : row.adapterExitSignal;
   const databaseCode = row.databaseCode === undefined || row.databaseCode === null ? null : row.databaseCode;
@@ -86,6 +90,9 @@ export function validateRunTraceEvent(value: unknown): RunTraceEvent | null {
   if (upstreamErrorKind !== null && (!['agent-runtime','model-gateway'].includes(String(row.component)) || typeof upstreamErrorKind !== 'string' || !upstreamErrorKinds.has(upstreamErrorKind))) return null;
   if (upstreamErrorCode !== null && (!['agent-runtime','model-gateway'].includes(String(row.component)) || typeof upstreamErrorCode !== 'string' || !upstreamErrorCodes.has(upstreamErrorCode))) return null;
   if (retryAfterSeconds !== null && (row.component!=='model-gateway' || !Number.isSafeInteger(retryAfterSeconds) || Number(retryAfterSeconds) < 0 || Number(retryAfterSeconds) > 86400)) return null;
+  if (requestBytes !== null && (row.component!=='model-gateway' || row.event!=='model.request' || row.outcome!=='failed' || !Number.isSafeInteger(requestBytes) || Number(requestBytes) < 0 || Number(requestBytes) > 128*1024*1024)) return null;
+  if (requestLimitBytes !== null && (row.component!=='model-gateway' || row.event!=='model.request' || row.outcome!=='failed' || !Number.isSafeInteger(requestLimitBytes) || Number(requestLimitBytes) < 1 || Number(requestLimitBytes) > 128*1024*1024)) return null;
+  if ((requestBytes === null) !== (requestLimitBytes === null) || requestBytes !== null && Number(requestBytes) <= Number(requestLimitBytes)) return null;
   if (adapterExitCode !== null && (row.component!=='agent-runtime' || !Number.isInteger(adapterExitCode) || Number(adapterExitCode) < 1 || Number(adapterExitCode) > 255)) return null;
   if (adapterExitSignal !== null && (row.component!=='agent-runtime' || typeof adapterExitSignal !== 'string' || !adapterExitSignals.has(adapterExitSignal))) return null;
   if (databaseCode !== null && (!['mysql','scheduler'].includes(String(row.component)) || typeof databaseCode !== 'string' || !/^[A-Z0-9_]{1,64}$/.test(databaseCode))) return null;
@@ -108,6 +115,8 @@ export function validateRunTraceEvent(value: unknown): RunTraceEvent | null {
     upstreamErrorKind: upstreamErrorKind as string | null,
     upstreamErrorCode: upstreamErrorCode as string | null,
     retryAfterSeconds: retryAfterSeconds as number | null,
+    requestBytes: requestBytes as number | null,
+    requestLimitBytes: requestLimitBytes as number | null,
     adapterExitCode: adapterExitCode as number | null,
     adapterExitSignal: adapterExitSignal as string | null,
     databaseCode: databaseCode as string | null,
