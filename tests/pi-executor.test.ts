@@ -52,6 +52,34 @@ test('Pi preserves a fixed Agent adapter failure code and correlates it without 
  assert.equal(JSON.stringify(warnings).includes('private provider diagnostic'),false);
 });
 
+test('Pi persists Agent runtime substeps before its outer HTTP failure and strips unsafe fields',async()=>{
+ const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));
+ const body=Buffer.from(JSON.stringify({
+  error:'Agent adapter stopped with signal SIGKILL',code:'agent_adapter_failed',reasonCode:'runtime_error',stage:'agent-execution',exitSignal:'SIGKILL',
+  runtimeTrace:[
+   {event:'agent.adapter.start',outcome:'succeeded',stage:'adapter-start',durationMs:8},
+   {event:'agent.adapter.exit',outcome:'failed',stage:'agent-execution',diagnosticCode:'AGENT_ADAPTER_SIGNAL_EXIT',reasonCode:'runtime_error',adapterExitSignal:'SIGKILL',durationMs:913,prompt:'private prompt'},
+   {event:'private.error',outcome:'failed',prompt:'private prompt'},
+  ],
+ }));
+ const response=new Response(body,{status:400,headers:{'content-type':'application/json','content-length':String(body.length)}});
+ const trace:unknown[]=[];
+ const executor=new PiExecutor({connect:async()=>({agentUrl:endpoint,agentToken})},gateway,'https://gateway.example.test/v1','model',async()=>response,undefined,undefined,undefined,undefined,async(_runId,event)=>{trace.push(event)});
+ try {
+  await assert.rejects(executor.execute(screen,run,new AbortController().signal,randomUUID()),error=>error instanceof RunDiagnosticError&&error.diagnosticCode==='agent_adapter_failed');
+ } finally {await executor.close();gateway.close()}
+ assert.deepEqual(trace.map((event)=>({event:(event as {event:string}).event,outcome:(event as {outcome:string}).outcome})),[
+  {event:'desktop.connect',outcome:'started'},
+  {event:'desktop.connect',outcome:'succeeded'},
+  {event:'agent.dispatch',outcome:'started'},
+  {event:'agent.adapter.start',outcome:'succeeded'},
+  {event:'agent.adapter.exit',outcome:'failed'},
+  {event:'agent.dispatch',outcome:'failed'},
+ ]);
+ assert.equal(JSON.stringify(trace).includes('private prompt'),false);
+ assert.equal(JSON.stringify(trace).includes('SIGKILL'),true);
+});
+
 test('Pi and DSH preload only enabled Skills named by the direct message and scope mutations to that request',async()=>{
  for(const [engine,Executor] of [['pi',PiExecutor],['dsh',DshExecutor]] as const){
   const gateway=new ModelGateway('test-provider-key','https://example.test/compatible-mode/v1','model',async()=>new Response('{}'));

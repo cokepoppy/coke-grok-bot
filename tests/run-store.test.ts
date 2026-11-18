@@ -53,10 +53,14 @@ test('runs are deduplicated and isolated; unknown outcomes resume queues without
     assert.ok(trace.some(event=>event.event==='run.claimed'));
     assert.ok(trace.some(event=>event.event==='run.persisted'));
     assert.deepEqual(trace.find(event=>event.event==='agent.dispatch'),{
-      component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:400,
+      component:'agent-runtime',event:'agent.dispatch',outcome:'failed',attemptNumber:null,httpStatus:400,
+      upstreamHttpStatus:null,upstreamErrorKind:null,upstreamErrorCode:null,retryAfterSeconds:null,
+      adapterExitCode:null,adapterExitSignal:null,databaseCode:null,relatedComponent:null,relatedEvent:null,
       diagnosticCode:'agent_adapter_failed',durationMs:42,releaseId:`sha-${'a'.repeat(40)}`,
+      reasonCode:null,stage:null,operation:null,transportCode:null,
       sequence:trace.find(event=>event.event==='agent.dispatch')?.sequence,
       at:trace.find(event=>event.event==='agent.dispatch')?.at,
+      source:'database',
     });
     assert.equal(await runs.trace(sb,claim.run.id),null,'run trace must remain owner-scoped');
     const persistedAudit=(await runs.list(sa,claim.run.botId))?.find(run=>run.id===claim.run.id)?.executionAudit;
