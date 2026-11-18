@@ -3536,3 +3536,17 @@ After restarting ChatGPT, `cua.getState()` again listed the Chrome extension and
 #### 2026-11-18 17:58 CST Computer Use availability recheck
 
 After another check, `cua.getState()` listed the same Chrome extension and public Grok Bot tab, but again reported that the Mac was locked and automatic unlock failed. This is tab discovery only; no live page action was possible. No Chrome tab binding, screenshot, CDP, Playwright, HTTP, or Pod check was used as a substitute. Public Computer Use acceptance remains incomplete until the Mac is manually unlocked and a visible semantic action succeeds.
+
+#### 2026-11-18 18:11 CST Computer Use availability recheck
+
+After the ChatGPT restart, `cua.getState()` again enumerated the Chrome extension tab `Coke Grok Bot · Preview` at the public app URL. Binding that tab with `cua.getTab` timed out after 30 seconds and reset the CUA kernel; one native `cua.getApp("Google Chrome")` check then returned `The Mac is locked and automatic unlock could not unlock it`. The browser tab listing therefore does not establish usable control. No screenshot, coordinate input, CDP, Playwright, HTTP, or Pod check substituted for Computer Use. Public click acceptance remains pending manual Mac unlock and a successful semantic browser action.
+
+#### 2026-11-18 18:11 CST 官方 Grok Bot 201 V2 连续逐帧续审（31:50.000–31:54.960）
+
+审阅 125 个连续 1920×1080、25 fps 源帧与五张 5×5 联系图。源 MKV SHA-256 为 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`；PTS 为 1,910,000–1,914,960、间隔 40 ms。独立紧凑重解码确认 125/125 帧 PTS、`yuv420p` 像素哈希/字节数和 5/5 联系图哈希匹配。31:51.680 的原尺寸帧仍显示三列商品网格，31:51.720 的相邻帧首次显示 Cloud Nap 商品详情；五帧边界目录经第二次独立提取确认 5/5 PTS、PNG SHA-256 与联系图哈希匹配。详情页包括左侧大号蓝色贴纸图，右侧 `Cloud Nap`、`Professional napper. Do not disturb.`、`$5.00`、简介、`MOOD: SLEEPY`、`STARRING: NIMBUS`、2/3/4 英寸尺寸选项、数量步进器和 `Add to cart · $5.00`。窗口后段贴纸形状持续动画，显示价格变为 `$6.00`；录像没有足够证据确认引发价格变化的输入，不据此声称加购或购买已发生。上述都是聊天媒体中的演示画面，不是项目站点实时交互或交易验收。证据目录见[研究证据台账](../research/README.md)及忽略目录 `research/frames/grok-201-3150-3155-compact-audit-20261118/`、`grok-201-3151-64-to-3151-84-state-boundary-20261118/`。V2 连续逐帧覆盖累计 47,875 帧，下一窗口从 31:55.000（PTS 1,915,000）开始。
+
+#### 2026-11-18 18:16 CST K3D 版本与用户命名空间只读核对
+
+当前 context 为 `k3d-tp1121-sandbox-dev`。Grok Bot 控制面 `coke-grok-auth`、`coke-grok-desktop-broker`、`coke-grok-namespace-bootstrap` 均为 `1/1`，镜像和 release 标签一致为 `sha-a510af23b7933e8f0e310406c5975b03b78127ff`。两个活动用户命名空间 `grok-user-00213195e832242e4afea5b264424355` 和 `grok-user-efbc9abae2560feb29bc9ba3719c77ce` 的 Agent、Desktop 各为 `1/1 Running` 且带相同 release 标签；两者各自有独立的 `Bound`、10 GiB `workspace` PVC。命名空间创建时间分别为 2026-11-01 与 2026-11-17。
+
+代码 `src/server/desktop-resources.ts` 将 namespace owner hash 定义为 `SHA-256(lowercase(tenantId + ':' + userId)).slice(0, 32)`，所以两个不同 owner hash 表示两个不同 tenant/user 身份组合；这不是同一身份下 Agent 与 Desktop 的 Pod 数量关系。仅凭 Kubernetes 哈希无法证明这两个身份是否对应同一邮箱；本次没有查询认证数据库，也没有删除命名空间、PVC 或登录态。后续需通过不泄露凭据的认证映射确认 `efbc…` 是否为测试身份，再决定是否按既有清理授权处理。集群其他项目和已缩容到零的旧桌面 Deployment 不纳入此 Grok Bot 活动版本核对。
