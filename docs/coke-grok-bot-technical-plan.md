@@ -3481,3 +3481,13 @@ V2 连续逐帧覆盖推进至 30:14.960（累计 45,375 帧），下一窗口�
 `agent.dispatch` 的 `HTTP 400` 表示聊天服务收到 Agent runtime 的拒绝响应；它本身不能证明是 Nginx 故障。只有上游确实记录并传回 provider HTTP/错误类别时，界面才显示该信息；无法安全分类的异常显示 `AGENT_RUNTIME_UNCLASSIFIED_ERROR`，不能伪称已找到根因。相关修复已随 `sha-d3587deaafde4dc8093f5d438a5f94f7e8c74cd0` 部署到 K3D；公网路由返回 HTTP 200，但本轮 Computer Use 报告本地浏览器不可用，尚未能通过公网 UI 确认聊天卡片的可见呈现。
 
 2026-11-18 公网只读淘宝任务的调用链进一步定位到 `Model Gateway` 的请求校验：HTTP 413、`request_body_too_large`，发生在 `request-validation`，没有 provider upstream 状态，因此请求未转发到模型 API，也没有证据指向 Nginx。2 MiB 是应用内部请求缓冲保护值；它不是模型 API 的要求，但在 Auth Pod 仅 256 MiB 内存时仍被设得过低，导致正常页面/图片上下文被挡。两次 Desktop `COMPUTER_STATE_CHANGED` HTTP 409 后续恢复并继续执行，不是最终退出原因。提交 `87bce58` 将 Gateway 上限提高到 32 MiB、Auth Pod 请求/上限调为 128/512 MiB，记录拒绝时读取字节数和配置上限，并让聊天卡片优先呈现具体 Gateway 根因；提交 `d3587de` 修复发布脚本，使资源值随发布应用且能随回滚恢复。Model Gateway 9/9、Run Trace 3/3、Runtime 220/220 通过；构建完成。2026-11-18 14:29 CST 发布版本 `sha-d3587deaafde4dc8093f5d438a5f94f7e8c74cd0` 到本机 K3D：7/7 Deployment rollout 成功，所有 7 个应用 Pod（共 10 个容器）均运行同一 release ID 并 Ready；Auth 实际资源为 request 128Mi / limit 512Mi。MySQL Pod UID 和 3 个 PVC UID 前后不变。公网域名 HTTP GET 返回 200。Computer Use 本轮报告本地浏览器不可用，因此未能通过公网 UI 读取既有聊天卡片；没有重放淘宝任务，也不把 HTTP 200 当作 UI 验收。MySQL 集成测试端口 13317 未运行，未启动额外 MySQL 容器。
+
+#### 2026-11-18 公网淘宝只读复测与请求大小边界
+
+2026-11-18 14:51 CST 将 `sha-0674074f30e5dba6da7500779cafe49b42f22b06` 部署到本机 K3D；7/7 Deployment 完成，7 个应用 Pod 的 release ID 一致，MySQL Pod 和 3 个 PVC 保留。部署后通过签入态公网 Chrome 打开已有淘宝对话和调用链，旧 13:41 运行卡片明确显示 `HTTP 413 / request_body_too_large`、模型调用第 11 次在请求校验阶段被拒绝且 provider 未调用。该历史 run 当时没有记录 request bytes，不能事后补写。
+
+第一条新只读复测 `97604441-a297-41cb-9caf-75c78f5bf284` 在同一条较长聊天中通过 Pi/DeepSeek/Browser User 运行。第 11 次模型请求返回 Model Gateway HTTP 200、provider HTTP 200，证明此前 2 MiB 截断已消失。任务确实打开 `taobao.com` 并得到“索康尼 跑鞋”结果；但商品卡可访问名被截断，多个商品共用详情链接，Browser click 返回 `COMPUTER_BROWSER_TARGET_NOT_FOUND`，另有一次 `COMPUTER_RENDERER_UNRESPONSIVE`，期间云电脑上下文一度回到 `example.com`。因此第一次复测没有确认尺码，不把模型先前的商品描述当作验证结果。
+
+之后在同一公网界面发起短查询，实际将淘宝搜索词改为“索康尼 跑鞋 41码”，结果页标题和列表均可见。列表明确显示一条满足条件的商品：索康尼菁华16，41–43码，¥399；另有 EXCURSION TR18 ¥399（券后价）和 COHESION19 ¥342（券后价），但列表未显示其尺码，故不计为已确认候选。未打开商品详情、未加购、下单或支付。此次请求大小修复的公网 UI 测试通过；完整规格确认仍受商品详情控件定位失败限制。第 2 条 run 的公网卡片报告搜索成功，但其调用链面板在本轮未能加载出明细，故不声称已单独核对该 run 的 release 字段。
+
+2 MiB 是应用为避免请求在内存缓冲、复制和 JSON 解析时耗尽 Auth Pod 内存而设置的本地上限，不是 DeepSeek、Token Plan 或模型上下文要求；其具体阈值没有按真实 Agent 请求做测量，设得过低，属于实现错误。当前 32 MiB 仍是容量保护边界，不是用户审批或网站白名单。不能把请求大小设成无限而让任意大正文耗尽单个 Auth Pod；后续若真实任务触及新上限，应依据调用链记录的实际字节数和 Pod 内存峰值调整容量预算，而不是增加逐步审批。
