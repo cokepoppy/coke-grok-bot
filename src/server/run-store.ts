@@ -12,7 +12,7 @@ export type RecoveryState = 'none' | 'pending' | 'retried' | 'acknowledged' | 'a
 export interface GroupRunContext { kind:'group-chat';groupName:string;currentBot:{name:string;label:string};members:Array<{name:string;label:string}>;targeted:boolean }
 export interface BotMentionRunContext { kind:'bot-mentions';targets:Array<{id:string;name:string;label:string}> }
 export type AgentRuntimeContext = GroupRunContext | BotMentionRunContext;
-export interface AgentRun { id: string; botId: string; prompt: string; status: RunStatus; result: string | null; recoveryState: RecoveryState; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: RunDiagnosticCode | null; failureComponent?:string|null; failureReasonCode?:string|null; failureStage?:string|null; failureHttpStatus?:number|null; failureUpstreamHttpStatus?:number|null; failureAdapterExitCode?:number|null; failureTransportCode?:string|null; runtimeContext?:AgentRuntimeContext|null; executionAudit?:AgentExecutionAudit|null; previousPrompts?:string[] }
+export interface AgentRun { id: string; botId: string; prompt: string; status: RunStatus; result: string | null; recoveryState: RecoveryState; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: RunDiagnosticCode | null; failureTraceDiagnosticCode?:string|null; failureComponent?:string|null; failureReasonCode?:string|null; failureStage?:string|null; failureHttpStatus?:number|null; failureUpstreamHttpStatus?:number|null; failureUpstreamErrorKind?:string|null; failureAdapterExitCode?:number|null; failureTransportCode?:string|null; runtimeContext?:AgentRuntimeContext|null; executionAudit?:AgentExecutionAudit|null; previousPrompts?:string[] }
 export interface RunRecoveryResult { decision: 'retry' | 'acknowledge'; run: AgentRun | null }
 export type RunOwner = Pick<Session, 'tenantId' | 'userId'>;
 export interface RunScreenScope extends RunOwner { botId: string }
@@ -71,7 +71,10 @@ export class RunStore {
       component VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
       event VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
       outcome ENUM('started','succeeded','failed','info') NOT NULL,
+      attempt_number SMALLINT UNSIGNED NULL,
       http_status SMALLINT UNSIGNED NULL,
+      upstream_error_kind VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NULL,
+      retry_after_seconds INT UNSIGNED NULL,
       diagnostic_code VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
       reason_code VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
       adapter_exit_code TINYINT UNSIGNED NULL,
@@ -87,9 +90,12 @@ export class RunStore {
     ) ENGINE=InnoDB`);
     const [traceColumns] = await this.pool.execute<RowDataPacket[]>(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='agent_run_traces'`);
     const traceNames = new Set(traceColumns.map(column => String(column.COLUMN_NAME)));
+    if (!traceNames.has('attempt_number')) await this.pool.execute('ALTER TABLE agent_run_traces ADD COLUMN attempt_number SMALLINT UNSIGNED NULL AFTER outcome');
     if (!traceNames.has('reason_code')) await this.pool.execute('ALTER TABLE agent_run_traces ADD COLUMN reason_code VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER diagnostic_code');
     if (!traceNames.has('adapter_exit_code')) await this.pool.execute('ALTER TABLE agent_run_traces ADD COLUMN adapter_exit_code TINYINT UNSIGNED NULL AFTER reason_code');
     if (!traceNames.has('upstream_http_status')) await this.pool.execute('ALTER TABLE agent_run_traces ADD COLUMN upstream_http_status SMALLINT UNSIGNED NULL AFTER reason_code');
+    if (!traceNames.has('upstream_error_kind')) await this.pool.execute('ALTER TABLE agent_run_traces ADD COLUMN upstream_error_kind VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER upstream_http_status');
+    if (!traceNames.has('retry_after_seconds')) await this.pool.execute('ALTER TABLE agent_run_traces ADD COLUMN retry_after_seconds INT UNSIGNED NULL AFTER upstream_error_kind');
     if (!traceNames.has('worker_stage')) await this.pool.execute('ALTER TABLE agent_run_traces ADD COLUMN worker_stage VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER release_id');
     if (!traceNames.has('worker_operation')) await this.pool.execute('ALTER TABLE agent_run_traces ADD COLUMN worker_operation VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER worker_stage');
     if (!traceNames.has('transport_code')) await this.pool.execute('ALTER TABLE agent_run_traces ADD COLUMN transport_code VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER worker_operation');
@@ -152,17 +158,19 @@ export class RunStore {
     const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT id,bot_id AS botId,prompt,status,result,recovery_state AS recoveryState,replacement_run_id AS replacementRunId,
       computer_used AS computerUsed,execution_audit AS executionAudit,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS createdAt,DATE_FORMAT(updated_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS updatedAt,
       (SELECT SUBSTRING(e.detail,12) FROM agent_run_events e WHERE e.run_id=agent_runs.id AND e.status='unknown' AND e.detail LIKE 'diagnostic:%' ORDER BY e.sequence DESC LIMIT 1) AS diagnosticCode,
-      (SELECT t.reason_code FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.reason_code IS NOT NULL ORDER BY t.sequence DESC LIMIT 1) AS failureReasonCode,
-      (SELECT t.component FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.outcome='failed' AND (t.http_status IS NOT NULL OR t.reason_code IS NOT NULL) ORDER BY t.sequence DESC LIMIT 1) AS failureComponent,
-      (SELECT t.worker_stage FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND (t.worker_stage IS NOT NULL OR t.reason_code IS NOT NULL) ORDER BY t.sequence DESC LIMIT 1) AS failureStage,
-      (SELECT t.http_status FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.outcome='failed' AND t.http_status IS NOT NULL ORDER BY t.sequence DESC LIMIT 1) AS failureHttpStatus,
-      (SELECT t.upstream_http_status FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.upstream_http_status IS NOT NULL ORDER BY t.sequence DESC LIMIT 1) AS failureUpstreamHttpStatus,
-      (SELECT t.adapter_exit_code FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.adapter_exit_code IS NOT NULL ORDER BY t.sequence DESC LIMIT 1) AS failureAdapterExitCode,
-      (SELECT t.transport_code FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.transport_code IS NOT NULL ORDER BY t.sequence DESC LIMIT 1) AS failureTransportCode
+      (SELECT t.diagnostic_code FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.outcome='failed' AND t.diagnostic_code IS NOT NULL ORDER BY (t.component='scheduler') ASC,t.sequence DESC LIMIT 1) AS failureTraceDiagnosticCode,
+      (SELECT t.reason_code FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.outcome='failed' AND t.reason_code IS NOT NULL ORDER BY (t.component='scheduler') ASC,t.sequence DESC LIMIT 1) AS failureReasonCode,
+      (SELECT t.component FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.outcome='failed' AND (t.http_status IS NOT NULL OR t.reason_code IS NOT NULL OR t.diagnostic_code IS NOT NULL) ORDER BY (t.component='scheduler') ASC,t.sequence DESC LIMIT 1) AS failureComponent,
+      (SELECT t.worker_stage FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.outcome='failed' AND (t.worker_stage IS NOT NULL OR t.reason_code IS NOT NULL) ORDER BY (t.component='scheduler') ASC,t.sequence DESC LIMIT 1) AS failureStage,
+      (SELECT t.http_status FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.outcome='failed' AND t.http_status IS NOT NULL ORDER BY (t.component='scheduler') ASC,t.sequence DESC LIMIT 1) AS failureHttpStatus,
+      (SELECT t.upstream_http_status FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.outcome='failed' AND t.upstream_http_status IS NOT NULL ORDER BY (t.component='scheduler') ASC,t.sequence DESC LIMIT 1) AS failureUpstreamHttpStatus,
+      (SELECT t.upstream_error_kind FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.outcome='failed' AND t.upstream_error_kind IS NOT NULL ORDER BY (t.component='scheduler') ASC,t.sequence DESC LIMIT 1) AS failureUpstreamErrorKind,
+      (SELECT t.adapter_exit_code FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.outcome='failed' AND t.adapter_exit_code IS NOT NULL ORDER BY (t.component='scheduler') ASC,t.sequence DESC LIMIT 1) AS failureAdapterExitCode,
+      (SELECT t.transport_code FROM agent_run_traces t WHERE t.run_id=agent_runs.id AND t.outcome='failed' AND t.transport_code IS NOT NULL ORDER BY (t.component='scheduler') ASC,t.sequence DESC LIMIT 1) AS failureTransportCode
       FROM agent_runs WHERE bot_id=? ORDER BY sequence`,[botId]);
     if (!rows.length) return [];
     const files = await this.filesForRuns(this.pool,rows.map(row=>String(row.id)));
-    return rows.map(row=>({...row,computerUsed:Boolean(row.computerUsed),diagnosticCode:isRunDiagnosticCode(row.diagnosticCode)?row.diagnosticCode:null,failureComponent:typeof row.failureComponent==='string'?row.failureComponent:null,failureReasonCode:typeof row.failureReasonCode==='string'?row.failureReasonCode:null,failureStage:typeof row.failureStage==='string'?row.failureStage:null,failureHttpStatus:row.failureHttpStatus==null?null:Number.isInteger(Number(row.failureHttpStatus))?Number(row.failureHttpStatus):null,failureUpstreamHttpStatus:row.failureUpstreamHttpStatus==null?null:Number.isInteger(Number(row.failureUpstreamHttpStatus))?Number(row.failureUpstreamHttpStatus):null,failureAdapterExitCode:row.failureAdapterExitCode==null?null:Number.isInteger(Number(row.failureAdapterExitCode))?Number(row.failureAdapterExitCode):null,failureTransportCode:typeof row.failureTransportCode==='string'?row.failureTransportCode:null,executionAudit:validateAgentExecutionAudit(row.executionAudit),files:files.get(String(row.id))||[]})) as AgentRun[];
+    return rows.map(row=>({...row,computerUsed:Boolean(row.computerUsed),diagnosticCode:isRunDiagnosticCode(row.diagnosticCode)?row.diagnosticCode:null,failureTraceDiagnosticCode:typeof row.failureTraceDiagnosticCode==='string'?row.failureTraceDiagnosticCode:null,failureComponent:typeof row.failureComponent==='string'?row.failureComponent:null,failureReasonCode:typeof row.failureReasonCode==='string'?row.failureReasonCode:null,failureStage:typeof row.failureStage==='string'?row.failureStage:null,failureHttpStatus:row.failureHttpStatus==null?null:Number.isInteger(Number(row.failureHttpStatus))?Number(row.failureHttpStatus):null,failureUpstreamHttpStatus:row.failureUpstreamHttpStatus==null?null:Number.isInteger(Number(row.failureUpstreamHttpStatus))?Number(row.failureUpstreamHttpStatus):null,failureUpstreamErrorKind:typeof row.failureUpstreamErrorKind==='string'?row.failureUpstreamErrorKind:null,failureAdapterExitCode:row.failureAdapterExitCode==null?null:Number.isInteger(Number(row.failureAdapterExitCode))?Number(row.failureAdapterExitCode):null,failureTransportCode:typeof row.failureTransportCode==='string'?row.failureTransportCode:null,executionAudit:validateAgentExecutionAudit(row.executionAudit),files:files.get(String(row.id))||[]})) as AgentRun[];
   }
   async ownsBot(session:Pick<Session,'tenantId'|'userId'>,botId:string):Promise<boolean>{
     if(!uuid.test(session.tenantId)||!uuid.test(session.userId)||!uuid.test(botId))return false;
@@ -337,7 +345,7 @@ export class RunStore {
     if (!uuid.test(runId)) return null;
     const [owned] = await this.pool.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND b.tenant_id=? AND b.owner_id=?`,[runId,session.tenantId,session.userId]);
     if (!owned.length) return null;
-    const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT sequence,component,event,outcome,http_status AS httpStatus,upstream_http_status AS upstreamHttpStatus,adapter_exit_code AS adapterExitCode,diagnostic_code AS diagnosticCode,reason_code AS reasonCode,duration_ms AS durationMs,release_id AS releaseId,worker_stage AS stage,worker_operation AS operation,transport_code AS transportCode,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS at FROM agent_run_traces WHERE run_id=? ORDER BY sequence DESC LIMIT 500`,[runId]);
+    const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT sequence,component,event,outcome,attempt_number AS attemptNumber,http_status AS httpStatus,upstream_http_status AS upstreamHttpStatus,upstream_error_kind AS upstreamErrorKind,retry_after_seconds AS retryAfterSeconds,adapter_exit_code AS adapterExitCode,diagnostic_code AS diagnosticCode,reason_code AS reasonCode,duration_ms AS durationMs,release_id AS releaseId,worker_stage AS stage,worker_operation AS operation,transport_code AS transportCode,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS at FROM agent_run_traces WHERE run_id=? ORDER BY sequence DESC LIMIT 500`,[runId]);
     return rows.reverse().flatMap(row=>{
       const event=validateRunTraceEvent(row);
       return event?[{...event,sequence:Number(row.sequence),at:String(row.at)}]:[];
@@ -348,8 +356,8 @@ export class RunStore {
     if(!uuid.test(runId))return;
     const event=validateRunTraceEvent(value);if(!event){console.warn('Run trace event rejected',{runId,diagnosticCode:'RUN_TRACE_EVENT_INVALID'});return}
     try{
-      await this.pool.execute<ResultSetHeader>(`INSERT INTO agent_run_traces (run_id,component,event,outcome,http_status,upstream_http_status,adapter_exit_code,diagnostic_code,reason_code,duration_ms,release_id,worker_stage,worker_operation,transport_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[
-        runId,event.component,event.event,event.outcome,event.httpStatus??null,event.upstreamHttpStatus??null,event.adapterExitCode??null,event.diagnosticCode??null,event.reasonCode??null,event.durationMs??null,event.releaseId??null,event.stage??null,event.operation??null,event.transportCode??null,
+      await this.pool.execute<ResultSetHeader>(`INSERT INTO agent_run_traces (run_id,component,event,outcome,attempt_number,http_status,upstream_http_status,upstream_error_kind,retry_after_seconds,adapter_exit_code,diagnostic_code,reason_code,duration_ms,release_id,worker_stage,worker_operation,transport_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[
+        runId,event.component,event.event,event.outcome,event.attemptNumber??null,event.httpStatus??null,event.upstreamHttpStatus??null,event.upstreamErrorKind??null,event.retryAfterSeconds??null,event.adapterExitCode??null,event.diagnosticCode??null,event.reasonCode??null,event.durationMs??null,event.releaseId??null,event.stage??null,event.operation??null,event.transportCode??null,
       ]);
     }catch(error){
       const rawCode=error&&typeof error==='object'&&'code'in error&&typeof error.code==='string'?error.code:'';

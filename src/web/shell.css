@@ -557,6 +557,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .run-trace-dialog header button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #f3f1f5; color: #625c68; font-size: 23px; line-height: 1; cursor: pointer; }
 .run-trace-release { margin: 16px 0 4px; padding: 9px 12px; border-radius: 10px; background: #eef7f1; color: #26734c; font-size: 13px; }
 .run-trace-release.mismatch { background: #fff0ed; color: #a33b31; }
+.run-trace-summary { margin: 12px 0 0; color: #6e6874; font-size: 12px; }
+.run-trace-primary-failure { display: grid; gap: 5px; margin: 12px 0 0; padding: 12px 14px; border: 1px solid #efc7c0; border-radius: 12px; background: #fff7f5; color: #773a32; }
+.run-trace-primary-failure strong { font-size: 13px; }
+.run-trace-primary-failure span { color: #67504d; font-size: 12px; line-height: 1.5; }
 .run-trace-list { display: grid; gap: 8px; margin: 16px 0; padding: 0; list-style: none; }
 .run-trace-event { display: grid; grid-template-columns: minmax(145px, .75fr) minmax(0, 1.5fr); gap: 4px 12px; padding: 12px; border: 1px solid #e8e5ec; border-radius: 12px; background: #fcfbfd; }
 .run-trace-event time { grid-column: 1 / -1; color: #817b89; font-size: 11px; }
@@ -569,7 +573,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .run-trace-metadata code { color: #4e4855; font-size: 11px; }
 .run-trace-event small { grid-column: 1 / -1; color: #77717f; font-size: 11px; }
 .run-trace-footnote { margin: 18px 0 0; color: #797380; font-size: 12px; }
-@media (max-width: 580px) { .run-trace-backdrop { padding: 10px; } .run-trace-dialog { padding: 16px; } .run-trace-event { grid-template-columns: 1fr; } .run-trace-event time,.run-trace-diagnostic,.run-trace-event small { grid-column: auto; } .run-trace-event > span { text-align: left; } }
+@media (max-width: 580px) { .run-trace-backdrop { padding: 10px; } .run-trace-dialog { padding: 16px; } .run-trace-event { grid-template-columns: 1fr; } .run-trace-event time,.run-trace-diagnostic,.run-trace-event small,.run-trace-summary,.run-trace-primary-failure { grid-column: auto; } .run-trace-event > span { text-align: left; } }
 
 /* Match the current x.ai/bot workspace window: two columns by default, with
    the computer/details surface opened from the monitor control on demand. */

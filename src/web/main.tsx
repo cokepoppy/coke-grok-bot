@@ -15,13 +15,13 @@ type RunFile = { id: string; name: string; mimeType: string; size: number; sha25
 type BotLibraryCategory = 'All'|'Pages'|'Media'|'Links'|'Files'|'Apps'|'Pinned';
 type BotLibraryItem = RunFile & {kind:'output';createdAt:string;pinned:boolean};
 type ExecutionAudit = {engine:'pi'|'dsh';model:string;modelCompleted:boolean;calls:{tool:string;action:string|null;outcome:'succeeded'|'failed'|'unconfirmed'}[];truncated:boolean};
-type RunTraceEntry = {sequence:number;component:'control-plane'|'scheduler'|'agent-runtime'|'model-gateway'|'computer-worker'|'mysql';event:string;outcome:'started'|'succeeded'|'failed'|'info';httpStatus:number|null;upstreamHttpStatus:number|null;adapterExitCode:number|null;diagnosticCode:string|null;reasonCode:string|null;durationMs:number|null;releaseId:string|null;stage:string|null;operation:string|null;transportCode:string|null;at:string};
-type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged' | 'auto_resumed'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; executionAudit?:ExecutionAudit|null; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: string | null; failureComponent?:string|null; failureReasonCode?:string|null; failureStage?:string|null;failureHttpStatus?:number|null;failureUpstreamHttpStatus?:number|null;failureAdapterExitCode?:number|null;failureTransportCode?:string|null };
+type RunTraceEntry = {sequence:number;component:'control-plane'|'scheduler'|'agent-runtime'|'model-gateway'|'computer-worker'|'mysql';event:string;outcome:'started'|'succeeded'|'failed'|'info';attemptNumber:number|null;httpStatus:number|null;upstreamHttpStatus:number|null;upstreamErrorKind:string|null;retryAfterSeconds:number|null;adapterExitCode:number|null;diagnosticCode:string|null;reasonCode:string|null;durationMs:number|null;releaseId:string|null;stage:string|null;operation:string|null;transportCode:string|null;at:string};
+type AgentRun = { id: string; prompt: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'unknown'; result: string | null; recoveryState: 'none' | 'pending' | 'retried' | 'acknowledged' | 'auto_resumed'; replacementRunId: string | null; files: RunFile[]; computerUsed?: boolean; executionAudit?:ExecutionAudit|null; createdAt?:string|null; updatedAt?: string | null; diagnosticCode?: string | null; failureTraceDiagnosticCode?:string|null; failureComponent?:string|null; failureReasonCode?:string|null; failureStage?:string|null;failureHttpStatus?:number|null;failureUpstreamHttpStatus?:number|null;failureUpstreamErrorKind?:string|null;failureAdapterExitCode?:number|null;failureTransportCode?:string|null };
 type GroupMember = Pick<Bot,'id'|'name'|'label'|'color'|'shape'> & { position: number };
 type BotMentionCandidate = {kind:'bot';id:string;bot:GroupMember|Bot}|{kind:'everyone';id:'everyone'};
 type GroupChat = { id: string; name: string; members: GroupMember[]; preview: string; lastActivityAt: string | null };
-type GroupReplacementRun = { id:string; status:AgentRun['status']; result:string|null; computerUsed:boolean; executionAudit?:ExecutionAudit|null; updatedAt:string|null; diagnosticCode?:string|null; failureComponent?:string|null;failureReasonCode?:string|null;failureStage?:string|null;failureHttpStatus?:number|null;failureUpstreamHttpStatus?:number|null;failureAdapterExitCode?:number|null;failureTransportCode?:string|null;files:RunFile[] };
-type GroupMessage = { id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;createdAt:string;runId:string|null;status:AgentRun['status']|null;recoveryState:AgentRun['recoveryState']|null;replacementRunId:string|null;replacementRun:GroupReplacementRun|null;computerUsed:boolean;executionAudit?:ExecutionAudit|null;updatedAt:string|null;diagnosticCode?:string|null;failureComponent?:string|null;failureReasonCode?:string|null;failureStage?:string|null;failureHttpStatus?:number|null;failureUpstreamHttpStatus?:number|null;failureAdapterExitCode?:number|null;failureTransportCode?:string|null;targetBotIds?:string[];files?:RunFile[] };
+type GroupReplacementRun = { id:string; status:AgentRun['status']; result:string|null; computerUsed:boolean; executionAudit?:ExecutionAudit|null; updatedAt:string|null; diagnosticCode?:string|null; failureTraceDiagnosticCode?:string|null; failureComponent?:string|null;failureReasonCode?:string|null;failureStage?:string|null;failureHttpStatus?:number|null;failureUpstreamHttpStatus?:number|null;failureUpstreamErrorKind?:string|null;failureAdapterExitCode?:number|null;failureTransportCode?:string|null;files:RunFile[] };
+type GroupMessage = { id:string;turnId:string;role:'user'|'bot';botId:string|null;botName:string|null;text:string|null;createdAt:string;runId:string|null;status:AgentRun['status']|null;recoveryState:AgentRun['recoveryState']|null;replacementRunId:string|null;replacementRun:GroupReplacementRun|null;computerUsed:boolean;executionAudit?:ExecutionAudit|null;updatedAt:string|null;diagnosticCode?:string|null;failureTraceDiagnosticCode?:string|null;failureComponent?:string|null;failureReasonCode?:string|null;failureStage?:string|null;failureHttpStatus?:number|null;failureUpstreamHttpStatus?:number|null;failureUpstreamErrorKind?:string|null;failureAdapterExitCode?:number|null;failureTransportCode?:string|null;targetBotIds?:string[];files?:RunFile[] };
 type GroupChatView = { group: GroupChat; messages: GroupMessage[] };
 type Routine = { id:string; name:string; instruction:string; schedule:{kind:'weekly';weekday:number;hour:number;minute:number}|{kind:'interval';minutes:number}|{kind:'webhook'}; timezone:string; paused:boolean; when:string; nextRunAt:string|null; runs:{id:string;status:string;scheduledFor:string;result:string|null}[] };
 type RoutineWebhook = {endpointPath:string;key:string;authorizationHeader:string};
@@ -221,7 +221,7 @@ function buildBotTimeline(messages:Message[],runs:AgentRun[],latestSubmittedItem
 }
 
 function groupRunStatusLabel(message: GroupMessage): string {
-  if (message.status === 'unknown' && runFailureHeadline(message)) return message.failureComponent==='agent-runtime'?'Agent error':'Failed · result unconfirmed';
+  if (message.status === 'unknown' && runFailureHeadline(message)) return 'Failed · diagnosis shown below';
   if (message.status === 'unknown' && message.recoveryState === 'auto_resumed') return 'Outcome unknown · not retried';
   if (message.status === 'unknown' && message.recoveryState === 'acknowledged') return 'Reviewed · outcome unknown';
   if (message.status === 'unknown' && message.recoveryState === 'retried') {
@@ -258,6 +258,7 @@ function replacementRunFallback(status:AgentRun['status']):string {
 }
 
 const agentFailureReasonLabels:Record<string,string>={
+  agent_transport_failed:'The request did not reach or receive a response from the Agent runtime.',
   runtime_setup_failed:'The Agent could not initialize the task runtime.',
   runtime_error:'The Agent runtime exited unexpectedly.',
   model_request_failed:'The model request failed inside the Agent runtime.',
@@ -273,29 +274,79 @@ const agentFailureReasonLabels:Record<string,string>={
   agent_output_limit:'The Agent response reached its output limit before returning a result.',
 };
 const agentFailureStageLabels:Record<string,string>={'agent-setup':'Agent setup','agent-execution':'Agent execution','model-request':'Model request','model-response':'Model response','tool-execution':'Tool execution','result-validation':'Result validation'};
+const failureStageLabels:Record<string,string>={...agentFailureStageLabels,'request-validation':'Validate model gateway request','request-auth':'Check model gateway capability','provider-request':'Send request to model provider','provider-response':'Receive model provider response','response-stream':'Transfer model response','scheduler-execution':'Run scheduler outcome handling','lease-renewal':'Renew task lease','result-persistence':'Save task result',route:'Worker route','screen-scope':'Resolve Bot screen','screen-owner':'Check computer owner','action-body':'Validate action request','action-navigate':'Run browser navigation','action-execute':'Run browser or desktop action'};
+const providerErrorKindLabels:Record<string,string>={request_invalid:'Provider classified the request as invalid',authentication_rejected:'Provider rejected authentication',model_not_found:'Provider could not find the configured model',context_limit:'Provider context or token limit was exceeded',rate_limited:'Provider rate limit was reached',quota_exhausted:'Provider quota or billing limit was reached',permission_denied:'Provider denied this request',provider_server_error:'Provider returned a server error',provider_unavailable:'Provider service was unavailable',content_filtered:'Provider content filter rejected the request',unknown:'Provider error category was not recognized'};
 const failureComponentLabels:Record<string,string>={'agent-runtime':'Pi / DeepSeek Harness','model-gateway':'Model gateway','computer-worker':'Cloud computer operation','scheduler':'Task scheduler','control-plane':'Control plane','mysql':'Database'};
-function runFailureHeadline(run:Pick<AgentRun,'diagnosticCode'|'failureComponent'|'failureHttpStatus'|'failureReasonCode'|'failureUpstreamHttpStatus'>):string|null {
-  if(!run.diagnosticCode&&!run.failureReasonCode)return null;
-  const component=run.failureComponent?failureComponentLabels[run.failureComponent]||'Task operation':run.diagnosticCode==='agent_adapter_failed'?'Pi / DeepSeek Harness':'Task operation';
+function runFailureHeadline(run:Pick<AgentRun,'diagnosticCode'|'failureTraceDiagnosticCode'|'failureComponent'|'failureHttpStatus'|'failureReasonCode'|'failureUpstreamHttpStatus'|'failureUpstreamErrorKind'>):string|null {
+  const diagnosticCode=run.failureTraceDiagnosticCode||run.diagnosticCode;
+  if(!diagnosticCode&&!run.failureReasonCode&&!run.failureComponent)return null;
+  if(run.failureComponent==='model-gateway'){
+    const upstreamStatus=run.failureUpstreamHttpStatus||null;
+    const status=upstreamStatus||run.failureHttpStatus;
+    const reason=run.failureUpstreamErrorKind?providerErrorKindLabels[run.failureUpstreamErrorKind]:null;
+    if(reason)return `${reason}${status?` · HTTP ${status}`:''}`;
+    return `Model gateway request failed${run.failureHttpStatus?` · gateway HTTP ${run.failureHttpStatus}`:''}${upstreamStatus?` · provider HTTP ${upstreamStatus}`:''}`;
+  }
+  if(run.failureComponent==='agent-runtime'){
+    const reason=run.failureReasonCode?agentFailureReasonLabels[run.failureReasonCode]:null;
+    const diagnosis=diagnosticCode?runDiagnosticSummary(diagnosticCode):null;
+    const lead=reason||diagnosis||'Agent runtime request failed';
+    return `${lead}${run.failureHttpStatus?` · HTTP ${run.failureHttpStatus}`:''}${run.failureUpstreamHttpStatus?` · model HTTP ${run.failureUpstreamHttpStatus}`:''}`;
+  }
+  if(run.failureComponent==='scheduler'){
+    if(diagnosticCode==='RUN_RESULT_PERSIST_FAILED'||diagnosticCode==='result_persist_failed')return 'Task result could not be saved';
+    if(diagnosticCode==='RUN_RESULT_NOT_PERSISTED')return 'Task result was not saved';
+    if(diagnosticCode==='lease_lost'||diagnosticCode==='lease_expired')return 'Task lease ended before completion was recorded';
+    return run.failureReasonCode?`Task scheduler failed · ${run.failureReasonCode}`:'Task scheduler could not confirm the result';
+  }
+  if(run.failureComponent==='computer-worker'){
+    const detail=diagnosticCode?computerFailureReasonLabels[diagnosticCode]:null;
+    return `${detail||'Cloud computer action failed'}${run.failureHttpStatus?` · HTTP ${run.failureHttpStatus}`:''}`;
+  }
+  if(run.failureComponent==='control-plane')return `${runDiagnosticSummary(run.diagnosticCode)||'Cloud computer connection failed'}${run.failureHttpStatus?` · HTTP ${run.failureHttpStatus}`:''}`;
+  if(run.failureComponent==='mysql')return `Database operation failed${run.failureHttpStatus?` · HTTP ${run.failureHttpStatus}`:''}`;
+  const component=run.failureComponent?failureComponentLabels[run.failureComponent]||'Task operation':diagnosticCode==='agent_adapter_failed'?'Pi / DeepSeek Harness':'Task operation';
   const status=run.failureHttpStatus?` · HTTP ${run.failureHttpStatus}${run.failureUpstreamHttpStatus?` · upstream HTTP ${run.failureUpstreamHttpStatus}`:''}`:'';
   if(run.failureReasonCode)return `${component} failed${status}`;
-  if(run.diagnosticCode==='agent_adapter_failed')return `Pi / DeepSeek Harness failed${status}`;
+  if(diagnosticCode==='agent_adapter_failed')return `Pi / DeepSeek Harness failed${status}`;
   if(run.failureComponent)return `${component} failed${status}`;
-  return runDiagnosticSummary(run.diagnosticCode);
+  return runDiagnosticSummary(diagnosticCode);
 }
-function runFailureDescription(run:Pick<AgentRun,'diagnosticCode'|'failureReasonCode'|'failureStage'|'failureUpstreamHttpStatus'|'failureAdapterExitCode'|'failureTransportCode'>):string|null {
-  if(run.failureReasonCode){
-    const stage=run.failureStage?agentFailureStageLabels[run.failureStage]||run.failureStage:null;
-    const codes=[run.diagnosticCode,run.failureReasonCode].filter(Boolean).join(' / ');
-    return `${stage?`${stage}: `:''}${agentFailureReasonLabels[run.failureReasonCode]||'The Agent runtime returned a classified failure.'} [${codes}]${run.failureUpstreamHttpStatus?` · model upstream HTTP ${run.failureUpstreamHttpStatus}`:''}${run.failureAdapterExitCode!==null&&run.failureAdapterExitCode!==undefined?` · adapter exit ${run.failureAdapterExitCode}`:''}${run.failureTransportCode?` · transport ${run.failureTransportCode}`:''}`;
+const computerFailureReasonLabels:Record<string,string>={COMPUTER_BROWSER_ACTION_FAILED:'The browser action failed without a more specific classification',COMPUTER_BROWSER_ACTION_TIMEOUT:'The browser action timed out; inspect the current page before retrying',COMPUTER_BROWSER_NAVIGATION_ABORTED:'The browser navigation was interrupted',COMPUTER_BROWSER_NAVIGATION_NETWORK_FAILED:'Chromium reported a network failure while loading the page',COMPUTER_BROWSER_NAVIGATION_FAILED:'The page navigation did not complete',COMPUTER_BROWSER_CONTROL_ACTION_FAILED:'The browser control action failed',COMPUTER_BROWSER_CONTEXT_CLOSED:'The browser page or context closed during the action',COMPUTER_BROWSER_PAGE_INSPECTION_FAILED:'The page inspection failed',COMPUTER_BROWSER_ARTIFACT_OPEN_FAILED:'The task artifact could not be opened',COMPUTER_BROWSER_TARGET_NOT_FOUND:'No visible target matched the requested action',COMPUTER_BROWSER_TARGET_AMBIGUOUS:'More than one visible target matched the requested action',COMPUTER_STATE_CHANGED:'The computer ownership or page state changed during the action',COMPUTER_OWNER_USER:'The computer is currently controlled by the user',COMPUTER_RENDERER_UNRESPONSIVE:'The browser renderer stopped responding'};
+function runFailureDescription(run:Pick<AgentRun,'diagnosticCode'|'failureTraceDiagnosticCode'|'failureComponent'|'failureReasonCode'|'failureStage'|'failureHttpStatus'|'failureUpstreamHttpStatus'|'failureUpstreamErrorKind'|'failureAdapterExitCode'|'failureTransportCode'>):string|null {
+  const diagnosticCode=run.failureTraceDiagnosticCode||run.diagnosticCode;
+  const stage=run.failureStage?failureStageLabels[run.failureStage]||run.failureStage:null;
+  const codes=[diagnosticCode,run.failureReasonCode,run.diagnosticCode!==diagnosticCode?run.diagnosticCode:null].filter(Boolean).join(' / ');
+  const statuses=[run.failureHttpStatus?`${run.failureComponent==='model-gateway'?'gateway ':''}HTTP ${run.failureHttpStatus}`:null,run.failureUpstreamHttpStatus?`upstream HTTP ${run.failureUpstreamHttpStatus}`:null].filter(Boolean).join(' · ');
+  const providerKind=run.failureUpstreamErrorKind?providerErrorKindLabels[run.failureUpstreamErrorKind]||'Provider returned a classified error':null;
+  if(run.failureComponent==='model-gateway'){
+    const reason=run.failureReasonCode?modelGatewayReasonLabels[run.failureReasonCode]:null;
+    return [stage,reason||runDiagnosticSummary(diagnosticCode)||'Model gateway request failed',providerKind,statuses,codes?`[${codes}]`:null,run.failureTransportCode?`transport ${run.failureTransportCode}`:null].filter(Boolean).join(' · ');
   }
-  if(run.diagnosticCode==='agent_adapter_failed')return `The Agent adapter exited before returning a task result [agent_adapter_failed]${run.failureAdapterExitCode!==null&&run.failureAdapterExitCode!==undefined?` · exit ${run.failureAdapterExitCode}`:''}${run.failureTransportCode?` · transport ${run.failureTransportCode}`:''}. No classified cause was recorded by this runtime.`;
-  const summary=runDiagnosticSummary(run.diagnosticCode);
-  return summary&&run.diagnosticCode?`${summary} [${run.diagnosticCode}]${run.failureTransportCode?` · transport ${run.failureTransportCode}`:''}`:summary;
+  if(run.failureComponent==='agent-runtime'){
+    const reason=run.failureReasonCode?agentFailureReasonLabels[run.failureReasonCode]:null;
+    const diagnosis=diagnosticCode?runDiagnosticSummary(diagnosticCode):null;
+    return [stage,reason||diagnosis||'Agent runtime request failed',statuses,providerKind,codes?`[${codes}]`:null,run.failureAdapterExitCode!==null&&run.failureAdapterExitCode!==undefined?`adapter exit ${run.failureAdapterExitCode}`:null,run.failureTransportCode?`transport ${run.failureTransportCode}`:null].filter(Boolean).join(' · ');
+  }
+  if(run.failureComponent==='scheduler'){
+    const reason=run.failureReasonCode? schedulerFailureReasonLabels[run.failureReasonCode]:null;
+    const diagnosis=diagnosticCode==='RUN_RESULT_PERSIST_FAILED'||diagnosticCode==='result_persist_failed'?'The executor returned a result, but persistence failed':diagnosticCode==='RUN_RESULT_NOT_PERSISTED'?'The database transaction did not update this active run':diagnosticCode?runDiagnosticSummary(diagnosticCode):null;
+    return [stage,reason||diagnosis||'The scheduler could not confirm the task result',codes?`[${codes}]`:null].filter(Boolean).join(' · ');
+  }
+  if(run.failureComponent==='computer-worker')return [stage,diagnosticCode?computerFailureReasonLabels[diagnosticCode]||'Cloud computer action failed':null,statuses,codes?`[${codes}]`:null,run.failureTransportCode?`transport ${run.failureTransportCode}`:null].filter(Boolean).join(' · ')||null;
+  if(run.failureReasonCode){
+    return `${stage?`${stage}: `:''}${agentFailureReasonLabels[run.failureReasonCode]||'The task failed with a classified reason.'} [${codes}]${run.failureUpstreamHttpStatus?` · upstream HTTP ${run.failureUpstreamHttpStatus}`:''}${providerKind?` · ${providerKind}`:''}${run.failureAdapterExitCode!==null&&run.failureAdapterExitCode!==undefined?` · adapter exit ${run.failureAdapterExitCode}`:''}${run.failureTransportCode?` · transport ${run.failureTransportCode}`:''}`;
+  }
+  if(diagnosticCode==='agent_adapter_failed')return `The Agent adapter exited before returning a task result [agent_adapter_failed]${run.failureAdapterExitCode!==null&&run.failureAdapterExitCode!==undefined?` · exit ${run.failureAdapterExitCode}`:''}${run.failureTransportCode?` · transport ${run.failureTransportCode}`:''}. No classified cause was recorded by this runtime.`;
+  const summary=runDiagnosticSummary(diagnosticCode);
+  return summary&&diagnosticCode?`${summary} [${diagnosticCode}]${statuses?` · ${statuses}`:''}${run.failureTransportCode?` · transport ${run.failureTransportCode}`:''}`:summary;
 }
+const modelGatewayReasonLabels:Record<string,string>={request_content_type_invalid:'The Agent sent a request with a non-JSON content type',request_body_too_large:'The model request exceeded the 2 MiB gateway limit',request_json_invalid:'The model request body was not valid JSON',request_shape_invalid:'The model request JSON had an invalid top-level shape',model_name_mismatch:'The request model did not match the configured model',messages_invalid:'The request had no valid messages or exceeded the message limit',max_tokens_invalid:'The requested max_tokens value was outside the supported range',stream_flag_invalid:'The stream option was not a boolean',capability_invalid:'The Agent capability was missing, expired, or invalid',call_budget_exhausted:'The task exhausted its model call budget',provider_http_rejected:'The provider rejected the model request',provider_rate_limited:'The provider rate-limited the request',provider_cooldown_active:'The gateway cooldown prevented another provider request',provider_transport_failed:'The gateway could not connect to the provider',provider_request_failed:'The provider request failed without a classified transport error',provider_response_stream_interrupted:'The provider response stream ended early',provider_response_missing_body:'The provider returned success without a response body'};
+const schedulerFailureReasonLabels:Record<string,string>={database_deadlock:'The database reported a transaction deadlock',database_lock_timeout:'The database lock wait timed out',database_connection:'The database connection failed while saving the result',database_error:'The result write failed with an unclassified database error',lease_lost:'The scheduler no longer held the run lease',executor_failed:'The task executor threw before returning a confirmed result',execution_aborted:'The task was interrupted before completion was recorded',result_persistence_failed:'The result could not be persisted',finish_not_applied:'The result-save transaction did not update the active run'};
 
 const runDiagnosticSummaries:Record<string,string>={
   executor_error:'The Agent stopped before it could confirm a result.',
+  agent_reported_failure:'The Agent returned a failed task result.',
   desktop_connect_failed:'The Bot could not connect to its computer.',
   model_upstream_429:'The model service was rate-limited before a result was confirmed.',
   model_gateway_call_limit:'The task used its model-call budget before it could confirm a result.',
@@ -744,7 +795,7 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
   const cardElement=useRef<HTMLElement|null>(null);
   const [cardVisible,setCardVisible]=useState(false);
   const failureHeadline=(run.status==='unknown'||run.status==='failed')?runFailureHeadline(run):null;
-  const status=failureHeadline?'Agent error':run.status==='running'?'Working':run.status==='queued'?'Queued':run.status==='completed'?'Done':run.status==='failed'?'Failed':'Not confirmed';
+  const status=failureHeadline?(run.failureComponent==='model-gateway'?'Model error':run.failureComponent==='agent-runtime'?'Agent error':run.failureComponent==='scheduler'?'Task handling error':run.failureComponent==='computer-worker'?'Computer error':'Failed'):run.status==='running'?'Working':run.status==='queued'?'Queued':run.status==='completed'?'Done':run.status==='failed'?'Failed':'Not confirmed';
   const diagnostic=(run.status==='unknown'||run.status==='failed')?runFailureDescription(run):null;
   useEffect(()=>{
     const element=cardElement.current;
@@ -787,25 +838,29 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
 
 function RunTraceButton({runId,compact=false}:{runId:string;compact?:boolean}) {
   const [open,setOpen]=useState(false);
-  const [state,setState]=useState<{status:'loading'|'ready'|'error';events:RunTraceEntry[]}>({status:'loading',events:[]});
+  const [state,setState]=useState<{status:'loading'|'ready'|'error';events:RunTraceEntry[];error?:string}>({status:'loading',events:[]});
   const load=async()=>{
     setOpen(true);setState({status:'loading',events:[]});
     try{
       const response=await fetch(`${import.meta.env.BASE_URL}api/runs/${encodeURIComponent(runId)}/trace`,{credentials:'same-origin',cache:'no-store'});
-      if(!response.ok)throw new Error('Trace unavailable');
+      if(!response.ok){setState({status:'error',events:[],error:`Trace API returned HTTP ${response.status}.`});return;}
       const value=await response.json() as {events?:RunTraceEntry[]};
-      if(!Array.isArray(value.events))throw new Error('Trace unavailable');
+      if(!Array.isArray(value.events)){setState({status:'error',events:[],error:'The trace response did not contain an event list.'});return;}
       setState({status:'ready',events:value.events});
-    }catch{setState({status:'error',events:[]})}
+    }catch{setState({status:'error',events:[],error:'The browser could not reach the trace API. Check the public app connection.'})}
   };
   const releaseIds=[...new Set(state.events.map(event=>event.releaseId).filter((value):value is string=>Boolean(value)))];
   const componentLabels:Record<RunTraceEntry['component'],string>={'control-plane':'Auth / control plane',scheduler:'Task scheduler','agent-runtime':'Pi / DeepSeek Harness','model-gateway':'Model gateway','computer-worker':'Cloud computer worker',mysql:'MySQL'};
-  const eventLabels:Record<string,string>={'run.queued':'Task queued','run.claimed':'Task claimed','desktop.connect':'Cloud computer connection','agent.dispatch':'Agent runtime request','agent.result':'Agent response','model.request':'Model request','computer.control':'Computer control check','computer.inspect':'Computer page inspection','computer.screenshot':'Computer screen read','computer.status':'Computer status check','computer.propose':'Computer action prepared','computer.execute':'Computer action executed','run.persisted':'Result saved','run.outcome_unknown':'Outcome marked unknown'};
+  const eventLabels:Record<string,string>={'run.queued':'Task queued','run.claimed':'Task claimed','run.execution':'Task execution result','run.lease_lost':'Task lease renewal','run.persist':'Save task result','run.persist.attempt':'Result save attempt','desktop.connect':'Cloud computer connection','agent.dispatch':'Agent runtime request','agent.result':'Agent response','model.request':'Model request','computer.control':'Computer control check','computer.inspect':'Computer page inspection','computer.screenshot':'Computer screen read','computer.status':'Computer status check','computer.propose':'Computer action prepared','computer.execute':'Computer action executed','run.persisted':'Result saved','run.outcome_unknown':'Outcome marked unknown'};
   const diagnosticLabels:Record<string,string>={
     MODEL_UPSTREAM_REJECTED:'The model provider returned an HTTP error.',MODEL_GATEWAY_UPSTREAM_FAILURE:'The model gateway could not complete its provider request.',MODEL_UPSTREAM_RATE_LIMITED:'The model provider rate-limited the request.',MODEL_GATEWAY_CALL_LIMIT:'The task reached its model call limit.',
-    agent_adapter_failed:'The Agent adapter exited before returning a task result.',agent_adapter_output_invalid:'The Agent returned a result that failed validation.',agent_transport_failed:'The connection to the Agent runtime failed.',
-    run_persist_failed:'The task result could not be saved to the database.',lease_expired:'The task lease expired before completion was recorded.',lease_lost:'The task lease was lost before completion was recorded.',
+    MODEL_GATEWAY_REQUEST_REJECTED:'The model gateway rejected the request before calling the provider.',MODEL_GATEWAY_CAPABILITY_REJECTED:'The model gateway rejected the Agent capability.',MODEL_UPSTREAM_MISSING_BODY:'The provider returned success without a response body.',MODEL_GATEWAY_STREAM_INTERRUPTED:'The provider accepted the request, but its response stream ended early.',
+    agent_adapter_failed:'The Agent adapter exited before returning a task result.',agent_adapter_output_invalid:'The Agent returned a result that failed validation.',agent_transport_failed:'The connection to the Agent runtime failed.',agent_reported_failure:'The Agent returned a failed task result.',
+    RUN_RESULT_PERSIST_FAILED:'The task finished, but saving the result failed.',RUN_RESULT_NOT_PERSISTED:'The save transaction did not update the active run.',run_persist_failed:'The task result could not be saved to the database.',lease_expired:'The task lease expired before completion was recorded.',lease_lost:'The task lease was lost before completion was recorded.',
     COMPUTER_BROWSER_ACTION_FAILED:'Unclassified browser action failure',COMPUTER_BROWSER_ACTION_TIMEOUT:'Browser action timed out; outcome needs inspection',COMPUTER_BROWSER_NAVIGATION_ABORTED:'Navigation was interrupted',COMPUTER_BROWSER_NAVIGATION_NETWORK_FAILED:'Chromium could not load the destination',COMPUTER_BROWSER_NAVIGATION_FAILED:'Navigation failed before completion',COMPUTER_BROWSER_CONTROL_ACTION_FAILED:'Browser control action failed',COMPUTER_BROWSER_CONTEXT_CLOSED:'Browser page or context closed during the action',COMPUTER_BROWSER_PAGE_INSPECTION_FAILED:'Page inspection failed',COMPUTER_BROWSER_ARTIFACT_OPEN_FAILED:'Task artifact could not be opened',COMPUTER_BROWSER_TARGET_NOT_FOUND:'No visible control matched',COMPUTER_BROWSER_TARGET_AMBIGUOUS:'More than one visible control matched',COMPUTER_STATE_CHANGED:'Page or computer owner changed during the action',COMPUTER_OWNER_USER:'The owner currently controls the computer',COMPUTER_RENDERER_UNRESPONSIVE:'Chromium did not respond'};
+  const reasonLabels:Record<string,string>={
+    request_content_type_invalid:'Request content-type was not JSON',request_body_too_large:'Request body exceeded the gateway limit',request_json_invalid:'Request body was not valid JSON',request_shape_invalid:'Request JSON had the wrong top-level shape',model_name_mismatch:'Requested model did not match gateway configuration',messages_invalid:'Messages were missing, empty, or over the limit',max_tokens_invalid:'max_tokens was outside the supported range',stream_flag_invalid:'stream was not a boolean',capability_invalid:'Agent capability was missing, expired, or no longer valid',call_budget_exhausted:'The run exhausted its model-call budget',provider_http_rejected:'Provider returned a non-success HTTP response',provider_rate_limited:'Provider returned HTTP 429',provider_cooldown_active:'Gateway cooldown blocked a new provider request',provider_transport_failed:'The provider connection failed',provider_request_failed:'The provider request failed without a classified transport code',provider_response_stream_interrupted:'Provider response streaming ended before completion',provider_response_missing_body:'Provider response did not include a body',database_deadlock:'Database transaction hit a deadlock',database_lock_timeout:'Database lock wait timed out',database_connection:'Database connection failed',database_error:'Database write failed with an unclassified database error',lease_lost:'Task lease could not be renewed',execution_aborted:'Task execution was interrupted',executor_failed:'Executor failed before it returned a result',result_persistence_failed:'Task result persistence failed',finish_not_applied:'Save transaction did not update the active task'};
+  const upstreamErrorLabels:Record<string,string>={request_invalid:'Provider classified the request as invalid',authentication_rejected:'Provider rejected authentication',model_not_found:'Provider could not find the configured model',context_limit:'Provider context or token limit was exceeded',rate_limited:'Provider rate limit was reached',quota_exhausted:'Provider quota or billing limit was reached',permission_denied:'Provider denied this request',provider_server_error:'Provider returned a server error',provider_unavailable:'Provider service was unavailable',content_filtered:'Provider content filter rejected the request',unknown:'Provider error category was not recognized'};
   const actionLabels:Record<string,string>={inspect:'page inspection',navigate:'navigation',open_artifact:'artifact open',upload_file:'file upload',click:'click',fill:'text entry',select:'selection',check:'checkbox check',uncheck:'checkbox clear',press:'key press',open:'desktop open',type:'desktop text entry',unknown:'unknown action'};
   const traceEventLabel=(event:string)=>{
     const match=event.match(/^computer\.(propose|execute)\.(browser|desktop)\.([a-z_-]+)$/);
@@ -815,7 +870,10 @@ function RunTraceButton({runId,compact=false}:{runId:string;compact?:boolean}) {
     return `${channel} ${action} ${match[1]==='propose'?'prepared':'executed'}`;
   };
   const outcomeLabels:Record<RunTraceEntry['outcome'],string>={started:'In progress',succeeded:'Succeeded',failed:'Failed',info:'Info'};
-  const stageLabels:Record<string,string>={route:'Worker route', 'screen-scope':'Resolve Bot screen','screen-owner':'Check computer owner','action-body':'Validate action request','action-navigate':'Run browser navigation','action-execute':'Run browser or desktop action',...agentFailureStageLabels};
+  const stageLabels=failureStageLabels;
+  const primaryFailure=[...state.events].reverse().find(event=>event.outcome==='failed'&&event.component!=='scheduler')||[...state.events].reverse().find(event=>event.outcome==='failed');
+  const primaryFailureTitle=primaryFailure?`${componentLabels[primaryFailure.component]} · ${eventLabels[primaryFailure.event]||traceEventLabel(primaryFailure.event)}`:null;
+  const primaryFailureDetails=primaryFailure?[primaryFailure.stage?`Stage: ${stageLabels[primaryFailure.stage]||primaryFailure.stage}`:null,primaryFailure.httpStatus?`${primaryFailure.component==='model-gateway'?'Gateway ':''}HTTP ${primaryFailure.httpStatus}`:null,primaryFailure.upstreamHttpStatus?`Upstream HTTP ${primaryFailure.upstreamHttpStatus}`:null,primaryFailure.diagnosticCode?diagnosticLabels[primaryFailure.diagnosticCode]||primaryFailure.diagnosticCode:null,primaryFailure.reasonCode?reasonLabels[primaryFailure.reasonCode]||agentFailureReasonLabels[primaryFailure.reasonCode]||primaryFailure.reasonCode:null,primaryFailure.transportCode?`Transport ${primaryFailure.transportCode}`:null].filter(Boolean).join(' · '):null;
   const traceIcon=<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h3l2 4.5 2-4.5h5M2 12.5h3l2-4.5 2 4.5h5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"/></svg>;
   return <>
     <button type="button" className={`run-trace-open${compact?' compact':''}`} aria-label={compact?'View task call chain':undefined} title="View task call chain" onClick={()=>void load()}>{compact?traceIcon:'View task call chain'}</button>
@@ -824,14 +882,17 @@ function RunTraceButton({runId,compact=false}:{runId:string;compact?:boolean}) {
         <header><div><h2 id={`run-trace-title-${runId}`}>Task call chain</h2><p>Run {runId}</p></div><button type="button" aria-label="Close call chain" onClick={()=>setOpen(false)}>×</button></header>
         {releaseIds.length>0&&<p className={`run-trace-release ${releaseIds.length>1?'mismatch':''}`}>{releaseIds.length===1?`Release ${releaseIds[0]}`:`Mixed releases: ${releaseIds.join(', ')}`}</p>}
         {state.status==='loading'&&<p role="status">Loading run trace…</p>}
-        {state.status==='error'&&<p role="alert">Could not load this run trace.</p>}
+        {state.status==='error'&&<p role="alert">{state.error||'Could not load this run trace.'}</p>}
         {state.status==='ready'&&!state.events.length&&<p>No backend trace was recorded for this run.</p>}
+        {state.status==='ready'&&state.events.length>0&&<p className="run-trace-summary">{state.events.length} recorded steps · {state.events.filter(event=>event.outcome==='failed').length} failed · {state.events.filter(event=>event.outcome==='started').length} still in progress</p>}
+        {state.status==='ready'&&primaryFailure&&<section className="run-trace-primary-failure"><strong>Primary failure point · {primaryFailureTitle}</strong><span>{primaryFailureDetails}</span></section>}
         {state.status==='ready'&&state.events.length>0&&<ol className="run-trace-list">{state.events.map(event=><li key={event.sequence} className={`run-trace-event ${event.outcome}`}>
           <time dateTime={event.at}>{new Date(event.at).toLocaleString()}</time>
-          <strong>{componentLabels[event.component]} · {traceEventLabel(event.event)}</strong>
-          <span>{outcomeLabels[event.outcome]}{event.httpStatus?` · HTTP ${event.httpStatus}`:''}{event.upstreamHttpStatus?` · upstream HTTP ${event.upstreamHttpStatus}`:''}{event.durationMs!==null?` · ${event.durationMs} ms`:''}</span>
+          <strong>#{event.sequence} · {componentLabels[event.component]} · {traceEventLabel(event.event)}</strong>
+          <span>{outcomeLabels[event.outcome]}{event.attemptNumber!==null?` · call ${event.attemptNumber}`:''}{event.httpStatus?` · gateway HTTP ${event.httpStatus}`:''}{event.upstreamHttpStatus?` · upstream HTTP ${event.upstreamHttpStatus}`:''}{event.durationMs!==null?` · ${event.durationMs} ms`:''}{event.retryAfterSeconds!==null?` · retry after ${event.retryAfterSeconds}s`:''}</span>
           {event.diagnosticCode&&<div className="run-trace-diagnostic"><span>{diagnosticLabels[event.diagnosticCode]||'A backend diagnostic was recorded'}</span><code>{event.diagnosticCode}</code></div>}
-          {event.reasonCode&&<div className="run-trace-diagnostic"><span>{agentFailureReasonLabels[event.reasonCode]||'Agent runtime failure category'}</span><code>{event.reasonCode}</code></div>}
+          {event.reasonCode&&<div className="run-trace-diagnostic"><span>{reasonLabels[event.reasonCode]||agentFailureReasonLabels[event.reasonCode]||'Recorded failure category'}</span><code>{event.reasonCode}</code></div>}
+          {event.upstreamErrorKind&&<div className="run-trace-diagnostic"><span>{upstreamErrorLabels[event.upstreamErrorKind]||'Provider error category'}</span><code>{event.upstreamErrorKind}</code></div>}
           {(event.stage||event.operation||event.transportCode||event.adapterExitCode!==null)&&<div className="run-trace-metadata">{event.stage&&<span>Stage: {stageLabels[event.stage]||event.stage}</span>}{event.operation&&<span>{event.component==='agent-runtime'?'Agent':'Worker'} operation: {event.operation}</span>}{event.adapterExitCode!==null&&<span>Adapter exit code: <code>{event.adapterExitCode}</code></span>}{event.transportCode&&<span>Transport: <code>{event.transportCode}</code></span>}</div>}
           {event.releaseId&&<small>Release {event.releaseId}</small>}
         </li>)}</ol>}
@@ -1378,17 +1439,17 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
           <Avatar bot={group.members.find(member=>member.id===message.botId)||group.members[0]} size={27}/>
           <div className="message-bubble">
             <header className="group-message-heading"><strong>{message.botName||'Bot'}</strong><span className={`group-run-status ${message.status||'queued'}`} title={groupRunStatusLabel(message)}>{groupRunStatusLabel(message)}</span></header>
-            <p>{message.text||(message.status==='unknown'&&runFailureHeadline(message)?`${runFailureHeadline(message)}. ${runFailureDescription(message)||''}`:groupRunFallback(message))}</p>
+            <p>{message.text||(runFailureHeadline(message)?`${runFailureHeadline(message)}. ${runFailureDescription(message)||''}`:groupRunFallback(message))}</p>
             <RunFileCards files={(message.files||[]).filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
-            {message.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.runId||message.id,prompt:'',status:message.status||'queued',result:message.text,recoveryState:message.recoveryState||'none',replacementRunId:message.replacementRunId,files:message.files||[],computerUsed:true,diagnosticCode:message.diagnosticCode,failureComponent:message.failureComponent,failureReasonCode:message.failureReasonCode,failureStage:message.failureStage,failureHttpStatus:message.failureHttpStatus,failureUpstreamHttpStatus:message.failureUpstreamHttpStatus,failureAdapterExitCode:message.failureAdapterExitCode,failureTransportCode:message.failureTransportCode,executionAudit:message.executionAudit}} botId={message.botId} showScreen={message.status==='running'||message.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
+            {message.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.runId||message.id,prompt:'',status:message.status||'queued',result:message.text,recoveryState:message.recoveryState||'none',replacementRunId:message.replacementRunId,files:message.files||[],computerUsed:true,diagnosticCode:message.diagnosticCode,failureTraceDiagnosticCode:message.failureTraceDiagnosticCode,failureComponent:message.failureComponent,failureReasonCode:message.failureReasonCode,failureStage:message.failureStage,failureHttpStatus:message.failureHttpStatus,failureUpstreamHttpStatus:message.failureUpstreamHttpStatus,failureUpstreamErrorKind:message.failureUpstreamErrorKind,failureAdapterExitCode:message.failureAdapterExitCode,failureTransportCode:message.failureTransportCode,executionAudit:message.executionAudit}} botId={message.botId} showScreen={message.status==='running'||message.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
             {!message.computerUsed&&remote&&message.runId&&<div className="message-actions"><RunTraceButton runId={message.runId} compact/></div>}
             {message.status==='unknown'&&<><p className="run-recovery-note">The task result was not confirmed and the task was not replayed. Inspect the computer before retrying.</p>{runFailureDescription(message)&&<p className="run-recovery-diagnostic">{runFailureDescription(message)}</p>}</>}
             {message.status==='unknown'&&message.recoveryState==='retried'&&message.replacementRunId&&<p className="run-recovery-note">The original task outcome remains unknown. The separate retry is shown below.</p>}
             {message.replacementRun&&<section className="group-replacement-run" aria-label={`Separate retry for ${message.botName||'Bot'}`}>
-              <header><strong>Separate retry</strong><span className={`group-run-status ${message.replacementRun.status}`}>{replacementRunLabel(message.replacementRun.status)}</span></header>
-              <p>{message.replacementRun.result||replacementRunFallback(message.replacementRun.status)}</p>
+              <header><strong>Separate retry</strong><span className={`group-run-status ${message.replacementRun.status}`}>{runFailureHeadline(message.replacementRun)||replacementRunLabel(message.replacementRun.status)}</span></header>
+              <p>{message.replacementRun.result||(runFailureHeadline(message.replacementRun)?runFailureDescription(message.replacementRun):replacementRunFallback(message.replacementRun.status))}</p>
               <RunFileCards files={message.replacementRun.files.filter(file=>file.kind==='output')} onPreview={setPreviewFile} onReuse={reuseGroupRunFile}/>
-              {message.replacementRun.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.replacementRun.id,prompt:'',status:message.replacementRun.status,result:message.replacementRun.result,recoveryState:'none',replacementRunId:null,files:message.replacementRun.files,computerUsed:true,diagnosticCode:message.replacementRun.diagnosticCode,failureComponent:message.replacementRun.failureComponent,failureReasonCode:message.replacementRun.failureReasonCode,failureStage:message.replacementRun.failureStage,failureHttpStatus:message.replacementRun.failureHttpStatus,failureUpstreamHttpStatus:message.replacementRun.failureUpstreamHttpStatus,failureAdapterExitCode:message.replacementRun.failureAdapterExitCode,failureTransportCode:message.replacementRun.failureTransportCode,executionAudit:message.replacementRun.executionAudit}} botId={message.botId} showScreen={message.replacementRun.status==='running'||message.replacementRun.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
+              {message.replacementRun.computerUsed&&message.botId&&<ComputerActivityCard run={{id:message.replacementRun.id,prompt:'',status:message.replacementRun.status,result:message.replacementRun.result,recoveryState:'none',replacementRunId:null,files:message.replacementRun.files,computerUsed:true,diagnosticCode:message.replacementRun.diagnosticCode,failureTraceDiagnosticCode:message.replacementRun.failureTraceDiagnosticCode,failureComponent:message.replacementRun.failureComponent,failureReasonCode:message.replacementRun.failureReasonCode,failureStage:message.replacementRun.failureStage,failureHttpStatus:message.replacementRun.failureHttpStatus,failureUpstreamHttpStatus:message.replacementRun.failureUpstreamHttpStatus,failureUpstreamErrorKind:message.replacementRun.failureUpstreamErrorKind,failureAdapterExitCode:message.replacementRun.failureAdapterExitCode,failureTransportCode:message.replacementRun.failureTransportCode,executionAudit:message.replacementRun.executionAudit}} botId={message.botId} showScreen={message.replacementRun.status==='running'||message.replacementRun.status==='completed'} onOpenComputer={()=>{setGroupComputerBotId(message.botId!);openProductPanel('Computer')}} />}
               {!message.replacementRun.computerUsed&&remote&&<RunTraceButton runId={message.replacementRun.id} compact/>}
             </section>}
           </div>

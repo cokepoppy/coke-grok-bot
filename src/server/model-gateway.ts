@@ -20,9 +20,60 @@ import { computerActionTraceEvent,type RunTraceEvent } from './run-trace.ts';
  * the control process. Never attach this server to the public ingress.
  */
 type CapabilityScope={runId:string;leaseId:string;botId?:string;owner?:RunOwner;skillMutations?:{create:boolean;update:boolean;delete:boolean}};
-type Grant = { expires: number; remaining: number; modelCallLimitReached:boolean; memoryRemaining:number; handoffRemaining:number; routineRemaining:number; skillRemaining:number; abort: AbortController; timer: NodeJS.Timeout; scope?:CapabilityScope; modelRateLimit?:{retryAfterSeconds?:number} };
+type Grant = { expires: number; remaining: number; modelCallLimitReached:boolean; modelCallsUsed:number; memoryRemaining:number; handoffRemaining:number; routineRemaining:number; skillRemaining:number; abort: AbortController; timer: NodeJS.Timeout; scope?:CapabilityScope; modelRateLimit?:{retryAfterSeconds?:number} };
 type UpstreamModelResponse = {response?:Response;retryAfterSeconds?:number};
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const modelTransportCodes=new Set(['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']);
+type UpstreamErrorKind='request_invalid'|'authentication_rejected'|'model_not_found'|'context_limit'|'rate_limited'|'quota_exhausted'|'permission_denied'|'provider_server_error'|'provider_unavailable'|'content_filtered'|'unknown';
+
+function modelTransportCode(error:unknown):string|null {
+  if(!error||typeof error!=='object')return null;
+  const row=error as {code?:unknown;cause?:{code?:unknown}|null};
+  for(const value of [row.code,row.cause?.code])if(typeof value==='string'&&modelTransportCodes.has(value.toUpperCase()))return value.toUpperCase();
+  return null;
+}
+
+function providerErrorKind(status:number,code:string,type:string):UpstreamErrorKind {
+  const value=`${code} ${type}`.toLowerCase();
+  if(/context.?length|context.?window|token.?limit|too_many_tokens/.test(value)||status===413)return 'context_limit';
+  if(/insufficient.?quota|billing|quota_exceeded/.test(value))return 'quota_exhausted';
+  if(/rate.?limit|too_many_requests/.test(value)||status===429)return 'rate_limited';
+  if(/invalid.?api.?key|authentication|unauthorized/.test(value)||status===401)return 'authentication_rejected';
+  if(/permission.?denied|forbidden/.test(value)||status===403)return 'permission_denied';
+  if(/model.?not.?found|unknown.?model/.test(value)||status===404)return 'model_not_found';
+  if(/content.?filter|safety.?filter/.test(value))return 'content_filtered';
+  if(/invalid.?request|bad.?request/.test(value)||status===400||status===422)return 'request_invalid';
+  if(status>=500&&status<=599)return status===503||status===504?'provider_unavailable':'provider_server_error';
+  return 'unknown';
+}
+
+async function readProviderErrorKind(response:Response):Promise<UpstreamErrorKind> {
+  let code='',type='';
+  try {
+    const reader=response.clone().body?.getReader();
+    if(reader){
+      const chunks:Uint8Array[]=[];let size=0;
+      try {
+        while(true){
+          const part=await reader.read();if(part.done)break;
+          size+=part.value.byteLength;
+          if(size>8192){await reader.cancel();break;}
+          chunks.push(part.value);
+        }
+      } finally {reader.releaseLock();}
+      if(size<=8192){
+        const body=JSON.parse(Buffer.concat(chunks.map(chunk=>Buffer.from(chunk))).toString('utf8')) as {error?:unknown};
+        const error=body?.error;
+        if(error&&typeof error==='object'&&!Array.isArray(error)){
+          const value=error as {code?:unknown;type?:unknown};
+          if(typeof value.code==='string'&&/^[A-Za-z0-9_.-]{1,64}$/.test(value.code))code=value.code;
+          if(typeof value.type==='string'&&/^[A-Za-z0-9_.-]{1,64}$/.test(value.type))type=value.type;
+        }
+      }
+    }
+  } catch { /* Provider response text is intentionally never retained. */ }
+  return providerErrorKind(response.status,code,type);
+}
 function retryAfterSeconds(value:string|null,now=Date.now()):number|undefined {
   const input=value?.trim();if(!input)return undefined;
   if(/^\d+$/.test(input)){
@@ -71,7 +122,7 @@ export class ModelGateway {
     const token = randomBytes(32).toString('base64url');
     const timer = setTimeout(() => this.revoke(token), options.ttlMs); timer.unref();
     const scope=options.scope ? { ...options.scope, ...(options.scope.owner ? {owner:{...options.scope.owner}} : {}), ...(options.scope.skillMutations?{skillMutations:{...options.scope.skillMutations}}:{}) } : undefined;
-    this.grants.set(token, { expires: Date.now() + options.ttlMs, remaining: options.calls, modelCallLimitReached:false, memoryRemaining:100, handoffRemaining:8, routineRemaining:20, skillRemaining:100, abort: new AbortController(), timer, scope });
+    this.grants.set(token, { expires: Date.now() + options.ttlMs, remaining: options.calls, modelCallLimitReached:false, modelCallsUsed:0, memoryRemaining:100, handoffRemaining:8, routineRemaining:20, skillRemaining:100, abort: new AbortController(), timer, scope });
     return token;
   }
   revoke(token: string): void {
@@ -128,6 +179,7 @@ export class ModelGateway {
   close(): void { for (const token of this.grants.keys()) this.revoke(token); }
   createServer(tls?: { key: Buffer; cert: Buffer }): Server {
     const handler: import('node:http').RequestListener = async (req, res) => {
+      const modelRequestReceivedAt=Date.now();
       const fail = (status: number) => { if (!res.headersSent) res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end('{"error":"Model gateway request failed"}'); };
       const approvalMatch = req.url?.match(/^\/v1\/action-approvals\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(\/consume)?$/i);
       const approvalRoute = req.url === '/v1/action-approvals' || Boolean(approvalMatch);
@@ -144,8 +196,19 @@ export class ModelGateway {
       if (!approvalRoute && !computerRoute && !memoryRoute && !handoffRoute && !routineRoute && !skillRoute && !modelRoute) return fail(404);
       const token = /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req.headers.authorization || '')?.[1];
       const grant = token && this.grants.get(token);
+      if(modelRoute&&grant&&grant.expires<=Date.now()){
+        await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:401,diagnosticCode:'MODEL_GATEWAY_CAPABILITY_REJECTED',reasonCode:'capability_invalid',stage:'request-auth',operation:'chat-completions',attemptNumber:Math.min(200,grant.modelCallsUsed+1),durationMs:Date.now()-modelRequestReceivedAt});
+      }
       if (!grant || grant.expires <= Date.now() || (memoryRoute && grant.memoryRemaining <= 0) || (handoffRoute && req.method==='POST' && grant.handoffRemaining <= 0) || (routineRoute && grant.routineRemaining <= 0) || (skillRoute && grant.skillRemaining <= 0)) { if (token && grant) this.revoke(token); return fail(401); }
-      if(modelRoute&&grant.modelRateLimit)return replyRateLimited(res,grant.modelRateLimit.retryAfterSeconds);
+      const modelCallNumber=Math.min(200,grant.modelCallsUsed+1);
+      const rejectModelRequest=async(status:number,reasonCode:string,stage:'request-validation'|'request-auth'='request-validation',diagnosticCode='MODEL_GATEWAY_REQUEST_REJECTED')=>{
+        await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:status,diagnosticCode,reasonCode,stage,operation:'chat-completions',attemptNumber:modelCallNumber,durationMs:Date.now()-modelRequestReceivedAt});
+        return fail(status);
+      };
+      if(modelRoute&&grant.modelRateLimit){
+        await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:429,diagnosticCode:'MODEL_UPSTREAM_RATE_LIMITED',reasonCode:'provider_cooldown_active',stage:'provider-request',operation:'chat-completions',attemptNumber:modelCallNumber,retryAfterSeconds:grant.modelRateLimit.retryAfterSeconds??null,durationMs:Date.now()-modelRequestReceivedAt});
+        return replyRateLimited(res,grant.modelRateLimit.retryAfterSeconds);
+      }
       if(approvalRoute)return fail(410);
       if(skillRoute){
         const reply=(status:number,value:unknown)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value))};
@@ -335,27 +398,29 @@ export class ModelGateway {
           return reply(409,{error:'computer_request_failed',diagnostic});
         }
       }
-      if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) return fail(415);
+      if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) return modelRoute?await rejectModelRequest(415,'request_content_type_invalid'):fail(415);
       const chunks: Buffer[] = []; let size = 0;
-      let modelStartedAt:number|undefined;
+      let modelStartedAt:number|undefined,modelUpstreamStatus:number|null=null,modelStage:'provider-request'|'provider-response'|'response-stream'='provider-request';
       try {
-        for await (const chunk of req) { size += chunk.length; if (size > 2 * 1024 * 1024) return fail(413); chunks.push(chunk); }
+        for await (const chunk of req) { size += chunk.length; if (size > 2 * 1024 * 1024) return modelRoute?await rejectModelRequest(413,'request_body_too_large'):fail(413); chunks.push(chunk); }
         let body: unknown;
-        try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return fail(400); }
-        if (!body || typeof body !== 'object' || Array.isArray(body)) return fail(400);
+        try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return modelRoute?await rejectModelRequest(400,'request_json_invalid'):fail(400); }
+        if (!body || typeof body !== 'object' || Array.isArray(body)) return modelRoute?await rejectModelRequest(400,'request_shape_invalid'):fail(400);
         const payload = body as Record<string, unknown>;
-        if (payload.model !== this.model || !Array.isArray(payload.messages) || payload.messages.length === 0 || payload.messages.length > 500) return fail(400);
-        if (payload.max_tokens !== undefined && (!Number.isInteger(payload.max_tokens) || (payload.max_tokens as number) < 1 || (payload.max_tokens as number) > 8192)) return fail(400);
-        if (payload.stream !== undefined && typeof payload.stream !== 'boolean') return fail(400);
-        if (!token || this.grants.get(token) !== grant || grant.expires <= Date.now()) return fail(401);
-        if(grant.remaining<=0){grant.modelCallLimitReached=true;return fail(401)}
+        if (payload.model !== this.model) return modelRoute?await rejectModelRequest(400,'model_name_mismatch'):fail(400);
+        if (!Array.isArray(payload.messages) || payload.messages.length === 0 || payload.messages.length > 500) return modelRoute?await rejectModelRequest(400,'messages_invalid'):fail(400);
+        if (payload.max_tokens !== undefined && (!Number.isInteger(payload.max_tokens) || (payload.max_tokens as number) < 1 || (payload.max_tokens as number) > 8192)) return modelRoute?await rejectModelRequest(400,'max_tokens_invalid'):fail(400);
+        if (payload.stream !== undefined && typeof payload.stream !== 'boolean') return modelRoute?await rejectModelRequest(400,'stream_flag_invalid'):fail(400);
+        if (!token || this.grants.get(token) !== grant || grant.expires <= Date.now()) return modelRoute?await rejectModelRequest(401,'capability_invalid','request-auth','MODEL_GATEWAY_CAPABILITY_REJECTED'):fail(401);
+        if(grant.remaining<=0){grant.modelCallLimitReached=true;return modelRoute?await rejectModelRequest(401,'call_budget_exhausted','request-auth','MODEL_GATEWAY_CALL_LIMIT'):fail(401)}
         payload.max_tokens ??= 8192;
         grant.remaining--;
+        grant.modelCallsUsed++;
         const disconnected = new AbortController();
         res.once('close', () => disconnected.abort());
         const upstreamBase=this.upstream.href.replace(/\/+$/,'');
         modelStartedAt=Date.now();
-        await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'started'});
+        await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'started',stage:'provider-request',operation:'chat-completions',attemptNumber:modelCallNumber,durationMs:Date.now()-modelRequestReceivedAt});
         const result = await this.requestUpstreamModel(`${upstreamBase}/chat/completions`, {
           method: 'POST', redirect: 'error', headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json' },
           body: JSON.stringify(payload), signal: AbortSignal.any([grant.abort.signal, disconnected.signal, AbortSignal.timeout(120_000)]),
@@ -363,22 +428,32 @@ export class ModelGateway {
         if(result.retryAfterSeconds!==undefined){
           grant.modelRateLimit={retryAfterSeconds:result.retryAfterSeconds};
           console.info('Model provider response',{code:result.response?'MODEL_UPSTREAM_RATE_LIMITED':'MODEL_UPSTREAM_RATE_LIMIT_COOLDOWN',status:429,retryAfterSeconds:result.retryAfterSeconds});
-          await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:429,diagnosticCode:'MODEL_UPSTREAM_RATE_LIMITED',durationMs:Date.now()-modelStartedAt});
+          await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:429,...(result.response?{upstreamHttpStatus:result.response.status,upstreamErrorKind:'rate_limited'}:{}),diagnosticCode:'MODEL_UPSTREAM_RATE_LIMITED',reasonCode:result.response?'provider_rate_limited':'provider_cooldown_active',stage:'provider-response',operation:'chat-completions',attemptNumber:modelCallNumber,retryAfterSeconds:result.retryAfterSeconds,durationMs:Date.now()-modelStartedAt});
           await result.response?.body?.cancel().catch(()=>undefined);
           return replyRateLimited(res,result.retryAfterSeconds);
         }
         const upstream=result.response!;
+        modelUpstreamStatus=upstream.status;
+        modelStage='provider-response';
         console.info('Model provider response',{code:upstream.ok&&upstream.body?'MODEL_UPSTREAM_OK':'MODEL_UPSTREAM_REJECTED',status:upstream.status});
         if (!upstream.ok || !upstream.body) {
-          await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:upstream.status,diagnosticCode:'MODEL_UPSTREAM_REJECTED',durationMs:Date.now()-modelStartedAt});
+          const errorKind=await readProviderErrorKind(upstream);
+          const missingBody=upstream.ok&&!upstream.body;
+          await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:502,upstreamHttpStatus:upstream.status,upstreamErrorKind:errorKind,diagnosticCode:missingBody?'MODEL_UPSTREAM_MISSING_BODY':'MODEL_UPSTREAM_REJECTED',reasonCode:missingBody?'provider_response_missing_body':'provider_http_rejected',stage:'provider-response',operation:'chat-completions',attemptNumber:modelCallNumber,durationMs:Date.now()-modelStartedAt});
+          await upstream.body?.cancel().catch(()=>undefined);
           return fail(502);
         }
         res.writeHead(200, { 'Content-Type': payload.stream === true ? 'text/event-stream; charset=utf-8' : 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
         const redactor = new SecretRedactor(Buffer.from(this.apiKey));
+        modelStage='response-stream';
         await pipeline(Readable.fromWeb(upstream.body as import('node:stream/web').ReadableStream<Uint8Array>), redactor, res);
-        await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'succeeded',httpStatus:upstream.status,durationMs:Date.now()-modelStartedAt});
-      } catch {
-        if(modelStartedAt!==undefined)await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:502,diagnosticCode:'MODEL_GATEWAY_UPSTREAM_FAILURE',durationMs:Date.now()-modelStartedAt});
+        await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'succeeded',httpStatus:200,upstreamHttpStatus:upstream.status,stage:'response-stream',operation:'chat-completions',attemptNumber:modelCallNumber,durationMs:Date.now()-modelStartedAt});
+      } catch (error) {
+        if(modelStartedAt!==undefined){
+          const code=modelTransportCode(error);
+          const streamInterrupted=modelStage==='response-stream';
+          await this.recordTrace(grant,{component:'model-gateway',event:'model.request',outcome:'failed',httpStatus:streamInterrupted&&res.headersSent?200:502,...(modelUpstreamStatus!==null?{upstreamHttpStatus:modelUpstreamStatus}:{}),diagnosticCode:streamInterrupted?'MODEL_GATEWAY_STREAM_INTERRUPTED':'MODEL_GATEWAY_UPSTREAM_FAILURE',reasonCode:streamInterrupted?'provider_response_stream_interrupted':code?'provider_transport_failed':'provider_request_failed',stage:modelStage,operation:'chat-completions',attemptNumber:modelCallNumber,...(code?{transportCode:code}:{}),durationMs:Date.now()-modelStartedAt});
+        }
         if (!res.headersSent) fail(502);
         else res.destroy();
       }

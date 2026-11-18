@@ -37,6 +37,13 @@ const agentRuntimeFailureReasonCodes=new Set(['runtime_setup_failed','runtime_er
 const agentRuntimeFailureStages=new Set(['agent-setup','agent-execution','model-request','model-response','tool-execution','result-validation']);
 const agentRuntimeTransportCodes=new Set(['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']);
 
+function agentRuntimeTransportCode(error:unknown):string|undefined {
+  if(!error||typeof error!=='object')return undefined;
+  const row=error as {code?:unknown;cause?:{code?:unknown}|null};
+  for(const value of [row.code,row.cause?.code])if(typeof value==='string'&&agentRuntimeTransportCodes.has(value.toUpperCase()))return value.toUpperCase();
+  return undefined;
+}
+
 /** Convert Agent error text into fixed, non-sensitive operational metadata. */
 export function classifyAgentRejection(value:unknown):AgentRejectionClass {
   if(typeof value!=='string')return 'unknown_agent_rejection';
@@ -182,34 +189,55 @@ export class DesktopAgentExecutor implements RunExecutor {
       };
       let response:Response;
       const dispatchStartedAt=Date.now();
-      await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'started'});
+      await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'started',stage:'agent-setup',operation:'agent-adapter'});
       try {
         response=await this.request(new URL('/v1/tasks/run',endpoint),requestInit);
-      } catch {
+      } catch (error) {
         if(signal.aborted)throw new RunDiagnosticError('execution_aborted');
         const modelDiagnostic=this.gateway.diagnosticCode(capability);
-        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',diagnosticCode:modelDiagnostic||'agent_transport_failed',durationMs:Date.now()-dispatchStartedAt});
+        const transportCode=agentRuntimeTransportCode(error);
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',diagnosticCode:modelDiagnostic||'agent_transport_failed',reasonCode:modelDiagnostic?'model_request_failed':'agent_transport_failed',stage:modelDiagnostic?'model-request':'agent-setup',operation:'agent-adapter',...(transportCode?{transportCode}:{}),durationMs:Date.now()-dispatchStartedAt});
         throw new RunDiagnosticError(modelDiagnostic||'agent_transport_failed');
       }
       if (!response.ok) {
         const rejection=await logAgentRejection(response,run.id);
         const diagnostic=this.gateway.diagnosticCode(capability)||(response.status===400?agentRejectionDiagnostic(rejection.code):agentHttpDiagnostic(response.status));
-        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:response.status,...(rejection.upstreamHttpStatus?{upstreamHttpStatus:rejection.upstreamHttpStatus}:{}),...(rejection.exitCode?{adapterExitCode:rejection.exitCode}:{}),diagnosticCode:diagnostic,...(rejection.reasonCode?{reasonCode:rejection.reasonCode}:{}),...(rejection.stage?{stage:rejection.stage}:{}),...(rejection.transportCode?{transportCode:rejection.transportCode}:{}),...(rejection.exitCode?{operation:'agent-adapter'}:{}),durationMs:Date.now()-dispatchStartedAt,...(response.headers.get('x-coke-grok-release-id')?{releaseId:response.headers.get('x-coke-grok-release-id')!}:{})});
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:response.status,...(rejection.upstreamHttpStatus?{upstreamHttpStatus:rejection.upstreamHttpStatus}:{}),...(rejection.exitCode?{adapterExitCode:rejection.exitCode}:{}),diagnosticCode:diagnostic,...(rejection.reasonCode?{reasonCode:rejection.reasonCode}:{}),...(rejection.stage?{stage:rejection.stage}:{}),operation:'agent-adapter',...(rejection.transportCode?{transportCode:rejection.transportCode}:{}),durationMs:Date.now()-dispatchStartedAt,...(response.headers.get('x-coke-grok-release-id')?{releaseId:response.headers.get('x-coke-grok-release-id')!}:{})});
         throw new RunDiagnosticError(diagnostic);
       }
       const agentReleaseId=response.headers.get('x-coke-grok-release-id');
-      await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'succeeded',httpStatus:response.status,durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
+      await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'succeeded',httpStatus:response.status,stage:'agent-setup',operation:'agent-adapter',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
       let value:unknown;
       try { value=await response.json(); }
-      catch { throw new RunDiagnosticError('agent_response_invalid'); }
-      if (!value || typeof value!=='object' || Array.isArray(value)) throw new RunDiagnosticError('agent_response_invalid');
+      catch {
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:'failed',httpStatus:response.status,diagnosticCode:'agent_response_invalid',reasonCode:'result_invalid',stage:'result-validation',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
+        throw new RunDiagnosticError('agent_response_invalid');
+      }
+      if (!value || typeof value!=='object' || Array.isArray(value)) {
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:'failed',httpStatus:response.status,diagnosticCode:'agent_response_invalid',reasonCode:'result_invalid',stage:'result-validation',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
+        throw new RunDiagnosticError('agent_response_invalid');
+      }
       const result=value as {status?:unknown;message?:unknown;pausedForControl?:unknown;controlOwner?:unknown;files?:unknown;executionAudit?:unknown};
       const executionAudit=validateAgentExecutionAudit(result.executionAudit);
       // A pause may have interrupted an operation after a side effect. Reconciliation is required.
-      if (result.pausedForControl===true) throw new RunDiagnosticError(result.controlOwner==='user'?'agent_paused_for_control':'computer_control_state_unknown',executionAudit);
-      if (result.status==='waiting') throw new RunDiagnosticError(result.controlOwner==='unknown'?'computer_control_state_unknown':'agent_result_status_unconfirmed',executionAudit);
-      if (!['done','failed','scheduled','delegating'].includes(String(result.status))) throw new RunDiagnosticError('agent_result_status_unconfirmed',executionAudit);
-      if (typeof result.message!=='string' || !result.message.trim()) throw new RunDiagnosticError('agent_result_message_missing',executionAudit);
+      if (result.pausedForControl===true) {
+        const code=result.controlOwner==='user'?'agent_paused_for_control':'computer_control_state_unknown';
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:'info',httpStatus:response.status,diagnosticCode:code,stage:'result-validation',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
+        throw new RunDiagnosticError(code,executionAudit);
+      }
+      if (result.status==='waiting') {
+        const code=result.controlOwner==='unknown'?'computer_control_state_unknown':'agent_result_status_unconfirmed';
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:'info',httpStatus:response.status,diagnosticCode:code,stage:'result-validation',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
+        throw new RunDiagnosticError(code,executionAudit);
+      }
+      if (!['done','failed','scheduled','delegating'].includes(String(result.status))) {
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:'failed',httpStatus:response.status,diagnosticCode:'agent_result_status_unconfirmed',reasonCode:'result_invalid',stage:'result-validation',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
+        throw new RunDiagnosticError('agent_result_status_unconfirmed',executionAudit);
+      }
+      if (typeof result.message!=='string' || !result.message.trim()) {
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:'failed',httpStatus:response.status,diagnosticCode:'agent_result_message_missing',reasonCode:'result_missing',stage:'result-validation',durationMs:Date.now()-dispatchStartedAt,...(agentReleaseId?{releaseId:agentReleaseId}:{})});
+        throw new RunDiagnosticError('agent_result_message_missing',executionAudit);
+      }
       await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.result',outcome:result.status==='failed'?'failed':'succeeded',httpStatus:200,durationMs:Date.now()-dispatchStartedAt,...(result.status==='failed'?{diagnosticCode:'agent_reported_failure'}:{}),...(agentReleaseId?{releaseId:agentReleaseId}:{})});
       let safe=result.message.split(capability).join('[redacted]').split(desktop.agentToken).join('[redacted]').slice(0,20000);
       if(explicitMemorySave==='saved') safe+=/\p{Script=Han}/u.test(run.prompt)?'\n\n已保存到此 Bot 的记忆中。':'\n\nSaved to this Bot’s memory.';
