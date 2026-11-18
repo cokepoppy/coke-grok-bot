@@ -3558,3 +3558,18 @@ After the ChatGPT restart, `cua.getState()` listed the Chrome extension and the 
 #### 2026-11-18 18:41 CST 官方 Grok Bot 201 V2 连续逐帧续审（31:55.000–31:59.960）
 
 完成 125 个连续源帧及五张联系图的逐帧观察。为核对帧标注，从完整 MKV 顺序解码 31:55.000–31:59.960：125/125 源 PTS、`yuv420p` 像素 SHA-256/字节数及 5/5 联系图 SHA-256 均与紧凑证据一致。精确相邻帧确认 31:59.320 仍显示 `Your sticker bag`，31:59.360 返回 `sam` 群聊；原尺寸帧与 PTS/PNG SHA-256 位于忽略目录 `research/frames/grok-201-3159-28-to-3159-36-state-boundary-20261118/`。视频里在 31:58.000 出现 2 件 Cloud Nap 4 英寸贴纸加入购物袋提示，31:58.040 展示数量 2、小计 `$12.00` 的购物袋；没有结账或付款证据。此为官方视频中聊天媒体的画面，不能作为本项目实时购物、Agent/Computer 运行或公网验收证据。V2 连续覆盖累计 48,000 帧；下一窗口从 32:00.000 开始。详细观察见[研究证据台账](../research/README.md)。
+
+#### 2026-11-18 19:13 CST 公网聊天流与接管竖线复核
+
+使用 Chrome 原生无障碍树（没有截图）刷新公网 `https://codex.cokeagent.com/grok-bot/`。刷新后，既有电脑任务指令以独立用户消息节点显示在 `Computer activity · Done` 节点之前；Computer 卡片不再包含重复指令。这是部署后真实公网 UI 的结构验收，不是图像像素比较或电脑接管验收。参考色值见上方研究记录：官网用户任务气泡 `#111110`、Computer 卡片约 `#f4f4f3`；产品 CSS 的 `.product-shell` 覆盖使实际用户气泡为 `#111110`、Computer 卡片为 `#f3f3f2`。通用非产品选择器中的紫色不适用于该页面。
+
+竖线检查：外层产品 CSS 与自定义 noVNC viewer 中均没有绘制该竖线的显式元素。实际 Desktop 容器使用 noVNC 1.6.0；其 RFB 客户端会将服务器光标形状应用到画布，x11vnc 使用默认光标形状行为。一次只读 XFixes 查询得到当时光标为 `left_ptr`、24×24；这不能解释先前用户图中的细白竖线，因此不能确定根因或称其已修复。未隐藏、替换光标，也未接管、重启云电脑或重放任务。`cua.getState()` 与 Chrome 原生无障碍读取成功，但已有扩展标签 `getTab()` 再次约 30 秒超时；遵循一次失败后改用原生 AX 的既有排查约定，不反复绑定或用截图替代。
+
+#### 2026-11-18 19:30 CST 接管竖线的 noVNC/XFixes 核对
+
+对当前 K3D 用户桌面 `grok-user-00213195e832242e4afea5b264424355/desktop-7cc5cfd9cc-kw8wb` 做只读检查：Auth、Broker、Namespace Bootstrap、两个活动用户的 Agent/Desktop 均仍标记为 `sha-a510af23b7933e8f0e310406c5975b03b78127ff`；未滚动服务或接管桌面。Desktop 内 noVNC 为 1.6.0，Chromium 运行于 `Xvfb :1`，x11vnc 使用 `-noxdamage`。通过 XFixes 读取到当前指针为 `left_ptr`，24×24，272 个非透明像素，位置 `(5888, 450)`；这与用户之前截图里的细白竖线不匹配，所以当前查询不能解释该竖线。noVNC 1.6.0 的 `_shouldShowDotCursor()` 仅在收到完全透明的远端 cursor shape 时以小圆点替代；它不会覆盖可见的竖线光标，盲目启用不会修复已确认问题。根因仍未确认；不隐藏光标、不改成小圆点，也不声称修复。下一步需在不截取新截图的前提下，通过受支持的浏览器 DOM/可访问性与 noVNC cursor-shape 元数据观察复现时的实际来源。
+
+
+#### 2026-11-18 noVNC 光标缩放修复候选
+
+公网桌面 viewer 对每个 Bot 的 X11 framebuffer 做裁切，并调用 noVNC `display.autoscale()` 做本地缩放；安装的 noVNC 1.6.0 在支持 CSS cursor URI 的 Chrome 上直接设置远端光标图像，光标图像不会随缩放后的 canvas 同步变换。noVNC 上游 PR #2077（截至本记录仍 open、未合并）明确修复硬件光标在本地缩放/裁切下的尺寸和坐标错位。Coke Grok 候选将该 PR 的 `core/util/cursor.js` 变更按固定 commit `f870d809b90c0ff5e719fbedfba42f4ce3816062` 随桌面镜像覆盖；保留 MPL-2.0 文件头，不隐藏或替换远端光标形状。该机制与白竖线现象高度相关，但在部署后用受支持的 Computer Use 直接复核前，仍只能称为修复候选，不能宣称根因已证实或问题已解决；构建和 Pod Ready 不代替光标视觉验收。此次工作不重放 Gmail、北交所或已验收的其他端到端任务。

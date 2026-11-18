@@ -12,6 +12,7 @@ RUN npm ci --prefix /opt/coke-grok/dsh-runtime --omit=dev --no-audit --no-fund \
     && rm -rf /opt/coke-dots/node_modules/@deepseek-ai/dsh-sdk-client \
     && ln -s /opt/coke-grok/dsh-runtime/node_modules/@deepseek-ai/dsh-sdk-client /opt/coke-dots/node_modules/@deepseek-ai/dsh-sdk-client \
     && cd /opt/coke-grok/dsh-runtime && node --input-type=module -e 'console.log(import.meta.resolve("@deepseek-ai/dsh-sdk-client"))'
+COPY --chmod=0644 deploy/desktop/vendor/novnc-1.6.0/core/util/cursor.js /usr/share/novnc/core/util/cursor.js
 COPY --chmod=0755 deploy/desktop/start-desktop.sh /usr/local/bin/start-grok-desktop
 COPY --chmod=0644 deploy/desktop/agent-runtime.mjs /opt/coke-grok/agent-runtime.mjs
 COPY --chmod=0644 deploy/desktop/cloud-kernel-adapter.mjs /opt/coke-dots/grok-kernel-adapter.mjs
