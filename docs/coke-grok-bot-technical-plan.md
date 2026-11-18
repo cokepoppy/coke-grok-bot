@@ -3520,3 +3520,7 @@ V2 连续逐帧覆盖推进至 30:14.960（累计 45,375 帧），下一窗口�
 #### 2026-11-18 17:24 CST Computer Use availability recheck
 
 After restarting ChatGPT, `cua.getState()` again listed the Chrome extension and the public `https://codex.cokeagent.com/grok-bot/` tab, but reported `Native apps: The Mac is locked and automatic unlock could not unlock it`. This confirms tab discovery only; it does not confirm that the existing tab can bind or receive real clicks. No tab binding or page action was attempted while the Mac was locked, and no screenshot, CDP, Playwright, HTTP, or Pod check was used as a substitute. Public click acceptance remains incomplete pending a manual Mac unlock. Independently, the K3D verifier passed for release `sha-a510af23b7933e8f0e310406c5975b03b78127ff`; that deployment check is not public UI acceptance.
+
+#### 2026-11-18 官方 Grok Bot 201 V2 连续逐帧续审（31:35.000–31:39.960）
+
+本窗口完整审阅 125 帧及五张紧凑联系图，PTS 1,895,000–1,899,960 连续；独立二次提取的逐帧像素哈希和联系图 SHA-256 全部匹配。31:36.600→31:36.640 的相邻原尺寸帧确认从贴纸商店静态附件查看器切回 `sam` 群聊；群聊显示黑色用户气泡、浅灰 Bot 气泡、底部语音输入，以及选中 `Computer` 标签但仍为灰色屏幕占位。静态附件和占位屏幕不能作为实时页面或云电脑在线的证据。证据保存在忽略目录 `research/frames/grok-201-3135-3140-compact-audit-20261118/` 和必要转场目录 `research/frames/grok-201-3136-56-to-3136-72-state-boundary-20261118/`；临时定位帧已删除。下一窗口从 31:40.000 开始；详细时码、可见 UI 与证据边界见[研究证据台账](../research/README.md)。
