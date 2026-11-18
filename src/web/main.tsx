@@ -207,8 +207,10 @@ function buildBotTimeline(messages:Message[],runs:AgentRun[],latestSubmittedItem
     const showRecovery=run.status==='unknown'&&run.recoveryState==='pending';
     const showRetryNote=run.status==='unknown'&&run.recoveryState==='retried'&&Boolean(run.replacementRunId);
     const showFollowup=!run.computerUsed||Boolean((run.result&&!genericDone)||outputFiles.length||showRecovery||showRetryNote||run.status==='unknown');
+    // A computer task is still a user message. Keep its prompt in the normal
+    // right-aligned user bubble, then show the computer activity separately.
+    entries.push({key:`prompt:${run.id}`,at:createdAt,priority:0,order:index,kind:'run-prompt',run});
     if(run.computerUsed)entries.push({key:`computer:${run.id}`,at:createdAt,priority:1,order:index,kind:'computer',run});
-    else entries.push({key:`prompt:${run.id}`,at:createdAt,priority:0,order:index,kind:'run-prompt',run});
     if(showFollowup)entries.push({key:`result:${run.id}`,at:updatedAt,priority:2,order:index,kind:'run-result',run});
   });
   return entries.sort((a,b)=>{
@@ -829,7 +831,7 @@ function ComputerPanel({name,botId,official=false,bot,onClose,onRename,onSaveNam
   </div>;
 }
 
-function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{run:AgentRun;botId:string;showScreen:boolean;onOpenComputer:()=>void;children?:React.ReactNode}) {
+function ComputerActivityCard({run,botId,showScreen,onOpenComputer,showPrompt=true,children}:{run:AgentRun;botId:string;showScreen:boolean;onOpenComputer:()=>void;showPrompt?:boolean;children?:React.ReactNode}) {
   const [image,setImage]=useState('');
   const [unavailable,setUnavailable]=useState(false);
   const [screenStale,setScreenStale]=useState(false);
@@ -869,7 +871,7 @@ function ComputerActivityCard({run,botId,showScreen,onOpenComputer,children}:{ru
   const toolLabel=(tool:string)=>tool==='computer_browser'?'Browser User':tool==='computer_desktop'?'Computer User':tool==='computer_files'?'Computer files':tool==='computer_terminal'?'Computer terminal':tool==='open_public_page'?'Public page':tool==='bot_handoff'?'Bot handoff':tool==='bot_memory'?'Bot memory':tool==='bot_routines'?'Bot routines':tool;
   return <section ref={cardElement} className="computer-activity-card" aria-label={`Computer activity · ${status}`}>
     <header><strong>Computer</strong><span className={`computer-activity-status ${failureHeadline?'failed':run.status}`}><i />{status}</span></header>
-    {run.prompt.trim()&&<p className="computer-activity-prompt">{run.prompt}</p>}
+    {showPrompt&&run.prompt.trim()&&<p className="computer-activity-prompt">{run.prompt}</p>}
     {children}
     {failureHeadline&&<div className="computer-activity-failure"><strong>{failureHeadline}</strong>{diagnostic&&<span>{diagnostic}</span>}</div>}
     {showScreen&&image?<button type="button" className="computer-activity-screen" onClick={onOpenComputer} aria-label="Open this Bot's computer"><img src={image} alt="Current cloud computer screen" /></button>:<button type="button" className="computer-activity-open" onClick={onOpenComputer}>{unavailable?'Open computer to inspect the screen':'View computer screen'}</button>}
@@ -1476,7 +1478,7 @@ function PreviewApp({ account, onLogout }: { account?: Account; onLogout?: () =>
     const failureHeadline=(run.status==='unknown'||run.status==='failed')?runFailureHeadline(run):null;
     const failureDescription=(run.status==='unknown'||run.status==='failed')?runFailureDescription(run):null;
     if(entry.kind==='run-prompt')return <div key={entry.key} className="message-line user"><div className="message-bubble">{run.prompt}<RunFileCards files={inputFiles} onPreview={setPreviewFile}/></div></div>;
-    if(entry.kind==='computer')return <div key={entry.key} className="computer-activity-line"><ComputerActivityCard run={run} botId={active.id} showScreen={run.id===latestComputerRunId} onOpenComputer={()=>openProductPanel('Computer')}><RunFileCards files={inputFiles} onPreview={setPreviewFile}/></ComputerActivityCard></div>;
+    if(entry.kind==='computer')return <div key={entry.key} className="computer-activity-line"><ComputerActivityCard run={run} botId={active.id} showScreen={run.id===latestComputerRunId} showPrompt={false} onOpenComputer={()=>openProductPanel('Computer')}/></div>;
     return <div key={entry.key} className={`message-line bot${run.computerUsed?' computer-followup':''}`}><div className="message-bubble">
       {(run.status==='unknown'||(!run.computerUsed&&run.status!=='completed'))&&<span className={`run-status${failureHeadline?' run-status-error':''}`}>{failureHeadline|| (run.status==='unknown'&&run.recoveryState==='auto_resumed'?'Outcome unknown · not retried':run.status==='unknown'&&run.recoveryState==='acknowledged'?'Outcome unknown · queue resumed':run.status==='unknown'&&run.recoveryState==='retried'?'Outcome unknown · explicit retry recorded':({queued:'Queued · waiting for your computer',running:'Working on your computer',failed:'Failed',unknown:'Outcome unknown'} as const)[run.status])}</span>}
       {run.result&&!genericDone&&<p>{run.result}</p>}
