@@ -3550,3 +3550,11 @@ After the ChatGPT restart, `cua.getState()` again enumerated the Chrome extensio
 当前 context 为 `k3d-tp1121-sandbox-dev`。Grok Bot 控制面 `coke-grok-auth`、`coke-grok-desktop-broker`、`coke-grok-namespace-bootstrap` 均为 `1/1`，镜像和 release 标签一致为 `sha-a510af23b7933e8f0e310406c5975b03b78127ff`。两个活动用户命名空间 `grok-user-00213195e832242e4afea5b264424355` 和 `grok-user-efbc9abae2560feb29bc9ba3719c77ce` 的 Agent、Desktop 各为 `1/1 Running` 且带相同 release 标签；两者各自有独立的 `Bound`、10 GiB `workspace` PVC。命名空间创建时间分别为 2026-11-01 与 2026-11-17。
 
 代码 `src/server/desktop-resources.ts` 将 namespace owner hash 定义为 `SHA-256(lowercase(tenantId + ':' + userId)).slice(0, 32)`，所以两个不同 owner hash 表示两个不同 tenant/user 身份组合；这不是同一身份下 Agent 与 Desktop 的 Pod 数量关系。仅凭 Kubernetes 哈希无法证明这两个身份是否对应同一邮箱；本次没有查询认证数据库，也没有删除命名空间、PVC 或登录态。后续需通过不泄露凭据的认证映射确认 `efbc…` 是否为测试身份，再决定是否按既有清理授权处理。集群其他项目和已缩容到零的旧桌面 Deployment 不纳入此 Grok Bot 活动版本核对。
+
+#### 2026-11-18 18:41 CST Computer Use availability recheck
+
+After the ChatGPT restart, `cua.getState()` listed the Chrome extension and the public Coke Grok Bot tab again, but returned `The Mac is locked and automatic unlock could not unlock it` for native apps. This confirms Chrome tab discovery only; native interaction remains unavailable. No further tab-binding retry or page action was attempted while locked, and no screenshot, coordinate input, CDP, Playwright, HTTP, or Pod check substituted for Computer Use. Public browser acceptance remains pending manual Mac unlock and a successful visible semantic action.
+
+#### 2026-11-18 18:41 CST 官方 Grok Bot 201 V2 连续逐帧续审（31:55.000–31:59.960）
+
+完成 125 个连续源帧及五张联系图的逐帧观察。为核对帧标注，从完整 MKV 顺序解码 31:55.000–31:59.960：125/125 源 PTS、`yuv420p` 像素 SHA-256/字节数及 5/5 联系图 SHA-256 均与紧凑证据一致。精确相邻帧确认 31:59.320 仍显示 `Your sticker bag`，31:59.360 返回 `sam` 群聊；原尺寸帧与 PTS/PNG SHA-256 位于忽略目录 `research/frames/grok-201-3159-28-to-3159-36-state-boundary-20261118/`。视频里在 31:58.000 出现 2 件 Cloud Nap 4 英寸贴纸加入购物袋提示，31:58.040 展示数量 2、小计 `$12.00` 的购物袋；没有结账或付款证据。此为官方视频中聊天媒体的画面，不能作为本项目实时购物、Agent/Computer 运行或公网验收证据。V2 连续覆盖累计 48,000 帧；下一窗口从 32:00.000 开始。详细观察见[研究证据台账](../research/README.md)。
