@@ -192,7 +192,7 @@ export class DesktopAgentExecutor implements RunExecutor {
       if (!response.ok) {
         const rejection=await logAgentRejection(response,run.id);
         const diagnostic=this.gateway.diagnosticCode(capability)||(response.status===400?agentRejectionDiagnostic(rejection.code):agentHttpDiagnostic(response.status));
-        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:response.status,...(rejection.upstreamHttpStatus?{upstreamHttpStatus:rejection.upstreamHttpStatus}:{}),diagnosticCode:diagnostic,...(rejection.reasonCode?{reasonCode:rejection.reasonCode}:{}),...(rejection.stage?{stage:rejection.stage}:{}),...(rejection.exitCode?{operation:'agent-adapter'}:{}),durationMs:Date.now()-dispatchStartedAt,...(response.headers.get('x-coke-grok-release-id')?{releaseId:response.headers.get('x-coke-grok-release-id')!}:{})});
+        await this.recordTrace(run.id,{component:'agent-runtime',event:'agent.dispatch',outcome:'failed',httpStatus:response.status,...(rejection.upstreamHttpStatus?{upstreamHttpStatus:rejection.upstreamHttpStatus}:{}),...(rejection.exitCode?{adapterExitCode:rejection.exitCode}:{}),diagnosticCode:diagnostic,...(rejection.reasonCode?{reasonCode:rejection.reasonCode}:{}),...(rejection.stage?{stage:rejection.stage}:{}),...(rejection.exitCode?{operation:'agent-adapter'}:{}),durationMs:Date.now()-dispatchStartedAt,...(response.headers.get('x-coke-grok-release-id')?{releaseId:response.headers.get('x-coke-grok-release-id')!}:{})});
         throw new RunDiagnosticError(diagnostic);
       }
       const agentReleaseId=response.headers.get('x-coke-grok-release-id');

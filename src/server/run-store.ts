@@ -74,6 +74,7 @@ export class RunStore {
       http_status SMALLINT UNSIGNED NULL,
       diagnostic_code VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
       reason_code VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL,
+      adapter_exit_code TINYINT UNSIGNED NULL,
       upstream_http_status SMALLINT UNSIGNED NULL,
       duration_ms INT UNSIGNED NULL,
       release_id VARCHAR(80) CHARACTER SET ascii COLLATE ascii_bin NULL,
@@ -87,6 +88,7 @@ export class RunStore {
     const [traceColumns] = await this.pool.execute<RowDataPacket[]>(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='agent_run_traces'`);
     const traceNames = new Set(traceColumns.map(column => String(column.COLUMN_NAME)));
     if (!traceNames.has('reason_code')) await this.pool.execute('ALTER TABLE agent_run_traces ADD COLUMN reason_code VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER diagnostic_code');
+    if (!traceNames.has('adapter_exit_code')) await this.pool.execute('ALTER TABLE agent_run_traces ADD COLUMN adapter_exit_code TINYINT UNSIGNED NULL AFTER reason_code');
     if (!traceNames.has('upstream_http_status')) await this.pool.execute('ALTER TABLE agent_run_traces ADD COLUMN upstream_http_status SMALLINT UNSIGNED NULL AFTER reason_code');
     if (!traceNames.has('worker_stage')) await this.pool.execute('ALTER TABLE agent_run_traces ADD COLUMN worker_stage VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER release_id');
     if (!traceNames.has('worker_operation')) await this.pool.execute('ALTER TABLE agent_run_traces ADD COLUMN worker_operation VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER worker_stage');
@@ -333,7 +335,7 @@ export class RunStore {
     if (!uuid.test(runId)) return null;
     const [owned] = await this.pool.execute<RowDataPacket[]>(`SELECT r.id FROM agent_runs r JOIN bots b ON b.id=r.bot_id WHERE r.id=? AND b.tenant_id=? AND b.owner_id=?`,[runId,session.tenantId,session.userId]);
     if (!owned.length) return null;
-    const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT sequence,component,event,outcome,http_status AS httpStatus,upstream_http_status AS upstreamHttpStatus,diagnostic_code AS diagnosticCode,reason_code AS reasonCode,duration_ms AS durationMs,release_id AS releaseId,worker_stage AS stage,worker_operation AS operation,transport_code AS transportCode,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS at FROM agent_run_traces WHERE run_id=? ORDER BY sequence DESC LIMIT 500`,[runId]);
+    const [rows] = await this.pool.execute<RowDataPacket[]>(`SELECT sequence,component,event,outcome,http_status AS httpStatus,upstream_http_status AS upstreamHttpStatus,adapter_exit_code AS adapterExitCode,diagnostic_code AS diagnosticCode,reason_code AS reasonCode,duration_ms AS durationMs,release_id AS releaseId,worker_stage AS stage,worker_operation AS operation,transport_code AS transportCode,DATE_FORMAT(created_at,'%Y-%m-%dT%H:%i:%s.%fZ') AS at FROM agent_run_traces WHERE run_id=? ORDER BY sequence DESC LIMIT 500`,[runId]);
     return rows.reverse().flatMap(row=>{
       const event=validateRunTraceEvent(row);
       return event?[{...event,sequence:Number(row.sequence),at:String(row.at)}]:[];
@@ -344,8 +346,8 @@ export class RunStore {
     if(!uuid.test(runId))return;
     const event=validateRunTraceEvent(value);if(!event){console.warn('Run trace event rejected',{runId,diagnosticCode:'RUN_TRACE_EVENT_INVALID'});return}
     try{
-      await this.pool.execute<ResultSetHeader>(`INSERT INTO agent_run_traces (run_id,component,event,outcome,http_status,upstream_http_status,diagnostic_code,reason_code,duration_ms,release_id,worker_stage,worker_operation,transport_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,[
-        runId,event.component,event.event,event.outcome,event.httpStatus??null,event.upstreamHttpStatus??null,event.diagnosticCode??null,event.reasonCode??null,event.durationMs??null,event.releaseId??null,event.stage??null,event.operation??null,event.transportCode??null,
+      await this.pool.execute<ResultSetHeader>(`INSERT INTO agent_run_traces (run_id,component,event,outcome,http_status,upstream_http_status,adapter_exit_code,diagnostic_code,reason_code,duration_ms,release_id,worker_stage,worker_operation,transport_code) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[
+        runId,event.component,event.event,event.outcome,event.httpStatus??null,event.upstreamHttpStatus??null,event.adapterExitCode??null,event.diagnosticCode??null,event.reasonCode??null,event.durationMs??null,event.releaseId??null,event.stage??null,event.operation??null,event.transportCode??null,
       ]);
     }catch(error){
       const rawCode=error&&typeof error==='object'&&'code'in error&&typeof error.code==='string'?error.code:'';
