@@ -3497,3 +3497,12 @@ V2 连续逐帧覆盖推进至 30:14.960（累计 45,375 帧），下一窗口�
 复查用户提供的全屏接管图后，确认单 Bot 时间线对 `computerUsed` run 只生成了 Computer 活动卡，没有生成用户消息条目，因此用户指令视觉上像 AI/电脑内容。当前单一候选分支 `codex/grok-chat-flow-colors-cursor-20261118` 改为每个 run 先显示普通用户气泡，再显示 Computer 活动卡；输入附件跟随用户气泡，电脑卡隐藏重复指令。用户黑色、Bot 浅灰、Computer 中性灰、状态绿/琥珀/红的语义颜色已存在于公共产品 CSS，不另造随机颜色。
 
 `npm run build`、`npm run build:deployment` 与 `git diff --check` 均通过。只读检查显示用户命名空间中的 Agent 与 Desktop 均运行 `sha-0674074f30e5dba6da7500779cafe49b42f22b06`，均为 Running；该候选 UI 尚未部署。Computer Use 返回 `Local browser access is unavailable for this chat`，所以没有进行公网 Chrome 视觉/交互验收，不提交或推送为已验收版本。用户截图里的白色竖线结合 noVNC RFB 光标渲染实现，更像远端 I-beam 鼠标光标；这是推断，缺少实时接管核对，不隐藏光标以免损害鼠标可见性。
+
+
+#### 2026-11-18 电脑任务聊天流角色修正候选部署
+
+2026-11-18 16:12 CST，将候选 `sha-b7c57ef8f7e47e0fe3bbe5133f72d56fcb422469` 部署到 Mac 本机 K3D 集群 `k3d-tp1121-sandbox-dev`。Auth、Desktop Broker、Namespace Bootstrap，以及两个现存用户命名空间中的 Agent/Desktop 共 7 个应用 Pod 全部 Ready；`release:verify-k3d` 确认 Deployment、Pod、容器均对齐完整 release ID。MySQL Pod 1 个和 PVC 3 个均保留，未重建数据库或 PVC。
+
+公网 `/grok-bot/` 返回的 JS（425,046 字节，SHA-256 `33f1c6dfd637081efca80bce0cabd136832933c7d8a5873aafde040840065f09`）与本地构建一致；CSS（99,137 字节，SHA-256 `48802f9dc393a985f7cd5032fbaec792051b2725e2d4349328fb8915e15e00c3`）也一致。这只证明静态资源部署一致，不是交互验收。重启 ChatGPT 后，Computer Use 的 `cua.getState()` 仍约 30 秒超时并重置会话内核，故未进行公网真实点击/视觉验收；没有用截图、坐标、CDP 或 Playwright 替代。候选已推送到当前功能分支，尚未合并 `main`、未打正式 checkpoint tag；待 Computer Use 恢复后完成公网 UI 验收再决定合并。
+
+候选发布记录与回退快照位于 `releases/candidate-grok-chat-flow-user-bubbles-b7c57ef-2026-11-18/`。目录含该源码提交归档、构建制品、部署清单与脚本、镜像锁定、部署结果、校验和回退命令；大约 913 MB 的 Desktop OCI 镜像层没有再复制一份，仍保存在本机 Docker/K3D 镜像缓存中，因此该目录目前是本机候选恢复包，不是独立可移植的镜像归档。
