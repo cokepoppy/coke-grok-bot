@@ -3669,3 +3669,13 @@ Chrome 原生无障碍树现稳定停留在已登录的 `https://codex.cokeagent
 `npm run release:build-images` 的 Auth、Broker、Namespace Bootstrap 镜像很快成功；桌面镜像在 `npm ci --prefix /opt/coke-grok/dsh-runtime` 长时间没有输出。BuildKit 历史显示这次默认网络运行 9 分 51 秒后仍停在同一步；11 月 18 日另一条同阶段历史运行 6 分 55 秒后被取消，所以这些历史记录本身不能证明 npm 最终失败。用相同源码/锁文件、相同 `sha-0b249007a0a5e94e982df26df8f138ace791ddb6` tag 单独以 `docker build --network=host` 重建，569 个包在 33 秒安装完成，桌面镜像随后成功导出。根因确认是 Docker BuildKit 默认构建网络路径造成依赖请求严重延迟；改动只影响镜像 build 阶段，不涉及运行时网页访问策略。
 
 发布脚本现仅为 `coke-grok-desktop` 构建加入 `--network=host`，其他镜像保持原网络模式。该修复尚需在本提交新版本的完整 `release:build-images` 运行中验证；上述单独构建先用于确认网络诊断方向，不部署集群。
+
+#### 2026-11-19 12:08 CST 网页 UI 候选部署与公网验收状态
+
+本次完整 `npm run release:build-images` 已为 Auth、Broker、Namespace Bootstrap、Desktop 构建全部 4 个 `linux/arm64` 镜像，统一 Release ID 为 `sha-68691bb482b4f07ca63c6d61436467f3f4fb5479`；桌面镜像的 host-network 构建修复随完整构建通过。部署到 Mac 本机 K3D 后，`release:verify-k3d` 再次通过：控制面与两个活动用户 namespace 内共 7 个 Deployment/Pod 均使用同一完整 Release ID。部署记录核对 MySQL Pod 身份及 3 个 PVC 身份未变化。完整部署回执见 `releases/candidate-grok-run-trace-version-68691bb-2026-11-19/operations/deployment-result.json`。
+
+公网验收继续使用已登录 Chrome 的 `https://codex.cokeagent.com/grok-bot/`。Chrome 扩展标签绑定和一次全局状态读取均超时；随后通过 `getApp("Google Chrome")` 成功读取原生无障碍树，在不截图的情况下刷新当前产品页。刷新后的 `kaka` 聊天中，既有 11:18 只读任务明确显示 Provider HTTP 403 `model_not_purchased`、新恢复说明“首个模型请求未到达 Agent，未执行浏览器/桌面操作且未重试”，调用链显示失败发生于首个 `Receive model provider response`。这证明具体失败说明已经在公网 UI 可见；它没有触发 Browser User 操作，也没有重放旧任务。
+
+因此，本轮**公网 UI 错误说明可见性已验收；真实 Agent→Browser User→Computer User 任务 E2E 仍失败/阻塞在模型供应商授权**。此前对同一阿里云兼容端点的单次最小请求已分别确认 `qwen3.8-flash` 和 `deepseek-v4.1-flash` 返回 HTTP 403 `AccessDenied.Unpurchased`；没有改模型配置或再次请求。需先由供应商账号开通已选模型，再创建一条新的只读公网任务。当前不合并、不打验收 tag。
+
+当前源码的本地 `test:ui` 覆盖网页全屏边界、隐藏 macOS 装饰、用户/Agent/Computer 卡片色、布局和发送后滚动，先前已通过；本次公网 Computer Use 是语义树检查，没有视觉截图，故不把它说成像素级视觉验收。noVNC 白色竖线在本轮也没有做视觉复核，结果仍未确认。此次 CUA 恢复路径和限制已单独记录在 memory note 中。
