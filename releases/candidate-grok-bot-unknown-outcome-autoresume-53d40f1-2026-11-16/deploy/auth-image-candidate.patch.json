@@ -1,3 +1,0 @@
-[
-  {"op":"replace","path":"/spec/template/spec/containers/0/image","value":"coke-grok-auth:candidate-unknown-outcome-autoresume-53d40f1-20261116-r1"}
-]

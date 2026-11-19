@@ -1,1 +1,0 @@
-No grok_runtime_poll_* or grok_scheduler_claim_* events were emitted in the first five minutes after the Auth rollout. This is startup-window telemetry only, not task E2E evidence.
