@@ -3619,3 +3619,9 @@ Kaka 最近提供的调用链确认主模型错误是供应商 HTTP 403，被旧
 用户指出公网网页里左上角仿 macOS 的红黄绿窗口点和页面四周圆弧外框看起来像客户端装饰。源码确认它们分别由 `.product-shell .sidebar-top::before` 与 `.app.product-shell` 的非零 inset、边框和 24px 圆角绘制。候选改为网页占满浏览器 viewport、去掉外层窗口框并隐藏这三个伪装成系统控件的圆点；聊天气泡、侧栏项目及电脑卡片自身的圆角保留。`npm run build:deployment` 已通过；该视觉修正尚未公网部署或通过公网 DOM 验证。
 
 Kaka 诊断候选已提交并推送到功能分支，之后增加的网页外框修正仍在同一分支。K3D 仍运行上一个统一版本；发布预检在一块持久电脑屏幕中观察到 `owner=user`，因此没有滚动用户 Desktop Worker。先前提交的四个镜像对应旧提交，CSS 更新后将重建成最终提交标签；当前功能版尚未部署或做公网验收。MySQL、PVC、浏览器文件与登录态均未更改。
+
+#### 2026-11-19 09:31 CST 统一部署与公网静态资源复核
+
+在用户此前授权重启被接管电脑后，将当前功能分支提交 `029a46380c46505cbcdc66615b97d50b7562723f` 构建成 4 个 `linux/arm64` 镜像并部署到本机 K3D `k3d-tp1121-sandbox-dev`。Auth、Broker、Namespace Bootstrap，以及两个活动用户 namespace 的 Agent/Desktop 共 7 个 Deployment 全部 rollout 成功；`release:verify-k3d` 确认运行 Pod、init container、Deployment 与 Pod template 均标记为 `sha-029a46380c46505cbcdc66615b97d50b7562723f`。发布脚本确认 MySQL Pod 身份和 3 个 Grok/MySQL PVC 身份未变化。部署前发现的一块 `owner=user` 屏幕状态保存在原 PVC 中；没有发送键鼠事件或手动修改其 owner。没有重新运行 Kaka 旧任务，也没有访问/改动 Gmail 或 Google Slides。
+
+公网 HTML 指向 `index-g52WLWaA.js` 与 `index-l19_Saz7.css`，两份公网文件 SHA-256 分别与本地发布制品完全一致。已读到线上 CSS 的 viewport 全屏规则与隐藏窗口红黄绿点规则，也在 JS bundle 中确认 `model_not_purchased` 及用户可读的 403 标题已发布。这是公网静态资源一致性证据；Chrome 扩展标签绑定本轮超时，故没有声称实际浏览器 DOM 或聊天失败卡已完成可见验收，也没有截图。Kaka 的成功任务验收仍受上游 `AccessDenied.Unpurchased` 阻塞。
