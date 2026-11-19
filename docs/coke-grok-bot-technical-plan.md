@@ -3715,3 +3715,7 @@ Chrome 原生无障碍树现稳定停留在已登录的 `https://codex.cokeagent
 代码修复使未识别的桌面操作变为明确的 HTTP 422 `COMPUTER_DESKTOP_ACTION_UNSUPPORTED`，并告诉模型把操作名与数据分字段传递；它不新增审批或操作白名单。相关单元检查、`npm run build` 与 `COKE_GROK_CAPTURE_UI_ARTIFACTS=0 E2E_PROGRESS=1 npm run test:ui` 均通过。
 
 公网点击验收尚未开始：Chrome 扩展标签绑定一次 30 秒超时后已按既有排查约定停止重试；随后通过 Chrome 原生无障碍树发现 `kaka` 当前已有一条用户任务「打开淘宝搜索」处于 Working。为避免打断或并发操作这条活跃任务，本轮没有提交新的公网验收消息、没有重放旧 run，也没有截图。当前公开站点的实际 Browser User/Computer User E2E 结果仍待验证；标签绑定超时不能作为服务端或云电脑故障证据。
+
+#### 2026-11-19 13:38 CST 候选发布目录保留策略与清理
+
+按用户要求只保留最近几个候选版本：保留 `candidate-grok-run-trace-version-3b9e9be-2026-11-19`、`candidate-grok-run-trace-version-abe1e8a-2026-11-19`、`candidate-grok-run-trace-version-68691bb-2026-11-19` 三份最新候选，以及带 `checkpoint/grok-bot-website-demo-ui-2026-11-01` tag 的正式 UI checkpoint 发布包。删除更早的五个候选目录：`c5b203d`、`a510af2`、`b7c57ef`、`226435b`、`029a463`。其中最大的 `c5b203d` 镜像归档占约 943 MiB；清理前候选目录和归档合计约 950 MiB，清理后 `releases/` 共约 80 MiB。仅删除仓库 `releases/` 下这些具体候选目录，未清理 Docker、K3D 镜像、数据库、PVC 或其他项目数据；checkpoint 与当前部署记录均通过存在性检查。
