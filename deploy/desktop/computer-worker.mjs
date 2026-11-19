@@ -15,7 +15,7 @@ import { ensureSharedComputerRoots } from './shared-computer-root.mjs';
 import { appendControlOwnerEvent, computerScreenKey } from './control-owner-audit.mjs';
 import { createGuardedComputer } from '/opt/coke-grok/guarded-computer.mjs';
 import { isAuthenticationChallenge } from './browser-task-policy.mjs';
-import { browserActionDiagnostic, computerWorkerRequestDiagnostic, safeComputerActionLogFields } from './browser-action-diagnostics.mjs';
+import { browserActionDiagnostic, computerWorkerRequestDiagnostic, desktopActionDiagnostic, safeComputerActionLogFields } from './browser-action-diagnostics.mjs';
 
 const exec = promisify(execFile);
 const token = String(process.env.LINUX_DESKTOP_WORKER_TOKEN || '');
@@ -774,7 +774,11 @@ http.createServer(async (req, res) => {
       computerActionLogFields = safeComputerActionLogFields(input.action);
       requestStage = 'action-execute';
       try { return send(res, 200, await guardedComputer.execute(input.action, input.expected)); }
-      catch (error) { if (input.action?.kind === 'browser') throw browserActionDiagnostic(error, input.action.action); throw error; }
+      catch (error) {
+        if (input.action?.kind === 'browser') throw browserActionDiagnostic(error, input.action.action);
+        if (input.action?.kind === 'desktop') throw desktopActionDiagnostic(error);
+        throw error;
+      }
     }
     if (req.method === 'GET' && pathname === '/v1/artifacts') {
       const taskId = new URL(req.url || '/', 'http://127.0.0.1').searchParams.get('taskId') || '';
@@ -839,29 +843,30 @@ http.createServer(async (req, res) => {
     const screenCapacity = error instanceof BotScreenCapacityError;
     const activeTabUnresolved = error instanceof ActiveTabResolutionError;
     const browserDiagnostic = error && typeof error === 'object' && typeof error.code === 'string' && error.code.startsWith('COMPUTER_BROWSER_');
+    const desktopActionDiagnostic = error && typeof error === 'object' && error.code === 'COMPUTER_DESKTOP_ACTION_UNSUPPORTED';
     const computerStateChanged = error && typeof error === 'object' && error.code === 'COMPUTER_STATE_CHANGED';
     const computerOwnerUser = error && typeof error === 'object' && error.code === 'COMPUTER_OWNER_USER';
-    const knownGuardedDiagnostic = browserDiagnostic || computerStateChanged || computerOwnerUser || contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved;
+    const knownGuardedDiagnostic = browserDiagnostic || desktopActionDiagnostic || computerStateChanged || computerOwnerUser || contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved;
     if (rendererUnresponsive || screenAllocationTimeout) {
       rendererHealth.fail();
       void recoverChromium();
     }
     if (computerActionRequest) {
       const diagnostic = knownGuardedDiagnostic
-        ? { code: browserDiagnostic ? error.code : computerStateChanged ? 'COMPUTER_STATE_CHANGED' : computerOwnerUser ? 'COMPUTER_OWNER_USER' : rendererUnresponsive ? 'COMPUTER_RENDERER_UNRESPONSIVE' : screenCapacity ? 'COMPUTER_SCREEN_CAPACITY' : activeTabUnresolved ? 'COMPUTER_ACTIVE_TAB_UNRESOLVED' : 'COMPUTER_BROWSER_ACTION_FAILED', status: browserDiagnostic ? error.status : computerStateChanged || computerOwnerUser ? 409 : 503 }
+        ? { code: browserDiagnostic || desktopActionDiagnostic ? error.code : computerStateChanged ? 'COMPUTER_STATE_CHANGED' : computerOwnerUser ? 'COMPUTER_OWNER_USER' : rendererUnresponsive ? 'COMPUTER_RENDERER_UNRESPONSIVE' : screenCapacity ? 'COMPUTER_SCREEN_CAPACITY' : activeTabUnresolved ? 'COMPUTER_ACTIVE_TAB_UNRESOLVED' : 'COMPUTER_BROWSER_ACTION_FAILED', status: browserDiagnostic || desktopActionDiagnostic ? error.status : computerStateChanged || computerOwnerUser ? 409 : 503 }
         : computerWorkerRequestDiagnostic(requestStage);
       const releaseId = /^sha-[a-f0-9]{40}$/.test(process.env.COKE_GROK_RELEASE_ID || '') ? process.env.COKE_GROK_RELEASE_ID : undefined;
       process.stderr.write(`${JSON.stringify({ event:'computer-action-failed', stage:requestStage, ...computerActionLogFields, code:diagnostic.code, status:diagnostic.status, ...(releaseId ? { releaseId } : {}) })}\n`);
-      const safeMessage = browserDiagnostic ? error.message
+      const safeMessage = browserDiagnostic || desktopActionDiagnostic ? error.message
         : computerStateChanged ? 'The computer page or owner changed before the action completed.'
         : computerOwnerUser ? 'The owner currently controls this computer.'
         : diagnostic.message || `Computer action failed: ${diagnostic.code}`;
       return send(res, diagnostic.status, { code:diagnostic.code, error:safeMessage, stage:requestStage });
     }
-    const status = browserDiagnostic ? error.status : computerStateChanged || computerOwnerUser ? 409 : contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved ? 503 : 400;
+    const status = browserDiagnostic || desktopActionDiagnostic ? error.status : computerStateChanged || computerOwnerUser ? 409 : contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved ? 503 : 400;
     return send(res, status, {
       error: browserDiagnostic ? error.message : message.slice(0, 240),
-      ...(browserDiagnostic || computerStateChanged || computerOwnerUser || contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved ? { code: error.code } : {}),
+      ...(browserDiagnostic || desktopActionDiagnostic || computerStateChanged || computerOwnerUser || contextUnavailable || rendererUnresponsive || screenAllocationTimeout || screenAllocationSuperseded || screenCapacity || activeTabUnresolved ? { code: error.code } : {}),
     });
   }
 }).listen(port, '0.0.0.0', () => process.stdout.write(`Dots desktop worker listening on ${port}\n`));

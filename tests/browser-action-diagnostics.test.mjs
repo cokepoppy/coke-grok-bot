@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { browserActionDiagnostic, computerWorkerRequestDiagnostic, safeComputerActionLogFields } from '../deploy/desktop/browser-action-diagnostics.mjs';
+import { browserActionDiagnostic, computerWorkerRequestDiagnostic, desktopActionDiagnostic, safeComputerActionLogFields } from '../deploy/desktop/browser-action-diagnostics.mjs';
 
 test('browser worker failures become fixed diagnostics without forwarding locator text', () => {
   const cases = [
@@ -90,4 +90,13 @@ test('guarded worker request stages use fixed diagnostics without exposing reque
     message: 'The computer worker could not complete the action.',
   });
   assert.equal(computerWorkerRequestDiagnostic('action-body').message.includes('secret'), false);
+});
+
+test('unsupported desktop operation names receive a specific safe diagnostic', () => {
+  const diagnostic = desktopActionDiagnostic(new Error('Unsupported desktop command'));
+  assert.equal(diagnostic.code, 'COMPUTER_DESKTOP_ACTION_UNSUPPORTED');
+  assert.equal(diagnostic.status, 422);
+  assert.match(diagnostic.message, /action=press/);
+  assert.match(diagnostic.message, /key=Control\+t/);
+  assert.equal(desktopActionDiagnostic(new Error('private xdotool details')).message, 'private xdotool details');
 });

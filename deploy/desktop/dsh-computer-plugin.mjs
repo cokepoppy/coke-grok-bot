@@ -11,7 +11,7 @@ export function apply(ctx) {
 
   ctx.tools.register({
     name: 'computer_desktop',
-    description: 'View a screenshot and operate this user’s real persistent cloud Linux desktop. Browser User and Computer User actions needed for the task run without per-step or per-site approval. Click coordinates use the full 1440 x 900 screenshot, with (0, 0) at its top-left and Chromium/window-manager bars included. Use semantic Browser User controls or direct desktop clicks, typing, and any X11 key name or modifier combination as appropriate; Chrome tabs and the address bar are ordinary computer controls. Screenshots are sent to the configured model. When a real login or human-verification challenge appears, stop Agent input and tell the owner to open the Computer screen and choose Take control. Do not claim control has transferred. Never enter or request credentials.',
+    description: 'View and operate this user’s real persistent cloud Linux desktop. Ordinary Browser User and Computer User actions run without per-step approval; stop only at a real sign-in or human-verification challenge and never enter credentials. Use the exact action fields: screenshot {action:"screenshot"}; click {action:"click",x:295,y:48}; type {action:"type",text:"text"}; key press {action:"press",key:"Control+t"}; page navigation {action:"navigate",url:"https://example.org/"}. Keep the operation name in action and its data in separate fields: do not send action:"press Control+t" or action:"open a new tab". Any X11 key name or modifier combination is accepted in key. Coordinates use the full 1440 x 900 desktop, origin at the top-left including Chromium/window-manager bars. Screenshots are sent to the configured model.',
     parameters: {
       type: 'object',
       properties: {
@@ -179,6 +179,7 @@ async function readJson(response, message) {
           else if(code==='COMPUTER_BROWSER_ACTION_TIMEOUT')forwardedDiagnostic='The browser action timed out and its outcome may be unknown. Inspect the current page before deciding whether to continue; do not repeat it blindly.';
           else if(code==='COMPUTER_BROWSER_ACTION_FAILED')forwardedDiagnostic='The browser action was not confirmed. Inspect the current page and task state before deciding whether to continue.';
           else if(['COMPUTER_BROWSER_NAVIGATION_ABORTED','COMPUTER_BROWSER_NAVIGATION_NETWORK_FAILED','COMPUTER_BROWSER_NAVIGATION_FAILED','COMPUTER_BROWSER_CONTROL_ACTION_FAILED','COMPUTER_BROWSER_CONTEXT_CLOSED','COMPUTER_BROWSER_PAGE_INSPECTION_FAILED','COMPUTER_BROWSER_ARTIFACT_OPEN_FAILED'].includes(code))forwardedDiagnostic=`Computer action failed: ${code}`;
+          else if(code==='COMPUTER_DESKTOP_ACTION_UNSUPPORTED')forwardedDiagnostic='The desktop action name was not recognized. Use action:"press" and pass the key separately as key:"Control+t"; any X11 key name or combination is accepted.';
           else if(['COMPUTER_WORKER_SCREEN_SCOPE_INVALID','COMPUTER_WORKER_SCREEN_OWNER_FAILED','COMPUTER_WORKER_REQUEST_BODY_INVALID','COMPUTER_WORKER_ACTION_EXECUTION_FAILED'].includes(code))forwardedDiagnostic=`Computer action failed: ${code}`;
           else if(['COMPUTER_SCREEN_CAPACITY','COMPUTER_ACTIVE_TAB_UNRESOLVED','COMPUTER_RENDERER_UNRESPONSIVE'].includes(code))forwardedDiagnostic=`Computer action failed: ${code}`;
         }

@@ -349,6 +349,7 @@ const safeComputerDiagnosticCodes=new Set([
   'COMPUTER_STATE_CHANGED','COMPUTER_BROWSER_TARGET_NOT_FOUND','COMPUTER_BROWSER_TARGET_AMBIGUOUS','COMPUTER_BROWSER_ACTION_TIMEOUT','COMPUTER_BROWSER_ACTION_FAILED',
   'COMPUTER_BROWSER_NAVIGATION_ABORTED','COMPUTER_BROWSER_NAVIGATION_NETWORK_FAILED','COMPUTER_BROWSER_NAVIGATION_FAILED','COMPUTER_BROWSER_CONTROL_ACTION_FAILED','COMPUTER_BROWSER_CONTEXT_CLOSED','COMPUTER_BROWSER_PAGE_INSPECTION_FAILED','COMPUTER_BROWSER_ARTIFACT_OPEN_FAILED',
   'COMPUTER_WORKER_SCREEN_SCOPE_INVALID','COMPUTER_WORKER_SCREEN_OWNER_FAILED','COMPUTER_WORKER_REQUEST_BODY_INVALID','COMPUTER_WORKER_ACTION_EXECUTION_FAILED',
+  'COMPUTER_DESKTOP_ACTION_UNSUPPORTED',
   'COMPUTER_WORKER_INVALID_RESPONSE','COMPUTER_WORKER_TRANSPORT_FAILED','INTERNAL_FAILURE',
 ]);
 
@@ -363,6 +364,7 @@ async function computerExecutionError(response,fallback=`Computer action was not
     const diagnostic=value?.diagnostic&&typeof value.diagnostic==='object'?value.diagnostic:null;
     if(!diagnostic||!safeComputerDiagnosticCodes.has(diagnostic.code))return new Error(fallback);
     if(diagnostic.code==='COMPUTER_ACTION_INVALID')return new Error('The worker rejected the computer action envelope before execution. Action names, URL schemes, key names, and extra fields are not allowlisted here. Inspect the worker diagnostics and correct only a malformed envelope; do not repeat an unconfirmed action.');
+    if(diagnostic.code==='COMPUTER_DESKTOP_ACTION_UNSUPPORTED')return new Error('The desktop action name was not recognized. Use action:"press" and pass the key separately as key:"Control+t"; any X11 key name or combination is accepted.');
     if(diagnostic.code==='COMPUTER_NAVIGATION_USE_BROWSER')return new Error('This is a browser action. The desktop action was not executed and no approval was requested. Use computer_browser for navigation and page interactions; do not use desktop coordinates for browser controls.');
     if(diagnostic.code==='COMPUTER_SIGNIN_HANDOFF_REQUIRED')return new Error('A sign-in or human-verification challenge is visible. Stop Agent input at that challenge and tell the owner to open the Computer screen and choose Take control. Ordinary navigation and page interaction remain available across sites until that challenge. Do not enter credentials or claim control has transferred.');
     if(diagnostic.code==='COMPUTER_OWNER_USER')return new Error('The owner currently controls this computer. Stop Agent input and resume after the owner returns control; no approval is requested for ordinary page actions.');

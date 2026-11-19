@@ -16,6 +16,7 @@ const messages = Object.freeze({
   COMPUTER_WORKER_SCREEN_OWNER_FAILED: 'The computer worker could not read the current computer control state before running the action.',
   COMPUTER_WORKER_REQUEST_BODY_INVALID: 'The computer worker could not read the browser action request.',
   COMPUTER_WORKER_ACTION_EXECUTION_FAILED: 'The computer worker could not complete the action.',
+  COMPUTER_DESKTOP_ACTION_UNSUPPORTED: 'The Computer User action name was not recognized. Send the operation as action=press with the key in a separate key field, for example key=Control+t.',
 });
 
 const requestStageDiagnostics = Object.freeze({
@@ -42,6 +43,16 @@ export function safeComputerActionLogFields(action, defaultKind = 'unknown') {
 export function computerWorkerRequestDiagnostic(stage) {
   const value = requestStageDiagnostics[stage] || requestStageDiagnostics['action-body'];
   return Object.freeze({ ...value, message: messages[value.code] });
+}
+
+/** Classify the worker's fixed unsupported-command error without retaining action arguments. */
+export function desktopActionDiagnostic(error) {
+  if (!(error instanceof Error) || error.message !== 'Unsupported desktop command') return error;
+  const result = new Error(messages.COMPUTER_DESKTOP_ACTION_UNSUPPORTED);
+  result.name = 'ComputerDesktopActionDiagnosticError';
+  result.code = 'COMPUTER_DESKTOP_ACTION_UNSUPPORTED';
+  result.status = 422;
+  return result;
 }
 
 export function browserActionDiagnostic(error, action = '') {

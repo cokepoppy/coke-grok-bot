@@ -3699,3 +3699,11 @@ Chrome 原生无障碍树现稳定停留在已登录的 `https://codex.cokeagent
 用户要求将模型 API 端点改为 DeepSeek 官方服务。按 DeepSeek 官方兼容 API 当前文档，OpenAI 兼容 `base_url` 为 `https://api.deepseek.com`，推荐模型名为 `deepseek-flash`，对应 DeepSeek-V4.1-Flash-1017；已据此更新源码 ConfigMap 配置。语音模型仍使用独立的 Alibaba-compatible 音频端点。
 
 使用用户指定的本机受保护 Key 文件发出一次最小 `POST /chat/completions`，不输出密钥或回复正文，得到 HTTP 200、模型 `deepseek-flash`、finish `stop`、9 tokens。该请求只验证官方 Key 和模型端点，不代表 Pi/Agent 工具调用或公网电脑任务已通过。K3D Secret/ConfigMap 与服务滚动尚待当前完整镜像版本构建完成后更新；构建仅能以包含本次官方端点配置的提交为版本，之前未完成的候选构建不部署。
+
+#### 2026-11-19 13:08 CST DeepSeek 官方路由部署与公网首轮任务
+
+提交 `abe1e8ab6ba61cc8b2c954ab090a7617716a90fa` 将 Auth 配置切换为官方 `https://api.deepseek.com` / `deepseek-flash`；音频仍走独立阿里云兼容端点。该提交构建并部署至 Mac K3D 后，Auth、Broker、Namespace Bootstrap 及两个活动用户 namespace 中 Agent/Desktop 共 7 个 Deployment 均为同一 Release ID `sha-abe1e8ab6ba61cc8b2c954ab090a7617716a90fa`；MySQL Pod 与 3 个 PVC 保持原身份。
+
+已登录公网 Chrome 在 `kaka` 对话中新建只读任务 `a8561437-4620-41e4-ab97-7abbdccf52e4`。调用链共 47 个事件；四次 DeepSeek model request 均 HTTP 200，控制面连接/电脑控制检查/屏幕读取也成功。首次 Computer User 操作返回 Worker HTTP 500（144 ms），任务停止且未重放；现有 Chrome 页仍是 `https://example.com/`，`https://example.org/` 未打开。Primary failure 为 `Cloud computer worker · Desktop unknown action prepared`，stage `action-execute`。同时检查了 Auth 与活动 Desktop Pod 日志：Auth 记录的是已分类 Worker HTTP 500，Desktop 日志没有留下底层异常字符串。追踪事件的 `desktop.unknown` 与 Worker `command()` 的固定 `Unsupported desktop command` 分支一致，说明 Worker 收到的 Computer User `action` 操作名没有被识别；具体原始 action 字段为避免持久化用户任务输入而没有记录，故不声称知道其具体文本。这是桌面工具参数契约/提示不清导致的动作映射问题，不是模型供应商 403、任务排队或用户接管。
+
+为修复并改善定位，Computer User 工具描述现提供明确参数形状示例（如 `action:"press", key:"Control+t"`，按键值仍接受任意 X11 名称/组合）；固定的 “Unsupported desktop command” 现在返回 HTTP 422 `COMPUTER_DESKTOP_ACTION_UNSUPPORTED`，任务卡片及调用链可直接显示可执行的修正方式，而不再伪装为通用 500。该诊断不保存原始键值、页面内容或输入参数。`tests/browser-action-diagnostics.test.mjs`、`tests/guarded-worker.test.ts`、`tests/run-trace.test.ts` 共 21 项及 `npm run build` 已通过。此修复尚未构建部署；下一次公网验收必须使用新版本和新 run，不能重放 `a8561437-4620-41e4-ab97-7abbdccf52e4`。本轮公网 Agent→Browser/Computer 任务因此仍未通过；noVNC 细白竖线也尚无可见验收证据。

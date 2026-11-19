@@ -141,11 +141,11 @@ test('guarded worker maps browser worker diagnostics to fixed safe codes',async(
    return metadata.code===expected&&metadata.status===status&&error instanceof Error&&error.message===expected&&!error.message.includes(token);
   });
  }
- for(const [workerCode,workerStage] of [['COMPUTER_WORKER_SCREEN_SCOPE_INVALID','screen-scope'],['COMPUTER_WORKER_SCREEN_OWNER_FAILED','screen-owner'],['COMPUTER_WORKER_REQUEST_BODY_INVALID','action-body'],['COMPUTER_WORKER_ACTION_EXECUTION_FAILED','action-execute']] as const){
-  const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>Response.json({code:workerCode,error:`private page and token ${token}`,stage:workerStage},{status:workerCode.includes('OWNER')?503:workerCode.includes('EXECUTION')?500:400}));
+ for(const [workerCode,workerStage,status] of [['COMPUTER_WORKER_SCREEN_SCOPE_INVALID','screen-scope',400],['COMPUTER_WORKER_SCREEN_OWNER_FAILED','screen-owner',503],['COMPUTER_WORKER_REQUEST_BODY_INVALID','action-body',400],['COMPUTER_WORKER_ACTION_EXECUTION_FAILED','action-execute',500],['COMPUTER_DESKTOP_ACTION_UNSUPPORTED','action-execute',422]] as const){
+  const worker=new HttpGuardedComputerWorker(owner,screenId,url,token,taskId,async()=>Response.json({code:workerCode,error:`private page and token ${token}`,stage:workerStage},{status}));
   await assert.rejects(worker.performIfUnchanged(action,state,signal),error=>{
    const metadata=safeDiagnosticMetadata(error);
-   return metadata.code===workerCode&&metadata.workerStage===workerStage&&error instanceof Error&&error.message===workerCode&&!error.message.includes(token);
+   return metadata.code===workerCode&&metadata.workerStage===workerStage&&metadata.status===status&&error instanceof Error&&error.message===workerCode&&!error.message.includes(token);
   });
  }
 });
