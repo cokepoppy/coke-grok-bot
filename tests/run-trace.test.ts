@@ -50,6 +50,9 @@ test('run traces reject malformed component, status, diagnostic, timing, and rel
  assert.equal(validateRunTraceEvent({...base,component:'agent-runtime',reasonCode:'private error text'}),null);
  assert.equal(validateRunTraceEvent({...base,component:'agent-runtime',adapterExitCode:256}),null);
  assert.equal(validateRunTraceEvent({...base,adapterExitCode:1}),null);
+ const purchased=validateRunTraceEvent({...base,upstreamHttpStatus:403,upstreamErrorKind:'permission_denied',upstreamErrorCode:'model_not_purchased'});
+ assert.equal(purchased?.upstreamErrorCode,'model_not_purchased');
+ assert.equal(validateRunTraceEvent({...base,upstreamHttpStatus:403,upstreamErrorKind:'permission_denied',upstreamErrorCode:'AccessDenied.Unpurchased'}),null);
 });
 
 test('computer-control retries retain attempt number, status, transport code, and terminal reason',()=>{

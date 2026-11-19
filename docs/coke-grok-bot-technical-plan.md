@@ -3589,3 +3589,25 @@ After the ChatGPT restart, `cua.getState()` listed the Chrome extension and the 
 当前唯一候选分支将该检查改为单次完成后再等待 1500 ms 的串行轮询；短暂失败逐次保留脱敏状态码/传输码并继续任务，只有连续至少 5 次失败或不可用持续至少 8 秒才停止任务，显式标记 `computer_control_unavailable` 且不重放；仅实际观察到 `owner=user` 才即时转入接管暂停。运行日志和聊天错误映射会显示探测尝试、HTTP/传输状态与恢复结果。新增 transient recovery、持续 503、用户接管三项 Agent Runtime 回归，并覆盖 trace schema 和 Pi 错误映射。`npm run test:runtime` 223/223 通过；最终改动后的 32 项 Agent Runtime/Pi/trace 定向用例通过；`npm run build`、`node --check deploy/desktop/agent-runtime.mjs` 和 `git diff --check` 通过。
 
 这仍只是源码候选，没有部署验收。K3D 控制面与当前两个用户 namespace 的应用镜像都仍是 `sha-4e551610a20d3901e2b585fad2f1e163c961eaa3`。磁盘尚有 41 GiB；但只读 `docker system df` 查询超过 15 秒无响应，已中断该查询，没有重启 Docker、清理镜像或改变集群。由于 release 镜像需要 Docker 构建与导入，本候选未进入镜像构建或 K3D rollout；必须恢复 Docker 查询/构建能力后，先生成可回退的固定版本包，再发布并确认所有 Pod 同版。供应商 HTTP 503 仍是独立上游可用性问题，本轮未声称已修复或重放 Kaka 任务。
+
+#### 2026-11-19 00:57 CST 卡片与 noVNC 光标部署核对
+
+当前工作分支为 `codex/grok-control-poll-recovery-20261118`，HEAD `226435b2144478d7f44780dac794ffccf7ffac9c`，远端分支同步；其父链包含 `main` 的 `4e551610a20d3901e2b585fad2f1e163c961eaa3` 与 noVNC 光标候选 `999a59fb6a653d0bfbef25cd773f32c1ba8529a8`。只读检查 K3D `k3d-tp1121-sandbox-dev`：Grok Auth、Desktop Broker、Namespace Bootstrap 及两个活动用户的 Agent/Desktop Pod 均为 Running，应用镜像标记统一为 `sha-226435b2144478d7f44780dac794ffccf7ffac9c`。本地 noVNC `cursor.js` 与两个在线 Desktop 容器内文件 SHA-256 完全相同：`20ab397d1b9deec9caf377cf461c53b4fe58bc57ac6bc5b888824f21632d90b4`。这证明光标缩放候选确实进入当前镜像，不证明用户看到的细白竖线已消失。
+
+Chrome 扩展绑定现有公网标签 `getTab` 本次再次约 30 秒超时；按重复错误排查约定停止重试，切到 Chrome 原生无障碍树继续。原生界面成功打开云电脑查看器，显示 `Bot is in control`，并仅暴露名为 `Current computer screen` 的图像节点；无障碍树没有图像像素或光标形状信息。遵守用户“不截图”的要求，没有取屏幕截图、接管电脑、重启桌面或重放任务。因此聊天气泡颜色与用户消息结构已有公网 DOM 核验记录；白线代码已部署，但真实显示结果仍待无截图的可见验收路径，不能标记为修复完成。
+
+#### 2026-11-19 01:28 CST 公网颜色与 Kaka 调用链续核
+
+公网聊天 DOM 的已记录计算样式为用户气泡 `#111110`、Bot 气泡 `#f4f4f3`、Computer 活动卡 `#f3f3f2`；对应用户、Bot、Computer 项均存在。Kaka 失败卡关联的只读调用链为 `cd5d7a9a-60b1-4c15-989b-9e5983b430d8`，包含 500 条事件、15 条失败、0 条未完成，运行镜像是旧版 `sha-0674074f30e5dba6da7500779cafe49b42f22b06`，不能当作当前 `sha-226435b2144478d7f44780dac794ffccf7ffac9c` 的新运行证据。主失败点是模型调用 78：Gateway HTTP 502，耗时 666 ms，未记录可分类的 provider transport code；较早调用 76 则明确收到供应商 HTTP 503 / `provider_unavailable`。同一 run 还分别有 Desktop action HTTP 500（事件 13、273）、screen read HTTP 503 `COMPUTER_ACTIVE_TAB_UNRESOLVED`（35）、Desktop action HTTP 409 `COMPUTER_STATE_CHANGED`（457）、导航 HTTP 409 `UND_ERR_SOCKET`（487）和 control HTTP 409 `ECONNREFUSED`（490）。Agent adapter 在 369310 ms 后以 SIGTERM 退出（496），记录没有发送者或因果关联，不能认定是用户接管，也不能把所有失败合并成一个根因。只读查看现有链路，没有重放任务。
+
+本轮曾为读取公网 viewer 的 DOM 状态短暂点击 `Take control`，随后已点击 `Return to Bot`；未在远端桌面输入、导航或更改页面。noVNC 光标候选虽已随 `sha-226435b` 部署且源文件哈希一致，用户提供的画面仍显示细白竖线；本机禁用截图后无法确认它在该次部署后的实际显示结果。因此气泡颜色已核实，竖线仍未验收通过，不能把候选部署称作问题已解决。
+
+#### 2026-11-19 08:40 CST Kaka 模型权限失败定位
+
+在当前 `k3d-tp1121-sandbox-dev` Auth Pod 内用最小请求核对配置模型，端点和 `deepseek-v4.1-flash` 与用户设置一致；没有读取或回显 API Key。上游明确返回 HTTP 403、`AccessDenied.Unpurchased`，说明当前供应商账号尚未购买或开通该模型，不是云电脑控制失败，也没有证据表明 API Key 本身无效。供应商请求 ID 为 `fc00919a-92dc-4b85-9654-fdc829998dfa`。旧前端追踪仅记录 `permission_denied`，因为稳定化白名单丢弃了该供应商专有代码。
+
+工作区改为仅将该确切供应商代码映射成固定脱敏诊断 `model_not_purchased`；前端失败卡会说明该模型尚未购买/开通，仍不保存供应商原始错误正文或凭据。私有 Model Gateway 把上游不可重试 4xx 原样状态返回给 Agent 客户端、附固定错误字段及 `X-Should-Retry: false`，避免将模型权限拒绝伪装成 502 服务器故障；上游 5xx 仍返回可重试 502。对应 Model Gateway 回归、trace schema 回归及生产构建通过。该诊断改动尚未提交、构建镜像或部署；要恢复 DeepSeek 端到端执行，须由账号侧开通此模型后再用新的只读公网任务验收。Kaka 新任务的网页操作未执行，不能记为 E2E 通过。
+
+#### 2026-11-19 08:56 CST Qwen 3.8 Flash 最小请求
+
+使用 Auth Pod 已挂载的模型凭据向用户提供的 Token Plan 兼容端点只发一条 `qwen3.8-flash` 请求，提示仅要求返回 `OK`，上限 8 tokens。结果为 HTTP 403、`AccessDenied.Unpurchased`，请求 ID `b9f57a52-49b7-47f1-9f76-9e64082655d8`，耗时 348 ms、无响应文本。该供应商账号当前也无 Qwen 3.8 Flash 的调用权限；请求未回显或更改凭据，也未购买/开通模型、切换运行模型或更改服务配置。不能把 DeepSeek/Qwen 的 403 与 API Key 无效混为一谈。

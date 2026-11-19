@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { ModelGateway } from '../src/server/model-gateway.ts';
+import type { RunTraceEvent } from '../src/server/run-trace.ts';
 
 const fakeKey = 'fake-sensitive-key-for-test';
 const model = 'deepseek-v4.1-flash';
@@ -95,9 +97,34 @@ test('revocation and expiry prevent use; upstream errors are not disclosed', asy
     const expired = gateway.issue({ ttlMs: 1, calls: 1 }); await new Promise(resolve => setTimeout(resolve, 10));
     assert.equal((await call(expired)).status,401);
     const token = gateway.issue({ ttlMs: 1000, calls: 1 });
-    const response = await call(token); assert.equal(response.status,502);
-    assert.equal((await response.text()).includes(fakeKey), false);
+    const response = await call(token); assert.equal(response.status,401);assert.equal(response.headers.get('x-should-retry'),'false');
+    const body=await response.text();assert.equal(body.includes(fakeKey),false);assert.equal(body.includes('provider response'),false);
   } finally { gateway.close(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
+test('an unpurchased Aliyun model is reported with a fixed actionable trace code, not provider response text', async()=>{
+ const trace:RunTraceEvent[]=[];
+ const providerMessage='Access to model denied. Please make sure you are eligible for using the model.';
+ const gateway=new ModelGateway(fakeKey,'https://example.test/compatible-mode/v1',model,async()=>Response.json({error:{code:'AccessDenied.Unpurchased',message:providerMessage}},{status:403}),undefined,undefined,undefined,undefined,undefined,undefined,async(_runId,event)=>{trace.push(event)});
+ const server=gateway.createServer();server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();if(!address||typeof address==='string')throw new Error('No test port');
+ const token=gateway.issue({ttlMs:10_000,calls:1,scope:{runId:randomUUID(),leaseId:randomUUID()}});
+ try{
+  const response=await fetch(`http://127.0.0.1:${address.port}/v1/chat/completions`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({model,messages:[{role:'user',content:'hello'}]})});
+  assert.equal(response.status,403);assert.equal(response.headers.get('x-should-retry'),'false');const publicBody=await response.text();assert.equal(publicBody.includes(providerMessage),false);assert.equal(publicBody.includes(fakeKey),false);assert.deepEqual(JSON.parse(publicBody),{error:{message:'The model provider rejected this request.',type:'permission_denied',code:'model_not_purchased'}});
+  const failure=trace.find(event=>event.outcome==='failed'&&event.stage==='provider-response');
+  assert.equal(failure?.httpStatus,403);assert.equal(failure?.upstreamHttpStatus,403);assert.equal(failure?.upstreamErrorKind,'permission_denied');assert.equal(failure?.upstreamErrorCode,'model_not_purchased');
+  assert.equal(JSON.stringify(trace).includes(providerMessage),false);
+ }finally{gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}
+});
+
+test('transient provider 5xx remains a retryable gateway failure',async()=>{
+ const gateway=new ModelGateway(fakeKey,'https://example.test/compatible-mode/v1',model,async()=>Response.json({error:{code:'provider_server_error'}},{status:503}));
+ const server=gateway.createServer();server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();if(!address||typeof address==='string')throw new Error('No test port');
+ const token=gateway.issue({ttlMs:10_000,calls:1});
+ try{
+  const response=await fetch(`http://127.0.0.1:${address.port}/v1/chat/completions`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({model,messages:[{role:'user',content:'hello'}]})});
+  assert.equal(response.status,502);assert.equal(response.headers.get('x-should-retry'),null);
+ }finally{gateway.close();await new Promise<void>(resolve=>server.close(()=>resolve()))}
 });
 
 test('an upstream 429 is redacted and opens a shared cooldown across run capabilities', async () => {

@@ -11,7 +11,7 @@ const agentFailureStages = new Set(['agent-setup','agent-execution','model-reque
 const agentFailureReasons = new Set(['runtime_setup_failed','runtime_error','model_request_failed','model_request_rejected','model_endpoint_not_found','model_rate_limited','model_auth_rejected','model_provider_unavailable','model_response_missing','tool_execution_failed','result_missing','result_invalid','agent_output_limit']);
 const agentTransportCodes = new Set(['ECONNRESET','ECONNREFUSED','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','ENOTFOUND','EAI_AGAIN','EPIPE','ECONNABORTED','ERR_SOCKET_CLOSED','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET']);
 const agentRuntimeErrorClasses = new Map([['AbortError','ABORT_ERROR'],['APIError','API_ERROR'],['FetchError','FETCH_ERROR'],['NetworkError','NETWORK_ERROR'],['RangeError','RANGE_ERROR'],['ReferenceError','REFERENCE_ERROR'],['SyntaxError','SYNTAX_ERROR'],['TimeoutError','TIMEOUT_ERROR'],['TypeError','TYPE_ERROR']]);
-const providerErrorCodes = new Set(['invalid_request_error','invalid_api_key','model_not_found','context_length_exceeded','rate_limit_exceeded','insufficient_quota','permission_denied','unsupported_parameter','unsupported_value','missing_required_parameter','invalid_type','unknown_parameter','request_too_large','content_filter']);
+const providerErrorCodes = new Set(['invalid_request_error','invalid_api_key','model_not_found','model_not_purchased','context_length_exceeded','rate_limit_exceeded','insufficient_quota','permission_denied','unsupported_parameter','unsupported_value','missing_required_parameter','invalid_type','unknown_parameter','request_too_large','content_filter']);
 const providerErrorKinds = new Set(['request_invalid','authentication_rejected','model_not_found','context_limit','rate_limited','quota_exhausted','permission_denied','provider_server_error','provider_unavailable','content_filtered','unknown']);
 
 function agentRuntimeErrorClass(error) {
@@ -21,9 +21,10 @@ function agentRuntimeErrorClass(error) {
 function safeProviderErrorDetails(error,status=null) {
   const row=error&&typeof error==='object'?error:{};
   const nested=row.error&&typeof row.error==='object'?row.error:{};
-  const rawCode=[row.code,nested.code,row.type,nested.type].find(value=>typeof value==='string'&&providerErrorCodes.has(value.toLowerCase()));
-  const code=typeof rawCode==='string'?rawCode.toLowerCase():null;
-  const kindByCode={invalid_request_error:'request_invalid',invalid_api_key:'authentication_rejected',model_not_found:'model_not_found',context_length_exceeded:'context_limit',rate_limit_exceeded:'rate_limited',insufficient_quota:'quota_exhausted',permission_denied:'permission_denied',unsupported_parameter:'request_invalid',unsupported_value:'request_invalid',missing_required_parameter:'request_invalid',invalid_type:'request_invalid',unknown_parameter:'request_invalid',request_too_large:'request_invalid',content_filter:'content_filtered'};
+  const rawCode=[row.code,nested.code,row.type,nested.type].find(value=>typeof value==='string'&&(/^[A-Za-z0-9_.-]{1,64}$/.test(value)));
+  const normalized=typeof rawCode==='string'?rawCode.toLowerCase().replaceAll('-','_'):'';
+  const code=normalized==='accessdenied.unpurchased'?'model_not_purchased':providerErrorCodes.has(normalized)?normalized:null;
+  const kindByCode={invalid_request_error:'request_invalid',invalid_api_key:'authentication_rejected',model_not_found:'model_not_found',model_not_purchased:'permission_denied',context_length_exceeded:'context_limit',rate_limit_exceeded:'rate_limited',insufficient_quota:'quota_exhausted',permission_denied:'permission_denied',unsupported_parameter:'request_invalid',unsupported_value:'request_invalid',missing_required_parameter:'request_invalid',invalid_type:'request_invalid',unknown_parameter:'request_invalid',request_too_large:'request_invalid',content_filter:'content_filtered'};
   const statusNumber=Number(status??row.status??row.statusCode??row.response?.status);
   const fallback=statusNumber===401||statusNumber===403?'authentication_rejected':statusNumber===429?'rate_limited':statusNumber>=500&&statusNumber<=599?'provider_unavailable':statusNumber>=400&&statusNumber<=499?'request_invalid':null;
   const kind=kindByCode[code]||fallback;
