@@ -3693,3 +3693,9 @@ Chrome 原生无障碍树现稳定停留在已登录的 `https://codex.cokeagent
 源码复核确认 viewer 先前在 RFB `connect` 事件且屏幕几何匹配时立即显示 `Connected`，但该事件不保证像素帧已绘制。当前候选改为握手后显示 `Waiting for desktop frame…`，检测首个带像素的帧并等待 noVNC `display.flush()` 后显示 `Screen frame received`。这可区分握手与首帧，不会修复或掩盖全黑桌面；用户指出的细白竖线仍未确认来源，未盲目隐藏/替换光标。`node --import tsx --test tests/computer-vnc-proxy.test.ts`、`npm run build` 和禁用工件捕获的 `npm run test:ui` 均通过；它们不是公网任务验收。
 
 公网 Agent → Browser User → Computer User 全链路仍被模型供应商 HTTP 403 `model_not_purchased` 阻断；不重放历史失败任务或重复请求同一未开通模型。仅当供应商授权恢复后，才创建新的只读公网任务；公网 UI 的语义交互和实际云电脑首帧状态需独立复核，未做视觉截图验收。
+
+#### 2026-11-19 12:57 CST 官方 DeepSeek API 切换
+
+用户要求将模型 API 端点改为 DeepSeek 官方服务。按 DeepSeek 官方兼容 API 当前文档，OpenAI 兼容 `base_url` 为 `https://api.deepseek.com`，推荐模型名为 `deepseek-flash`，对应 DeepSeek-V4.1-Flash-1017；已据此更新源码 ConfigMap 配置。语音模型仍使用独立的 Alibaba-compatible 音频端点。
+
+使用用户指定的本机受保护 Key 文件发出一次最小 `POST /chat/completions`，不输出密钥或回复正文，得到 HTTP 200、模型 `deepseek-flash`、finish `stop`、9 tokens。该请求只验证官方 Key 和模型端点，不代表 Pi/Agent 工具调用或公网电脑任务已通过。K3D Secret/ConfigMap 与服务滚动尚待当前完整镜像版本构建完成后更新；构建仅能以包含本次官方端点配置的提交为版本，之前未完成的候选构建不部署。
