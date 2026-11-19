@@ -575,17 +575,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .run-trace-footnote { margin: 18px 0 0; color: #797380; font-size: 12px; }
 @media (max-width: 580px) { .run-trace-backdrop { padding: 10px; } .run-trace-dialog { padding: 16px; } .run-trace-event { grid-template-columns: 1fr; } .run-trace-event time,.run-trace-diagnostic,.run-trace-event small,.run-trace-summary,.run-trace-primary-failure { grid-column: auto; } .run-trace-event > span { text-align: left; } }
 
-/* Match the current x.ai/bot workspace window: two columns by default, with
-   the computer/details surface opened from the monitor control on demand. */
+/* The authenticated browser app owns the viewport; OS window chrome belongs
+   to the browser or native client, not to this web page. */
 .app.product-shell {
   position: fixed;
-  inset: 10px 11px 5px 6px;
+  inset: 0;
   grid-template-columns: var(--sidebar-width, minmax(280px, min(28vw, 560px))) minmax(0, 1fr);
   grid-template-rows: 44px minmax(0, 1fr);
-  border: 1px solid #e7e7e7;
-  border-radius: 24px;
+  border: 0;
+  border-radius: 0;
 }
-.app.product-shell::before { border-radius: 23px 23px 0 0; }
+.app.product-shell::before { border-radius: 0; }
+.product-shell .sidebar-top::before { display: none; }
 .product-shell .sidebar-resize-handle {
   z-index: 9;
   grid-column: 1;

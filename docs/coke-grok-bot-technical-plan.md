@@ -3611,3 +3611,11 @@ Chrome 扩展绑定现有公网标签 `getTab` 本次再次约 30 秒超时；�
 #### 2026-11-19 08:56 CST Qwen 3.8 Flash 最小请求
 
 使用 Auth Pod 已挂载的模型凭据向用户提供的 Token Plan 兼容端点只发一条 `qwen3.8-flash` 请求，提示仅要求返回 `OK`，上限 8 tokens。结果为 HTTP 403、`AccessDenied.Unpurchased`，请求 ID `b9f57a52-49b7-47f1-9f76-9e64082655d8`，耗时 348 ms、无响应文本。该供应商账号当前也无 Qwen 3.8 Flash 的调用权限；请求未回显或更改凭据，也未购买/开通模型、切换运行模型或更改服务配置。不能把 DeepSeek/Qwen 的 403 与 API Key 无效混为一谈。
+
+#### 2026-11-19 09:19 CST Kaka 403 展示与网页窗口装饰候选
+
+Kaka 最近提供的调用链确认主模型错误是供应商 HTTP 403，被旧版本映射成 `provider_http_rejected`；同一会话里还存在一条更早的 HTTP 502，不能把两者合成同一个故障。独立最小请求已进一步确认当前 DeepSeek V4.1 Flash 与 Qwen 3.8 Flash 都返回 `AccessDenied.Unpurchased`。当前代码候选只把供应商这个确切错误转换为脱敏 `model_not_purchased`，让聊天失败卡显示“模型尚未购买或开通”及供应商 403，且不会保存原始 provider body 或凭据；模型账户未开通前，Kaka 的真实任务仍不能成功运行。
+
+用户指出公网网页里左上角仿 macOS 的红黄绿窗口点和页面四周圆弧外框看起来像客户端装饰。源码确认它们分别由 `.product-shell .sidebar-top::before` 与 `.app.product-shell` 的非零 inset、边框和 24px 圆角绘制。候选改为网页占满浏览器 viewport、去掉外层窗口框并隐藏这三个伪装成系统控件的圆点；聊天气泡、侧栏项目及电脑卡片自身的圆角保留。`npm run build:deployment` 已通过；该视觉修正尚未公网部署或通过公网 DOM 验证。
+
+Kaka 诊断候选已提交并推送到功能分支，之后增加的网页外框修正仍在同一分支。K3D 仍运行上一个统一版本；发布预检在一块持久电脑屏幕中观察到 `owner=user`，因此没有滚动用户 Desktop Worker。先前提交的四个镜像对应旧提交，CSS 更新后将重建成最终提交标签；当前功能版尚未部署或做公网验收。MySQL、PVC、浏览器文件与登录态均未更改。
