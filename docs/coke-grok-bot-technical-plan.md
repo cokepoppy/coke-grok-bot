@@ -3707,3 +3707,11 @@ Chrome 原生无障碍树现稳定停留在已登录的 `https://codex.cokeagent
 已登录公网 Chrome 在 `kaka` 对话中新建只读任务 `a8561437-4620-41e4-ab97-7abbdccf52e4`。调用链共 47 个事件；四次 DeepSeek model request 均 HTTP 200，控制面连接/电脑控制检查/屏幕读取也成功。首次 Computer User 操作返回 Worker HTTP 500（144 ms），任务停止且未重放；现有 Chrome 页仍是 `https://example.com/`，`https://example.org/` 未打开。Primary failure 为 `Cloud computer worker · Desktop unknown action prepared`，stage `action-execute`。同时检查了 Auth 与活动 Desktop Pod 日志：Auth 记录的是已分类 Worker HTTP 500，Desktop 日志没有留下底层异常字符串。追踪事件的 `desktop.unknown` 与 Worker `command()` 的固定 `Unsupported desktop command` 分支一致，说明 Worker 收到的 Computer User `action` 操作名没有被识别；具体原始 action 字段为避免持久化用户任务输入而没有记录，故不声称知道其具体文本。这是桌面工具参数契约/提示不清导致的动作映射问题，不是模型供应商 403、任务排队或用户接管。
 
 为修复并改善定位，Computer User 工具描述现提供明确参数形状示例（如 `action:"press", key:"Control+t"`，按键值仍接受任意 X11 名称/组合）；固定的 “Unsupported desktop command” 现在返回 HTTP 422 `COMPUTER_DESKTOP_ACTION_UNSUPPORTED`，任务卡片及调用链可直接显示可执行的修正方式，而不再伪装为通用 500。该诊断不保存原始键值、页面内容或输入参数。`tests/browser-action-diagnostics.test.mjs`、`tests/guarded-worker.test.ts`、`tests/run-trace.test.ts` 共 21 项及 `npm run build` 已通过。此修复尚未构建部署；下一次公网验收必须使用新版本和新 run，不能重放 `a8561437-4620-41e4-ab97-7abbdccf52e4`。本轮公网 Agent→Browser/Computer 任务因此仍未通过；noVNC 细白竖线也尚无可见验收证据。
+
+#### 2026-11-19 13:35 CST 桌面动作诊断发布与公网验收阻塞
+
+修复提交 `3b9e9be537ac768f8851c413ed64fbd069843e29` 已推送到当前功能分支。`npm run release:build-images` 成功构建 4 个应用镜像；`npm run release:deploy-k3d` 将 `sha-3b9e9be537ac768f8851c413ed64fbd069843e29` 部署到 Mac 本机 K3D，7 个应用 Deployment/Pod 的 release ID 一致，MySQL Pod 和 3 个 PVC 身份未变化。线上 `auth-runtime-config` 只读核对为 `https://api.deepseek.com` / `deepseek-flash`。发布操作记录位于 `releases/candidate-grok-run-trace-version-3b9e9be-2026-11-19/operations/`。
+
+代码修复使未识别的桌面操作变为明确的 HTTP 422 `COMPUTER_DESKTOP_ACTION_UNSUPPORTED`，并告诉模型把操作名与数据分字段传递；它不新增审批或操作白名单。相关单元检查、`npm run build` 与 `COKE_GROK_CAPTURE_UI_ARTIFACTS=0 E2E_PROGRESS=1 npm run test:ui` 均通过。
+
+公网点击验收尚未开始：Chrome 扩展标签绑定一次 30 秒超时后已按既有排查约定停止重试；随后通过 Chrome 原生无障碍树发现 `kaka` 当前已有一条用户任务「打开淘宝搜索」处于 Working。为避免打断或并发操作这条活跃任务，本轮没有提交新的公网验收消息、没有重放旧 run，也没有截图。当前公开站点的实际 Browser User/Computer User E2E 结果仍待验证；标签绑定超时不能作为服务端或云电脑故障证据。
