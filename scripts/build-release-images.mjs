@@ -20,8 +20,9 @@ execFileSync('npm', ['run', 'build:deployment'], { cwd: root, stdio: 'inherit' }
 const images = {};
 for (const image of imageSpecs) {
   const ref = `${image.name}:${releaseId}`;
+  const buildNetwork = image.name === 'coke-grok-desktop' ? ['--network=host'] : [];
   execFileSync('docker', [
-    'build', '--platform', 'linux/arm64', '--build-arg', `COKE_GROK_RELEASE_ID=${releaseId}`,
+    'build', '--platform', 'linux/arm64', ...buildNetwork, '--build-arg', `COKE_GROK_RELEASE_ID=${releaseId}`,
     '-f', image.dockerfile, '-t', ref, '.',
   ], { cwd: root, stdio: 'inherit' });
   const inspected = JSON.parse(execFileSync('docker', ['image', 'inspect', ref, '--format', '{{json .}}'], { cwd: root, encoding: 'utf8' }));

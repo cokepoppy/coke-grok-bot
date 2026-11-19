@@ -3663,3 +3663,9 @@ Chrome 原生无障碍树现稳定停留在已登录的 `https://codex.cokeagent
 针对 `model_not_purchased` 首次 provider response 被拒绝仍显示“Earlier computer actions may already have completed / inspect the computer”通用提示的问题，新增窄条件展示：只有 `model-gateway`、`provider-response`、模型调用 1、上游码 `model_not_purchased` 同时成立，才说明首个模型请求未获得响应、网页/桌面动作尚未发出且任务未重放；其他未知结果仍保留“先检查电脑”说明，以免掩盖可能已执行的外部副作用。该判断只改前端说明，不篡改数据库中的 unknown 运行状态或调用链记录。
 
 `npm run test:ui` 通过：3 个失败说明判定用例通过，既有本地 UI 回归通过；`npm run build:deployment` 与 `git diff --check` 通过。公网任务仍被供应商返回的 HTTP 403 `model_not_purchased` 阻断，尚无 Browser User 网页操作成功；本次前端改动截至记录时尚未部署。远端 `main` 经 HTTP/1.1 `git ls-remote` 确认仍为 `f917138bbdc8821ec9045e6730d2d6abdd5253b8`。本机 K3D 部署仍是 `sha-029a46380c46505cbcdc66615b97d50b7562723f`，本轮 release consistency verifier 通过。
+
+#### 2026-11-19 11:54 CST 发布镜像依赖安装卡点
+
+`npm run release:build-images` 的 Auth、Broker、Namespace Bootstrap 镜像很快成功；桌面镜像在 `npm ci --prefix /opt/coke-grok/dsh-runtime` 长时间没有输出。BuildKit 历史显示这次默认网络运行 9 分 51 秒后仍停在同一步；11 月 18 日另一条同阶段历史运行 6 分 55 秒后被取消，所以这些历史记录本身不能证明 npm 最终失败。用相同源码/锁文件、相同 `sha-0b249007a0a5e94e982df26df8f138ace791ddb6` tag 单独以 `docker build --network=host` 重建，569 个包在 33 秒安装完成，桌面镜像随后成功导出。根因确认是 Docker BuildKit 默认构建网络路径造成依赖请求严重延迟；改动只影响镜像 build 阶段，不涉及运行时网页访问策略。
+
+发布脚本现仅为 `coke-grok-desktop` 构建加入 `--network=host`，其他镜像保持原网络模式。该修复尚需在本提交新版本的完整 `release:build-images` 运行中验证；上述单独构建先用于确认网络诊断方向，不部署集群。
