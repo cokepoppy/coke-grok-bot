@@ -3625,3 +3625,15 @@ Kaka 诊断候选已提交并推送到功能分支，之后增加的网页外框
 在用户此前授权重启被接管电脑后，将当前功能分支提交 `029a46380c46505cbcdc66615b97d50b7562723f` 构建成 4 个 `linux/arm64` 镜像并部署到本机 K3D `k3d-tp1121-sandbox-dev`。Auth、Broker、Namespace Bootstrap，以及两个活动用户 namespace 的 Agent/Desktop 共 7 个 Deployment 全部 rollout 成功；`release:verify-k3d` 确认运行 Pod、init container、Deployment 与 Pod template 均标记为 `sha-029a46380c46505cbcdc66615b97d50b7562723f`。发布脚本确认 MySQL Pod 身份和 3 个 Grok/MySQL PVC 身份未变化。部署前发现的一块 `owner=user` 屏幕状态保存在原 PVC 中；没有发送键鼠事件或手动修改其 owner。没有重新运行 Kaka 旧任务，也没有访问/改动 Gmail 或 Google Slides。
 
 公网 HTML 指向 `index-g52WLWaA.js` 与 `index-l19_Saz7.css`，两份公网文件 SHA-256 分别与本地发布制品完全一致。已读到线上 CSS 的 viewport 全屏规则与隐藏窗口红黄绿点规则，也在 JS bundle 中确认 `model_not_purchased` 及用户可读的 403 标题已发布。这是公网静态资源一致性证据；Chrome 扩展标签绑定本轮超时，故没有声称实际浏览器 DOM 或聊天失败卡已完成可见验收，也没有截图。Kaka 的成功任务验收仍受上游 `AccessDenied.Unpurchased` 阻塞。
+
+#### 2026-11-19 官方 Grok Bot 201 V2 连续逐帧续审（32:00.000–32:04.960）
+
+接续本机完整 MKV `research/videos/grok-201-rOVomdnWhjQ.mkv`（1920×1080、25 fps、1 ms time base；源 SHA-256 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`），逐帧审阅 PTS 1,920,000–1,924,960 的 125 帧和五张 5×5 联系图。独立 FFmpeg 重解码确认 125/125 帧 PTS、`yuv420p` 像素哈希/字节数以及 5/5 联系图哈希均匹配。必要原尺寸帧为 PTS 1,920,000、1,920,960、1,922,000、1,924,000、1,924,480、1,924,960；各自 PNG SHA-256 和源像素哈希映射保存在 Git 忽略目录 `research/frames/grok-201-3200-3205-keyframes-20261119/manifest.json`，紧凑证据与联系图在同名 `compact-audit` 目录。
+
+32:00.000 的原生 Grok Bot 桌面录屏显示 `sam` 对话描述 Opus 5.5 贴纸站点，并附图片与 0:25 媒体卡；右侧 Computer 是灰色占位。32:00.960 起可见 Chrome 贴纸列表 `gb-sticker-shop.vercel.app/#stickers`；32:02.000 可见 `one bot, one persona.` 手提袋 hero；32:04.000 可见 `big & little` 商品详情。32:04.480 状态栏显示链接 `/stickers/big-and-little`，32:04.960 地址栏及标签标题已变为该商品详情路径/标题。录屏没有清晰呈现精确点击瞬间；没有可见加购、结账或付款。站点页面、对话文案和 Computer 占位均是官方录屏内容，不证明该项目的页面、Agent、云电脑或公网端到端已成功。V2 累计审阅 48,125 个源帧，下一窗口从 32:05.000（PTS 1,925,000）开始。详细观察见 `research/README.md`。
+
+#### 2026-11-19 官方 Grok Bot 201 V2 连续逐帧续审（32:05.000–32:09.960）
+
+继续从完整 MKV 顺序检查 125 个连续帧（PTS 1,925,000–1,929,960，帧距 40 ms）及五张 5×5 联系图。完整源文件 SHA-256 与前段一致；独立 FFmpeg 解码的 125/125 帧 PTS、`yuv420p` 像素哈希/字节数与 5/5 联系图哈希均匹配。证据位于本机 Git 忽略目录 `research/frames/grok-201-3205-3210-compact-audit-20261119/`。全源流代表帧 PTS 1,925,000 曾临时解码查看，未保留原尺寸图；连续窗口未出现需要保留的产品 UI 转场。
+
+32:05.000 可见 Chrome 打开 `gb-sticker-shop.vercel.app/stickers/big-and-little`：白底商品详情、橙色大小 Bot 贴纸、`big & little` 标题、`the little one always gets the view.` 文案、心形收藏控件和底部 `you might also like`。随后 4.96 秒内页面画面保持不变；没有可见加购、结账或支付状态。Chrome/macOS 菜单与演讲者画中画排除在网页 UI 外。以上是录像画面观察，不证明此项目的功能、当前公网网站状态或真实交易结果。V2 累计审阅 48,250 个源帧，下一窗口为 32:10.000（PTS 1,930,000）；详细观察见 `research/README.md`。
