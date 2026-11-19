@@ -350,13 +350,19 @@ try {
   const appBox = await productShellPage.locator('.app.product-shell').boundingBox();
   const sidebarBox = await productShellPage.locator('.sidebar').boundingBox();
   const productComposerBox = await productShellPage.locator('.composer').boundingBox();
-  assert.deepEqual(appBox && { x: appBox.x, y: appBox.y, width: appBox.width, height: appBox.height }, { x: 6, y: 10, width: 978, height: 660 }, 'Authenticated product window should match the supplied 1996×1352 screenshot at 2× scale');
-  assert.ok(sidebarBox && Math.abs(sidebarBox.x - 6) <= 1 && Math.abs(sidebarBox.y - 54) <= 1 && Math.abs(sidebarBox.width - 280) <= 1, 'Product sidebar should align to the window header and match the reference width');
-  assert.ok(productComposerBox && productComposerBox.x >= sidebarBox.x + sidebarBox.width && productComposerBox.x + productComposerBox.width <= 989 && productComposerBox.y + productComposerBox.height <= 674, 'Product composer should stay inside the two-column chat area');
+  assert.deepEqual(appBox && { x: appBox.x, y: appBox.y, width: appBox.width, height: appBox.height }, { x: 0, y: 0, width: 995, height: 675 }, 'The authenticated web app should fill the browser viewport without a faux desktop window inset');
+  const windowChrome = await productShellPage.locator('.app.product-shell').evaluate(element => ({
+    borderWidth: getComputedStyle(element).borderWidth,
+    borderRadius: getComputedStyle(element).borderRadius,
+    trafficLights: getComputedStyle(element.querySelector('.sidebar-top'), '::before').display,
+  }));
+  assert.deepEqual(windowChrome, { borderWidth: '0px', borderRadius: '0px', trafficLights: 'none' }, 'The web page should not draw native macOS window chrome');
+  assert.ok(sidebarBox && Math.abs(sidebarBox.x) <= 1 && Math.abs(sidebarBox.y - 44) <= 1 && Math.abs(sidebarBox.width - 280) <= 1, 'Product sidebar should begin below the web header and keep the reference width');
+  assert.ok(productComposerBox && productComposerBox.x >= sidebarBox.x + sidebarBox.width && productComposerBox.x + productComposerBox.width <= 995 && productComposerBox.y + productComposerBox.height <= 675, 'Product composer should stay inside the two-column browser viewport');
   assert.equal(await productShellPage.getByLabel('Search bots').isVisible(), true);
   assert.equal(await productShellPage.locator('.bot-row').count(), 7, 'The official reference state shows the full Bot list');
   const firstBotAvatarBounds = await productShellPage.locator('.bot-row').first().locator('.avatar').boundingBox();
-  assert.ok(firstBotAvatarBounds && Math.abs(firstBotAvatarBounds.width - 36) < 1 && Math.abs(firstBotAvatarBounds.y - 101.5) < 1, `The expanded Bot list should align avatar size and first-row spacing to the official screenshot: ${JSON.stringify(firstBotAvatarBounds)}`);
+  assert.ok(firstBotAvatarBounds && Math.abs(firstBotAvatarBounds.width - 36) < 1 && Math.abs(firstBotAvatarBounds.y - 90.5) < 1, `The expanded Bot list should align avatar size and first-row spacing below the full-viewport web header: ${JSON.stringify(firstBotAvatarBounds)}`);
   assert.equal(await productShellPage.locator('.group-row').count(), 1, 'The reference state contains six Bots and one separate group');
   assert.equal(await productShellPage.locator('.group-row .group-avatar > span').count(), 3, 'The group avatar should stack its three member Bots');
   assert.equal(await productShellPage.locator('.group-section-heading').isVisible(), false, 'The compact reference sidebar places the group directly after the Bot list');
@@ -397,6 +403,12 @@ try {
   assert.equal(await productShellPage.locator('.message-line.user .message-bubble').filter({ hasText: computerTaskPrompt }).count(), 1, 'A computer task prompt should appear as a user message');
   assert.equal(await completedActivityCard.locator('.computer-activity-prompt').count(), 0, 'The Computer activity card should not duplicate the user prompt');
   assert.equal(await productShellPage.locator('.message-line.user .message-bubble').count(), 2, 'Both ordinary and computer task prompts should appear in the user side of the conversation');
+  const bubbleColors = await productShellPage.evaluate(() => ({
+    user: getComputedStyle(document.querySelector('.message-line.user .message-bubble')).backgroundColor,
+    bot: getComputedStyle(document.querySelector('.message-line.bot .message-bubble')).backgroundColor,
+    computer: getComputedStyle(document.querySelector('.computer-activity-card')).backgroundColor,
+  }));
+  assert.deepEqual(bubbleColors, { user: 'rgb(17, 17, 16)', bot: 'rgb(244, 244, 243)', computer: 'rgb(243, 243, 242)' }, 'User, Bot, and Computer timeline items should retain their distinct reference colors');
   assert.equal(await productShellPage.locator('.message-line.bot .message-bubble').filter({hasText: /^Done\.$/}).count(), 0, 'The activity status should carry a generic Done result without a duplicate reply bubble');
   const activityCardBounds = await productShellPage.locator('.computer-activity-card').boundingBox();
   assert.ok(activityCardBounds && activityCardBounds.width <= 421, 'Computer activity should match the reference card width');
@@ -431,15 +443,15 @@ try {
     const box = (selector, index = 0) => { const rect = document.querySelectorAll(selector)[index]?.getBoundingClientRect(); return rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height }; };
     return { welcome: box('.message-line.bot .message-bubble', 0), prompt: box('.message-line.user .message-bubble', 0), computerPrompt: box('.message-line.user .message-bubble', 1), response: box('.message-line.bot .message-bubble', 1), computer: box('.computer-activity-card'), screen: box('.computer-preview-button') };
   });
-  assert.ok(referenceMessageGeometry.welcome && Math.abs(referenceMessageGeometry.welcome.x - 110.5) <= 3 && Math.abs(referenceMessageGeometry.welcome.width - 531) <= 8, 'The welcome message should align to the official panel-open chat geometry');
-  assert.ok(referenceMessageGeometry.welcome && Math.abs(referenceMessageGeometry.welcome.y - 95) <= 2, `The welcome message should follow its visible timestamp: ${JSON.stringify(referenceMessageGeometry)}`);
-  assert.ok(referenceMessageGeometry.prompt && Math.abs(referenceMessageGeometry.prompt.x - 267.5) <= 4 && Math.abs(referenceMessageGeometry.prompt.width - 420) <= 5, 'The user prompt should match the official message width and right alignment');
-  assert.ok(referenceMessageGeometry.prompt && Math.abs(referenceMessageGeometry.prompt.y - 161.5) <= 3, `The first task should follow the timestamped welcome message: ${JSON.stringify(referenceMessageGeometry.prompt)}`);
-  assert.ok(referenceMessageGeometry.response && Math.abs(referenceMessageGeometry.response.x - 110.5) <= 3 && Math.abs(referenceMessageGeometry.response.width - 531) <= 8, 'The Agent response should match the official Bot bubble geometry');
-  assert.ok(referenceMessageGeometry.response && Math.abs(referenceMessageGeometry.response.y - 355) <= 2, 'The Agent response should follow the timestamped user message');
+  assert.ok(referenceMessageGeometry.welcome && Math.abs(referenceMessageGeometry.welcome.x - 104) <= 3 && Math.abs(referenceMessageGeometry.welcome.width - 546) <= 8, `The welcome message should align to the full-viewport panel-open chat baseline: ${JSON.stringify(referenceMessageGeometry)}`);
+  assert.ok(referenceMessageGeometry.welcome && Math.abs(referenceMessageGeometry.welcome.y - 84) <= 2, `The welcome message should follow its visible timestamp: ${JSON.stringify(referenceMessageGeometry)}`);
+  assert.ok(referenceMessageGeometry.prompt && Math.abs(referenceMessageGeometry.prompt.x - 266) <= 4 && Math.abs(referenceMessageGeometry.prompt.width - 433) <= 5, `The user prompt should keep its right alignment in the full-viewport chat: ${JSON.stringify(referenceMessageGeometry.prompt)}`);
+  assert.ok(referenceMessageGeometry.prompt && Math.abs(referenceMessageGeometry.prompt.y - 150.75) <= 3, `The first task should follow the timestamped welcome message: ${JSON.stringify(referenceMessageGeometry.prompt)}`);
+  assert.ok(referenceMessageGeometry.response && Math.abs(referenceMessageGeometry.response.x - 104) <= 3 && Math.abs(referenceMessageGeometry.response.width - 546) <= 8, `The Agent response should align to the full-viewport Bot bubble baseline: ${JSON.stringify(referenceMessageGeometry.response)}`);
+  assert.ok(referenceMessageGeometry.response && Math.abs(referenceMessageGeometry.response.y - 344) <= 2, `The Agent response should follow the timestamped user message: ${JSON.stringify(referenceMessageGeometry.response)}`);
   assert.ok(referenceMessageGeometry.computer && Math.abs(referenceMessageGeometry.computer.width - 420) <= 1, 'The Computer activity card should match the official card width');
   assert.ok(referenceMessageGeometry.computerPrompt && referenceMessageGeometry.computer && referenceMessageGeometry.computer.y > referenceMessageGeometry.computerPrompt.y + referenceMessageGeometry.computerPrompt.height && referenceMessageGeometry.computer.y - referenceMessageGeometry.computerPrompt.y - referenceMessageGeometry.computerPrompt.height < 32, `The Computer activity card should follow its user task bubble in the timeline: ${JSON.stringify(referenceMessageGeometry)}`);
-  assert.ok(referenceMessageGeometry.screen && Math.abs(referenceMessageGeometry.screen.x - 735) <= 2 && Math.abs(referenceMessageGeometry.screen.y - 58.5) <= 2 && Math.abs(referenceMessageGeometry.screen.width - 231.5) <= 2, 'The live computer preview should align to the official right pane');
+  assert.ok(referenceMessageGeometry.screen && Math.abs(referenceMessageGeometry.screen.x - 748) <= 2 && Math.abs(referenceMessageGeometry.screen.y - 48) <= 2 && Math.abs(referenceMessageGeometry.screen.width - 231) <= 2, `The live computer preview should align inside the full-viewport right pane: ${JSON.stringify(referenceMessageGeometry.screen)}`);
   await captureUiScreenshot(productShellPage, { path: 'artifacts/ui/authenticated-product-computer-panel-reference-size-20261105.png' });
   demoRoutines.splice(0, demoRoutines.length);
   await productShellPage.getByRole('button', { name: 'Hide computer' }).click();
@@ -456,7 +468,7 @@ try {
   await computerPanel.waitFor({ state: 'visible' });
   const computerPanelBox = await computerPanel.boundingBox();
   const conversationBox = await productShellPage.locator('.conversation').boundingBox();
-  assert.ok(computerPanelBox && computerPanelBox.x + computerPanelBox.width <= 989 && computerPanelBox.width >= 240, 'Expanded Computer panel should fit inside the rounded workspace window');
+  assert.ok(computerPanelBox && computerPanelBox.x + computerPanelBox.width <= 995 && computerPanelBox.width >= 240, `Expanded Computer panel should fit inside the browser viewport: ${JSON.stringify(computerPanelBox)}`);
   assert.ok(conversationBox && conversationBox.width >= 320, 'Opening the Computer panel should preserve useful chat width');
   assert.equal(await productShellPage.getByRole('separator', { name: 'Resize sidebar' }).getAttribute('aria-valuenow'), '84', 'The Computer panel opens with the reference Bot icon rail');
   const sidebarResizeWhileOpen = productShellPage.getByRole('separator', { name: 'Resize sidebar' });

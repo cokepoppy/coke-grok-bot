@@ -3643,3 +3643,23 @@ Kaka 诊断候选已提交并推送到功能分支，之后增加的网页外框
 继续检查 PTS 1,930,000–1,934,960 的 125 个连续 1920×1080 源帧及五张 5×5 联系图；源 MKV SHA-256 仍为 `2b4e52bc561de5a1375cbc73fd8f446cfbd9d72aed04c8a255910653a15b90a2`。一次完整源流顺序 FFmpeg 解码同时校验帧像素与重新生成的联系图，125/125 帧 PTS/`yuv420p` 字节数/哈希和 5/5 联系图哈希全部匹配。紧凑证据保存在 `research/frames/grok-201-3210-3215-compact-audit-20261119/`；三个用于辨认鼠标位置的原尺寸代表帧临时查看后已清理，没有发现应保留的 UI 状态边界。
 
 32:10.000 指针位于 `big & little` 商品页的心形收藏控件上；32:13.000 与 32:14.960 指针已移到说明文字附近。控件外观没有可确认的变化，页面没有可见导航、加购或结账。因此只记录指针经过，不推断发生收藏点击或收藏成功。录像中可见的 Chrome/macOS 边框及演讲者画中画不属于网站内容。V2 累计审阅 48,375 个源帧，下一窗口从 32:15.000（PTS 1,935,000）开始；详细记录见 `research/README.md`。
+
+#### 2026-11-19 11:10 CST 网页全屏 UI 回归基准与公网验收状态
+
+用户将网页细节对齐与公网端到端验收提升为当前首要工作，后续暂缓继续逐帧研究。检查发现 `tests/ui.e2e.mjs` 仍按旧版伪桌面窗口测试 `.app.product-shell` 的 6×10 px inset、红黄绿点、圆角边框及旧版聊天/Computer 几何；实际源码与已部署版本 `sha-029a46380c46505cbcdc66615b97d50b7562723f` 已改为网页占满 viewport。回归脚本现检查全屏边界、窗口装饰隐藏、用户/机器人/电脑卡片颜色和当前布局几何；`COKE_GROK_CAPTURE_UI_ARTIFACTS=0 E2E_PROGRESS=1 npm run test:ui` 通过。该脚本启动本地 Vite、使用合成身份和模拟 API，只是本地 UI 回归，不是公网产品 E2E；运行时关闭了截图文件生成。
+
+本机 K3D `release:verify-k3d` 对 `sha-029a46380c46505cbcdc66615b97d50b7562723f` 通过，核对的 Auth、Broker、Namespace Bootstrap、Agent 与 Desktop 活动应用镜像及运行 release ID 一致。这只证明当前 K3D 版本一致，不能代替公网点击验收。Chrome 原生 AX 刷新显示当前活动页仍为 X，Grok Bot 公网预览标签存在但未选中；切换该标签此前连续触发 `The user changed '/Applications/Google Chrome.app'`，刷新后仍回到 X。本轮没有继续点击、截图或接管用户电脑；公网 UI 和实时 Agent/Computer 全链路仍未验收。待 Chrome 保持在产品标签且可稳定交互后，再完成公网细节核对及真实任务验收。
+
+#### 2026-11-19 11:18 CST 公网可见验收续测
+
+Chrome 原生无障碍树现稳定停留在已登录的 `https://codex.cokeagent.com/grok-bot/`。通过公网聊天输入框发起一条新的只读任务（访问 `https://example.org`，只读标题/正文；没有重放任何旧任务、没有截图）。当前 K3D 统一版本再次核对为 `sha-029a46380c46505cbcdc66615b97d50b7562723f`；该公网任务调用链 `b503f6b7-b23b-4eb7-8c4c-86fcc4eadaa3` 也标记同一 Release。任务已排队，控制面连接 HTTP 200/71 ms、云电脑控制状态检查 HTTP 200/13 ms，随后首次模型请求返回 Gateway/Provider HTTP 403、`model_not_purchased`（411 ms）。Pi Adapter 以 HTTP 400/1,319 ms 退出，调用链共 18 条事件、5 条失败、0 条未完成；页面尚未导航到 example.org，没有 Browser User 成功证据，因此公网任务 E2E 明确失败，不能记作通过。前端聊天已直接显示“模型尚未购买或启用 / provider HTTP 403 / model_not_purchased”，调用链给出 `Receive model provider response` 和单次尝试；但 scheduler 仍记录 `Outcome marked unknown` 和通用“Agent 未返回最终结果”提示，错误卡虽已显示具体原因，未知结果状态仍待完善。与 226435 旧运行的 12 次模型拒绝相比，本次 029a 只发出 1 次请求，未因同一 403 连续重试。需先由供应商账号开通此模型，再做一次新的只读 Browser User 公网验收；不重试本次 run。
+
+本轮 `COKE_GROK_CAPTURE_UI_ARTIFACTS=0 E2E_PROGRESS=1 npm run test:ui` 通过，包含全屏布局、窗口伪装装饰隐藏、用户/Bot/Computer 卡片颜色及输入后滚动等本地回归；这是合成身份和模拟 API 的本地测试。`git ls-remote origin main` 本轮因 HTTP/2 framing error 失败，未能在线确认远端分支头；本地 `origin/main` 与工作分支起点仍是 `f917138bbdc8821ec9045e6730d2d6abdd5253b8`。未部署新代码或改动云电脑状态。
+
+随后对公网 HTML/CSS/JS 做只读静态资源核对：页面 HTTP 200 指向 `/grok-bot/assets/index-l19_Saz7.css` 与 `/grok-bot/assets/index-g52WLWaA.js`；压缩 CSS 中确有 `border-radius:0`、`.product-shell .sidebar-top:before{display:none}` 与用户消息深色样式，JS 中有 `model_not_purchased`。这是已发布资源内容核对，结合 Chrome 原生 AX 的公网可见聊天状态；没有用截图，也不把静态资源检查单独算成网页视觉或任务 E2E 成功。
+
+#### 2026-11-19 11:37 CST 已知首请求失败的聊天说明
+
+针对 `model_not_purchased` 首次 provider response 被拒绝仍显示“Earlier computer actions may already have completed / inspect the computer”通用提示的问题，新增窄条件展示：只有 `model-gateway`、`provider-response`、模型调用 1、上游码 `model_not_purchased` 同时成立，才说明首个模型请求未获得响应、网页/桌面动作尚未发出且任务未重放；其他未知结果仍保留“先检查电脑”说明，以免掩盖可能已执行的外部副作用。该判断只改前端说明，不篡改数据库中的 unknown 运行状态或调用链记录。
+
+`npm run test:ui` 通过：3 个失败说明判定用例通过，既有本地 UI 回归通过；`npm run build:deployment` 与 `git diff --check` 通过。公网任务仍被供应商返回的 HTTP 403 `model_not_purchased` 阻断，尚无 Browser User 网页操作成功；本次前端改动截至记录时尚未部署。远端 `main` 经 HTTP/1.1 `git ls-remote` 确认仍为 `f917138bbdc8821ec9045e6730d2d6abdd5253b8`。本机 K3D 部署仍是 `sha-029a46380c46505cbcdc66615b97d50b7562723f`，本轮 release consistency verifier 通过。
