@@ -3685,3 +3685,11 @@ Chrome 原生无障碍树现稳定停留在已登录的 `https://codex.cokeagent
 用户再次将网页 UI 细节对齐和公网端到端验收设为首要事项。本轮在当前唯一功能分支复跑 `COKE_GROK_CAPTURE_UI_ARTIFACTS=0 E2E_PROGRESS=1 npm run test:ui`，通过本地合成 UI 回归；覆盖用户/机器人/Computer 卡片颜色、对话时间顺序、发送后最新消息可见、网页全屏及隐藏伪 macOS 窗口装饰。这是本地 UI 回归，不是已登录公网真实任务验收。`release:verify-k3d` 再次核对七个活动应用 Deployment 均为 `sha-68691bb482b4f07ca63c6d61436467f3f4fb5479`；公网入口 JS/CSS 与候选 `dist/assets` 的 SHA-256 分别完全一致。运行中的保留用户 Desktop Pod 内 noVNC cursor override 文件哈希也与仓库源码一致（`20ab397d1b9deec9caf377cf461c53b4fe58bc57ac6bc5b888824f21632d90b4`），但代码存在不等于用户看到的细白竖线已消失。
 
 通过已登录公网 Chrome 的原生无障碍树复核已有调用链 `b503f6b7-b23b-4eb7-8c4c-86fcc4eadaa3`：这是历史 `sha-029a46380c46505cbcdc66615b97d50b7562723f` 任务，18 个事件、5 个失败、0 个未完成；第一个模型供应商响应即 HTTP 403 `model_not_purchased`，Agent adapter 以退出码 1 结束，没有 Browser User/Computer User 成功动作。这不能作为当前 `sha-68691bb...` 的新任务验收。因供应商开通状态没有变化，未重试模型请求、未提交新任务，也未重放旧任务；公网 Agent → Browser/Computer 全链路仍未通过。Chrome 扩展 `getTab` 与 `getState` 本轮均超时一次，但 `getApp("Google Chrome")` 的语义无障碍控制成功恢复页面读取，没有使用截图/CDP/坐标。该分支不合并、不打验收 tag；细白竖线仍需可见方式验证。
+
+#### 2026-11-19 12:49 CST 云电脑画面状态语义与公网验收优先级
+
+用户将网页 UI 细节对齐与公网端到端验收提升为当前最高优先级。复核保留用户 Desktop Pod `grok-user-00213195e832242e4afea5b264424355/desktop-dc548687c-mg2d2`：Pod UID `93014dd0-f9aa-4dcb-8540-34caa03844be`，Running、重启数 0；Xvfb 为 `11776×900×24`，x11vnc 为单进程，Chromium 进程仍在。该证据证明进程存活，不证明 noVNC 客户端收到或绘制了桌面帧。
+
+源码复核确认 viewer 先前在 RFB `connect` 事件且屏幕几何匹配时立即显示 `Connected`，但该事件不保证像素帧已绘制。当前候选改为握手后显示 `Waiting for desktop frame…`，检测首个带像素的帧并等待 noVNC `display.flush()` 后显示 `Screen frame received`。这可区分握手与首帧，不会修复或掩盖全黑桌面；用户指出的细白竖线仍未确认来源，未盲目隐藏/替换光标。`node --import tsx --test tests/computer-vnc-proxy.test.ts`、`npm run build` 和禁用工件捕获的 `npm run test:ui` 均通过；它们不是公网任务验收。
+
+公网 Agent → Browser User → Computer User 全链路仍被模型供应商 HTTP 403 `model_not_purchased` 阻断；不重放历史失败任务或重复请求同一未开通模型。仅当供应商授权恢复后，才创建新的只读公网任务；公网 UI 的语义交互和实际云电脑首帧状态需独立复核，未做视觉截图验收。

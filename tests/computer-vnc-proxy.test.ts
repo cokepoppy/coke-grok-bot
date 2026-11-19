@@ -24,6 +24,8 @@ function executeViewerLayout(html:string,framebuffer:{width:number;height:number
  class Display{
   _viewportLoc={x:0,y:0,w:0,h:0};_scale=1;
   constructor(readonly width:number,readonly height:number){}
+  fillRect(){}imageRect(){}blitImage(){}copyImage(){}
+  flush(){return Promise.resolve()}
   get scale(){return this._scale}
   viewportChangePos(dx:number,dy:number){const current=this._viewportLoc;current.x=Math.max(0,Math.min(this.width-current.w,current.x+Math.floor(dx)));current.y=Math.max(0,Math.min(this.height-current.h,current.y+Math.floor(dy)))}
   viewportChangeSize(width:number,height:number){const current=this._viewportLoc;current.w=Math.min(width,this.width);current.h=Math.min(height,this.height);this.viewportChangePos(0,0)}
@@ -32,6 +34,7 @@ function executeViewerLayout(html:string,framebuffer:{width:number;height:number
  class FakeRFB extends EventTarget{
   _display:Display;disconnected=false;
   constructor(_target:unknown,_url:string){super();this._display=new Display(framebuffer.width,framebuffer.height);rfbInstance=this as EventTarget&Record<string,any>}
+  _framebufferUpdate(){return true}
   _fixScrollbars(){}
   disconnect(){this.disconnected=true;this.dispatchEvent(Object.assign(new Event('disconnect'),{detail:{clean:true}}))}
  }
@@ -76,7 +79,9 @@ test('authenticated computer proxy scopes noVNC assets and a WebSocket handshake
   assert.equal(viewer.status,200);assert.equal(viewer.headers.get('cache-control'),'no-store');
   const viewerHtml=await viewer.text();assert.match(viewerHtml,/import RFB from '\.\/core\/rfb\.js'/);assert.match(viewerHtml,/viewportChangePos/);assert.match(viewerHtml,/"left":1472/);assert.equal(forwardedPath,'/vnc_lite.html');
   const fitted=executeViewerLayout(viewerHtml,{width:11776,height:900},{width:1000,height:600});
-  assert.equal(fitted.status.textContent,'Connected');assert.equal(fitted.status.dataset.state,'connected');assert.equal(fitted.display._viewportLoc.x,1472);assert.equal(fitted.display._viewportLoc.y,0);
+  assert.equal(fitted.status.textContent,'Waiting for desktop frame…');assert.equal(fitted.status.dataset.state,'connected');assert.equal(fitted.display._viewportLoc.x,1472);assert.equal(fitted.display._viewportLoc.y,0);
+  fitted.display.fillRect();fitted.rfb._framebufferUpdate();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(fitted.status.textContent,'Screen frame received');assert.equal(fitted.status.dataset.state,'connected');
   assert.equal(fitted.mount.style.left,'20px');assert.equal(fitted.mount.style.top,'0px');assert.equal(fitted.screen.style.width,'1440px');assert.equal(fitted.screen.style.height,'900px');assert.equal(fitted.screen.style.overflow,'visible');assert.equal(fitted.canvas.style.margin,'0px');
   fitted.display.viewportChangePos(5000,0);assert.equal(fitted.display._viewportLoc.x,1472,'the user viewport cannot pan into another Bot screen');
   const enlarged=executeViewerLayout(viewerHtml,{width:11776,height:900},{width:2000,height:1200});

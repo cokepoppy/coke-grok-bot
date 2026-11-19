@@ -31,6 +31,22 @@ if(screen){screen.style.width=box.width+'px';screen.style.height=box.height+'px'
 if(canvas)canvas.style.margin='0px';
 const display=rfb._display;
 let viewportReady=false,layoutUnavailable=false;
+let framePixelsPending=false,firstFrameReady=false;
+for(const method of ['fillRect','imageRect','blitImage','copyImage']){
+ const draw=display[method].bind(display);
+ display[method]=(...args)=>{framePixelsPending=true;return draw(...args)};
+}
+const framebufferUpdate=rfb._framebufferUpdate.bind(rfb);
+rfb._framebufferUpdate=(...args)=>{
+ const complete=framebufferUpdate(...args);
+ if(complete&&framePixelsPending&&!firstFrameReady){
+  framePixelsPending=false;firstFrameReady=true;
+  void display.flush().then(()=>{
+   if(!layoutUnavailable&&status.dataset.state==='connected')status.textContent='Screen frame received';
+  });
+ }
+ return complete;
+};
 const moveViewport=display.viewportChangePos.bind(display);
 display.viewportChangePos=(dx,dy)=>{
  if(!viewportReady)return;
@@ -67,7 +83,9 @@ rfb.addEventListener('connect',()=>{
  if(!layout()){
   layoutUnavailable=true;status.textContent='Computer screen is unavailable';status.dataset.state='error';rfb.disconnect();return;
  }
- status.textContent='Connected';status.dataset.state='connected';
+ // The RFB connect event confirms the protocol handshake and geometry only.
+ // Keep the distinction visible until a framebuffer update has rendered.
+ status.textContent='Waiting for desktop frame…';status.dataset.state='connected';
 });
 rfb.addEventListener('disconnect',event=>{
  if(layoutUnavailable)return;
