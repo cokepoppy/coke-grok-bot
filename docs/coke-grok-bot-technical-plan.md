@@ -3679,3 +3679,9 @@ Chrome 原生无障碍树现稳定停留在已登录的 `https://codex.cokeagent
 因此，本轮**公网 UI 错误说明可见性已验收；真实 Agent→Browser User→Computer User 任务 E2E 仍失败/阻塞在模型供应商授权**。此前对同一阿里云兼容端点的单次最小请求已分别确认 `qwen3.8-flash` 和 `deepseek-v4.1-flash` 返回 HTTP 403 `AccessDenied.Unpurchased`；没有改模型配置或再次请求。需先由供应商账号开通已选模型，再创建一条新的只读公网任务。当前不合并、不打验收 tag。
 
 当前源码的本地 `test:ui` 覆盖网页全屏边界、隐藏 macOS 装饰、用户/Agent/Computer 卡片色、布局和发送后滚动，先前已通过；本次公网 Computer Use 是语义树检查，没有视觉截图，故不把它说成像素级视觉验收。noVNC 白色竖线在本轮也没有做视觉复核，结果仍未确认。此次 CUA 恢复路径和限制已单独记录在 memory note 中。
+
+#### 2026-11-19 12:21 CST 网页细节回归与公网链路复核
+
+用户再次将网页 UI 细节对齐和公网端到端验收设为首要事项。本轮在当前唯一功能分支复跑 `COKE_GROK_CAPTURE_UI_ARTIFACTS=0 E2E_PROGRESS=1 npm run test:ui`，通过本地合成 UI 回归；覆盖用户/机器人/Computer 卡片颜色、对话时间顺序、发送后最新消息可见、网页全屏及隐藏伪 macOS 窗口装饰。这是本地 UI 回归，不是已登录公网真实任务验收。`release:verify-k3d` 再次核对七个活动应用 Deployment 均为 `sha-68691bb482b4f07ca63c6d61436467f3f4fb5479`；公网入口 JS/CSS 与候选 `dist/assets` 的 SHA-256 分别完全一致。运行中的保留用户 Desktop Pod 内 noVNC cursor override 文件哈希也与仓库源码一致（`20ab397d1b9deec9caf377cf461c53b4fe58bc57ac6bc5b888824f21632d90b4`），但代码存在不等于用户看到的细白竖线已消失。
+
+通过已登录公网 Chrome 的原生无障碍树复核已有调用链 `b503f6b7-b23b-4eb7-8c4c-86fcc4eadaa3`：这是历史 `sha-029a46380c46505cbcdc66615b97d50b7562723f` 任务，18 个事件、5 个失败、0 个未完成；第一个模型供应商响应即 HTTP 403 `model_not_purchased`，Agent adapter 以退出码 1 结束，没有 Browser User/Computer User 成功动作。这不能作为当前 `sha-68691bb...` 的新任务验收。因供应商开通状态没有变化，未重试模型请求、未提交新任务，也未重放旧任务；公网 Agent → Browser/Computer 全链路仍未通过。Chrome 扩展 `getTab` 与 `getState` 本轮均超时一次，但 `getApp("Google Chrome")` 的语义无障碍控制成功恢复页面读取，没有使用截图/CDP/坐标。该分支不合并、不打验收 tag；细白竖线仍需可见方式验证。
